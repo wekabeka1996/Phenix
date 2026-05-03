@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from apps.reference.config_models import BracketsConfig, SLConfig, TPConfig
-from apps.reference.domains.execution_position.fsm_manage import (
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import (
     ManageFlowFSM,
     ManageState,
 )

@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from apps.reference.domains.execution_position.order_guardian import InMemoryStore, OrderGuardian
+from apps.reference.domains.execution_position.guardian.order_guardian import InMemoryStore, OrderGuardian
 
 
 class _ExplodingOrderLedger:
@@ -31,7 +31,7 @@ def test_order_guardian_explicit_store_override_still_wins_over_config() -> None
         {"unified": True, "ledger_db_path": "data/order_ledger.db"})
 
     with patch(
-        "apps.reference.domains.execution_position.order_guardian._get_ledger_store",
+        "apps.reference.domains.execution_position.guardian.order_guardian._get_ledger_store",
         side_effect=AssertionError(
             "explicit store override should bypass ledger construction"),
     ):
@@ -50,7 +50,7 @@ def test_order_guardian_explicit_ledger_failure_raises_without_inmemory_fallback
         {"unified": True, "ledger_db_path": "data/bad/order_ledger.db"})
 
     with patch(
-        "apps.reference.domains.execution_position.order_guardian._get_ledger_store",
+        "apps.reference.domains.execution_position.guardian.order_guardian._get_ledger_store",
         return_value=(_FakeLedgerStoreAdapter, _ExplodingOrderLedger),
     ):
         with pytest.raises(ValueError, match="No InMemoryStore fallback is allowed"):
@@ -62,7 +62,7 @@ def test_order_guardian_explicit_ledger_import_failure_raises_without_inmemory_f
         {"unified": True, "ledger_db_path": "data/order_ledger.db"})
 
     with patch(
-        "apps.reference.domains.execution_position.order_guardian._get_ledger_store",
+        "apps.reference.domains.execution_position.guardian.order_guardian._get_ledger_store",
         side_effect=ImportError("ledger adapter import failed"),
     ):
         with pytest.raises(ValueError, match="LedgerStoreAdapter"):

@@ -16,8 +16,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from apps.reference.domains.execution_position.open_executor import OpenExecutor
-from apps.reference.domains.execution_position.open_submission_adapter import (
+from apps.reference.domains.execution_position.flows.open.open_executor import OpenExecutor
+from apps.reference.domains.execution_position.flows.open.open_submission_adapter import (
     OPEN_SUBMISSION_CONTRACT,
     OpenSubmissionAdapterError,
     OpenSubmissionPayload,
@@ -355,7 +355,7 @@ async def test_queued_supersede_redispatch_routes_through_typed_submission() -> 
     # OpenExecutor.execute_open. We invoke execute_open directly to keep the
     # test bounded to the typed submission seam.)
     with patch(
-        "apps.reference.domains.execution_position.open_executor."
+        "apps.reference.domains.execution_position.flows.open.open_executor."
         "OpenSubmissionPayload.from_dec_open_with_key",
         wraps=OpenSubmissionPayload.from_dec_open_with_key,
     ) as wrapped_seam, patch(
@@ -377,7 +377,7 @@ async def test_entry_manager_process_queued_supersede_drives_typed_seam_end_to_e
     """
     import asyncio
 
-    from apps.reference.domains.execution_position.entry_manager import (
+    from apps.reference.domains.execution_position.flows.open.entry_manager import (
         EntryManager,
     )
 
@@ -417,11 +417,11 @@ async def test_entry_manager_process_queued_supersede_drives_typed_seam_end_to_e
     fsm._execute_decision = _execute_decision
 
     with patch(
-        "apps.reference.domains.execution_position.open_executor."
+        "apps.reference.domains.execution_position.flows.open.open_executor."
         "OpenSubmissionPayload.from_dec_open_with_key",
         wraps=OpenSubmissionPayload.from_dec_open_with_key,
     ) as wrapped_seam, patch(
-        "apps.reference.domains.execution_position.open_executor."
+        "apps.reference.domains.execution_position.flows.open.open_executor."
         "OpenSubmissionPayload.from_dec_open",
         wraps=OpenSubmissionPayload.from_dec_open,
     ) as wrapped_alt_seam, patch(
@@ -476,7 +476,7 @@ async def test_entry_manager_process_queued_supersede_noops_when_queue_empty() -
     """
     import asyncio
 
-    from apps.reference.domains.execution_position.entry_manager import (
+    from apps.reference.domains.execution_position.flows.open.entry_manager import (
         EntryManager,
     )
 
@@ -488,7 +488,7 @@ async def test_entry_manager_process_queued_supersede_noops_when_queue_empty() -
     fsm._execute_decision = AsyncMock()
 
     with patch(
-        "apps.reference.domains.execution_position.open_executor."
+        "apps.reference.domains.execution_position.flows.open.open_executor."
         "OpenSubmissionPayload.from_dec_open_with_key",
         wraps=OpenSubmissionPayload.from_dec_open_with_key,
     ) as wrapped_seam:

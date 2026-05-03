@@ -25,7 +25,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from apps.reference.domains.execution_position.bracket_manager import BracketManager
+from apps.reference.domains.execution_position.flows.manage.bracket_manager import BracketManager
 
 pytest_plugins = ("tests.domains.execution_position.conftest",)
 
@@ -80,7 +80,8 @@ def _make_fsm_for_deferred(*, handler=None) -> SimpleNamespace:
         elif order_role == "TP":
             brackets["tp_order_id"] = order_id
 
-    fsm._set_symbol_bracket_order = MagicMock(side_effect=_set_symbol_bracket_order)
+    fsm._set_symbol_bracket_order = MagicMock(
+        side_effect=_set_symbol_bracket_order)
     fsm._remember_bracket_owner = MagicMock(return_value={})
     fsm._append_bracket_ownership_record = MagicMock()
     fsm._has_active_lifecycle_for_symbol = MagicMock(return_value=True)
@@ -95,13 +96,15 @@ def _make_fsm_for_deferred(*, handler=None) -> SimpleNamespace:
             )
         return True
 
-    fsm._clear_pending_brackets = MagicMock(side_effect=_clear_pending_brackets)
+    fsm._clear_pending_brackets = MagicMock(
+        side_effect=_clear_pending_brackets)
 
     # Attach the protection-missing handler (or a mock)
     if handler is not None:
         fsm._handle_bracket_protection_missing = handler
     else:
-        fsm._handle_bracket_protection_missing = AsyncMock(return_value="force_reduce_only_close")
+        fsm._handle_bracket_protection_missing = AsyncMock(
+            return_value="force_reduce_only_close")
 
     return fsm
 
@@ -156,7 +159,8 @@ class TestDeferredGuardianVeto:
     @pytest.mark.asyncio
     async def test_guardian_veto_uses_live_position_proven_false(self) -> None:
         fsm = _make_fsm_for_deferred()
-        fsm.order_guardian.should_place_brackets = AsyncMock(return_value=False)
+        fsm.order_guardian.should_place_brackets = AsyncMock(
+            return_value=False)
         manager = BracketManager(fsm)
         manager.preflight_position_check = AsyncMock(return_value=True)
 
@@ -207,14 +211,25 @@ class TestDeferredBothFailAfterPreflight:
         assert details["missing_tp"] is True
         assert details["preflight_position_confirmed"] is True
         assert details["deferred_brackets"] is True
+        assert details["correlation"]["rid"] == "rid-1"
+        assert details["correlation"]["entry_order_id"] == "entry-1"
+        assert details["correlation"]["entry_client_order_id"] == "ENTRY-1"
+        child_outcomes = details["child_outcomes"]
+        assert child_outcomes["SL"]["submission_attempted"] is True
+        assert child_outcomes["SL"]["adapter_outcome_class"] == "exception"
+        assert child_outcomes["TP1"]["submission_attempted"] is True
+        assert child_outcomes["TP1"]["adapter_outcome_class"] == "exception"
+        assert child_outcomes["TP2"]["adapter_outcome_class"] == "not_configured"
 
     @pytest.mark.asyncio
     async def test_both_fail_emits_event_via_handler(self) -> None:
         """Handler is called with force-close semantics when both legs fail after preflight."""
         fsm = _make_fsm_for_deferred()
         fsm.adapter = SimpleNamespace(
-            place_stop_market_close_position=AsyncMock(side_effect=RuntimeError("boom")),
-            place_take_profit_market_close_position=AsyncMock(side_effect=RuntimeError("boom")),
+            place_stop_market_close_position=AsyncMock(
+                side_effect=RuntimeError("boom")),
+            place_take_profit_market_close_position=AsyncMock(
+                side_effect=RuntimeError("boom")),
         )
         fsm.order_guardian.should_place_brackets = AsyncMock(return_value=True)
         manager = BracketManager(fsm)
@@ -226,6 +241,43 @@ class TestDeferredBothFailAfterPreflight:
         assert fsm._handle_bracket_protection_missing.await_count == 1
         kwargs = fsm._handle_bracket_protection_missing.await_args.kwargs
         assert kwargs["source_path"] == "BracketManager.place_deferred_brackets"
+
+    @pytest.mark.asyncio
+    async def test_both_fail_with_4130_is_classified_and_preserves_exchange_reason(self) -> None:
+        from apps.reference.adapters.binance_adapter import BinanceAPIError
+
+        fsm = _make_fsm_for_deferred()
+        fsm.adapter = SimpleNamespace(
+            place_stop_market_close_position=AsyncMock(
+                side_effect=BinanceAPIError(
+                    code=-4130,
+                    msg="An open stop or take profit order with GTE and closePosition in the direction is existing.",
+                )
+            ),
+            place_take_profit_market_close_position=AsyncMock(
+                side_effect=BinanceAPIError(
+                    code=-4130,
+                    msg="An open stop or take profit order with GTE and closePosition in the direction is existing.",
+                )
+            ),
+        )
+        fsm.order_guardian.should_place_brackets = AsyncMock(return_value=True)
+        fsm.order_guardian.cleanup_other_brackets_for_symbol = AsyncMock(
+            return_value=0)
+        manager = BracketManager(fsm)
+        manager.preflight_position_check = AsyncMock(return_value=True)
+
+        result = await manager.place_deferred_brackets("entry-1", _entry_payload())
+
+        assert result is False
+        kwargs = fsm._handle_bracket_protection_missing.await_args.kwargs
+        assert kwargs["live_position_proven"] is True
+        assert kwargs["why_code"] == "BRACKET_DEFERRED_EXISTING_CLOSEPOSITION_ORDER"
+        assert kwargs["failure_class"] == "exchange_reject_duplicate_closeposition_direction"
+        details = kwargs["details"]
+        assert details["sl_error_code"] == -4130
+        assert details["tp_error_code"] == -4130
+        assert "closePosition" in str(details["sl_error_msg"])
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +316,8 @@ class TestDeferredSLMissingTPPresent:
         assert details["missing_tp"] is False
         assert details["sl_response_present"] is False
         assert details["tp_response_present"] is True
+        assert details["child_outcomes"]["TP1"]["adapter_outcome_class"] == "accepted"
+        assert details["child_outcomes"]["TP1"]["order_id"] == "600001"
 
     @pytest.mark.asyncio
     async def test_sl_missing_does_not_silently_ignore(self) -> None:
@@ -271,12 +325,14 @@ class TestDeferredSLMissingTPPresent:
         fsm = _make_fsm_for_deferred()
         # Use a no-op handler to verify it is called (not ignored)
         calls = []
+
         async def capturing_handler(**kwargs):
             calls.append(kwargs)
         fsm._handle_bracket_protection_missing = capturing_handler
 
         fsm.adapter = SimpleNamespace(
-            place_stop_market_close_position=AsyncMock(side_effect=RuntimeError("sl_fail")),
+            place_stop_market_close_position=AsyncMock(
+                side_effect=RuntimeError("sl_fail")),
             place_take_profit_market_close_position=AsyncMock(
                 return_value={"orderId": "600001"}
             ),
@@ -308,7 +364,8 @@ class TestDeferredTPMissingSLPresent:
             place_stop_market_close_position=AsyncMock(
                 return_value={"orderId": "500001", "clientAlgoId": "algo-sl-1"}
             ),
-            place_take_profit_market_close_position=AsyncMock(side_effect=tp_error),
+            place_take_profit_market_close_position=AsyncMock(
+                side_effect=tp_error),
         )
         fsm.order_guardian.should_place_brackets = AsyncMock(return_value=True)
         fsm.order_guardian.register_bracket = MagicMock()
@@ -330,6 +387,9 @@ class TestDeferredTPMissingSLPresent:
         assert details["missing_sl"] is False
         assert details["sl_response_present"] is True
         assert details["tp_response_present"] is False
+        assert details["child_outcomes"]["SL"]["adapter_outcome_class"] == "accepted"
+        assert details["child_outcomes"]["SL"]["order_id"] == "500001"
+        assert details["child_outcomes"]["TP1"]["adapter_outcome_class"] == "exception"
 
     @pytest.mark.asyncio
     async def test_tp_missing_generic_exception_also_escalates(self) -> None:
@@ -366,7 +426,8 @@ class TestDeferredTPMissingSLPresent:
             place_stop_market_close_position=AsyncMock(
                 return_value={"orderId": "500001"}
             ),
-            place_take_profit_market_close_position=AsyncMock(side_effect=tp_error),
+            place_take_profit_market_close_position=AsyncMock(
+                side_effect=tp_error),
         )
         fsm.order_guardian.should_place_brackets = AsyncMock(return_value=True)
         fsm.order_guardian.register_bracket = MagicMock()

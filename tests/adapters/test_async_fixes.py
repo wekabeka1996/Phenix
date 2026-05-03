@@ -11,7 +11,7 @@ pytest.importorskip("httpx")
 
 from unittest.mock import AsyncMock, MagicMock, patch
 from apps.reference.adapters.binance_adapter import BinanceAdapter
-from apps.reference.domains.execution_position.watchdog import OrderTimeoutWatchdog
+from apps.reference.domains.execution_position.adapters.watchdog import OrderTimeoutWatchdog
 
 
 # ---------------------------------------------------------------------------

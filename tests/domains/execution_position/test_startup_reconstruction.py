@@ -5,8 +5,8 @@ import pytest
 from unittest.mock import MagicMock
 
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
-from apps.reference.domains.execution_position.startup_reconstruction import StartupReconstruction
-from apps.reference.domains.execution_position.restore_artifact import TRUTH_SOURCE_RECONSTRUCTED_GUARDIAN
+from apps.reference.domains.execution_position.state.startup_reconstruction import StartupReconstruction
+from apps.reference.domains.execution_position.state.restore_artifact import TRUTH_SOURCE_RECONSTRUCTED_GUARDIAN
 
 
 @pytest.fixture

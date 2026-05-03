@@ -5,9 +5,9 @@ from unittest.mock import MagicMock
 
 from vfoundation.core.protocol import Message
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
-from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM, ManageState
-from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
-from apps.reference.domains.execution_position.fsm_close import CloseFlowFSM
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageFlowFSM, ManageState
+from apps.reference.domains.execution_position.flows.open.fsm_open import OpenFlowFSM
+from apps.reference.domains.execution_position.flows.close.fsm_close import CloseFlowFSM
 from apps.reference.config_models import AuroraConfig
 
 def feed_opened_position(fsm: ExecPosFSM, symbol: str, side: str, qty: Decimal, entry_price: Decimal):

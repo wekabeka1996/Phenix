@@ -1,246 +1,243 @@
-# execution_position — Domain README
+# execution_position - Domain README
 
-> **Authoritative domain documentation.** For auto-generated docs see `docs/` (may be stale).
+> Authoritative package-local documentation for the `execution_position` domain.
+> Generated docs under `docs/` are secondary summaries. Phase 9B syncs them to
+> the accepted Phase 8 skeleton layout without changing runtime behavior.
 
 ## 1. Purpose
 
-`execution_position` is the **execution soldier** of the trading system. It receives trade intents from `decision_making`, translates them into exchange orders via `BinanceAdapter`, tracks order/position lifecycle through a 3-FSM system, manages bracket orders (SL/TP), handles exposure tracking, reconciliation, and orphan cleanup.
+`execution_position` is the execution soldier of the trading system. It receives
+trade intents from `decision_making`, translates them into exchange orders via
+the adapter boundary, tracks lifecycle through open/manage/close flows, manages
+brackets, enforces exposure and leverage guardrails, restores truth at startup,
+and reconciles orphaned or stale runtime state.
 
-**It does NOT make trading decisions.**
+It does not make trading decisions.
 
 ## 2. Responsibility Boundary
 
 Owns:
-- Order placement validation and normalization (qty, price, notional)
-- Order lifecycle FSM (open → manage → close)
-- Bracket order management (SL/TP placement, adjustment, cancel)
-- Exposure tracking and fail-closed guarding
-- Order timeout / stale detection (Watchdog)
-- Orphan order cleanup and reconciliation (OrderGuardian)
-- Leverage configuration and bootstrapping
+- Order placement validation and normalization
+- Order and position lifecycle execution
+- Bracket placement, cleanup, and reconciliation
+- Exposure, leverage, and execution fail-closed guardrails
+- Runtime/state restoration and ledger persistence
+- Telemetry, watchdog, and position-policy sidecar integration
 
-Does NOT own:
-- Trade signal generation (→ decision_making)
-- Risk assessment (→ risk_management)
-- Exchange adapter wire protocol (→ adapters/binance_adapter)
-- Position tracking aggregation (→ position_tracking)
+Does not own:
+- Signal generation
+- Portfolio strategy logic
+- Exchange wire protocol implementation
+- Cross-domain risk policy definition
 
-## 3. State Ownership
+## 3. Physical Skeleton
 
-| State | Owner | File |
-|-------|-------|------|
-| Order tracking (runtime) | `OrderIndex` | `order_index.py` |
-| Position tracking (runtime) | `ManageFlowFSM` | `fsm_manage.py` |
-| Exposure state | `ExposureGuard` / `ExposureManager` | `exposure_guard.py`, `exposure_manager.py` |
-| Order persistence | `OrderLedger` | `infra/order_ledger.py` |
+### Intentional root anchors
 
-### OrderStatus Enums (3 intentional layers)
+These files are intentionally root-level public API or facade anchors:
 
-| Layer | File | Members | Purpose |
-|-------|------|---------|---------|
-| Domain contract | `contracts.py` | PENDING, PLACED, PARTIAL, FILLED, CANCELLED, REJECTED, EXPIRED | Internal domain lifecycle |
-| Binance wire format | `idempotent_cancel.py` | NEW, PARTIALLY_FILLED, FILLED, CANCELED, REJECTED, EXPIRED | Exchange-native spelling |
-| Persistence | `infra/order_ledger.py` | PENDING, ACTIVE, CANCELLED, FILLED, REJECTED, EXPIRED, UNKNOWN | SQLite storage |
+| Path | Role |
+|------|------|
+| `fsm.py` | Root orchestration anchor for `ExecPosFSM`; intentionally not moved |
+| `contracts.py` | Root public contract API anchor |
+| `reasons.py` | Root canonical reason constant source |
+| `utils.py` | Root utility API anchor |
+| `__init__.py` | Package marker |
 
-These are **intentionally separate** — each models a different layer's view of order state. Do not merge.
+These root anchors are not unfinished migration debt. They are the accepted
+final root surface after Phase 8 physical skeleton migration and Phase 9A
+guardrails.
 
-## 4. FSM Architecture
+### Root shadowing constraints
 
+The following package paths are forbidden because they would shadow accepted
+root module import surfaces:
+
+- Do not create `execution_position/contracts/`
+- Do not create `execution_position/utils/`
+
+`contract_layer/` remains a separate additive package and must not shadow
+`contracts.py`.
+
+### Current semantic subpackages
+
+| Package | Purpose | Example files |
+|---------|---------|---------------|
+| `contract_layer/` | Additive contract helpers and schemas | `numeric.py`, `trade_executed_contracts.py` |
+| `telemetry/` | Observability and metrics | `metrics_collector.py`, `drift_monitor.py` |
+| `guardian/` | Guardian and cancel bridges | `order_guardian.py`, `guardian_reconcile_cancel_bridge.py` |
+| `state/` | Truth, ledger, restore, startup state | `order_ledger.py`, `startup_truth_orchestrator.py` |
+| `guards/` | Exposure, leverage, qty, soft clip | `exposure_guard.py`, `leverage_service.py` |
+| `adapters/` | Adapter and scheduling mixins | `adapter_init.py`, `watchdog.py` |
+| `sidecar/` | Position policy sidecar and mediator | `position_policy_sidecar.py`, `position_policy_mediator.py` |
+| `flows/open/` | Open-flow intake and submission | `fsm_open.py`, `open_executor.py` |
+| `flows/manage/` | Manage/bracket lifecycle | `fsm_manage.py`, `bracket_manager.py` |
+| `flows/close/` | Close-flow execution and cancel seams | `fsm_close.py`, `close_executor.py` |
+| `orchestration/` | Event ingress and routing helpers | `event_handlers.py`, `fill_ingress_coordinator.py` |
+| `support/` | Non-shadowing support utilities | `stopprice_validation.py`, `utils_event_bus.py` |
+
+### Compatibility stubs
+
+Flat root compatibility stubs from Phase 8 remain in place as temporary
+migration shims. They preserve old import paths while callers transition to the
+semantic packages above. Phase 9 does not remove them.
+
+## 4. State Ownership
+
+| State | Owner | Current file |
+|-------|-------|--------------|
+| Order tracking (runtime) | `OrderIndex` | `state/order_index.py` |
+| Position tracking (runtime) | `ManageFlowFSM` | `flows/manage/fsm_manage.py` |
+| Exposure state | `ExposureGuard` / `ExposureManager` | `guards/exposure_guard.py`, `guards/exposure_manager.py` |
+| Order persistence | `OrderLedger` | `state/order_ledger.py` |
+
+### OrderStatus enums (3 intentional layers)
+
+| Layer | File | Purpose |
+|-------|------|---------|
+| Domain contract | `contracts.py` | Internal domain lifecycle |
+| Binance wire format | `guardian/idempotent_cancel.py` | Exchange-native spelling |
+| Persistence | `state/order_ledger.py` | SQLite storage |
+
+These remain intentionally separate. Do not merge them.
+
+## 5. FSM Architecture
+
+```text
+ExecPosFSM (root orchestration anchor in fsm.py)
+  |- OpenFlowFSM:   flows/open/fsm_open.py
+  |- ManageFlowFSM: flows/manage/fsm_manage.py
+  `- CloseFlowFSM:  flows/close/fsm_close.py
 ```
-ExecPosFSM (orchestrator)
-  ├── OpenFlowFSM:   IDLE → CANDIDATE → READY → EMIT_DEC_OPEN → DONE
-  ├── ManageFlowFSM: FLAT → OPENED → TRACKING → BRACKETS_PENDING → BRACKETS_PLACED → ...
-  └── CloseFlowFSM:  FLAT → OPENED → CLOSE_COND → EMIT_DEC_CLOSE → DONE
-```
 
-- `ExecPosFSM` subscribes to bus events and routes to sub-FSMs
-- `OpenFlowFSM` validates CMD:OPEN and emits DEC:OPEN
-- `ManageFlowFSM` tracks positions, places/adjusts brackets, handles exits
-- `CloseFlowFSM` processes CMD:CLOSE (soldier pattern — only explicit close)
-
-## 5. Events
-
-### Consumed (9)
-
-| Event | Source |
-|-------|--------|
-| `EVT:TRADE_INTENT_PROPOSED` | decision_making |
-| `EVT:TRADE_INTENT_REJECTED` | decision_making |
-| `EVT:PORTFOLIO_STATE_UPDATED` | position_tracking |
-| `EVT:FEATURES_CALCULATED` | feature_engineering |
-| `EVT:REGIME_DETECTED` | regime_detector |
-| `EVT:ORDER_ACK` | adapter |
-| `EVT:ORDER_FILL` | adapter |
-| `EVT:SYMBOL_TIDY` | self |
-| `CMD:CLOSE` | decision_making |
-
-### Emitted (31 registered in verb_registry)
-
-See `domain_dict.json` for the full export list. Key events:
-- `DEC:OPEN`, `DEC:CLOSE` — adapter commands
-- `DEC:PLACE_ORDER`, `DEC:CANCEL_ORDER`, `DEC:ADJUST`, `DEC:BATCH` — bracket management
-- `EVT:EXECUTION_GUARD_BLOCKED`, `EVT:EXECUTION_DIVERGENCE_DETECTED` — observability
-- `EVT:EXECUTION_CLOSE_RECONCILED`, `EVT:EXECUTION_TIDY_PERFORMED` — reconciliation
-- `ERR:OPEN`, `ERR:EXECUTION_FAILED`, `ERR:FATAL_CONFIG_MISMATCH` — errors
+- `fsm.py` remains the root orchestration anchor because its import, patch, and
+  source-inspection surface is intentionally frozen.
+- The specialized flow implementations live under `flows/open/`,
+  `flows/manage/`, and `flows/close/`.
 
 ## 6. File Map
 
-### FSM Orchestration (4 files, ~4,651 LOC)
-| File | Role |
-|------|------|
-| `fsm.py` | Main orchestrator (~2,056 LOC) |
-| `fsm_open.py` | Open flow FSM (589 LOC) |
-| `fsm_manage.py` | Manage flow FSM (1,826 LOC) |
-| `fsm_close.py` | Close flow FSM (180 LOC) |
+### Root anchors
+- `fsm.py`
+- `contracts.py`
+- `reasons.py`
+- `utils.py`
 
-### Guards & Managers (7 files)
-| File | Role |
-|------|------|
-| `exposure_guard.py` | Fail-closed exposure guard (1,067 LOC) |
-| `exposure_manager.py` | Exposure tracking and reserve management |
-| `order_guardian.py` | Orphan cleanup and reconciliation (1,433 LOC) |
-| `bracket_manager.py` | SL/TP bracket placement |
-| `watchdog.py` | Order timeout detection |
-| `entry_manager.py` | Entry lifecycle management |
+### Contract layer
+- `contract_layer/numeric.py`
+- `contract_layer/reasons.py`
+- `contract_layer/typed_results.py`
+- `contract_layer/terminal_order_contracts.py`
+- `contract_layer/trade_executed_contracts.py`
+- `contract_layer/trade_intent_reject_contracts.py`
 
-### Execution (3 files)
-| File | Role |
-|------|------|
-| `open_executor.py` | Order placement execution |
-| `close_executor.py` | Position close execution |
-| `intent_router.py` | Route intents to CMD:OPEN/CMD:CLOSE |
+### Telemetry
+- `telemetry/aurora_log_adapter.py`
+- `telemetry/metrics_collector.py`
+- `telemetry/metrics_aggregator.py`
+- `telemetry/health_metrics.py`
+- `telemetry/drift_monitor.py`
+- `telemetry/intent_boundary_audit.py`
 
-### Utilities (8 files)
-| File | Role |
-|------|------|
-| `contracts.py` | Domain enums, Pydantic models, validation |
-| `reasons.py` | Cancel/reject reason constants (SSOT) |
-| `utils.py` | Shared utilities (client_order_id gen, rounding) |
-| `qty_normalizer.py` | Strict qty/price normalization |
-| `idempotent_cancel.py` | Idempotent cancel with -2011 absorption |
-| `order_index.py` | Order tracking index (SSOT) |
-| `soft_clip.py` | Soft limit / position clipping engine |
-| `stopprice_validation.py` | Stop price validation |
+### Guardian and cancel
+- `guardian/order_guardian.py`
+- `guardian/idempotent_cancel.py`
+- `guardian/cancel_submission_adapter.py`
+- `guardian/cancel_bridge_utils.py`
+- `guardian/guardian_background_orphan_cancel_bridge.py`
+- `guardian/guardian_old_bracket_cleanup_bridge.py`
+- `guardian/guardian_pre_close_cleanup_bridge.py`
+- `guardian/guardian_reconcile_cancel_bridge.py`
 
-### Infrastructure (3 files)
-| File | Role |
-|------|------|
-| `infra/order_ledger.py` | SQLite order persistence |
-| `infra/ledger_store_adapter.py` | Ledger store adapter |
-| `pending_brackets_wal.py` | WAL for bracket state recovery |
+### State and restore
+- `state/order_index.py`
+- `state/order_ledger.py`
+- `state/ledger_store_adapter.py`
+- `state/restore_artifact.py`
+- `state/authoritative_restore_apply.py`
+- `state/startup_reconstruction.py`
+- `state/startup_truth_orchestrator.py`
+- `state/truth_hardening.py`
 
-### Observability (5 files)
-| File | Role |
-|------|------|
-| `aurora_log_adapter.py` | Structured trade logging |
-| `metrics_collector.py` | Metrics collection |
-| `metrics_aggregator.py` | Metrics aggregation |
-| `drift_monitor.py` | Drift detection |
-| `health_metrics.py` | Health metrics mixin |
+### Guards
+- `guards/exposure_guard.py`
+- `guards/exposure_manager.py`
+- `guards/soft_clip.py`
+- `guards/qty_normalizer.py`
+- `guards/leverage_config.py`
+- `guards/leverage_service.py`
+- `guards/bootstrapping/leverage_bootstrapper.py`
 
-### Config & Bootstrap (5 files)
-| File | Role |
-|------|------|
-| `config_resolver.py` | Config resolution mixin |
-| `leverage_config.py` | Leverage configuration |
-| `leverage_service.py` | Leverage verification |
-| `bootstrapping/leverage_bootstrapper.py` | Leverage bootstrap at startup |
-| `adapter_init.py` | Adapter initialization mixin |
+### Adapters
+- `adapters/adapter_init.py`
+- `adapters/async_scheduling.py`
+- `adapters/config_resolver.py`
+- `adapters/watchdog.py`
 
-### Other (3 files)
-| File | Role |
-|------|------|
-| `async_scheduling.py` | Async scheduling mixin |
-| `utils_event_bus.py` | Local event bus utility |
-| `event_handlers.py` | Event handler dispatch (727 LOC) |
+### Sidecar
+- `sidecar/position_policy_sidecar.py`
+- `sidecar/position_policy_mediator.py`
 
-## 7. Fail-Closed Rules
+### Flows
+- `flows/open/fsm_open.py`
+- `flows/open/trade_intent_open_intake.py`
+- `flows/open/intent_router.py`
+- `flows/open/entry_manager.py`
+- `flows/open/open_executor.py`
+- `flows/open/open_submission_adapter.py`
+- `flows/open/open_dispatch_adapter.py`
+- `flows/manage/fsm_manage.py`
+- `flows/manage/bracket_manager.py`
+- `flows/manage/bracket_math.py`
+- `flows/manage/bracket_health.py`
+- `flows/manage/bracket_ownership.py`
+- `flows/manage/pending_brackets_wal.py`
+- `flows/manage/manage_max_hold_close_bridge.py`
+- `flows/close/fsm_close.py`
+- `flows/close/close_executor.py`
+- `flows/close/close_submission_adapter.py`
+- `flows/close/close_producer_bridge.py`
+- `flows/close/reconcile_close_cancel_bridge.py`
+- `flows/close/tracked_close_teardown_cancel_bridge.py`
 
-- **Missing config → crash** (no silent fallback to global config)
-- **Exposure breach → deny** (ExposureGuard blocks CMD:OPEN)
-- **Unknown order status → safe** (IdempotentCancel treats -2011 as success)
-- **Stale order → cancel** (Watchdog detects timeout → cancel)
-- **Close flow → soldier** (only executes explicit CMD:CLOSE, no autonomous close)
-- **Max-hold → DEC:CLOSE** (ManageFlowFSM emits DEC:CLOSE on timeout)
+### Orchestration and support
+- `orchestration/event_handlers.py`
+- `orchestration/fill_ingress_coordinator.py`
+- `support/stopprice_validation.py`
+- `support/utils_event_bus.py`
 
-## 8. Cancel/Timeout/Reconcile Policy
+## 7. Boundary reminders
 
-| Scenario | Handler | Reason Code |
-|----------|---------|-------------|
-| Fill TTL expired | Watchdog | `CANCEL_TTL_EXPIRED` |
-| Signal superseded | EntryManager | `CANCEL_SUPERSEDED` |
-| Regime change | EntryManager | `CANCEL_STALE_REGIME` |
-| Panic killswitch | FSM | `CANCEL_PANIC_KILL` |
-| Orphan brackets | OrderGuardian | `EVT:EXECUTION_TIDY_PERFORMED` |
-| Tidy triggered | OrderGuardian | `EVT:SYMBOL_TIDY` |
-| Close reconciled | OrderGuardian | `EVT:EXECUTION_CLOSE_RECONCILED` |
+- Do not import state enums from external domains.
+- Do not bypass `ExposureGuard` for order placement.
+- Do not create new cancel reason strings; use `reasons.py`.
+- Do not merge the layered `OrderStatus` enums.
+- Do not add trading decision logic here.
+- Do not add autonomous close logic; close remains command-driven.
 
-## 9. Forbidden Patterns
-
-- Do NOT import state enums from external domains
-- Do NOT bypass ExposureGuard for order placement
-- Do NOT create new cancel reason strings — use `reasons.py`
-- Do NOT merge the 3 OrderStatus enums
-- Do NOT add trading decision logic — this domain executes, not decides
-- Do NOT add autonomous close logic — CloseFlow is a soldier (explicit CMD:CLOSE only)
-
-## 10. Testing
+## 8. Testing
 
 ```bash
-pytest tests/domains/execution_position/ -v        # 44 focused tests (364 functions)
-pytest tests/order_guardian/ -v                     # 4 guardian tests (37 functions)
-pytest tests/integration/ -k "execpos or ep01" -v   # Integration tests
+pytest tests/domains/execution_position -q
+pytest tests/order_guardian -q
 ```
 
-**Total test surface:** ~147 files, ~1,192 test functions across all directories.
+## 9. Contract boundary notes
 
-## 11. Cross-Domain Coupling
+- `contracts.py` remains the root public contract API anchor.
+- `reasons.py` remains the root canonical reason source.
+- `contract_layer/` is additive and separate from `contracts.py`.
+- Compatibility stubs remain present and documented as temporary shims.
 
-| Direction | What | Why |
-|-----------|------|-----|
-| EP → shared | `NormalizedRejectReasons` via `shared/types.py` | Leverage reject codes (NRR-020..024) |
-| EP → Adapter | `BinanceAdapter` import (7 files) | Exchange API calls |
-| EP → vfoundation | Message, WAL, emit_compat | Infrastructure |
-| DM → EP | Event-based only (CMD:OPEN, CMD:CLOSE) | Clean event-driven |
+### Timeout contract deprecation
 
-## 12. Contract Boundary Policy
-
-### Owned contracts (registry owner = execution_position)
-All `DEC:*`, `EVT:EXECUTION_*`, `EVT:EXIT_MATCH_*`, `EVT:EXPOSURE_*`, `EVT:ORDER_*`,
-`EVT:LIMIT_ORDER_TIMEOUT` *(deprecated — no live emitter since J2; see note below)*,
-`EVT:MANAGE_SKIPPED`, `EVT:PENDING_BRACKETS_*`, `EVT:SYMBOL_TIDY`,
-`ERR:OPEN`, `ERR:EXECUTION_FAILED`, `ERR:FATAL_CONFIG_MISMATCH`.
-
-> **Deprecation (J4, 2026-04-30):** `EVT:LIMIT_ORDER_TIMEOUT` has no live runtime emitter
-> after `LimitOrderMonitor` was retired in J2. The active timeout event is
-> **`EVT:ORDER_TIMEOUT`**, emitted by `EntryManager.handle_order_timeout()` via
-> `OrderTimeoutWatchdog` callback. `EVT:ORDER_TIMEOUT` carries `timeout_type`
-> (ACK_TIMEOUT / FILL_TIMEOUT) as payload discriminator. The export is retained in
-> `domain_dict.json` for staged retirement.
-
-### Sanctioned co-emission (EP emits, another domain owns)
-| Contract | Owner | EP emitter | Why EP co-emits |
-|----------|-------|-----------|-----------------|
-| `EVT:TRADE_INTENT_REJECTED` | decision_making | `intent_router.py` | Intent fails at execution boundary (exposure guard, leverage) |
-| `EVT:TRADE_EXECUTED` | position_tracking | `watchdog.py` | REST polling fallback when WS misses fills |
-
-### NRR dependency
-`NormalizedRejectReasons` is imported via `apps.reference.shared.types` (re-export facade).
-The canonical definition lives in `decision_making/normalized_reject_reasons.py`.
-EP uses 5 NRR codes: NRR-020 through NRR-024 (leverage/margin verification failures).
-
-### Forbidden boundary patterns
-- Do NOT import directly from `decision_making.*` — use `shared/types.py` for cross-domain types
-- Do NOT emit events owned by other domains without explicit `co_emitters` in verb_registry
-- Do NOT define local NRR codes — all NRR codes live in canonical `NormalizedRejectReasons`
-- Do NOT create parallel contract registries — all contracts in `verb_registry_v1.yaml`
-
-## 13. Known Structural Debt
-
-- Triple OrderStatus enum (documented, not mergeable without heavy blast radius)
-- 3 ghost pycache packages cleaned in 2026-03-14 audit (aggregator_oco, observability, shadow_execpos)
-- `fsm.py` at 2,056 LOC is large but cohesive as orchestrator
-- Heavy Binance adapter coupling (7 files) — acceptable for current single-exchange architecture
+`EVT:LIMIT_ORDER_TIMEOUT` is deprecated and has no live runtime emitter after
+the `LimitOrderMonitor` retirement. The active timeout contract is
+`EVT:ORDER_TIMEOUT`, emitted by `EntryManager.handle_order_timeout()` through
+the `OrderTimeoutWatchdog` callback path with `timeout_type` payload
+discrimination. The deprecated export remains in `domain_dict.json` for staged
+retirement.
 
 ---
-*Version: 1.1.0 — Updated 2026-03-14 (EP-CONTRACT-BOUNDARY)*
+
+Version: 1.2.0 - Phase 9B physical skeleton path sync

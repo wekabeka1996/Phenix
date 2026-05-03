@@ -5,7 +5,7 @@ Tests for -2011 absorption, pre-cancel checks, and deterministic clientOrderId.
 
 import pytest
 from decimal import Decimal
-from apps.reference.domains.execution_position.idempotent_cancel import (
+from apps.reference.domains.execution_position.guardian.idempotent_cancel import (
     IdempotentCancelHelper,
     IdempotentCancelResult,
     ClientOrderIdConfig,

@@ -1,21 +1,28 @@
-# Якість коду та технічний борг Execution Position
+# Execution Position Quality and Debt
 
-## 1. Hotspots та архітектурна складність
-- **`fsm.py` (God Object)**: Головний файл домену містить понад 4400 рядків коду. Це ускладнює навігацію та збільшує ризик регресій при змінах. Необхідно розділити його на окремі сервіси (Routing, Lifecycle, Reconciliation).
-- **Silent Suppression у LocalBus**: Утиліта `utils_event_bus.py` перехоплює виключення в колбеках і лише логує їх. Це може призводити до "примарних" успіхів, коли важлива логіка (напр. обробка FILL) впала, але система вважає її виконаною.
+## Hotspots
 
-## 2. Технічний борг (Debt Ledger)
+- `fsm.py` remains a large root orchestration anchor. That is an accepted
+  architectural constraint, not pending Phase 8 migration work.
+- `support/utils_event_bus.py` still subclasses a generic LocalBus and allows
+  synchronous publish. Refactoring it to strict async queues is postponed.
 
-| Елемент | Ризик | Доказ | Рекомендація | Пріоритет |
-| :--- | :--- | :--- | :--- | :--- |
-| **Monolithic FSM** | Висока складність підтримки. | `fsm.py` size | Розбити на сервіси через DI. | High |
-| **RID Gap** | Втрата зв'язку між `rid` стратегії та `rid` виконання. | `WHY_CHAIN_VALIDATION.md` | Уніфікувати передачу `rid` через `data_ref` або пейлоад. | Medium |
-| **SQLite Locking** | Затримки при високій інтенсивності записів ордерів. | `infra/order_ledger.py` | Впровадити асинхронну чергу записів у БД. | Low |
+## Technical Debt Roadmap
 
-## 3. Ризики реалізації
-- **In-Memory Order Index**: Якщо система перезавантажиться під час активного процесу відміни та перевідкриття (Supersede), стан може стати неузгодженим.
-- **Binance API Limits**: Watchdog Polling може вичерпати ліміти RPS при великій кількості одночасно відкритих ордерів.
+| Component | Debt Type | Priority |
+| :--- | :--- | :--- |
+| `state/truth_hardening.py` | Excessive duplicate fill hardening | Medium |
+| `adapters/ledger_store_adapter.py` | Sync disk I/O in path of event dispatch | High |
+| `adapters/watchdog.py` | Polling latency on order cancellation | Low |
+| `support/utils_event_bus.py` | Convert to strict async write queue in future runtime work | Low |
 
-## 4. Рекомендації
-- Впровадити повний **End-to-End Tracing** (Why Chain) через усі шари домену.
-- Посилити обробку помилок у `LocalBus` — критичні помилки мають зупиняти потік (fail-fast).
+## Notes
+
+- Compatibility stubs from Phase 8 remain in place by design.
+- Root anchors (`fsm.py`, `contracts.py`, `reasons.py`, `utils.py`) are
+  intentional public API or facade surfaces.
+
+### Phase 9V Blocker Provenance
+- Compatibility stubs from Phase 8 are retained intentionally as facades.
+- No ordinary runtime, test, or documentation old-path debt remains for `execution_position`.
+- Remaining blockers for removing kept candidate stubs are exclusively classified as root-anchor dependencies (`fsm.py`), major release-boundary policy holds, operator-confirmation debt, or historical-record-only citations.

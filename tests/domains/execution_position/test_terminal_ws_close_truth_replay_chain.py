@@ -6,12 +6,12 @@ from unittest.mock import MagicMock
 from vfoundation.core.protocol import Message
 
 from apps.reference.adapters.binance_ws_client import BinanceWebSocketClient
-from apps.reference.domains.execution_position.fsm_manage import ManageState
-from apps.reference.domains.execution_position.order_guardian import (
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageState
+from apps.reference.domains.execution_position.guardian.order_guardian import (
     InMemoryStore,
     OrderGuardian,
 )
-from apps.reference.domains.execution_position.order_index import OrderIndex
+from apps.reference.domains.execution_position.state.order_index import OrderIndex
 from apps.reference.domains.position_tracking.position_tracking import PositionTracking
 from apps.reference.core.time import get_clock
 

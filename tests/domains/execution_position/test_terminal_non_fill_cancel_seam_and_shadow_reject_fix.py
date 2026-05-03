@@ -8,14 +8,14 @@ import pytest
 from apps.reference.adapters.binance_adapter import BinanceAPIError
 from apps.reference.adapters.binance_ws_client import BinanceWebSocketClient
 from apps.reference.main import build_emit_with_monitoring
-from apps.reference.domains.execution_position.terminal_order_contracts import (
+from apps.reference.domains.execution_position.contract_layer.terminal_order_contracts import (
     emit_canonical_terminal_order_event,
 )
-from apps.reference.domains.execution_position.entry_manager import EntryManager
+from apps.reference.domains.execution_position.flows.open.entry_manager import EntryManager
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
-from apps.reference.domains.execution_position.open_executor import OpenExecutor
-from apps.reference.domains.execution_position.open_executor import UncertainSubmitRecoveryError
-from apps.reference.domains.execution_position.open_submission_adapter import (
+from apps.reference.domains.execution_position.flows.open.open_executor import OpenExecutor
+from apps.reference.domains.execution_position.flows.open.open_executor import UncertainSubmitRecoveryError
+from apps.reference.domains.execution_position.flows.open.open_submission_adapter import (
     OpenSubmissionPayload,
 )
 from apps.reference.telemetry.shadow_journal import (
@@ -119,9 +119,9 @@ async def test_timeout_cancel_emits_canonical_order_state_changed_and_hits_shado
     lifecycle = TradeLifecycleLogger(
         log_file=str(lifecycle_path), orphan_ttl_sec=3600)
     with patch("vfoundation.dr.wal.append", side_effect=wal_records.append), patch(
-        "apps.reference.domains.execution_position.entry_manager.order_logger.write"
+        "apps.reference.domains.execution_position.flows.open.entry_manager.order_logger.write"
     ), patch(
-        "apps.reference.domains.execution_position.terminal_order_contracts._trade_lifecycle",
+        "apps.reference.domains.execution_position.contract_layer.terminal_order_contracts._trade_lifecycle",
         lifecycle,
     ):
         lifecycle.on_intent(
@@ -185,9 +185,9 @@ async def test_live_reject_path_reaches_wal_and_local_shadow_without_emit_compat
     lifecycle = TradeLifecycleLogger(
         log_file=str(lifecycle_path), orphan_ttl_sec=3600)
     with patch("vfoundation.dr.wal.append", side_effect=wal_records.append), patch(
-        "apps.reference.domains.execution_position.open_executor.order_logger.write"
+        "apps.reference.domains.execution_position.flows.open.open_executor.order_logger.write"
     ), patch(
-        "apps.reference.domains.execution_position.terminal_order_contracts.emit_compat",
+        "apps.reference.domains.execution_position.contract_layer.terminal_order_contracts.emit_compat",
         new_callable=AsyncMock,
     ) as mock_emit_compat:
         lifecycle.on_intent(
@@ -198,7 +198,7 @@ async def test_live_reject_path_reaches_wal_and_local_shadow_without_emit_compat
             entry_type="LIMIT",
         )
         with patch(
-            "apps.reference.domains.execution_position.terminal_order_contracts._trade_lifecycle",
+            "apps.reference.domains.execution_position.contract_layer.terminal_order_contracts._trade_lifecycle",
             lifecycle,
         ):
             entry_resp, returned_submission, price_adjusted = await executor._place_limit_entry(
@@ -274,7 +274,7 @@ async def test_monitored_emit_wrapper_preserves_message_path_for_canonical_rejec
         entry_type="LIMIT",
     )
     with patch("vfoundation.dr.wal.append", side_effect=wal_records.append), patch(
-        "apps.reference.domains.execution_position.terminal_order_contracts._trade_lifecycle",
+        "apps.reference.domains.execution_position.contract_layer.terminal_order_contracts._trade_lifecycle",
         lifecycle,
     ):
         await emit_canonical_terminal_order_event(
@@ -360,7 +360,7 @@ async def test_uncertain_submit_unrecovered_emits_single_canonical_reject_from_f
         "apps.reference.domains.execution_position.fsm.emit_compat",
         new_callable=AsyncMock,
     ) as mock_emit_compat, patch(
-        "apps.reference.domains.execution_position.terminal_order_contracts._trade_lifecycle",
+        "apps.reference.domains.execution_position.contract_layer.terminal_order_contracts._trade_lifecycle",
         lifecycle,
     ):
         lifecycle.on_intent(
@@ -404,6 +404,99 @@ async def test_uncertain_submit_unrecovered_emits_single_canonical_reject_from_f
     assert lifecycle_rows[-1]["close_reason"].startswith(
         "UNCERTAIN_SUBMIT_UNRECOVERED:"
     )
+
+
+@pytest.mark.asyncio
+async def test_close_adapter_error_outer_sink_has_stage_and_linkage_markers(tmp_path):
+    journal_path = tmp_path / "shadow_close_outer_reject.jsonl"
+    bus = FSMCore()
+    attach_shadow_journal(bus, _shadow_cfg(journal_path))
+
+    wal_records: list[dict] = []
+    retained_rows: list[dict] = []
+
+    fsm = ExecPosFSM.__new__(ExecPosFSM)
+    fsm.config = SimpleNamespace(get_domain_mode=lambda _domain: "testnet")
+    fsm.fsm = bus
+    fsm.alert_manager = None
+    fsm.adapter = SimpleNamespace(base_url="https://testnet.binance.example")
+
+    async def _close_fail(_decision):
+        retained_rows.append(
+            {
+                "rid": "rid-close-outer-propagation",
+                "event_type": "ORDER_REJECTED",
+                "symbol": "BTCUSDT",
+                "side": "SELL",
+                "quantity": 0.5,
+                "client_order_id": "CLOSE-BTC-1",
+                "source_fsm": "CloseExecutor",
+                "metadata": {
+                    "trace_kind": "CLOSE_SUBMIT_OUTCOME",
+                    "outcome": "rejected",
+                },
+            }
+        )
+        raise BinanceAPIError(code=-4116, msg="Duplicate order sent.")
+
+    fsm._close_exec = SimpleNamespace(
+        execute_close=AsyncMock(side_effect=_close_fail))
+    fsm._open_exec = SimpleNamespace(execute_open=AsyncMock())
+
+    decision = Message(
+        op="DEC",
+        verb="CLOSE",
+        src="decision_making",
+        dst="execution_position",
+        rid="rid-close-outer-propagation",
+        pld={"symbol": "BTCUSDT"},
+    )
+
+    with patch("vfoundation.dr.wal.append", side_effect=wal_records.append), patch(
+        "apps.reference.domains.execution_position.fsm.order_logger.write",
+        side_effect=lambda row: retained_rows.append(dict(row)),
+    ), patch(
+        "apps.reference.domains.execution_position.fsm.emit_compat",
+        new_callable=AsyncMock,
+    ) as mock_emit_compat:
+        await fsm._execute_decision(decision)
+
+    outer_rows = [
+        row
+        for row in retained_rows
+        if row.get("event_type") == "ORDER_REJECTED"
+        and row.get("source_fsm") == "ExecPosFSM"
+    ]
+    assert len(outer_rows) == 1
+    outer_row = outer_rows[0]
+    outer_meta = outer_row["metadata"]
+    assert outer_meta["reject_stage"] == "outer_propagation"
+    assert outer_meta["link_to_inner_reject"] is True
+    assert outer_meta["inner_reject_owner"] == "CloseExecutor"
+    assert outer_meta["correlation_basis"] == "rid+symbol+reject_stage"
+
+    inner_rows = [
+        row
+        for row in retained_rows
+        if row.get("event_type") == "ORDER_REJECTED"
+        and row.get("source_fsm") == "CloseExecutor"
+    ]
+    assert len(inner_rows) == 1
+    assert inner_rows[0]["metadata"]["trace_kind"] == "CLOSE_SUBMIT_OUTCOME"
+
+    rejected = [record for record in wal_records if record.get(
+        "verb") == "ORDER_REJECTED"]
+    assert len(rejected) == 1
+    payload = rejected[0]["pld"]
+    assert payload["reject_stage"] == "outer_propagation"
+    assert payload["link_to_inner_reject"] is True
+    assert payload["correlation_basis"] == "rid+symbol+reject_stage"
+    assert payload["side"] == "UNKNOWN_CLOSE_SIDE"
+
+    mock_emit_compat.assert_awaited_once()
+    exec_failed_msg = mock_emit_compat.await_args.args[1]
+    assert exec_failed_msg.verb == "EXECUTION_FAILED"
+    assert exec_failed_msg.pld["reject_stage"] == "outer_propagation"
 
 
 def test_ws_terminal_cancel_writes_wal_and_shadow(tmp_path):
@@ -459,7 +552,7 @@ def test_ws_terminal_cancel_writes_wal_and_shadow(tmp_path):
         price=120.5,
     )
     with patch("vfoundation.dr.wal.append", side_effect=wal_records.append), patch(
-        "apps.reference.domains.execution_position.terminal_order_contracts._trade_lifecycle",
+        "apps.reference.domains.execution_position.contract_layer.terminal_order_contracts._trade_lifecycle",
         lifecycle,
     ):
         ws_client._handle_order_trade_update(ws_msg)

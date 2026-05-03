@@ -7,19 +7,19 @@ from unittest.mock import patch
 import pytest
 
 from apps.reference.domains.decision_making.intent.flip import FlipOrchestrator
-from apps.reference.domains.execution_position.close_producer_bridge import (
+from apps.reference.domains.execution_position.flows.close.close_producer_bridge import (
     adapt_cmd_close_to_dec_close,
     build_close_producer_bridge_trace_ref,
 )
-from apps.reference.domains.execution_position.fsm_close import CloseFlowFSM
-from apps.reference.domains.execution_position.intent_router import IntentRouter
-from apps.reference.domains.execution_position.position_policy_mediator import (
+from apps.reference.domains.execution_position.flows.close.fsm_close import CloseFlowFSM
+from apps.reference.domains.execution_position.flows.open.intent_router import IntentRouter
+from apps.reference.domains.execution_position.sidecar.position_policy_mediator import (
     PositionPolicyMediator,
 )
-from apps.reference.domains.execution_position.position_policy_sidecar import (
+from apps.reference.domains.execution_position.sidecar.position_policy_sidecar import (
     CLOSE_REQUEST_COMMAND_TOPIC,
 )
-from apps.reference.domains.execution_position.truth_hardening import (
+from apps.reference.domains.execution_position.state.truth_hardening import (
     CloseGuardDecision,
 )
 from vfoundation.core.protocol import Message
@@ -203,7 +203,7 @@ def test_intent_router_reduce_only_path_reaches_typed_close_bridge() -> None:
     )
 
     with patch(
-        "apps.reference.domains.execution_position.fsm_close.adapt_cmd_close_to_dec_close",
+        "apps.reference.domains.execution_position.flows.close.fsm_close.adapt_cmd_close_to_dec_close",
         wraps=adapt_cmd_close_to_dec_close,
     ) as wrapped:
         router.on_trade_intent_proposed(intent)
@@ -406,10 +406,10 @@ def test_position_policy_mediator_path_reaches_typed_close_bridge(tmp_path: Path
             "exact_targeting": False,
         },
     ), patch(
-        "apps.reference.domains.execution_position.position_policy_mediator.append_trade_lifecycle_record",
+        "apps.reference.domains.execution_position.sidecar.position_policy_mediator.append_trade_lifecycle_record",
         lambda *args, **kwargs: None,
     ), patch(
-        "apps.reference.domains.execution_position.fsm_close.adapt_cmd_close_to_dec_close",
+        "apps.reference.domains.execution_position.flows.close.fsm_close.adapt_cmd_close_to_dec_close",
         wraps=adapt_cmd_close_to_dec_close,
     ) as wrapped:
         mediator.on_position_policy_close_request(event)
@@ -468,7 +468,7 @@ def test_flip_close_compatibility_payload_enters_typed_close_bridge() -> None:
         payload=payload,
     )
     with patch(
-        "apps.reference.domains.execution_position.fsm_close.adapt_cmd_close_to_dec_close",
+        "apps.reference.domains.execution_position.flows.close.fsm_close.adapt_cmd_close_to_dec_close",
         wraps=adapt_cmd_close_to_dec_close,
     ) as wrapped:
         decision = flow.handle(msg)

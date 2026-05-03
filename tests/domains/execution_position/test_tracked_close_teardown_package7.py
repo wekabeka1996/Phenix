@@ -13,15 +13,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from apps.reference.domains.execution_position.cancel_submission_adapter import (
+from apps.reference.domains.execution_position.guardian.cancel_submission_adapter import (
     CancelSubmissionPayload,
 )
-from apps.reference.domains.execution_position.close_submission_adapter import (
+from apps.reference.domains.execution_position.flows.close.close_submission_adapter import (
     CLOSE_SUBMISSION_CONTRACT,
     CloseSubmissionPayload,
 )
-from apps.reference.domains.execution_position.close_executor import CloseExecutor
-from apps.reference.domains.execution_position.tracked_close_teardown_cancel_bridge import (
+from apps.reference.domains.execution_position.flows.close.close_executor import CloseExecutor
+from apps.reference.domains.execution_position.flows.close.tracked_close_teardown_cancel_bridge import (
     TRACKED_CLOSE_TEARDOWN_CANCEL_CONTRACT,
     TrackedCloseTeardownCancelBridgeError,
     TrackedCloseTeardownCancelRequest,
@@ -159,7 +159,7 @@ class TestTrackedCloseTeardownRouting:
             "execute_cancel_order",
             wraps=executor.execute_cancel_order,
         ) as cancel_wrapped, patch(
-            "apps.reference.domains.execution_position.close_executor."
+            "apps.reference.domains.execution_position.flows.close.close_executor."
             "CancelSubmissionPayload.from_dec_cancel",
             wraps=CancelSubmissionPayload.from_dec_cancel,
         ) as package4_wrapped:
@@ -185,7 +185,7 @@ class TestTrackedCloseTeardownRouting:
             "execute_cancel_order",
             wraps=executor.execute_cancel_order,
         ) as cancel_wrapped, patch(
-            "apps.reference.domains.execution_position.close_executor."
+            "apps.reference.domains.execution_position.flows.close.close_executor."
             "CancelSubmissionPayload.from_dec_cancel",
             wraps=CancelSubmissionPayload.from_dec_cancel,
         ) as package4_wrapped:
@@ -211,7 +211,7 @@ class TestTrackedCloseTeardownRouting:
             "execute_cancel_order",
             wraps=executor.execute_cancel_order,
         ) as cancel_wrapped, patch(
-            "apps.reference.domains.execution_position.close_executor."
+            "apps.reference.domains.execution_position.flows.close.close_executor."
             "CancelSubmissionPayload.from_dec_cancel",
             wraps=CancelSubmissionPayload.from_dec_cancel,
         ) as package4_wrapped:
@@ -253,7 +253,7 @@ class TestTrackedCloseTeardownRouting:
         decision = _dec_close_decision()
 
         with patch(
-            "apps.reference.domains.execution_position.close_executor."
+            "apps.reference.domains.execution_position.flows.close.close_executor."
             "CloseSubmissionPayload.from_dec_close",
             wraps=CloseSubmissionPayload.from_dec_close,
         ) as close_wrapped:

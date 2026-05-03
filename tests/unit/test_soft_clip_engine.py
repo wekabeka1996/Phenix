@@ -5,7 +5,7 @@ Tests the core clipping logic with various exposure scenarios.
 
 import pytest
 from decimal import Decimal
-from apps.reference.domains.execution_position.soft_clip import (
+from apps.reference.domains.execution_position.guards.soft_clip import (
     SoftLimitConfig,
     SoftClipEngine,
     ClipResult,

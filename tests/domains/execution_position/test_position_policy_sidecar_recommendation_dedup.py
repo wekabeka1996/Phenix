@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 from apps.reference.config_models import PositionPolicySidecarConfig
 from apps.reference.core.time import get_clock
-from apps.reference.domains.execution_position.position_policy_sidecar import (
+from apps.reference.domains.execution_position.sidecar.position_policy_sidecar import (
     PositionPolicySidecar,
 )
 

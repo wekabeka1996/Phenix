@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 from vfoundation.core.protocol import Message
 
 from apps.reference.core.time import get_clock
-from apps.reference.domains.execution_position.fsm_manage import ManageState
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageState
 
 
 def test_recovered_sl_fill_flattens_manage_lifecycle_and_records_close_proof(

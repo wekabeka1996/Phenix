@@ -17,14 +17,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from apps.reference.domains.execution_position.cancel_submission_adapter import (
+from apps.reference.domains.execution_position.guardian.cancel_submission_adapter import (
     CANCEL_SUBMISSION_CONTRACT,
     CANCEL_SUBMISSION_PATH,
     CancelSubmissionAdapterError,
     CancelSubmissionPayload,
     build_cancel_submission_trace_ref,
 )
-from apps.reference.domains.execution_position.close_executor import CloseExecutor
+from apps.reference.domains.execution_position.flows.close.close_executor import CloseExecutor
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +266,7 @@ class TestCloseExecutorCancelIntake:
             return original(payload=payload)
 
         with patch(
-            "apps.reference.domains.execution_position.close_executor."
+            "apps.reference.domains.execution_position.flows.close.close_executor."
             "CancelSubmissionPayload.from_dec_cancel",
             side_effect=_spy,
         ) as wrapped:
@@ -305,7 +305,7 @@ class TestCloseExecutorCancelIntake:
         ]
 
         with patch(
-            "apps.reference.domains.execution_position.close_executor."
+            "apps.reference.domains.execution_position.flows.close.close_executor."
             "CancelSubmissionPayload.from_dec_cancel",
             wraps=CancelSubmissionPayload.from_dec_cancel,
         ) as wrapped:
@@ -373,7 +373,7 @@ class TestDownstreamOwnershipUnchanged:
     """
 
     def test_idempotent_cancel_helper_unchanged(self) -> None:
-        from apps.reference.domains.execution_position.idempotent_cancel import (
+        from apps.reference.domains.execution_position.guardian.idempotent_cancel import (
             IdempotentCancelHelper,
             IdempotentCancelResult,
         )

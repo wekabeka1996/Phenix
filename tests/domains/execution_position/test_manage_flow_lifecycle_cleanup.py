@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 
 from vfoundation.core.protocol import Message
 
-from apps.reference.domains.execution_position.fsm_close import CloseState
-from apps.reference.domains.execution_position.fsm_manage import (
+from apps.reference.domains.execution_position.flows.close.fsm_close import CloseState
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import (
     ManageFlowFSM,
     ManageState,
 )
@@ -240,10 +240,10 @@ def test_portfolio_close_reset_allows_follow_on_open_guard(fsm_harness) -> None:
     )
 
     with patch(
-        "apps.reference.domains.execution_position.event_handlers._trade_lifecycle",
+        "apps.reference.domains.execution_position.orchestration.event_handlers._trade_lifecycle",
         SimpleNamespace(on_close=lambda **kwargs: None),
     ), patch(
-        "apps.reference.domains.execution_position.event_handlers._get_order_logger",
+        "apps.reference.domains.execution_position.orchestration.event_handlers._get_order_logger",
         return_value=SimpleNamespace(write=lambda payload: None),
     ), patch(
         "apps.reference.domains.execution_position.fsm.write_pending_brackets_cleared"

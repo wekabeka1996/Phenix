@@ -1,0 +1,110 @@
+tools:
+  - tool_id: "read_repo"
+    description: "Read files from the repository workspace (no writes)"
+    risk_level: "low"
+    allowed_agents: ["ScoutAgent", "LogScoutAgent", "TestScoutAgent", "CriticAgent", "DocScribe", "main"]
+    approval_required: false
+    audit_logging: true
+    rollback_expectation: "none"
+    enabled: true
+    manual_only: false
+
+  - tool_id: "edit_file"
+    description: "Edit or create source files in the workspace"
+    risk_level: "medium"
+    allowed_agents: ["main"]
+    approval_required: true
+    audit_logging: true
+    rollback_expectation: "git_revert"
+    enabled: true
+    manual_only: false
+
+  - tool_id: "run_tests"
+    description: "Run the test suite (pytest) for validation"
+    risk_level: "low"
+    allowed_agents: ["TestScoutAgent", "main"]
+    approval_required: false
+    audit_logging: true
+    rollback_expectation: "none"
+    enabled: true
+    manual_only: false
+
+  - tool_id: "run_scripts"
+    description: "Run approved collector/analysis scripts from tools/"
+    risk_level: "medium"
+    allowed_agents: ["LogScoutAgent", "main"]
+    approval_required: true
+    audit_logging: true
+    rollback_expectation: "none"
+    enabled: true
+    manual_only: false
+
+  - tool_id: "update_config"
+    description: "Modify configuration YAML files"
+    risk_level: "high"
+    allowed_agents: ["main"]
+    approval_required: true
+    audit_logging: true
+    rollback_expectation: "git_revert"
+    enabled: true
+    manual_only: false
+
+  - tool_id: "update_registry"
+    description: "Modify playbook, tool, or agent registry files"
+    risk_level: "high"
+    allowed_agents: ["main"]
+    approval_required: true
+    audit_logging: true
+    rollback_expectation: "git_revert"
+    enabled: true
+    manual_only: false
+
+  - tool_id: "deploy"
+    description: "Deploy code to production or staging environments"
+    risk_level: "critical"
+    allowed_agents: []
+    approval_required: true
+    audit_logging: true
+    rollback_expectation: "rollback_script"
+    enabled: true
+    manual_only: true
+
+  - tool_id: "update_memory"
+    description: "Update the deep memory checkpoint or memory atoms"
+    risk_level: "high"
+    allowed_agents: ["main"]
+    approval_required: true
+    audit_logging: true
+    rollback_expectation: "memory_backup"
+    enabled: true
+    manual_only: false
+
+  - tool_id: "access_logs"
+    description: "Read runtime logs and WAL files (metadata/sample only by default)"
+    risk_level: "medium"
+    allowed_agents: ["LogScoutAgent", "main"]
+    approval_required: false
+    audit_logging: true
+    rollback_expectation: "none"
+    enabled: true
+    manual_only: false
+
+  - tool_id: "call_external_api"
+    description: "Call external APIs (DeepSeek, exchange APIs, etc.)"
+    risk_level: "medium"
+    allowed_agents: ["main"]
+    approval_required: false
+    audit_logging: true
+    rollback_expectation: "none"
+    enabled: true
+    manual_only: false
+
+  - tool_id: "terminal_exec"
+    description: "Execute terminal commands within the workspace (sandboxed)"
+    risk_level: "high"
+    allowed_agents: ["main"]
+    approval_required: true
+    audit_logging: true
+    rollback_expectation: "manual"
+    enabled: true
+    manual_only: false

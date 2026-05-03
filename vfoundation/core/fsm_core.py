@@ -8,13 +8,13 @@ from typing import Dict, List, Callable, Any, Optional
 import logging
 import threading
 from .protocol import Message
-from apps.reference.domains.execution_position.terminal_order_contracts import (
+from apps.reference.domains.execution_position.contract_layer.terminal_order_contracts import (
     normalize_terminal_order_event_payload,
 )
-from apps.reference.domains.execution_position.trade_intent_reject_contracts import (
+from apps.reference.domains.execution_position.contract_layer.trade_intent_reject_contracts import (
     normalize_trade_intent_rejected_payload,
 )
-from apps.reference.domains.execution_position.trade_executed_contracts import (
+from apps.reference.domains.execution_position.contract_layer.trade_executed_contracts import (
     normalize_trade_executed_payload,
 )
 

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import jsonschema
 
-from apps.reference.domains.execution_position.terminal_order_contracts import (
+from apps.reference.domains.execution_position.contract_layer.terminal_order_contracts import (
     normalize_order_rejected_payload,
     normalize_order_state_changed_payload,
 )

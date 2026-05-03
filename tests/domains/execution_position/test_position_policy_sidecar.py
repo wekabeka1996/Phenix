@@ -4,9 +4,9 @@ from unittest.mock import MagicMock, patch
 
 from apps.reference.config_models import PositionPolicySidecarConfig
 from apps.reference.core.time import get_clock
-from apps.reference.domains.execution_position.fsm_close import CloseState
-from apps.reference.domains.execution_position.fsm_manage import ManageState
-from apps.reference.domains.execution_position.position_policy_sidecar import (
+from apps.reference.domains.execution_position.flows.close.fsm_close import CloseState
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageState
+from apps.reference.domains.execution_position.sidecar.position_policy_sidecar import (
     PositionPolicySidecar,
 )
 from apps.reference.domains.execution_position.fsm import ExecPosFSM

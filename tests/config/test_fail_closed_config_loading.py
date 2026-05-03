@@ -99,7 +99,7 @@ class TestFailClosedAntiRaceCloseMs:
 
     def test_manage_fsm_fails_without_anti_race_close_ms(self):
         """ManageFlowFSM should fail if anti_race_close_ms is missing."""
-        from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM
+        from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageFlowFSM
         
         cfg = MagicMock()
         cfg.trading.execution.anti_race_close_ms = None  # Missing!
@@ -115,7 +115,7 @@ class TestFailClosedIdempotencyWindow:
 
     def test_open_fsm_fails_without_idempotency_window(self):
         """OpenFlowFSM should fail if idempotency_window_sec is missing."""
-        from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
+        from apps.reference.domains.execution_position.flows.open.fsm_open import OpenFlowFSM
         
         cfg = MagicMock()
         cfg.domains.execution_position.fsm_open = None  # Missing!

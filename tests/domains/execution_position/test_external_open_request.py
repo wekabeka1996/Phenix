@@ -57,7 +57,7 @@ def _build_router(*, config_ttl: Optional[int] = 120000, config_reachable: bool 
     config_ttl: value of pending_entry_ttl_ms (None = field absent)
     config_reachable: if False, config access raises AttributeError
     """
-    from apps.reference.domains.execution_position.intent_router import IntentRouter
+    from apps.reference.domains.execution_position.flows.open.intent_router import IntentRouter
 
     fsm = MagicMock()
     fsm.bus = MagicMock()

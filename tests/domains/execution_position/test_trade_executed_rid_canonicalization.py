@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from apps.reference.config_loader import ConfigLoader
-from apps.reference.domains.execution_position.event_handlers import EPEventHandlers
+from apps.reference.domains.execution_position.orchestration.event_handlers import EPEventHandlers
 from apps.reference.domains.execution_position.fsm import (
     _build_watchdog_trade_executed_message,
 )
@@ -134,7 +134,7 @@ def test_trade_executed_canonical_rid_queries_wal_shadow_and_lifecycle(tmp_path)
         )
 
         with patch(
-            "apps.reference.domains.execution_position.event_handlers._trade_lifecycle",
+            "apps.reference.domains.execution_position.orchestration.event_handlers._trade_lifecycle",
             lifecycle,
         ):
             bus.emit(msg)

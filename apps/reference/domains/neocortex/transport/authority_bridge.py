@@ -12,6 +12,7 @@ from apps.reference.domains.neocortex.config_models import NeocortexConfig
 from apps.reference.domains.neocortex.contracts.control_decision import (
     AuthorityMode,
     ControlDecisionAction,
+    ControlDecisionApplyResult,
     ControlDecisionRequest,
     ControlDecisionResponse,
 )
@@ -103,6 +104,37 @@ class NeocortexAuthorityBridge:
         return AuthorityMode(str(self._config.authority.mode))
 
     @property
+    def journal_only_capture_enabled(self) -> bool:
+        if self._config is None:
+            return False
+        capture_cfg = getattr(self._config, "evidence_capture", None)
+        if capture_cfg is None:
+            return False
+        return (
+            str(getattr(capture_cfg, "mode", "disabled")).strip().lower() == "journal_only"
+            and bool(getattr(capture_cfg, "collect_observation", False))
+            and bool(getattr(capture_cfg, "collect_authority_request", False))
+        )
+
+    @property
+    def journal_only_response_journal_enabled(self) -> bool:
+        if self._config is None:
+            return False
+        capture_cfg = getattr(self._config, "evidence_capture", None)
+        if capture_cfg is None:
+            return False
+        return bool(getattr(capture_cfg, "collect_authority_response", False))
+
+    @property
+    def journal_only_emit_shadow_decision_logged(self) -> bool:
+        if self._config is None:
+            return False
+        capture_cfg = getattr(self._config, "evidence_capture", None)
+        if capture_cfg is None:
+            return False
+        return bool(getattr(capture_cfg, "emit_shadow_decision_logged", False))
+
+    @property
     def deadline_ms(self) -> int:
         if self._config is None:
             return 1
@@ -171,6 +203,34 @@ class NeocortexAuthorityBridge:
             )
         finally:
             self._release_symbol(request.symbol)
+
+    def journal_only_capture(
+        self,
+        request: ControlDecisionRequest,
+    ) -> ControlDecisionResponse:
+        returned_at_ms = self._now_ms()
+        response = ControlDecisionResponse(
+            decision_id=request.decision_id,
+            action=ControlDecisionAction.ALLOW,
+            reason_code="JOURNAL_ONLY_CAPTURE",
+            reason_text="Journal-only capture recorded without authority application",
+            returned_at_ms=returned_at_ms,
+            model_ref="journal_only_capture",
+            policy_ref="journal_only_capture",
+            idempotent_key=request.idempotent_key,
+            apply_result=ControlDecisionApplyResult.SHADOW_RECORDED,
+        )
+        if self.journal_only_emit_shadow_decision_logged:
+            self._emit_shadow_response(
+                request,
+                response,
+                request_ts_ms=returned_at_ms,
+                capture_mode="journal_only",
+                authority_applied=False,
+                no_effect=True,
+                shadow_logged=True,
+            )
+        return response
 
     def _predict_baseline_response(
         self,
@@ -259,6 +319,10 @@ class NeocortexAuthorityBridge:
         response: ControlDecisionResponse,
         *,
         request_ts_ms: int,
+        capture_mode: str | None = None,
+        authority_applied: bool | None = None,
+        no_effect: bool | None = None,
+        shadow_logged: bool | None = None,
     ) -> None:
         if self._shadow_emit is None:
             return
@@ -284,6 +348,20 @@ class NeocortexAuthorityBridge:
                 "reason_code": response.reason_code,
             },
         }
+        if capture_mode is not None:
+            payload["capture_mode"] = capture_mode
+            payload["data_quality_flags"]["capture_mode"] = capture_mode
+        if authority_applied is not None:
+            payload["authority_applied"] = bool(authority_applied)
+            payload["data_quality_flags"]["authority_applied"] = bool(
+                authority_applied)
+        if no_effect is not None:
+            payload["no_effect"] = bool(no_effect)
+            payload["data_quality_flags"]["no_effect"] = bool(no_effect)
+        if shadow_logged is not None:
+            payload["shadow_logged"] = bool(shadow_logged)
+            payload["data_quality_flags"]["shadow_logged"] = bool(
+                shadow_logged)
         try:
             self._shadow_emit(
                 "SHADOW:NEOCORTEX_DECISION_LOGGED",

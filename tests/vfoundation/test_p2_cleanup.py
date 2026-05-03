@@ -72,7 +72,7 @@ class TestP2CloseFlowPrecision:
 
     def test_close_flow_init_no_args(self):
         """CloseFlowFSM initializes without arguments (max_hold_sec removed)."""
-        from apps.reference.domains.execution_position.fsm_close import CloseFlowFSM
+        from apps.reference.domains.execution_position.flows.close.fsm_close import CloseFlowFSM
         
         # Should NOT require any arguments
         fsm = CloseFlowFSM()
@@ -80,7 +80,7 @@ class TestP2CloseFlowPrecision:
 
     def test_close_flow_handles_precise_qty(self):
         """CloseFlowFSM must preserve Decimal precision in qty."""
-        from apps.reference.domains.execution_position.fsm_close import CloseFlowFSM, CloseState
+        from apps.reference.domains.execution_position.flows.close.fsm_close import CloseFlowFSM, CloseState
         from vfoundation.core.protocol import Message
         
         fsm = CloseFlowFSM()

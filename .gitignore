@@ -218,3 +218,6 @@ best_aurora*.json
 regime_filters*.json
 best_metrics*.json
 
+# deepseek-terminal-agent run logs
+.agent_runs/
+

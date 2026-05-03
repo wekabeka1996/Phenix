@@ -1,5 +1,5 @@
 import os
-from apps.reference.domains.execution_position.aurora_log_adapter import (
+from apps.reference.domains.execution_position.telemetry.aurora_log_adapter import (
     AuroraLogAdapter,
 )
 

@@ -6,9 +6,9 @@ Tests interactions between phases 1-5.
 
 import pytest
 from decimal import Decimal
-from apps.reference.domains.execution_position.soft_clip import SoftClipEngine, SoftLimitConfig
-from apps.reference.domains.execution_position.idempotent_cancel import IdempotentCancelHelper, ClientOrderIdConfig
-from apps.reference.domains.execution_position.metrics_aggregator import StructuredMetricsLogger, MetricEventType
+from apps.reference.domains.execution_position.guards.soft_clip import SoftClipEngine, SoftLimitConfig
+from apps.reference.domains.execution_position.guardian.idempotent_cancel import IdempotentCancelHelper, ClientOrderIdConfig
+from apps.reference.domains.execution_position.telemetry.metrics_aggregator import StructuredMetricsLogger, MetricEventType
 
 
 @pytest.fixture

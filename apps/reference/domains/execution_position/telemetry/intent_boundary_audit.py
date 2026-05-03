@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from apps.reference.core.time import get_clock
-from apps.reference.domains.execution_position.trade_intent_reject_contracts import (
+from ..contract_layer.trade_intent_reject_contracts import (
     emit_canonical_trade_intent_rejected_event,
 )
 

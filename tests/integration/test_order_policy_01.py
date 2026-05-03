@@ -61,7 +61,7 @@ class TestCmdOpenPayloadStrict:
     
     def test_order_type_is_required(self):
         """Missing order_type should raise ValidationError."""
-        from apps.reference.domains.execution_position.fsm_open import CmdOpenPayload
+        from apps.reference.domains.execution_position.flows.open.fsm_open import CmdOpenPayload
         
         with pytest.raises(ValidationError) as exc_info:
             CmdOpenPayload(
@@ -76,7 +76,7 @@ class TestCmdOpenPayloadStrict:
     
     def test_valid_limit_order(self):
         """Valid LIMIT order with all required fields."""
-        from apps.reference.domains.execution_position.fsm_open import CmdOpenPayload
+        from apps.reference.domains.execution_position.flows.open.fsm_open import CmdOpenPayload
         
         payload = CmdOpenPayload(
             symbol="BTCUSDT",
@@ -92,7 +92,7 @@ class TestCmdOpenPayloadStrict:
     
     def test_valid_market_order(self):
         """Valid MARKET order."""
-        from apps.reference.domains.execution_position.fsm_open import CmdOpenPayload
+        from apps.reference.domains.execution_position.flows.open.fsm_open import CmdOpenPayload
         
         payload = CmdOpenPayload(
             symbol="BTCUSDT",
@@ -292,7 +292,7 @@ class TestCmdOpenPayloadForbidExtra:
     """CmdOpenPayload must reject unknown fields."""
     
     def test_extra_field_rejected(self):
-        from apps.reference.domains.execution_position.fsm_open import CmdOpenPayload
+        from apps.reference.domains.execution_position.flows.open.fsm_open import CmdOpenPayload
         
         with pytest.raises(ValidationError):
             CmdOpenPayload(

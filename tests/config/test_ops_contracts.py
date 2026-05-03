@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from apps.reference.config_loader import ConfigLoader
 import apps.reference.config.system.ops as system_ops
 import apps.reference.config_models as cm
-from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
+from apps.reference.domains.execution_position.flows.open.fsm_open import OpenFlowFSM
 from vfoundation.core.protocol import Message
 
 
@@ -140,13 +140,13 @@ def test_ops_runtime_import_smoke() -> None:
             "apps.reference.config.system.ops",
             "apps.reference.config.system.observability",
             "apps.reference.config_loader",
-            "apps.reference.domains.execution_position.fsm_open",
+            "apps.reference.domains.execution_position.flows.open.fsm_open",
         )
     }
 
     assert hasattr(modules["apps.reference.config.system.ops"], "OpsConfig")
     assert hasattr(
-        modules["apps.reference.domains.execution_position.fsm_open"], "OpenFlowFSM")
+        modules["apps.reference.domains.execution_position.flows.open.fsm_open"], "OpenFlowFSM")
 
 
 def test_panic_killswitch_runtime_gate_still_blocks_new_open_when_enabled() -> None:

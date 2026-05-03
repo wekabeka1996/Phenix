@@ -106,7 +106,7 @@ def _run_fill(mock_fsm, event, mock_oi=None):
     Run EPEventHandlers.on_order_fill with patched order_logger.
     Returns list of dicts written to order_logger.
     """
-    import apps.reference.domains.execution_position.event_handlers as handlers_mod
+    import apps.reference.domains.execution_position.orchestration.event_handlers as handlers_mod
 
     # Explicitly set order_index to None so code falls through to mock_fsm.fsm.order_index
     mock_fsm.order_index = None
@@ -119,7 +119,7 @@ def _run_fill(mock_fsm, event, mock_oi=None):
 
     with patch.object(handlers_mod, "_trade_lifecycle", None), \
             patch.object(handlers_mod, "_get_order_logger") as mock_log_fn, \
-            patch("apps.reference.domains.execution_position.event_handlers.get_clock") as mock_clock:
+            patch("apps.reference.domains.execution_position.orchestration.event_handlers.get_clock") as mock_clock:
         mock_clock.return_value.now_ms.return_value = 1_700_000_000_000
         mock_log_fn.return_value.write.side_effect = written.append
 
@@ -141,7 +141,7 @@ def _run_portfolio_close(
     Run EPEventHandlers.on_portfolio_state_updated to trigger POSITION_CLOSED write.
     Pre-populates Phase 1 + Phase 2 caches. Returns list of dicts written to order_logger.
     """
-    import apps.reference.domains.execution_position.event_handlers as handlers_mod
+    import apps.reference.domains.execution_position.orchestration.event_handlers as handlers_mod
 
     mock_fsm._prev_position_amts = {"BTCUSDT": 1.0}
     mock_fsm._last_lifecycle_rid_by_symbol = {
@@ -166,7 +166,7 @@ def _run_portfolio_close(
 
     with patch.object(handlers_mod, "_trade_lifecycle", trade_lifecycle), \
             patch.object(handlers_mod, "_get_order_logger") as mock_log_fn, \
-            patch("apps.reference.domains.execution_position.event_handlers.get_clock") as mock_clock:
+            patch("apps.reference.domains.execution_position.orchestration.event_handlers.get_clock") as mock_clock:
         mock_clock.return_value.now_sec.return_value = 1_700_000.0
         mock_clock.return_value.now_ms.return_value = 1_700_000_000_000
         mock_log_fn.return_value.write.side_effect = written.append
@@ -374,7 +374,7 @@ class TestPositionClosedIdentity:
         Fail-closed: when _last_entry_side_by_symbol has no entry for the symbol,
         POSITION_CLOSED side must fall back to 'N/A' (graceful, not crash or absent key).
         """
-        import apps.reference.domains.execution_position.event_handlers as handlers_mod
+        import apps.reference.domains.execution_position.orchestration.event_handlers as handlers_mod
 
         mock_fsm = _make_mock_fsm()
         mock_fsm._last_entry_side_by_symbol = {}   # empty
@@ -391,7 +391,7 @@ class TestPositionClosedIdentity:
         written = []
         with patch.object(handlers_mod, "_trade_lifecycle", None), \
                 patch.object(handlers_mod, "_get_order_logger") as mock_log_fn, \
-                patch("apps.reference.domains.execution_position.event_handlers.get_clock") as mock_clock:
+                patch("apps.reference.domains.execution_position.orchestration.event_handlers.get_clock") as mock_clock:
             mock_clock.return_value.now_sec.return_value = 1_700_000.0
             mock_clock.return_value.now_ms.return_value = 1_700_000_000_000
             mock_log_fn.return_value.write.side_effect = written.append

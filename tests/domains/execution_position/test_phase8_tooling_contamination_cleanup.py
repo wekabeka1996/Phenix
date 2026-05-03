@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from apps.reference.domains.execution_position.terminal_order_contracts import (
+from apps.reference.domains.execution_position.contract_layer.terminal_order_contracts import (
     emit_canonical_terminal_order_event,
 )
 from apps.reference.telemetry.trade_lifecycle_logger import (

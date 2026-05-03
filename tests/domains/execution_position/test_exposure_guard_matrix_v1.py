@@ -2,7 +2,7 @@ import pytest
 import time
 from decimal import Decimal
 from unittest.mock import MagicMock
-from apps.reference.domains.execution_position.exposure_guard import ExposureGuard
+from apps.reference.domains.execution_position.guards.exposure_guard import ExposureGuard
 
 def setup_guard_with_equity(guard, equity=10000):
     """Utility to bootstrap guard with equity using CORRECT keys from exposure_guard.py:403-405"""

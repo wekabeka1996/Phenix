@@ -6,7 +6,7 @@ import pytest
 from vfoundation.core.protocol import Message
 
 from apps.reference.config_loader import ConfigLoader
-from apps.reference.domains.execution_position.position_policy_sidecar import (
+from apps.reference.domains.execution_position.sidecar.position_policy_sidecar import (
     PositionPolicySidecar,
 )
 

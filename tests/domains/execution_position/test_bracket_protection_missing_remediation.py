@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from apps.reference.adapters.binance_adapter import BinanceAPIError
 from apps.reference.domains.execution_position.bracket_manager import BracketManager
 from apps.reference.domains.execution_position.close_executor import CloseExecutor
 from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM, ManageState
@@ -74,7 +75,8 @@ def _make_open_executor_fsm() -> SimpleNamespace:
             preflight_position_check=AsyncMock(return_value=False),
             place_brackets_parallel=AsyncMock(),
         ),
-        _evt_handlers=SimpleNamespace(entry_tidy_gate_allow=MagicMock(return_value=True)),
+        _evt_handlers=SimpleNamespace(
+            entry_tidy_gate_allow=MagicMock(return_value=True)),
         _resolve_strategy_owner_from_decision=MagicMock(return_value={}),
         _remember_bracket_owner=MagicMock(),
         _has_active_lifecycle_for_symbol=MagicMock(return_value=False),
@@ -113,7 +115,8 @@ def test_manageflow_missing_sl_pct_enters_protection_missing_and_emits_event(fsm
     fsm_config.strategies.aurora.assets = {}
     flow = ManageFlowFSM(config=fsm_config)
     events: list[tuple[str, dict]] = []
-    flow.set_observability_hook(lambda topic, payload: events.append((topic, payload)))
+    flow.set_observability_hook(
+        lambda topic, payload: events.append((topic, payload)))
 
     result = flow.handle(_entry_fill())
 
@@ -122,7 +125,8 @@ def test_manageflow_missing_sl_pct_enters_protection_missing_and_emits_event(fsm
     assert result.op == "DEC"
     assert result.verb == "CLOSE"
     assert result.pld["trigger"] == "BRACKET_PROTECTION_MISSING"
-    failure_events = [payload for topic, payload in events if topic == "EVT:BRACKET_PLACEMENT_FAILED"]
+    failure_events = [payload for topic,
+                      payload in events if topic == "EVT:BRACKET_PLACEMENT_FAILED"]
     assert failure_events
     assert failure_events[0]["failure_class"] == "config_contract_error"
     assert failure_events[0]["remediation_action"] == "force_reduce_only_close"
@@ -132,7 +136,8 @@ def test_manageflow_missing_sl_pct_enters_protection_missing_and_emits_event(fsm
 def test_manageflow_missing_runtime_fill_data_does_not_silently_track(fsm_config, missing_field: str) -> None:
     flow = ManageFlowFSM(config=fsm_config)
     events: list[tuple[str, dict]] = []
-    flow.set_observability_hook(lambda topic, payload: events.append((topic, payload)))
+    flow.set_observability_hook(
+        lambda topic, payload: events.append((topic, payload)))
     payload = _entry_fill().pld
     payload.pop(missing_field, None)
     msg = Message(
@@ -150,7 +155,8 @@ def test_manageflow_missing_runtime_fill_data_does_not_silently_track(fsm_config
 
     assert flow.state == ManageState.PROTECTION_MISSING
     assert result is None
-    failure_events = [payload for topic, payload in events if topic == "EVT:BRACKET_PLACEMENT_FAILED"]
+    failure_events = [payload for topic,
+                      payload in events if topic == "EVT:BRACKET_PLACEMENT_FAILED"]
     assert failure_events
     assert failure_events[0]["failure_class"] == "runtime_data_missing"
     assert failure_events[0]["remediation_action"] == "position_not_proven_no_close"
@@ -176,7 +182,8 @@ async def test_market_entry_preflight_false_emits_bracket_failure_without_blind_
 async def test_primary_bracket_adapter_rejection_records_failure_with_live_close_remediation() -> None:
     fsm = SimpleNamespace(
         adapter=SimpleNamespace(
-            place_stop_market_close_position=AsyncMock(side_effect=RuntimeError("sl boom")),
+            place_stop_market_close_position=AsyncMock(
+                side_effect=RuntimeError("sl boom")),
             place_take_profit_market_close_position=AsyncMock(),
             place_limit_reduce_only=AsyncMock(),
         ),
@@ -209,7 +216,8 @@ async def test_primary_bracket_adapter_rejection_records_failure_with_live_close
             corr_id="corr",
             oco_group_id="oco",
             entry_resp={"orderId": "entry-1", "clientOrderId": "ENTRY-1"},
-            decision=SimpleNamespace(rid="rid-open", corr_id="corr", oco_group_id="oco"),
+            decision=SimpleNamespace(
+                rid="rid-open", corr_id="corr", oco_group_id="oco"),
             owner_context={"strategy_id": "aurora"},
         )
 
@@ -226,7 +234,8 @@ async def test_auxiliary_bracket_place_order_failure_is_not_log_only() -> None:
     manage_flow.entry_order_id = "entry-1"
     fsm = SimpleNamespace(
         adapter=SimpleNamespace(
-            place_stop_market_close_position=AsyncMock(side_effect=RuntimeError("adapter reject")),
+            place_stop_market_close_position=AsyncMock(
+                side_effect=RuntimeError("adapter reject")),
         ),
         manage_flows={"BTCUSDT": manage_flow},
         _handle_bracket_protection_missing=AsyncMock(),
@@ -272,8 +281,54 @@ async def test_execpos_helper_force_close_uses_existing_close_executor(fsm_harne
     )
 
     assert action == "force_reduce_only_close"
-    assert any(event[0] == "EVT:BRACKET_PLACEMENT_FAILED" for event in bus.events)
+    assert any(
+        event[0] == "EVT:BRACKET_PLACEMENT_FAILED" for event in bus.events)
     fsm._close_exec.execute_close.assert_awaited_once()
     close_msg = fsm._close_exec.execute_close.await_args.args[0]
     assert close_msg.verb == "CLOSE"
     assert close_msg.pld["trigger"] == "BRACKET_PROTECTION_MISSING"
+
+
+@pytest.mark.asyncio
+async def test_execpos_helper_force_close_exception_routes_outer_failure_sink(fsm_harness) -> None:
+    fsm, _bus, _cfg = fsm_harness
+    wal_records: list[dict] = []
+    fsm._close_exec.execute_close = AsyncMock(
+        side_effect=BinanceAPIError(code=-4116, msg="Duplicate order sent."),
+    )
+
+    with patch("vfoundation.dr.wal.append", side_effect=wal_records.append), patch(
+        "apps.reference.domains.execution_position.fsm.order_logger.write"
+    ) as mock_order_write, patch(
+        "apps.reference.domains.execution_position.fsm.emit_compat",
+        new_callable=AsyncMock,
+    ) as mock_emit_compat:
+        action = await fsm._handle_bracket_protection_missing(
+            symbol="BTCUSDT",
+            source_path="test",
+            failure_class="adapter_rejection",
+            reason="boom",
+            why_code="BRACKET_PRIMARY_ADAPTER_REJECTION",
+            rid="rid-close-guarded",
+            side="BUY",
+            qty="0.01",
+            live_position_proven=True,
+        )
+
+    assert action == "force_reduce_only_close"
+    mock_order_write.assert_called_once()
+    outer_payload = mock_order_write.call_args.args[0]
+    assert outer_payload["event_type"] == "ORDER_REJECTED"
+    assert outer_payload["source_fsm"] == "ExecPosFSM"
+    assert outer_payload["metadata"]["reject_stage"] == "outer_propagation"
+    assert outer_payload["metadata"]["propagation_source"] == "_handle_bracket_protection_missing"
+
+    rejected = [record for record in wal_records if record.get(
+        "verb") == "ORDER_REJECTED"]
+    assert len(rejected) == 1
+    assert rejected[0]["pld"]["reject_stage"] == "outer_propagation"
+
+    mock_emit_compat.assert_awaited_once()
+    exec_failed_msg = mock_emit_compat.await_args.args[1]
+    assert exec_failed_msg.verb == "EXECUTION_FAILED"
+    assert exec_failed_msg.pld["propagation_source"] == "_handle_bracket_protection_missing"

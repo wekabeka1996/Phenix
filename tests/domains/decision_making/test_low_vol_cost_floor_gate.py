@@ -380,6 +380,30 @@ def test_metadata_includes_required_economic_fields() -> None:
         "provenance_context",
         "economics_context",
         "direction_confidence_context",
+        "direction_confidence_selected_value",
+        "direction_confidence_selected_source",
+        "direction_confidence_selected_scale",
+        "direction_confidence_required_threshold",
+        "direction_confidence_threshold_source",
+        "direction_confidence_margin",
+        "direction_confidence_side_match",
+        "proposed_side",
+        "signal_score_raw",
+        "signal_score_abs",
+        "strategy_confidence_candidate",
+        "strategy_confidence_side_scope",
+        "final_score_raw",
+        "judge_confidence_candidate",
+        "active_allowed_sources",
+        "missing_allowed_sources",
+        "confidence_resolution_status",
+        "aurora_pillar_confidence_candidate",
+        "aurora_threshold_factor",
+        "aurora_raw_score_to_threshold_ratio",
+        "decision_id",
+        "cycle_key",
+        "features_ts_ms",
+        "detector_event",
         "observation_summary",
     }
 
@@ -391,6 +415,8 @@ def test_metadata_includes_required_economic_fields() -> None:
     assert evaluation.details["score_context"]["final_score"] == -0.8
     assert evaluation.details["direction_confidence_context"]["passed"] is True
     assert evaluation.details["subcondition_verdicts"]["rr_passed"] is True
+    assert evaluation.details["direction_confidence_selected_scale"] == "raw_signed_score"
+    assert evaluation.details["confidence_resolution_status"] == "present_passed"
 
 
 def test_observability_details_capture_explicit_missing_flags() -> None:
@@ -405,9 +431,20 @@ def test_observability_details_capture_explicit_missing_flags() -> None:
         stop_price=99.75,
         strategy_trace={
             "strategy_confidence": 0.77,
+            "strategy_confidence_candidate": 0.88,
+            "strategy_confidence_side_scope": "BUY",
             "direction_confidence": 0.77,
             "direction_confidence_source": "strategy_confidence",
             "direction_confidence_side_scope": "BUY",
+            "final_score_raw": 0.81,
+            "judge_confidence_candidate": 0.66,
+            "decision_id": "decision-1",
+            "cycle_key": "ENTRY:DOGEUSDT:300:1700000000000",
+            "features_ts_ms": 1_700_000_000_000,
+            "detector_event": {"bar_close_ts_ms": 1_700_000_000_299},
+            "aurora_pillar_confidence_candidate": 0.95,
+            "aurora_threshold_factor": 0.14,
+            "aurora_raw_score_to_threshold_ratio": 0.95,
             "ret_60s": 0.012,
             "objective": {
                 "score": 0.81,
@@ -428,6 +465,159 @@ def test_observability_details_capture_explicit_missing_flags() -> None:
     assert evaluation.details["missing_inputs"]["signal_score"] is True
     assert evaluation.details["provenance_context"]["strategy_trace_present"] is True
     assert evaluation.details["observation_summary"]["threshold_failed"] is False
+    assert evaluation.details["strategy_confidence_candidate"] == 0.88
+    assert evaluation.details["strategy_confidence_side_scope"] == "BUY"
+    assert evaluation.details["final_score_raw"] == 0.81
+    assert evaluation.details["judge_confidence_candidate"] == 0.66
+    assert evaluation.details["decision_id"] == "decision-1"
+    assert evaluation.details["cycle_key"] == "ENTRY:DOGEUSDT:300:1700000000000"
+    assert evaluation.details["features_ts_ms"] == 1_700_000_000_000
+    assert evaluation.details["detector_event"]["bar_close_ts_ms"] == 1_700_000_000_299
+    assert evaluation.details["aurora_pillar_confidence_candidate"] == 0.95
+    assert evaluation.details["aurora_threshold_factor"] == 0.14
+    assert evaluation.details["aurora_raw_score_to_threshold_ratio"] == 0.95
+
+
+def test_signal_score_observability_fields_capture_raw_scale_and_margin_without_changing_block() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(direction_confidence={
+            "required": True,
+            "allowed_sources": ["signal_score"],
+            "missing_policy": "fail_closed",
+        }),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace={
+            "active_threshold": 0.0005,
+            "aurora_threshold_factor": 0.14,
+            "aurora_pillar_confidence_candidate": 0.029285714285714286,
+            "aurora_raw_score_to_threshold_ratio": 0.029285714285714286,
+        },
+        signal_score=0.0041,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is True
+    assert evaluation.details["signal_score_raw"] == 0.0041
+    assert evaluation.details["signal_score_abs"] == 0.0041
+    assert evaluation.details["direction_confidence_selected_source"] == "signal_score"
+    assert evaluation.details["direction_confidence_selected_scale"] == "raw_signed_score"
+    assert evaluation.details["direction_confidence_required_threshold"] == 0.51
+    assert evaluation.details["direction_confidence_margin"] == pytest.approx(
+        0.0041 - 0.51)
+    assert evaluation.details["confidence_resolution_status"] == "present_below_threshold"
+    assert "direction_confidence_below_threshold" in evaluation.details["violations"]
+
+
+def test_strategy_confidence_candidate_is_logged_without_being_selected() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(direction_confidence={
+            "required": True,
+            "allowed_sources": ["signal_score", "strategy_confidence"],
+            "missing_policy": "fail_closed",
+        }),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace={
+            "strategy_confidence_candidate": 0.88,
+            "strategy_confidence_side_scope": "BUY",
+        },
+        signal_score=0.50,
+        reduce_only=False,
+    )
+
+    assert evaluation.details["strategy_confidence_candidate"] == 0.88
+    assert evaluation.details["strategy_confidence_side_scope"] == "BUY"
+    assert evaluation.details["direction_confidence_selected_source"] == "signal_score"
+    assert evaluation.details["direction_confidence_source"] == "signal_score"
+
+
+def test_missing_direction_confidence_logs_missing_allowed_sources_and_missing_status() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(direction_confidence={
+            "required": True,
+            "allowed_sources": ["strategy_confidence", "signal_score", "final_score", "judge_confidence"],
+            "missing_policy": "fail_closed",
+        }),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.9,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace=None,
+        signal_score=None,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is True
+    assert evaluation.details["confidence_resolution_status"] == "missing"
+    assert evaluation.details["missing_allowed_sources"] == [
+        "strategy_confidence",
+        "signal_score",
+        "final_score",
+        "judge_confidence",
+    ]
+
+
+def test_wrong_side_signed_score_logs_side_mismatch_without_relaxing_gate() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(direction_confidence={
+            "required": True,
+            "allowed_sources": ["signal_score"],
+            "missing_policy": "fail_closed",
+        }),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace=None,
+        signal_score=-0.9,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is True
+    assert evaluation.details["direction_confidence_side_match"] is False
+    assert evaluation.details["confidence_resolution_status"] == "wrong_side"
+    assert evaluation.details["direction_confidence_failure_reason"] == "invalid_direction_confidence_value"
+
+
+def test_high_signal_score_logs_present_passed_status() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(direction_confidence={
+            "required": True,
+            "allowed_sources": ["signal_score"],
+            "missing_policy": "fail_closed",
+        }),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace=None,
+        signal_score=0.85,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is False
+    assert evaluation.details["confidence_resolution_status"] == "present_passed"
+    assert evaluation.details["direction_confidence_side_match"] is True
 
 
 def test_strategy_symbol_threshold_override_applies_only_to_matching_symbol() -> None:
@@ -910,6 +1100,7 @@ def test_propose_trade_intent_blocks_low_vol_cost_floor_in_testnet() -> None:
     assert decision_trace_calls[0]["low_vol_cost_floor"]["gate_mode"] == "enforced"
     assert decision_trace_calls[0]["low_vol_cost_floor"]["persistence_context"]["rid"] == "rid-low-vol-block-1"
     assert decision_trace_calls[0]["low_vol_cost_floor"]["persistence_context"]["decision_outcome"] == "DENY"
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["confidence_resolution_status"] == "present_passed"
     assert decision_trace_calls[0]["low_vol_cost_floor"]["price_motion_context"]["pm_norm_60s"] == 0.21
     assert decision_trace_calls[0]["low_vol_cost_floor"]["price_motion_context"]["pm_norm_300s"] == 0.34
     assert decision_trace_calls[0]["low_vol_cost_floor"]["price_motion_context"]["vol_pct_300s"] == 0.004
@@ -1007,6 +1198,7 @@ def test_propose_trade_intent_observes_in_live_without_blocking() -> None:
     assert kwargs["strategy_trace"]["low_vol_cost_floor"]["threshold_failed"] is True
     assert kwargs["strategy_trace"]["low_vol_cost_floor"]["would_block"] is True
     assert kwargs["strategy_trace"]["low_vol_cost_floor"]["persistence_context"]["decision_outcome"] == "ALLOW"
+    assert kwargs["strategy_trace"]["low_vol_cost_floor"]["confidence_resolution_status"] == "present_passed"
     assert kwargs["strategy_trace"]["low_vol_cost_floor"]["price_motion_context"]["pm_norm_60s"] == 0.11
     assert kwargs["strategy_trace"]["low_vol_cost_floor"]["price_motion_context"]["vol_pct_300s"] == 0.002
     assert kwargs["sg"].low_vol_cost_floor_details["gate_mode"] == "observe_only"

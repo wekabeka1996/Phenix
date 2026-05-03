@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from apps.reference.domains.execution_position.open_submission_adapter import (
+from apps.reference.domains.execution_position.flows.open.open_submission_adapter import (
     OpenSubmissionAdapterError,
     OpenSubmissionPayload,
 )

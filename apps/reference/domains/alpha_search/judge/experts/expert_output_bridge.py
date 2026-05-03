@@ -247,3 +247,39 @@ def write_jsonl_verdict_log(
             handle.write(line + "\n")
     except Exception:
         LOG.exception("Failed to write verdict log to %s", filepath)
+
+
+def write_jsonl_policy_cortex_log(
+    annotation: "PolicyCortexAnnotation",
+    log_dir: str,
+    ts_ms: int,
+) -> None:
+    """Append PolicyCortexAnnotation as one JSONL line to the policy cortex shadow log.
+
+    J6-S16.1 shadow-only telemetry sink.
+    Follows the same pattern as write_jsonl_verdict_log and siblings.
+    Never consumed by decision_making or execution_position.
+
+    Args:
+        annotation: The fully-assembled PolicyCortexAnnotation.
+        log_dir:    Shadow log directory (same as other judge JSONL logs).
+        ts_ms:      Candidate timestamp in milliseconds (used for date-part filename).
+    """
+    from apps.reference.domains.alpha_search.judge.policy_cortex.evidence_models import (
+        PolicyCortexAnnotation,
+    )
+
+    log_path = Path(log_dir)
+    log_path.mkdir(parents=True, exist_ok=True)
+
+    date_str = utc_day_from_ts_ms(ts_ms)
+    filename = f"policy_cortex_{annotation.symbol}_{date_str}.jsonl"
+    filepath = log_path / filename
+
+    line = annotation.model_dump_json()
+    try:
+        with open(filepath, "a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+    except Exception:
+        LOG.exception("Failed to write policy cortex log to %s", filepath)
+

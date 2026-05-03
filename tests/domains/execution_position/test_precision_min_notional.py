@@ -22,7 +22,7 @@ class TestPrecisionMinNotionalInvariant:
     
     def _make_fsm(self, min_notional=5.0, step_size=0.001, tick_size=0.01, min_qty=0.001):
         """Create OpenFlowFSM with mocked config."""
-        from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
+        from apps.reference.domains.execution_position.flows.open.fsm_open import OpenFlowFSM
         from apps.reference.config_models import AuroraConfig
         
         config = MagicMock(spec=AuroraConfig)

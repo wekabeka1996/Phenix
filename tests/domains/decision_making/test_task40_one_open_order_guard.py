@@ -98,7 +98,7 @@ def _mk_dm(*, fsm):
 
 
 def test_order_in_flight_deferred_reason():
-    from apps.reference.domains.execution_position.order_index import OrderIndex
+    from apps.reference.domains.execution_position.state.order_index import OrderIndex
 
     oi = OrderIndex(ttl_sec=3600)
     oi.upsert_from_open(
@@ -130,7 +130,7 @@ def test_order_in_flight_deferred_reason():
 
 def test_unlock_on_terminal_allows_next_open():
     from decimal import Decimal
-    from apps.reference.domains.execution_position.order_index import OrderIndex
+    from apps.reference.domains.execution_position.state.order_index import OrderIndex
 
     oi = OrderIndex(ttl_sec=3600)
     ref = oi.upsert_from_open(
@@ -163,7 +163,7 @@ def test_unlock_on_terminal_allows_next_open():
 
 def test_double_signal_only_one_order_placed():
     from decimal import Decimal
-    from apps.reference.domains.execution_position.order_index import OrderIndex
+    from apps.reference.domains.execution_position.state.order_index import OrderIndex
 
     oi = OrderIndex(ttl_sec=3600)
     fsm = _DummyFsm(order_index=oi)

@@ -9,9 +9,9 @@ TDD: These tests should FAIL before implementation and PASS after.
 import pytest
 from unittest.mock import MagicMock
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
-from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
-from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM
-from apps.reference.domains.execution_position.exposure_guard import ExposureGuard
+from apps.reference.domains.execution_position.flows.open.fsm_open import OpenFlowFSM
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageFlowFSM
+from apps.reference.domains.execution_position.guards.exposure_guard import ExposureGuard
 from apps.reference.config_contract import ConfigContractError
 
 

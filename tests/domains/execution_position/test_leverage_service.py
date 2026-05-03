@@ -30,7 +30,7 @@ class TestLeverageServiceVerify:
     @pytest.mark.asyncio
     async def test_verify_only_rejects_on_leverage_mismatch(self):
         """When actual leverage != expected, verify returns ok=False with LEV_MISMATCH."""
-        from apps.reference.domains.execution_position.leverage_service import LeverageService
+        from apps.reference.domains.execution_position.guards.leverage_service import LeverageService
         from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         # Mock adapter returns mismatched leverage
@@ -50,7 +50,7 @@ class TestLeverageServiceVerify:
     @pytest.mark.asyncio
     async def test_verify_only_rejects_on_margin_mode_mismatch(self):
         """When actual margin mode != expected, verify returns ok=False with MARGIN_MODE_MISMATCH."""
-        from apps.reference.domains.execution_position.leverage_service import LeverageService
+        from apps.reference.domains.execution_position.guards.leverage_service import LeverageService
         from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         # Mock adapter returns mismatched margin mode
@@ -69,7 +69,7 @@ class TestLeverageServiceVerify:
     @pytest.mark.asyncio
     async def test_verify_returns_ok_when_all_match(self):
         """When leverage and margin mode match, verify returns ok=True."""
-        from apps.reference.domains.execution_position.leverage_service import LeverageService
+        from apps.reference.domains.execution_position.guards.leverage_service import LeverageService
         
         adapter = AsyncMock()
         adapter.get_current_leverage = AsyncMock(return_value=20)
@@ -90,7 +90,7 @@ class TestLeverageServiceSetAndVerify:
     @pytest.mark.asyncio
     async def test_set_and_verify_calls_setters_then_verifies_success(self):
         """set_and_verify should call set methods, then verify they took effect."""
-        from apps.reference.domains.execution_position.leverage_service import LeverageService
+        from apps.reference.domains.execution_position.guards.leverage_service import LeverageService
         
         call_order = []
 
@@ -135,7 +135,7 @@ class TestLeverageServiceSetAndVerify:
     @pytest.mark.asyncio
     async def test_set_and_verify_rejects_when_set_leverage_fails(self):
         """When set_leverage fails, set_and_verify returns failure with LEV_SET_FAILED."""
-        from apps.reference.domains.execution_position.leverage_service import LeverageService
+        from apps.reference.domains.execution_position.guards.leverage_service import LeverageService
         from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         adapter = AsyncMock()
@@ -151,7 +151,7 @@ class TestLeverageServiceSetAndVerify:
     @pytest.mark.asyncio
     async def test_set_and_verify_rejects_when_set_margin_fails(self):
         """When set_margin_mode fails, set_and_verify returns failure."""
-        from apps.reference.domains.execution_position.leverage_service import LeverageService
+        from apps.reference.domains.execution_position.guards.leverage_service import LeverageService
         from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         adapter = AsyncMock()
@@ -170,7 +170,7 @@ class TestLeverageServiceIdempotency:
     @pytest.mark.asyncio
     async def test_idempotency_window_skips_redundant_set_calls(self):
         """Within idempotency window, set_and_verify should not call setters again."""
-        from apps.reference.domains.execution_position.leverage_service import LeverageService
+        from apps.reference.domains.execution_position.guards.leverage_service import LeverageService
         
         current_time = 1000.0
         clock = MagicMock(return_value=current_time)
@@ -203,7 +203,7 @@ class TestLeverageServiceIdempotency:
     @pytest.mark.asyncio
     async def test_idempotency_expires_after_window(self):
         """After idempotency window expires, set_and_verify should call setters again."""
-        from apps.reference.domains.execution_position.leverage_service import LeverageService
+        from apps.reference.domains.execution_position.guards.leverage_service import LeverageService
         
         current_time = 1000.0
         clock = MagicMock(return_value=current_time)
@@ -236,7 +236,7 @@ class TestLeverageServiceFailClosed:
     @pytest.mark.asyncio
     async def test_fail_closed_on_adapter_get_leverage_error(self):
         """When get_current_leverage fails, verify returns failure with VERIFY_FAILED."""
-        from apps.reference.domains.execution_position.leverage_service import LeverageService
+        from apps.reference.domains.execution_position.guards.leverage_service import LeverageService
         from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         adapter = AsyncMock()
@@ -252,7 +252,7 @@ class TestLeverageServiceFailClosed:
     @pytest.mark.asyncio
     async def test_fail_closed_on_adapter_get_margin_error(self):
         """When get_margin_mode fails, verify returns failure with VERIFY_FAILED."""
-        from apps.reference.domains.execution_position.leverage_service import LeverageService
+        from apps.reference.domains.execution_position.guards.leverage_service import LeverageService
         from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         adapter = AsyncMock()

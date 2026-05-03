@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 from unittest.mock import MagicMock, patch
 
-from apps.reference.domains.execution_position.adapter_init import AdapterInitMixin
+from apps.reference.domains.execution_position.adapters.adapter_init import AdapterInitMixin
 
 
 class _FakeAdapterInitFSM(AdapterInitMixin):
@@ -143,7 +143,7 @@ class TestInstrumentConfigFailClosed:
         DEF-E05: When config.instruments[symbol] is missing, execution must fail
         closed rather than using MIN_ORDER_QTY / MIN_NOTIONAL constants.
         """
-        from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
+        from apps.reference.domains.execution_position.flows.open.fsm_open import OpenFlowFSM
 
         mock_config = MagicMock()
         mock_config.instruments = {}  # Empty — no instruments configured
@@ -163,7 +163,7 @@ class TestInstrumentConfigFailClosed:
         when instrument is not in config. The constants in contracts.py are for
         tests only.
         """
-        from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
+        from apps.reference.domains.execution_position.flows.open.fsm_open import OpenFlowFSM
         from decimal import Decimal
 
         mock_config = MagicMock()

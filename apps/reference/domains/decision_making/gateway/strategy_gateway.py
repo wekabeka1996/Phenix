@@ -554,6 +554,86 @@ class StrategyGateway:
             authority_mode = getattr(
                 bridge, "authority_mode", AuthorityMode.SHADOW)
             inc_neocortex_authority_kill_switch_active()
+            journal_only_capture_enabled = bool(
+                getattr(bridge, "journal_only_capture_enabled", False)
+            )
+            journal_only_capture = getattr(bridge, "journal_only_capture", None)
+            if journal_only_capture_enabled and callable(journal_only_capture):
+                decision_id = str(uuid.uuid4())
+                deadline_ms = int(getattr(bridge, "deadline_ms", 1))
+                observation = self._build_authority_observation(
+                    decision_id=decision_id,
+                    symbol=symbol,
+                    side=side,
+                    rid=rid,
+                    strategy_id=strategy_id,
+                    qty_dec=qty_dec,
+                    entry_price_dec=entry_price_dec,
+                    decision_basis_ts_ms=decision_basis_ts_ms,
+                    latest_risk=latest_risk,
+                    gate_ctx=gate_ctx,
+                    chain_result=chain_result,
+                )
+                request = ControlDecisionRequest(
+                    decision_id=decision_id,
+                    rid=str(rid),
+                    symbol=str(symbol),
+                    request_kind=ControlDecisionRequestKind.NEW_RISK_INTENT,
+                    authority_mode=authority_mode,
+                    decision_basis_ts_ms=int(decision_basis_ts_ms),
+                    deadline_ms=deadline_ms,
+                    expires_at_ms=int(decision_basis_ts_ms) + deadline_ms,
+                    observation=observation,
+                    candidate_intent_summary=dict(
+                        observation.candidate_intent_summary),
+                    idempotent_key=decision_id,
+                )
+                request_row = request.model_dump(mode="json")
+                request_row["capture_mode"] = "journal_only"
+                self._append_authority_journal_row(
+                    "authority_request_journal_v1.jsonl",
+                    request_row,
+                )
+
+                response = journal_only_capture(request)
+                apply_result = response.apply_result or ControlDecisionApplyResult.SHADOW_RECORDED
+
+                inc_neocortex_authority_request(
+                    mode=authority_mode.value,
+                    symbol=str(symbol),
+                    apply_result=apply_result.value,
+                )
+
+                authority_context = {
+                    "decision_id": request.decision_id,
+                    "authority_mode": request.authority_mode.value,
+                    "action": response.action.value,
+                    "apply_result": apply_result.value,
+                    "reason_code": response.reason_code,
+                    "reason_text": response.reason_text,
+                    "idempotent_key": response.idempotent_key,
+                    "capture_mode": "journal_only",
+                    "authority_applied": False,
+                    "no_effect": True,
+                }
+                if response.overlay_patch is not None:
+                    authority_context["overlay_patch"] = dict(
+                        response.overlay_patch)
+
+                if bool(getattr(bridge, "journal_only_response_journal_enabled", False)):
+                    response_row = response.model_dump(mode="json")
+                    response_row["apply_result"] = apply_result.value
+                    response_row["authority_mode"] = request.authority_mode.value
+                    response_row["expires_at_ms"] = int(request.expires_at_ms)
+                    response_row["capture_mode"] = "journal_only"
+                    response_row["authority_applied"] = False
+                    response_row["no_effect"] = True
+                    self._append_authority_journal_row(
+                        "authority_response_journal_v1.jsonl",
+                        response_row,
+                    )
+                return authority_context, False
+
             inc_neocortex_authority_request(
                 mode=authority_mode.value,
                 symbol=str(symbol),
@@ -1191,6 +1271,87 @@ class StrategyGateway:
             if authority_blocked:
                 return
 
+            strategy_trace_payload = {
+                **({"md_amr": md_amr_trace_norm} if md_amr_trace_norm else {}),
+                **({"objective": objective_trace_norm} if objective_trace_norm else {}),
+            }
+            if strategy_id_s in {"aurora", "mean_reversion"} and isinstance(scoring, dict):
+                def _obs_float(value: Any) -> float | None:
+                    try:
+                        dec = decimal.Decimal(str(value))
+                    except Exception:
+                        return None
+                    if not dec.is_finite():
+                        return None
+                    return float(dec)
+
+                raw_signal_score = _obs_float(scoring.get("score"))
+                final_score_raw = _obs_float(
+                    scoring.get("decision_score", scoring.get("score"))
+                )
+                active_threshold = _obs_float(
+                    scoring.get("thr_buy") if side == "BUY" else scoring.get(
+                        "thr_sell")
+                )
+                psi_vector = scoring.get("psi_vector")
+                if not isinstance(psi_vector, dict):
+                    psi_vector = {}
+                aurora_threshold_factor = _obs_float(
+                    psi_vector.get("threshold_factor"))
+                aurora_raw_score_to_threshold_ratio = None
+                aurora_pillar_confidence_candidate = None
+                if (
+                    raw_signal_score is not None
+                    and aurora_threshold_factor is not None
+                    and aurora_threshold_factor > 0.0
+                ):
+                    aurora_raw_score_to_threshold_ratio = abs(
+                        raw_signal_score) / aurora_threshold_factor
+                    aurora_pillar_confidence_candidate = min(
+                        1.0,
+                        aurora_raw_score_to_threshold_ratio,
+                    )
+                feature_ts_ms = None
+                symbol_state = dm.symbol_states.get(symbol) if isinstance(
+                    dm.symbol_states, dict) else None
+                if isinstance(symbol_state, dict):
+                    feature_state = symbol_state.get("features")
+                    if isinstance(feature_state, dict):
+                        feature_ts_ms = feature_state.get(
+                            "ts") or feature_state.get("ts_ms")
+                raw_bar_close_ts = pld.get("bar_close_ts")
+                detector_event = None
+                try:
+                    if raw_bar_close_ts not in (None, ""):
+                        detector_event = {
+                            "bar_close_ts_ms": int(raw_bar_close_ts)}
+                except (TypeError, ValueError):
+                    detector_event = None
+
+                if raw_signal_score is not None:
+                    strategy_trace_payload["signal_score"] = raw_signal_score
+                    strategy_trace_payload["signal_score_abs"] = abs(
+                        raw_signal_score)
+                if final_score_raw is not None:
+                    strategy_trace_payload["final_score_raw"] = final_score_raw
+                if active_threshold is not None:
+                    strategy_trace_payload["active_threshold"] = active_threshold
+                if aurora_threshold_factor is not None:
+                    strategy_trace_payload["aurora_threshold_factor"] = aurora_threshold_factor
+                if aurora_pillar_confidence_candidate is not None:
+                    strategy_trace_payload["aurora_pillar_confidence_candidate"] = aurora_pillar_confidence_candidate
+                if aurora_raw_score_to_threshold_ratio is not None:
+                    strategy_trace_payload["aurora_raw_score_to_threshold_ratio"] = aurora_raw_score_to_threshold_ratio
+                if feature_ts_ms is not None:
+                    strategy_trace_payload["features_ts_ms"] = feature_ts_ms
+                if detector_event is not None:
+                    strategy_trace_payload["detector_event"] = detector_event
+                if pld.get("decision_id") is not None:
+                    strategy_trace_payload["decision_id"] = pld.get(
+                        "decision_id")
+                if pld.get("cycle_key") is not None:
+                    strategy_trace_payload["cycle_key"] = pld.get("cycle_key")
+
             # Dispatch through facade (safety gates already ran in chain)
             dm._propose_trade_intent(
                 symbol=symbol, side=side,
@@ -1207,12 +1368,7 @@ class StrategyGateway:
                 authority_context=authority_context,
                 safety_gate_result=gate_ctx.accumulated.get(
                     "safety_gate_result"),
-                strategy_trace=(
-                    {
-                        **({"md_amr": md_amr_trace_norm} if md_amr_trace_norm else {}),
-                        **({"objective": objective_trace_norm} if objective_trace_norm else {}),
-                    } or None
-                ))
+                strategy_trace=(strategy_trace_payload or None))
             if qos_enabled:
                 dm._update_qos_state(symbol, strategy_id)
 

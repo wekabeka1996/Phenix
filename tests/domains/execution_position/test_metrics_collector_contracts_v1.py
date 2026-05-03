@@ -1,6 +1,6 @@
 import pytest
 import time
-from apps.reference.domains.execution_position.metrics_collector import MetricsCollector
+from apps.reference.domains.execution_position.telemetry.metrics_collector import MetricsCollector
 
 @pytest.fixture
 def collector():

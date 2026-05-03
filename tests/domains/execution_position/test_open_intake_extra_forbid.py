@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from apps.reference.domains.execution_position.trade_intent_open_intake import (
+from apps.reference.domains.execution_position.flows.open.trade_intent_open_intake import (
     TradeIntentOpenIntake,
     TradeIntentOpenIntakeError,
     TradeIntentOpenOrder,

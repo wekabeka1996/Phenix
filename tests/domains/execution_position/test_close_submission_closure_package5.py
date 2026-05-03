@@ -19,14 +19,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from apps.reference.domains.execution_position.close_submission_adapter import (
+from apps.reference.domains.execution_position.flows.close.close_submission_adapter import (
     CLOSE_SUBMISSION_CONTRACT,
     CLOSE_SUBMISSION_PATH,
     CloseSubmissionAdapterError,
     CloseSubmissionPayload,
     build_close_submission_trace_ref,
 )
-from apps.reference.domains.execution_position.close_executor import CloseExecutor
+from apps.reference.domains.execution_position.flows.close.close_executor import CloseExecutor
 from apps.reference.adapters.binance_adapter import BinanceAPIError
 
 
@@ -420,7 +420,7 @@ class TestCloseExecutorTruthGate:
             "_build_close_submission",
             wraps=executor._build_close_submission,
         ) as wrapped, patch(
-            "apps.reference.domains.execution_position.close_executor.order_logger.write"
+            "apps.reference.domains.execution_position.flows.close.close_executor.order_logger.write"
         ) as order_log_write:
             await executor.execute_close(decision)
 
@@ -463,11 +463,11 @@ class TestCloseExecutorFullCloseBranch:
         place_close.side_effect = _capture_place
 
         with patch(
-            "apps.reference.domains.execution_position.close_executor."
+            "apps.reference.domains.execution_position.flows.close.close_executor."
             "CloseSubmissionPayload.from_dec_close",
             wraps=CloseSubmissionPayload.from_dec_close,
         ) as wrapped, patch(
-            "apps.reference.domains.execution_position.close_executor.order_logger.write",
+            "apps.reference.domains.execution_position.flows.close.close_executor.order_logger.write",
             side_effect=lambda entry: records.append(dict(entry)),
         ):
             await executor.execute_close(decision)
@@ -543,11 +543,11 @@ class TestCloseExecutorPartialCloseBranch:
         place_close.side_effect = _capture_place
 
         with patch(
-            "apps.reference.domains.execution_position.close_executor."
+            "apps.reference.domains.execution_position.flows.close.close_executor."
             "CloseSubmissionPayload.from_dec_close",
             wraps=CloseSubmissionPayload.from_dec_close,
         ) as wrapped, patch(
-            "apps.reference.domains.execution_position.close_executor.order_logger.write",
+            "apps.reference.domains.execution_position.flows.close.close_executor.order_logger.write",
             side_effect=lambda entry: records.append(dict(entry)),
         ):
             await executor.execute_close(decision)
@@ -608,11 +608,11 @@ class TestCloseExecutorFailClosed:
         decision = _dec_close_decision(symbol="BTCUSDT")
 
         with patch(
-            "apps.reference.domains.execution_position.close_executor."
+            "apps.reference.domains.execution_position.flows.close.close_executor."
             "CloseSubmissionPayload.from_dec_close",
             wraps=CloseSubmissionPayload.from_dec_close,
         ) as wrapped, patch(
-            "apps.reference.domains.execution_position.close_executor.order_logger.write"
+            "apps.reference.domains.execution_position.flows.close.close_executor.order_logger.write"
         ) as order_log_write:
             await executor.execute_close(decision)
 
@@ -636,11 +636,11 @@ class TestCloseExecutorFailClosed:
             raise CloseSubmissionAdapterError("forced reject for test")
 
         with patch(
-            "apps.reference.domains.execution_position.close_executor."
+            "apps.reference.domains.execution_position.flows.close.close_executor."
             "CloseSubmissionPayload.from_dec_close",
             side_effect=_always_raise,
         ), patch(
-            "apps.reference.domains.execution_position.close_executor.order_logger.write"
+            "apps.reference.domains.execution_position.flows.close.close_executor.order_logger.write"
         ) as order_log_write:
             await executor.execute_close(decision)
 
@@ -673,7 +673,7 @@ class TestCloseExecutorFailClosed:
         place_close.side_effect = _raise_place
 
         with patch(
-            "apps.reference.domains.execution_position.close_executor.order_logger.write",
+            "apps.reference.domains.execution_position.flows.close.close_executor.order_logger.write",
             side_effect=lambda entry: records.append(dict(entry)),
         ):
             with pytest.raises(RuntimeError) as exc_info:
@@ -716,7 +716,7 @@ class TestCloseExecutorFailClosed:
         place_close.side_effect = _raise_place
 
         with patch(
-            "apps.reference.domains.execution_position.close_executor.order_logger.write",
+            "apps.reference.domains.execution_position.flows.close.close_executor.order_logger.write",
             side_effect=lambda entry: records.append(dict(entry)),
         ):
             with pytest.raises(BinanceAPIError) as exc_info:
@@ -804,7 +804,7 @@ class TestCloseExecutorNonBypass:
         decision = _dec_close_decision(symbol="BTCUSDT")
 
         with patch(
-            "apps.reference.domains.execution_position.close_executor."
+            "apps.reference.domains.execution_position.flows.close.close_executor."
             "CloseSubmissionPayload.from_dec_close",
             wraps=CloseSubmissionPayload.from_dec_close,
         ) as wrapped:
@@ -820,7 +820,7 @@ class TestCloseExecutorNonBypass:
         decision = _dec_close_decision(symbol="BTCUSDT", qty="0.04")
 
         with patch(
-            "apps.reference.domains.execution_position.close_executor."
+            "apps.reference.domains.execution_position.flows.close.close_executor."
             "CloseSubmissionPayload.from_dec_close",
             wraps=CloseSubmissionPayload.from_dec_close,
         ) as wrapped:
@@ -868,7 +868,7 @@ class TestCloseExecutorTraces:
 class TestDownstreamOwnershipUnchanged:
 
     def test_open_submission_payload_untouched(self) -> None:
-        from apps.reference.domains.execution_position.open_submission_adapter import (
+        from apps.reference.domains.execution_position.flows.open.open_submission_adapter import (
             OpenSubmissionPayload,
         )
 
@@ -876,14 +876,14 @@ class TestDownstreamOwnershipUnchanged:
         assert hasattr(OpenSubmissionPayload, "from_dec_open_with_key")
 
     def test_cancel_submission_payload_untouched(self) -> None:
-        from apps.reference.domains.execution_position.cancel_submission_adapter import (
+        from apps.reference.domains.execution_position.guardian.cancel_submission_adapter import (
             CancelSubmissionPayload,
         )
 
         assert hasattr(CancelSubmissionPayload, "from_dec_cancel")
 
     def test_idempotent_cancel_helper_unchanged(self) -> None:
-        from apps.reference.domains.execution_position.idempotent_cancel import (
+        from apps.reference.domains.execution_position.guardian.idempotent_cancel import (
             IdempotentCancelHelper,
         )
 

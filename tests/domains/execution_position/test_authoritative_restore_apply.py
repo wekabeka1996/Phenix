@@ -9,10 +9,10 @@ No 6A read/parse machinery is involved.
 import pytest
 from unittest.mock import MagicMock
 
-from apps.reference.domains.execution_position.authoritative_restore_apply import (
+from apps.reference.domains.execution_position.state.authoritative_restore_apply import (
     AuthoritativeRestoreApply,
 )
-from apps.reference.domains.execution_position.restore_artifact import (
+from apps.reference.domains.execution_position.state.restore_artifact import (
     BRACKET_STATE_DEFERRED_PENDING_WAL,
     BRACKET_STATE_LINKED_ACTIVE,
     BRACKET_STATE_PARTIAL_LINKAGE,
@@ -23,8 +23,8 @@ from apps.reference.domains.execution_position.restore_artifact import (
     ExecutionPositionRestoreLifecycleRecord,
     TRUTH_SOURCE_RESTORE_ARTIFACT,
 )
-from apps.reference.domains.execution_position.fsm_manage import ManageState
-from apps.reference.domains.execution_position.fsm_close import CloseState
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageState
+from apps.reference.domains.execution_position.flows.close.fsm_close import CloseState
 
 
 # ---------------------------------------------------------------------------

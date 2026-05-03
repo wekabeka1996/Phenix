@@ -316,7 +316,7 @@ class TestLeverageBootstrapIntegration:
         """Verify bootstrap logs SSOT mismatch warnings."""
         import logging
 
-        from apps.reference.domains.execution_position.bootstrapping.leverage_bootstrapper import (
+        from apps.reference.domains.execution_position.guards.bootstrapping.leverage_bootstrapper import (
             LeverageBootstrapper,
             BootstrapResults,
         )

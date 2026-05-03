@@ -112,6 +112,22 @@ def _safe_int(value: object) -> int | None:
         return None
 
 
+def _coerce_bool(value: object, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, (str, bytes, bytearray)):
+        text = str(value).strip().lower()
+        if text in {"1", "true", "yes", "y", "on"}:
+            return True
+        if text in {"0", "false", "no", "n", "off", ""}:
+            return False
+    return default
+
+
 def _normalize_action(value: object) -> str:
     normalized = str(value or "FALLBACK").strip().upper()
     if normalized == "DENY":
@@ -715,6 +731,11 @@ class DecisionOutcomeLedgerSink:
             normalized = _normalize_authority_mode(candidate)
             if normalized != "unknown":
                 return normalized
+        capture_mode = _string_alias(payload, "capture_mode") or _string_alias(
+            flags, "capture_mode"
+        )
+        if capture_mode == "journal_only":
+            return "shadow"
         apply_result = _string_alias(
             payload, "apply_result") or _string_alias(flags, "apply_result")
         if apply_result is not None:
@@ -743,6 +764,11 @@ class DecisionOutcomeLedgerSink:
             ),
             "has_nan": bool(flags.get("has_nan", False)),
             "is_stale": bool(flags.get("is_stale", False)),
+            "capture_mode": _string_alias(flags, "capture_mode"),
+            "authority_applied": _coerce_bool(
+                flags.get("authority_applied"), default=True
+            ),
+            "no_effect": _coerce_bool(flags.get("no_effect"), default=False),
             "explicit_request_ts_present": _explicit_timestamp_present(
                 payload, "request_ts_ms"
             ),
@@ -835,6 +861,12 @@ class DecisionOutcomeLedgerSink:
         invalid_reason_code: str | None,
     ) -> DatasetVisibility:
         if invalid_reason_code is not None or entry.authority_mode == "unknown":
+            return "diagnostics_only"
+        if entry.support_quality.get("capture_mode") == "journal_only":
+            return "diagnostics_only"
+        if not entry.support_quality.get("authority_applied", True):
+            return "diagnostics_only"
+        if entry.support_quality.get("no_effect", False):
             return "diagnostics_only"
         if terminal_status == DecisionOutcomeTerminalStatus.INVALID_FOR_DATASET:
             return "diagnostics_only"

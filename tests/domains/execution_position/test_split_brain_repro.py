@@ -7,9 +7,9 @@ from vfoundation.core.protocol import Message
 
 from apps.reference.core.time import get_clock
 from apps.reference.domains.decision_making.primitives.position_queries import PositionQueries
-from apps.reference.domains.execution_position.fsm_manage import ManageState
-from apps.reference.domains.execution_position.order_index import OrderIndex
-from apps.reference.domains.execution_position.order_guardian import (
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageState
+from apps.reference.domains.execution_position.state.order_index import OrderIndex
+from apps.reference.domains.execution_position.guardian.order_guardian import (
     InMemoryStore,
     OrderGuardian,
 )
@@ -387,7 +387,7 @@ def test_invariant_valid_tp_fill_matches_preack_client_id(fsm_config):
     Current expected buggy behavior: current matcher ignores the fill, leaves TP tracking untouched, and keeps the position quantity unchanged.
     What future repair should change: accept the runtime TP1 client-id format and advance the local lifecycle on the valid exit fill.
     """
-    from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM
+    from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageFlowFSM
 
     manage_flow = ManageFlowFSM(config=fsm_config)
     _prime_tracking_state(manage_flow)

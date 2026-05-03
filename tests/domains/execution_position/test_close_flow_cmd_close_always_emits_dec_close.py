@@ -2,7 +2,7 @@ from vfoundation.core.protocol import Message
 
 
 def test_close_flow_cmd_close_emits_dec_close_even_when_flat():
-    from apps.reference.domains.execution_position.fsm_close import CloseFlowFSM, CloseState
+    from apps.reference.domains.execution_position.flows.close.fsm_close import CloseFlowFSM, CloseState
 
     close_flow = CloseFlowFSM()
     assert close_flow.state == CloseState.FLAT

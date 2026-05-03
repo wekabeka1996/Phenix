@@ -4,7 +4,7 @@ from decimal import Decimal
 from unittest.mock import MagicMock, AsyncMock, patch
 from vfoundation.core.protocol import Message
 
-from apps.reference.domains.execution_position.exposure_manager import ExposureManager
+from apps.reference.domains.execution_position.guards.exposure_manager import ExposureManager
 from apps.reference.core.time import get_clock
 
 
@@ -145,7 +145,10 @@ def test_check_exposure_fail_closed_allowed_and_clipping(mock_wal, exposure_mana
 @patch("vfoundation.dr.wal.append")
 def test_check_exposure_fail_closed_shadow_check_trigger(mock_wal, exposure_manager, fsm):
     tasks = []
-    fsm._submit_async = lambda coro, loop: tasks.append(coro)
+    def _capture_and_close(coro, loop):
+        tasks.append(coro.cr_code.co_name)
+        coro.close()
+    fsm._submit_async = _capture_and_close
     fsm.exposure_guard.can_open.return_value = {"allowed": True}
 
     msg = Message(op="DEC", verb="OPEN", src="src", dst="dst", pld={
@@ -157,7 +160,7 @@ def test_check_exposure_fail_closed_shadow_check_trigger(mock_wal, exposure_mana
     assert fsm._shadow_check_counter == 1
 
     exposure_manager.check_exposure_fail_closed(msg)
-    assert len(tasks) == 1
+    assert tasks == ["check_shadow_notional"]
     assert fsm._shadow_check_counter == 2
 
 
@@ -233,10 +236,13 @@ async def test_check_shadow_notional_absolute_threshold(mock_emit, exposure_mana
     mock_emit.assert_not_called()
 
 
-@patch("apps.reference.domains.execution_position.pending_brackets_wal.write_pending_brackets_cleared")
+@patch("apps.reference.domains.execution_position.flows.manage.pending_brackets_wal.write_pending_brackets_cleared")
 def test_handle_cancel_event(mock_wal, exposure_manager, fsm):
     tasks = []
-    fsm._submit_async = lambda coro, loop: tasks.append(coro)
+    def _capture_and_close(coro, loop):
+        tasks.append(coro.cr_code.co_name)
+        coro.close()
+    fsm._submit_async = _capture_and_close
 
     fsm._pending_brackets = {"o1": {"symbol": "BTCUSDT"}}
     fsm._supersede_canceling.add("BTCUSDT")
@@ -258,7 +264,7 @@ def test_handle_cancel_event(mock_wal, exposure_manager, fsm):
     fsm.fsm.order_index.mark_terminal.assert_called_once()
 
     # 3. Emits exposure summary (async)
-    assert len(tasks) == 1
+    assert tasks == ["emit_exposure_update_async"]
 
     # 4. Processes queued supersede
     fsm._entry_mgr.process_queued_supersede.assert_called_with("BTCUSDT")

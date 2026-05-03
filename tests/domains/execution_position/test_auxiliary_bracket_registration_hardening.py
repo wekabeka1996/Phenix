@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from apps.reference.domains.execution_position.close_executor import CloseExecutor
-from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM, ManageState
+from apps.reference.domains.execution_position.flows.close.close_executor import CloseExecutor
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageFlowFSM, ManageState
 from vfoundation.core.protocol import Message
 
 

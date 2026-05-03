@@ -1,75 +1,49 @@
-> **Примітка:** Авторитетне джерело документації домену — `execution_position/README.md` (батьківська директорія).
-> Цей файл був згенерований автоматично та може бути неактуальним.
+> Note: The authoritative domain documentation is `execution_position/README.md`.
+> This atlas is a package-local summary synced to the accepted Phase 8 skeleton.
 
-# Атлас домену Execution Position
+# Execution Position Atlas
 
-## 1. Огляд (Scope & Purpose)
-Домен **execution_position** є критичним виконавчим шаром системи. Він відповідає за детерміноване перетворення торгових намірів у реальні біржові ордери, супровід позицій (TP/SL) та гарантування цілісності торгового стану.
+## Overview
 
-**Межі відповідальності:**
-- Валідація та нормалізація об'ємів (`LOT_SIZE`) та цін (`TICK_SIZE`).
-- Управління життєвим циклом ордерів (Entry -> TP/SL Brackets).
-- Моніторинг ризиків експозиції та концентрації (`ExposureGuard`).
-- Реконсиляція стану ордерів та позицій з біржею.
-- Захист від помилок ціни (Anti-2021) та "завислих" ордерів (Watchdog).
+`execution_position` is the deterministic execution layer that transforms trade
+intents into live exchange actions while preserving lifecycle truth, fail-closed
+guardrails, and observability.
 
-## 2. Карта залежностей (Dependencies)
-```mermaid
-graph TD
-    subgraph "Inbound Commands"
-        DM[decision_making]
-    end
-    subgraph "Domain: execution_position"
-        FSM[ExecPosFSM]
-        EG[ExposureGuard]
-        BM[BracketManager]
-        WD[Watchdog]
-    end
-    subgraph "Infrastructure"
-        BA[BinanceAdapter]
-        OG[OrderGuardian]
-        LS[LeverageService]
-    end
+## File map
 
-    DM -->|CMD:OPEN / CLOSE| FSM
-    FSM --> EG
-    FSM --> BM
-    FSM --> WD
-    FSM -->|REST/WS| BA
-    FSM --> OG
-    FSM --> LS
-```
+- Root anchors:
+  - `fsm.py`
+  - `contracts.py`
+  - `reasons.py`
+  - `utils.py`
+- Flows:
+  - `flows/open/fsm_open.py`
+  - `flows/manage/fsm_manage.py`
+  - `flows/close/fsm_close.py`
+- Guards:
+  - `guards/exposure_guard.py`
+  - `guards/exposure_manager.py`
+- Guardian:
+  - `guardian/order_guardian.py`
+- State:
+  - `state/order_index.py`
+  - `state/order_ledger.py`
+- Sidecar:
+  - `sidecar/position_policy_sidecar.py`
+  - `sidecar/position_policy_mediator.py`
+- Telemetry:
+  - `telemetry/metrics_collector.py`
+  - `telemetry/drift_monitor.py`
+- Orchestration:
+  - `orchestration/event_handlers.py`
+  - `orchestration/fill_ingress_coordinator.py`
+- Support:
+  - `support/stopprice_validation.py`
+  - `support/utils_event_bus.py`
 
-- **Вхідні:** `CMD:OPEN`, `CMD:CLOSE` (від `decision_making`).
-- **Вихідні:** Виклики API через `BinanceAdapter`, події `EVT:ORDER_FILL`, `EVT:EXPOSURE_SUMMARY_UPDATED`.
+## Import compatibility
 
-## 3. Карта файлів (File Map)
-- **FSM Orchestration:**
-  - `fsm.py`: Головний оркестратор (4400+ LOC).
-  - `fsm_open.py` / `fsm_manage.py` / `fsm_close.py`: Спеціалізовані потоки життєвого циклу.
-- **Managers & Guards:**
-  - `exposure_guard.py` & `exposure_manager.py`: Контроль ризиків та лімітів.
-  - `bracket_manager.py`: Управління TP/SL ордерами.
-  - `order_guardian.py`: Реконсиляція та очищення "сирітських" ордерів.
-  - `watchdog.py`: Відстеження таймаутів та зависань.
-- **Utilities:**
-  - `qty_normalizer.py`: Сувора нормалізація до лімітів біржі.
-  - `leverage_service.py`: Управління плечем та режимом маржі.
-  - `order_index.py`: Індексація та запобігання дублюванню (Idempotency).
-
-## 4. Карта подій (Event Map)
-
-### Вхідні (Inbound)
-| Назва події | Джерело | Опис |
-| :--- | :--- | :--- |
-| `CMD:OPEN` | Decision Making | Запит на відкриття позиції. |
-| `CMD:CLOSE` | Decision Making | Запит на негайне закриття позиції. |
-| `EVT:ORDER_ACK` | Adapter | Підтвердження розміщення ордера на біржі. |
-| `EVT:ORDER_FILL` | Adapter | Повідомлення про виконання (часткове/повне). |
-
-### Вихідні (Outbound)
-| Назва події | Споживач | Опис |
-| :--- | :--- | :--- |
-| `EVT:EXPOSURE_SUMMARY_UPDATED` | Risk Management | Оновлена інформація про поточну експозицію. |
-| `EVT:ORDER_REJECTED` | Telemetry | Повідомлення про відхилення ордера. |
-| `EVT:DEC_CLOSE_COMPLETED` | Decision Making | Підтвердження завершення закриття позиції. |
+Phase 8 left flat-path compatibility stubs in place as temporary migration
+shims. They preserve old imports while the semantic subpackage layout becomes
+the documented physical structure. Those stubs are still present and are not
+documented as removed.

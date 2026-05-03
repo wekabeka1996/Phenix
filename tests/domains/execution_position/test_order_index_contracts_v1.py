@@ -1,6 +1,6 @@
 import pytest
 import time
-from apps.reference.domains.execution_position.order_index import OrderIndex, OrderRef
+from apps.reference.domains.execution_position.state.order_index import OrderIndex, OrderRef
 
 @pytest.fixture
 def index():

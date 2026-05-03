@@ -47,7 +47,7 @@ def mock_wal_dir(tmp_path, monkeypatch):
 @pytest.fixture
 def wal_module():
     """Import WAL module after mocking."""
-    from apps.reference.domains.execution_position.pending_brackets_wal import (
+    from apps.reference.domains.execution_position.flows.manage.pending_brackets_wal import (
         write_pending_brackets_stored,
         write_pending_brackets_cleared,
         read_pending_brackets_from_wal,

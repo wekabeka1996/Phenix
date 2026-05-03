@@ -2,7 +2,7 @@ import pytest
 from decimal import Decimal
 from unittest.mock import patch
 from vfoundation.core.protocol import Message
-from apps.reference.domains.execution_position.fsm_manage import ManageState, ManageFlowFSM
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageState, ManageFlowFSM
 from apps.reference.core.time import MockClock, reset_clock, set_clock
 
 

@@ -9,7 +9,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from decimal import Decimal
 
-from apps.reference.domains.execution_position.order_guardian import OrderGuardian
+from apps.reference.domains.execution_position.guardian.order_guardian import OrderGuardian
 
 
 @pytest.fixture

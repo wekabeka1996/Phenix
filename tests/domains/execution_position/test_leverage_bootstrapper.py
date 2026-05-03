@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 import logging
 
 # Import will work after implementation
-from apps.reference.domains.execution_position.bootstrapping.leverage_bootstrapper import (
+from apps.reference.domains.execution_position.guards.bootstrapping.leverage_bootstrapper import (
     LeverageBootstrapper,
     BootstrapResult,
 )
@@ -211,7 +211,7 @@ class TestBootstrapResultAggregation:
 
     def test_bootstrap_results_properties(self):
         """Test BootstrapResults aggregation."""
-        from apps.reference.domains.execution_position.bootstrapping.leverage_bootstrapper import (
+        from apps.reference.domains.execution_position.guards.bootstrapping.leverage_bootstrapper import (
             BootstrapResults,
         )
 

@@ -8,7 +8,7 @@ from vfoundation.core.protocol import Message
 import pytest
 
 from apps.reference.core.time import MockClock, reset_clock, set_clock
-from apps.reference.domains.execution_position.manage_max_hold_close_bridge import (
+from apps.reference.domains.execution_position.flows.manage.manage_max_hold_close_bridge import (
     MANAGE_MAX_HOLD_CLOSE_TRIGGER,
 )
 from tests.harness.execpos_scenarios import feed_opened_position

@@ -17,6 +17,7 @@ from pydantic.fields import PydanticUndefined
 
 from apps.reference.domains.neocortex.config_models import (
     AuthorityConfig,
+    EvidenceCaptureConfig,
     DatasetConfig,
     DatasetCutoverConfig,
     DatasetSplitConfig,
@@ -79,6 +80,7 @@ ALL_MODELS: list[type] = [
     ReplayConfig,
     OracleConfig,
     AuthorityConfig,
+    EvidenceCaptureConfig,
 ]
 
 LEGACY_COMPAT_FIELDS: dict[str, set[str]] = {
@@ -202,6 +204,18 @@ def test_unknown_key_rejected_by_authority_config():
         })
 
 
+def test_unknown_key_rejected_by_evidence_capture_config():
+    with pytest.raises(ValidationError):
+        EvidenceCaptureConfig.model_validate({
+            "mode": "disabled",
+            "collect_observation": False,
+            "collect_authority_request": False,
+            "collect_authority_response": False,
+            "emit_shadow_decision_logged": False,
+            "unknown_extra_field": "boom",
+        })
+
+
 # ---------------------------------------------------------------------------
 # Test 7: missing required runtime key raises ValidationError
 # ---------------------------------------------------------------------------
@@ -229,6 +243,16 @@ def test_missing_deadline_ms_raises():
             "modulation_allowlist": ["a"],
             "signal_threshold_bias_bounds": [-0.1, 0.1],
             "cooldown_mult_bounds": [1.0, 3.0],
+        })
+
+
+def test_missing_evidence_capture_mode_raises():
+    with pytest.raises(ValidationError):
+        EvidenceCaptureConfig.model_validate({
+            "collect_observation": False,
+            "collect_authority_request": False,
+            "collect_authority_response": False,
+            "emit_shadow_decision_logged": False,
         })
 
 
@@ -295,3 +319,35 @@ def test_modulation_allowlist_empty_raises():
     with pytest.raises(ValidationError):
         AuthorityConfig.model_validate(
             _valid_authority(modulation_allowlist=[]))
+
+
+def test_evidence_capture_journal_only_requires_request_and_observation():
+    with pytest.raises(ValidationError, match="collect_observation"):
+        EvidenceCaptureConfig.model_validate({
+            "mode": "journal_only",
+            "collect_observation": False,
+            "collect_authority_request": True,
+            "collect_authority_response": True,
+            "emit_shadow_decision_logged": True,
+        })
+
+    with pytest.raises(ValidationError, match="collect_authority_request"):
+        EvidenceCaptureConfig.model_validate({
+            "mode": "journal_only",
+            "collect_observation": True,
+            "collect_authority_request": False,
+            "collect_authority_response": True,
+            "emit_shadow_decision_logged": True,
+        })
+
+
+def test_evidence_capture_valid_config_loads():
+    cfg = EvidenceCaptureConfig.model_validate({
+        "mode": "disabled",
+        "collect_observation": False,
+        "collect_authority_request": False,
+        "collect_authority_response": False,
+        "emit_shadow_decision_logged": False,
+    })
+
+    assert cfg.mode == "disabled"

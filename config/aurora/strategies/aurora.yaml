@@ -398,6 +398,7 @@ aurora:
             TREND_UP: 1.0
             DEFAULT: 1.84
           tp_mult:
+            LOW_VOLATILITY: 1.25
             TREND_UP: 2.25
             DEFAULT: 0.5
           sl_k_atr: null
@@ -496,7 +497,7 @@ aurora:
           tp_mult:
             DEFAULT: 1.0
             FLAT_LOW: 0.65
-            LOW_VOLATILITY: 1.35
+            LOW_VOLATILITY: 3.4
             FLAT_NORMAL: 0.8
             MEAN_REVERSION: 0.97
             TREND_UP: 1.3
@@ -604,7 +605,7 @@ aurora:
             TREND_DOWN: 1.0
             DEFAULT: 1.64
           tp_mult:
-            LOW_VOLATILITY: 0.5
+            LOW_VOLATILITY: 1.25
             HIGH_VOLATILITY: 0.53
             TREND_UP: 1.9
             TREND_DOWN: 1.9
@@ -710,7 +711,7 @@ aurora:
             TREND_DOWN: 1.0
             DEFAULT: 1.64
           tp_mult:
-            LOW_VOLATILITY: 0.5
+            LOW_VOLATILITY: 1.25
             HIGH_VOLATILITY: 0.53
             TREND_UP: 1.9
             TREND_DOWN: 1.9
@@ -925,7 +926,7 @@ aurora:
             TREND_DOWN: 1.0
             DEFAULT: 1.64
           tp_mult:
-            LOW_VOLATILITY: 0.5
+            LOW_VOLATILITY: 1.25
             HIGH_VOLATILITY: 0.53
             TREND_UP: 1.9
             TREND_DOWN: 1.9
@@ -1029,7 +1030,7 @@ aurora:
             TREND_DOWN: 1.0
             DEFAULT: 1.64
           tp_mult:
-            LOW_VOLATILITY: 0.5
+            LOW_VOLATILITY: 1.25
             HIGH_VOLATILITY: 0.53
             TREND_UP: 1.9
             TREND_DOWN: 1.9
@@ -1060,6 +1061,7 @@ aurora:
       - TREND_DOWN
       - HIGH_VOLATILITY
       - MEAN_REVERSION
+      - LOW_VOLATILITY
       scoring_version: null
       feature_neutrals: null
       essential_features: null

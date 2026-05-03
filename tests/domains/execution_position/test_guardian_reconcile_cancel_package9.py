@@ -4,11 +4,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from apps.reference.domains.execution_position.cancel_submission_adapter import (
+from apps.reference.domains.execution_position.guardian.cancel_submission_adapter import (
     CancelSubmissionAdapterError,
     CancelSubmissionPayload,
 )
-from apps.reference.domains.execution_position.order_guardian import (
+from apps.reference.domains.execution_position.guardian.order_guardian import (
     InMemoryStore,
     OrderGuardian,
 )

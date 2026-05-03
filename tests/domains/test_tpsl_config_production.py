@@ -19,7 +19,7 @@ import yaml
 
 from apps.reference.config_loader import ConfigLoader
 from apps.reference.config_models import AuroraConfig
-from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM, ManageState
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageFlowFSM, ManageState
 
 
 @pytest.fixture

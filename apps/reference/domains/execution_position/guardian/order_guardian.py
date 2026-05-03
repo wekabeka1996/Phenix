@@ -26,33 +26,33 @@ from dataclasses import dataclass, asdict, is_dataclass
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Protocol, Union, TypeAlias, Iterable, Set
 
-from apps.reference.domains.execution_position.cancel_submission_adapter import (
+from .cancel_submission_adapter import (
     CancelSubmissionAdapterError,
     CancelSubmissionPayload,
     build_cancel_submission_trace_ref,
 )
-from apps.reference.domains.execution_position.guardian_pre_close_cleanup_bridge import (
+from .guardian_pre_close_cleanup_bridge import (
     GUARDIAN_PRE_CLOSE_CLEANUP_PATH,
     GUARDIAN_PRE_CLOSE_CLEANUP_TRIGGER,
     GuardianPreCloseCleanupBridgeError,
     adapt_guardian_pre_close_cleanup_to_dec_cancel,
     build_guardian_pre_close_cleanup_trace_ref,
 )
-from apps.reference.domains.execution_position.guardian_old_bracket_cleanup_bridge import (
+from .guardian_old_bracket_cleanup_bridge import (
     GUARDIAN_OLD_BRACKET_CLEANUP_PATH,
     GUARDIAN_OLD_BRACKET_CLEANUP_TRIGGER,
     GuardianOldBracketCleanupBridgeError,
     adapt_guardian_old_bracket_cleanup_to_dec_cancel,
     build_guardian_old_bracket_cleanup_trace_ref,
 )
-from apps.reference.domains.execution_position.guardian_reconcile_cancel_bridge import (
+from .guardian_reconcile_cancel_bridge import (
     GUARDIAN_RECONCILE_CANCEL_PATH,
     GUARDIAN_RECONCILE_CANCEL_TRIGGER,
     GuardianReconcileCancelBridgeError,
     adapt_guardian_reconcile_to_dec_cancel,
     build_guardian_reconcile_cancel_trace_ref,
 )
-from apps.reference.domains.execution_position.guardian_background_orphan_cancel_bridge import (
+from .guardian_background_orphan_cancel_bridge import (
     GUARDIAN_BACKGROUND_ORPHAN_CANCEL_PATH,
     GUARDIAN_BACKGROUND_ORPHAN_CANCEL_TRIGGER,
     GuardianBackgroundOrphanCancelBridgeError,
@@ -69,8 +69,8 @@ from apps.reference.utils.accessors import aget
 
 
 def _get_ledger_store():
-    from apps.reference.domains.execution_position.infra.ledger_store_adapter import LedgerStoreAdapter
-    from apps.reference.domains.execution_position.infra.order_ledger import OrderLedger
+    from ..state.ledger_store_adapter import LedgerStoreAdapter
+    from ..state.order_ledger import OrderLedger
     return LedgerStoreAdapter, OrderLedger
 
 
@@ -111,6 +111,9 @@ class AdapterProtocol(Protocol):
     """Protocol for adapter interface required by OrderGuardian"""
 
     async def get_open_orders(
+        self, symbol: Optional[str] = None) -> List[Dict[str, Any]]: ...
+
+    async def get_open_orders_raw(
         self, symbol: Optional[str] = None) -> List[Dict[str, Any]]: ...
 
     async def get_open_positions(self) -> List[PositionType]: ...
@@ -740,6 +743,34 @@ class OrderGuardian:
 
         return normalized
 
+    async def _get_open_orders_for_guardian(self, symbol: Optional[str]) -> List[Dict[str, Any]]:
+        """Fetch open orders with raw exchange fields when available.
+
+        Guardian logic depends on reduceOnly/closePosition/type fields that may be
+        absent in normalized adapter.get_open_orders() payloads.
+        """
+        if not self.adapter:
+            return []
+
+        get_open_orders_raw = getattr(
+            self.adapter, "get_open_orders_raw", None)
+        if callable(get_open_orders_raw):
+            try:
+                raw_orders = await get_open_orders_raw(symbol)
+                if isinstance(raw_orders, list):
+                    return raw_orders
+            except Exception as exc:
+                LOG.debug(
+                    "[GUARD] get_open_orders_raw failed for %s, fallback to get_open_orders: %s",
+                    symbol,
+                    exc,
+                )
+
+        open_orders = await self.adapter.get_open_orders(symbol)
+        if isinstance(open_orders, list):
+            return open_orders
+        return []
+
     async def _startup_relink_known_symbols(self) -> None:
         """Perform best-effort re-link on startup for all known symbols."""
         if not self.adapter:
@@ -767,7 +798,7 @@ class OrderGuardian:
             return
 
         try:
-            open_orders = await self.adapter.get_open_orders(symbol)
+            open_orders = await self._get_open_orders_for_guardian(symbol)
 
             linked_count = 0
             for raw_order in open_orders:
@@ -930,7 +961,7 @@ class OrderGuardian:
             return []
 
         try:
-            open_orders = await self.adapter.get_open_orders(symbol)
+            open_orders = await self._get_open_orders_for_guardian(symbol)
 
             our_brackets = []
             for raw_order in open_orders:
@@ -1278,6 +1309,12 @@ class OrderGuardian:
                 submission.order_id,
             )
             if self._is_successful_cancel(result):
+                self._mark_store_order_terminal(
+                    order_id=submission.order_id,
+                    status="CANCELLED",
+                    reason="guardian_pre_close_cleanup",
+                    outcome_class="cancel_success",
+                )
                 self._guardian_pre_close_cleanup_log_success(
                     symbol=submission.symbol,
                     order_id=submission.order_id,
@@ -1322,6 +1359,12 @@ class OrderGuardian:
                     "bridge_trace_ref": bridge_trace_ref,
                     "cancel_submission_trace_ref": package4_trace_ref,
                 },
+            )
+            self._mark_store_order_terminal(
+                order_id=submission.order_id,
+                status="CANCELLED",
+                reason="guardian_pre_close_cleanup_missing_order",
+                outcome_class="missing_order",
             )
             return True
 
@@ -1496,6 +1539,14 @@ class OrderGuardian:
                 submission.order_id,
             )
             if self._is_successful_cancel(result):
+                self._mark_store_order_terminal(
+                    order_id=submission.order_id,
+                    client_order_id=str(order_meta.get(
+                        "client_order_id") or "").strip() or None,
+                    status="CANCELLED",
+                    reason="guardian_reconcile_cancel",
+                    outcome_class="cancel_success",
+                )
                 self._guardian_reconcile_cancel_log_success(
                     symbol=submission.symbol,
                     order_id=submission.order_id,
@@ -1542,6 +1593,14 @@ class OrderGuardian:
                     "bridge_trace_ref": bridge_trace_ref,
                     "cancel_submission_trace_ref": package4_trace_ref,
                 },
+            )
+            self._mark_store_order_terminal(
+                order_id=submission.order_id,
+                client_order_id=str(order_meta.get(
+                    "client_order_id") or "").strip() or None,
+                status="CANCELLED",
+                reason="guardian_reconcile_cancel_missing_order",
+                outcome_class="missing_order",
             )
             return True
 
@@ -1605,7 +1664,7 @@ class OrderGuardian:
                     f"Position exists ({position_amt}), skipping orphan cleanup")
                 return 0
 
-            open_orders = await self.adapter.get_open_orders(symbol)
+            open_orders = await self._get_open_orders_for_guardian(symbol)
 
             has_candidates = False
             for raw_order in open_orders:
@@ -2093,6 +2152,14 @@ class OrderGuardian:
                 submission.order_id,
             )
             if self._is_successful_cancel(result):
+                self._mark_store_order_terminal(
+                    order_id=submission.order_id,
+                    client_order_id=str(order_meta.get(
+                        "client_order_id") or "").strip() or None,
+                    status="CANCELLED",
+                    reason="guardian_background_orphan_cancel",
+                    outcome_class="cancel_success",
+                )
                 self._guardian_background_orphan_cancel_log_success(
                     symbol=submission.symbol,
                     order_id=submission.order_id,
@@ -2134,6 +2201,14 @@ class OrderGuardian:
                     "bridge_trace_ref": bridge_trace_ref,
                     "cancel_submission_trace_ref": package4_trace_ref,
                 },
+            )
+            self._mark_store_order_terminal(
+                order_id=submission.order_id,
+                client_order_id=str(order_meta.get(
+                    "client_order_id") or "").strip() or None,
+                status="CANCELLED",
+                reason="guardian_background_orphan_cancel_missing_order",
+                outcome_class="missing_order",
             )
             return True
 
@@ -2201,6 +2276,14 @@ class OrderGuardian:
                 submission.order_id,
             )
             if self._is_successful_cancel(result):
+                self._mark_store_order_terminal(
+                    order_id=submission.order_id,
+                    client_order_id=str(order_meta.get(
+                        "client_order_id") or "").strip() or None,
+                    status="CANCELLED",
+                    reason="guardian_old_bracket_cleanup",
+                    outcome_class="cancel_success",
+                )
                 self._guardian_old_bracket_cleanup_log_success(
                     symbol=submission.symbol,
                     order_id=submission.order_id,
@@ -2245,6 +2328,14 @@ class OrderGuardian:
                     "cancel_submission_trace_ref": package4_trace_ref,
                 },
             )
+            self._mark_store_order_terminal(
+                order_id=submission.order_id,
+                client_order_id=str(order_meta.get(
+                    "client_order_id") or "").strip() or None,
+                status="CANCELLED",
+                reason="guardian_old_bracket_cleanup_missing_order",
+                outcome_class="missing_order",
+            )
             return True
 
     async def cleanup_other_brackets_for_symbol(
@@ -2270,7 +2361,7 @@ class OrderGuardian:
         cancelled_this_batch = 0
 
         try:
-            open_orders = await self.adapter.get_open_orders(symbol)
+            open_orders = await self._get_open_orders_for_guardian(symbol)
 
             for raw_order in open_orders:
                 if cancelled_this_batch >= batch_limit:
@@ -2374,6 +2465,51 @@ class OrderGuardian:
 
         return False
 
+    def _mark_store_order_terminal(
+        self,
+        *,
+        order_id: Any,
+        client_order_id: Optional[str] = None,
+        status: str = "CANCELLED",
+        reason: Optional[str] = None,
+        outcome_class: Optional[str] = None,
+    ) -> None:
+        """Best-effort terminal marker for ledger-backed and legacy stores."""
+        order_id_text = str(order_id or "").strip()
+        if not order_id_text:
+            return
+
+        marker = getattr(self.store, "mark_order_terminal", None)
+        if callable(marker):
+            try:
+                marker(
+                    order_id=order_id_text,
+                    client_order_id=(
+                        str(client_order_id).strip()
+                        if client_order_id not in (None, "")
+                        else None
+                    ),
+                    status=str(status or "CANCELLED"),
+                    reason=reason,
+                    outcome_class=outcome_class,
+                )
+                return
+            except Exception as exc:
+                LOG.debug(
+                    "[GUARD] mark_order_terminal failed for %s: %s",
+                    order_id_text,
+                    exc,
+                )
+
+        try:
+            self.store.delete(f"order:{order_id_text}")
+        except Exception as exc:
+            LOG.debug(
+                "[GUARD] legacy store delete failed for %s: %s",
+                order_id_text,
+                exc,
+            )
+
     async def reconcile_symbol(self, symbol: str, rid: Optional[str] = None) -> None:
         """
         Reconcile orders for symbol: cancel orphaned brackets if no position.
@@ -2426,10 +2562,13 @@ class OrderGuardian:
             })
 
             try:
-                open_orders = await self.adapter.get_open_orders(symbol) if self.adapter else []
+                open_orders = await self._get_open_orders_for_guardian(symbol)
                 any_tracked = False
                 for o in open_orders:
-                    oid = o.get("orderId")
+                    normalized_order = self._normalize_order_payload(o)
+                    if not normalized_order:
+                        continue
+                    oid = normalized_order.get("orderId")
                     meta = self.store.get(f"order:{oid}") if oid else None
                     if meta and (meta.get("reduce_only") or meta.get("close_position")):
                         any_tracked = True

@@ -404,6 +404,38 @@ def _resolve_direction_confidence_reason(
     return None, None
 
 
+def _resolve_direction_confidence_scale(source: str) -> str:
+    if source in _SIGNED_DIRECTION_CONFIDENCE_SOURCES:
+        return "raw_signed_score"
+    if source in {"strategy_confidence", "judge_confidence"}:
+        return "normalized_confidence"
+    return "unknown"
+
+
+def _resolve_direction_confidence_status(
+    *,
+    direction_resolution: DirectionConfidenceResolution,
+    direction_passed: bool,
+    side_match: bool | None,
+) -> str:
+    failure_reason = direction_resolution.failure_reason
+    if failure_reason in {
+        "direction_confidence_missing",
+        "missing_direction_confidence_source",
+        "unsupported_direction_confidence_source",
+    } or not direction_resolution.is_present:
+        return "missing"
+    if failure_reason == "invalid_direction_confidence_value":
+        if side_match is False:
+            return "wrong_side"
+        return "invalid_range"
+    if failure_reason == "non_side_aware_direction_confidence":
+        return "wrong_side"
+    if direction_passed:
+        return "present_passed"
+    return "present_below_threshold"
+
+
 def _compute_tp_sl_bps(*, side: str, entry_price: Decimal, target_price: Decimal, stop_price: Decimal) -> tuple[Decimal | None, Decimal | None]:
     if entry_price <= 0:
         return None, None
@@ -513,6 +545,13 @@ def _build_low_vol_observation_blocks(
         ("strategy_confidence",),
         ("objective", "strategy_confidence"),
     )
+    strategy_confidence_candidate = _extract_observation_float(
+        trace,
+        ("strategy_confidence_candidate",),
+    )
+    strategy_confidence_side_scope = _normalize_side_scope(
+        trace.get("strategy_confidence_side_scope")
+    )
     model_confidence = _extract_observation_float(
         trace,
         ("confidence",),
@@ -520,6 +559,49 @@ def _build_low_vol_observation_blocks(
         ("objective", "confidence"),
         ("objective", "model_confidence"),
     )
+    final_score_raw = _extract_observation_float(
+        trace,
+        ("final_score_raw",),
+        ("final_score",),
+        ("objective", "final_score"),
+    )
+    judge_confidence_candidate = _extract_observation_float(
+        trace,
+        ("judge_confidence_candidate",),
+        ("judge_confidence",),
+        ("objective", "judge_confidence"),
+    )
+    active_threshold = _extract_observation_float(
+        trace,
+        ("active_threshold",),
+        ("threshold",),
+        ("objective", "threshold"),
+        ("objective", "active_threshold"),
+    )
+    aurora_pillar_confidence_candidate = _extract_observation_float(
+        trace,
+        ("aurora_pillar_confidence_candidate",),
+    )
+    aurora_threshold_factor = _extract_observation_float(
+        trace,
+        ("aurora_threshold_factor",),
+    )
+    aurora_raw_score_to_threshold_ratio = _extract_observation_float(
+        trace,
+        ("aurora_raw_score_to_threshold_ratio",),
+    )
+    features_ts_ms = _extract_observation_float(
+        trace,
+        ("features_ts_ms",),
+    )
+    detector_event = _mapping_get_path(trace, ("detector_event",))
+    detector_event_bar_close_ts_ms = _extract_observation_float(
+        trace,
+        ("detector_event", "bar_close_ts_ms"),
+        ("bar_close_ts",),
+    )
+    decision_id = trace.get("decision_id")
+    cycle_key = trace.get("cycle_key")
 
     pm_norm_10s = _extract_observation_float(
         trace,
@@ -607,6 +689,32 @@ def _build_low_vol_observation_blocks(
         and direction_confidence is not None
         and float(direction_confidence) >= resolved_direction_threshold.value
     )
+    proposed_side = _normalize_side_scope(side)
+    direction_confidence_selected_scale = _resolve_direction_confidence_scale(
+        direction_resolution.source
+    )
+    direction_confidence_selected_value = direction_confidence
+    direction_confidence_selected_source = direction_resolution.source
+    direction_confidence_side_match = (
+        None
+        if direction_resolution.side_scope is None or proposed_side is None
+        else direction_resolution.side_scope == proposed_side
+    )
+    direction_confidence_required_threshold = resolved_direction_threshold.value
+    direction_confidence_threshold_source = resolved_direction_threshold.source
+    direction_confidence_margin = None
+    if direction_confidence_selected_value is not None:
+        if direction_confidence_selected_scale == "raw_signed_score":
+            direction_confidence_margin = abs(
+                direction_confidence_selected_value) - direction_confidence_required_threshold
+        else:
+            direction_confidence_margin = direction_confidence_selected_value - \
+                direction_confidence_required_threshold
+    confidence_resolution_status = _resolve_direction_confidence_status(
+        direction_resolution=direction_resolution,
+        direction_passed=direction_passed,
+        side_match=direction_confidence_side_match,
+    )
     tp_meets_required_gross = actual_tp_bps is not None and actual_tp_bps >= required_gross_tp_bps
     tp_fee_coverage_passed = (
         tp_fee_coverage_ratio is not None
@@ -624,6 +732,7 @@ def _build_low_vol_observation_blocks(
         "judge_confidence": judge_confidence,
         "strategy_confidence": strategy_confidence,
         "model_confidence": model_confidence,
+        "active_threshold": active_threshold,
         "missing": {
             "signal_score": signal_score is None,
             "final_score": final_score is None,
@@ -690,12 +799,18 @@ def _build_low_vol_observation_blocks(
         "evaluation_stage": "post_safety_gate",
         "strategy_trace_present": bool(trace),
         "objective_present": objective_present,
+        "decision_id": str(decision_id) if decision_id is not None else None,
+        "cycle_key": str(cycle_key) if cycle_key is not None else None,
         "strategy_id": str(strategy_id) if strategy_id is not None else None,
         "symbol": str(symbol).upper() if symbol is not None else None,
         "trading_mode": str(trading_mode),
         "gate_mode": gate_mode,
         "regime": regime,
         "side": _normalize_side_scope(side),
+        "features_ts_ms": features_ts_ms,
+        "detector_event": {
+            "bar_close_ts_ms": detector_event_bar_close_ts_ms,
+        },
         "direction_confidence_allowed_sources": list(gate_cfg.direction_confidence.allowed_sources),
         "resolved_regime_threshold": {
             "value": resolved_regime_threshold.value,
@@ -735,6 +850,16 @@ def _build_low_vol_observation_blocks(
         "strategy_confidence": score_context["missing"]["strategy_confidence"],
         "model_confidence": score_context["missing"]["model_confidence"],
     }
+    missing_allowed_sources: list[str] = []
+    for source in gate_cfg.direction_confidence.allowed_sources:
+        if source == "signal_score" and signal_score is None:
+            missing_allowed_sources.append(source)
+        elif source == "final_score" and final_score is None:
+            missing_allowed_sources.append(source)
+        elif source == "judge_confidence" and judge_confidence is None:
+            missing_allowed_sources.append(source)
+        elif source == "strategy_confidence" and strategy_confidence is None:
+            missing_allowed_sources.append(source)
 
     return {
         "evaluated": True,
@@ -774,6 +899,32 @@ def _build_low_vol_observation_blocks(
             "missing_policy": str(gate_cfg.direction_confidence.missing_policy),
             "threshold": resolved_direction_threshold.value,
             "passed": direction_passed,
+        },
+        "direction_confidence_selected_value": direction_confidence_selected_value,
+        "direction_confidence_selected_source": direction_confidence_selected_source,
+        "direction_confidence_selected_scale": direction_confidence_selected_scale,
+        "direction_confidence_required_threshold": direction_confidence_required_threshold,
+        "direction_confidence_threshold_source": direction_confidence_threshold_source,
+        "direction_confidence_margin": direction_confidence_margin,
+        "direction_confidence_side_match": direction_confidence_side_match,
+        "proposed_side": proposed_side,
+        "signal_score_raw": signal_score,
+        "signal_score_abs": None if signal_score is None else abs(signal_score),
+        "strategy_confidence_candidate": strategy_confidence_candidate,
+        "strategy_confidence_side_scope": strategy_confidence_side_scope,
+        "final_score_raw": final_score_raw,
+        "judge_confidence_candidate": judge_confidence_candidate,
+        "active_allowed_sources": list(gate_cfg.direction_confidence.allowed_sources),
+        "missing_allowed_sources": missing_allowed_sources,
+        "confidence_resolution_status": confidence_resolution_status,
+        "aurora_pillar_confidence_candidate": aurora_pillar_confidence_candidate,
+        "aurora_threshold_factor": aurora_threshold_factor,
+        "aurora_raw_score_to_threshold_ratio": aurora_raw_score_to_threshold_ratio,
+        "decision_id": str(decision_id) if decision_id is not None else None,
+        "cycle_key": str(cycle_key) if cycle_key is not None else None,
+        "features_ts_ms": features_ts_ms,
+        "detector_event": detector_event if isinstance(detector_event, Mapping) else {
+            "bar_close_ts_ms": detector_event_bar_close_ts_ms,
         },
         "observation_summary": {
             "threshold_failed": threshold_failed,

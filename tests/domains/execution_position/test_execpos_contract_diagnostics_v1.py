@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from vfoundation.core.protocol import Message
 from apps.reference.config_models import AuroraConfig
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
-from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
-from apps.reference.domains.execution_position.fsm_close import CloseFlowFSM, CloseState
+from apps.reference.domains.execution_position.flows.open.fsm_open import OpenFlowFSM
+from apps.reference.domains.execution_position.flows.close.fsm_close import CloseFlowFSM, CloseState
 from apps.reference.domains.execution_position.contracts import (
     MIN_NOTIONAL, MIN_ORDER_QTY
 )

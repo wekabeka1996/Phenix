@@ -15,6 +15,13 @@ def write_yaml(path: Path, filename: str, content: dict):
 def valid_config_dir(tmp_path: Path):
     system = {
         "trust_enabled": False,
+        "evidence_capture": {
+            "mode": "disabled",
+            "collect_observation": False,
+            "collect_authority_request": False,
+            "collect_authority_response": False,
+            "emit_shadow_decision_logged": False,
+        },
         "authority": {
             "mode": "shadow",
             "deadline_ms": 100,
@@ -181,6 +188,7 @@ def test_load_config_success(valid_config_dir):
     config = load_config(str(valid_config_dir))
     assert isinstance(config, NeocortexConfig)
     assert config.trust_enabled is False
+    assert config.evidence_capture.mode == "disabled"
     assert config.authority.mode == "shadow"
     assert config.replay.enabled is False
     assert config.neuro.vae.regime_aux.enabled is False

@@ -1099,6 +1099,59 @@ class AuthorityConfig(BaseModel):
         return self
 
 
+class EvidenceCaptureConfig(BaseModel):
+    """Explicit Neocortex journal-only evidence capture SSOT."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True)
+
+    mode: Literal["disabled", "journal_only"] = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
+        description="Evidence capture mode. 'disabled' preserves current behavior; 'journal_only' writes canonical evidence without applying authority.",
+    )
+    collect_observation: bool = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
+        description="Write the pre-authority observation envelope into canonical evidence.",
+    )
+    collect_authority_request: bool = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
+        description="Write the canonical authority request journal row.",
+    )
+    collect_authority_response: bool = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
+        description="Write the canonical authority response journal row.",
+    )
+    emit_shadow_decision_logged: bool = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
+        description="Emit SHADOW:NEOCORTEX_DECISION_LOGGED when the shadow contract is safe to do so.",
+    )
+
+    @model_validator(mode="after")
+    def validate_capture_contract(self):
+        if self.mode == "disabled":
+            if any(
+                (
+                    self.collect_observation,
+                    self.collect_authority_request,
+                    self.collect_authority_response,
+                    self.emit_shadow_decision_logged,
+                )
+            ):
+                raise ValueError(
+                    "evidence_capture.mode='disabled' requires all capture flags to be false"
+                )
+            return self
+
+        if not self.collect_observation:
+            raise ValueError(
+                "evidence_capture.mode='journal_only' requires collect_observation=True"
+            )
+        if not self.collect_authority_request:
+            raise ValueError(
+                "evidence_capture.mode='journal_only' requires collect_authority_request=True"
+            )
+        return self
+
+
 # =============================================================================
 # ROOT CONFIGURATION
 # =============================================================================
@@ -1132,6 +1185,10 @@ class NeocortexConfig(BaseModel):
     authority: AuthorityConfig = Field(
         json_schema_extra={"default_class": "runtime_behavior"},
         description="Authority seam configuration (§6.2). Consumer: Phase 5 NeocortexAuthorityBridge.",
+    )
+    evidence_capture: EvidenceCaptureConfig = Field(
+        json_schema_extra={"default_class": "runtime_behavior"},
+        description="Explicit Neocortex evidence-capture configuration for journal-only capture.",
     )
 
     @field_validator('neuro', mode='after')
@@ -1225,9 +1282,11 @@ def load_config(config_dir: Path) -> NeocortexConfig:
         neuro_data = yaml.safe_load(f)
 
     # Extract §6.2 top-level keys from system.yaml before passing to SystemConfig.
-    # trust_enabled and authority live in system.yaml but are root-level NeocortexConfig fields.
+    # trust_enabled, authority, and evidence_capture live in system.yaml but are
+    # root-level NeocortexConfig fields.
     trust_enabled = system_data.pop("trust_enabled", None)
     authority_data = system_data.pop("authority", None)
+    evidence_capture_data = system_data.pop("evidence_capture", None)
 
     if trust_enabled is None:
         raise ValueError(
@@ -1236,6 +1295,10 @@ def load_config(config_dir: Path) -> NeocortexConfig:
     if authority_data is None:
         raise ValueError(
             "Missing required key 'authority' in system.yaml (neocortex.authority.* per §6.2)"
+        )
+    if evidence_capture_data is None:
+        raise ValueError(
+            "Missing required key 'evidence_capture' in system.yaml (neocortex.evidence_capture.*)"
         )
 
     # Load required replay config (Phase 2 I2: no implicit default)
@@ -1259,6 +1322,7 @@ def load_config(config_dir: Path) -> NeocortexConfig:
     kwargs: dict = {
         "trust_enabled": trust_enabled,
         "authority": authority_data,
+        "evidence_capture": evidence_capture_data,
         "system": system_data,
         "ingest": ingest_data,
         "neuro": neuro_data,

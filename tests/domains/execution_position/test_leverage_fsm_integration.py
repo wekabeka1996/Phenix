@@ -20,7 +20,7 @@ class TestFsmOpenLeverageIntegration:
         This test verifies the integration pattern where leverage verification
         happens BEFORE the order is sent to the exchange.
         """
-        from apps.reference.domains.execution_position.leverage_service import LeverageService, VerifyResult
+        from apps.reference.domains.execution_position.guards.leverage_service import LeverageService, VerifyResult
         from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         # Mock adapter with successful leverage/margin settings
@@ -46,7 +46,7 @@ class TestFsmOpenLeverageIntegration:
         """
         Integration test: Leverage mismatch should block DEC:OPEN emission.
         """
-        from apps.reference.domains.execution_position.leverage_service import LeverageService, VerifyResult
+        from apps.reference.domains.execution_position.guards.leverage_service import LeverageService, VerifyResult
         from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         # Mock adapter with MISMATCHED leverage
@@ -72,7 +72,7 @@ class TestFsmOpenLeverageIntegration:
         """
         Integration test: set_and_verify should fix mismatch and allow DEC:OPEN.
         """
-        from apps.reference.domains.execution_position.leverage_service import LeverageService
+        from apps.reference.domains.execution_position.guards.leverage_service import LeverageService
         
         # Mock adapter that starts with wrong settings, then corrects them
         adapter = AsyncMock()

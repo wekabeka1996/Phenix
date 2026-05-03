@@ -24,7 +24,7 @@ class TestLeverageServiceWiring:
         max_notional_utilization: float = 0.5,
     ):
         """Create OpenFlowFSM with optional LeverageService."""
-        from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
+        from apps.reference.domains.execution_position.flows.open.fsm_open import OpenFlowFSM
         from apps.reference.config_models import AuroraConfig, InstrumentExecutionConfig
         
         config = MagicMock(spec=AuroraConfig)
@@ -56,7 +56,7 @@ class TestLeverageServiceWiring:
         
     def _make_mock_leverage_service(self, verify_result_ok: bool = True):
         """Create mock LeverageService."""
-        from apps.reference.domains.execution_position.leverage_service import VerifyResult
+        from apps.reference.domains.execution_position.guards.leverage_service import VerifyResult
         from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
         
         service = MagicMock()
@@ -208,7 +208,7 @@ class TestLeverageServiceWiring:
         """
         In LIVE mode, missing leverage_service should raise RuntimeError at init.
         """
-        from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
+        from apps.reference.domains.execution_position.flows.open.fsm_open import OpenFlowFSM
         from apps.reference.config_models import AuroraConfig
         
         config = MagicMock(spec=AuroraConfig)
@@ -232,7 +232,7 @@ class TestLeverageServiceWiring:
         In SHADOW/DEV mode, missing leverage_service should log warning but not crash.
         """
         import logging
-        from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
+        from apps.reference.domains.execution_position.flows.open.fsm_open import OpenFlowFSM
         from apps.reference.config_models import AuroraConfig
         
         config = MagicMock(spec=AuroraConfig)

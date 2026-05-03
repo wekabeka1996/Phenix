@@ -19,8 +19,8 @@ from types import SimpleNamespace
 from typing import Optional, Dict, Any
 from unittest.mock import MagicMock, AsyncMock, patch
 
-from apps.reference.domains.execution_position.bracket_manager import BracketManager
-from apps.reference.domains.execution_position.order_index import (
+from apps.reference.domains.execution_position.flows.manage.bracket_manager import BracketManager
+from apps.reference.domains.execution_position.state.order_index import (
     OrderIndex,
     OrderRef,
 )
@@ -32,7 +32,7 @@ from apps.reference.domains.execution_position.order_index import (
 
 def _make_manage_flow():
     """Create a ManageFlowFSM with minimal config for testing."""
-    from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM
+    from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageFlowFSM
 
     # Build a minimal AuroraConfig mock that satisfies ManageFlowFSM __init__
     config = MagicMock()

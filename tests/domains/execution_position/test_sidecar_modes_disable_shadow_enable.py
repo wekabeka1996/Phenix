@@ -43,7 +43,7 @@ class TestShadowModeNeverEmitsCloseCommand:
         SHADOW mode passes the DISABLE check and must be explicitly excluded.
         """
         import inspect
-        from apps.reference.domains.execution_position.position_policy_sidecar import (
+        from apps.reference.domains.execution_position.sidecar.position_policy_sidecar import (
             PositionPolicySidecar,
         )
 
@@ -65,7 +65,7 @@ class TestShadowModeNeverEmitsCloseCommand:
     def test_peak_giveback_close_command_also_guarded_by_enable(self):
         """DEF-E16: Peak giveback path also must require ENABLE mode to emit close command."""
         import inspect
-        from apps.reference.domains.execution_position.position_policy_sidecar import (
+        from apps.reference.domains.execution_position.sidecar.position_policy_sidecar import (
             PositionPolicySidecar,
         )
 
@@ -91,7 +91,7 @@ class TestShadowModeNeverEmitsCloseCommand:
         any publish calls — no advisory events, no close commands.
         """
         import inspect
-        from apps.reference.domains.execution_position.position_policy_sidecar import (
+        from apps.reference.domains.execution_position.sidecar.position_policy_sidecar import (
             PositionPolicySidecar,
         )
 
@@ -115,7 +115,7 @@ class TestSidecarDuplicateCloseSuppressionContract:
         This prevents spam-closing a position on every heartbeat.
         """
         import inspect
-        from apps.reference.domains.execution_position.position_policy_sidecar import (
+        from apps.reference.domains.execution_position.sidecar.position_policy_sidecar import (
             PositionPolicySidecar,
         )
 
@@ -129,7 +129,7 @@ class TestSidecarDuplicateCloseSuppressionContract:
 
     def test_recommendation_signature_method_exists(self):
         """_recommendation_signature must exist as a dedicated method."""
-        from apps.reference.domains.execution_position.position_policy_sidecar import (
+        from apps.reference.domains.execution_position.sidecar.position_policy_sidecar import (
             PositionPolicySidecar,
         )
         assert hasattr(PositionPolicySidecar, "_recommendation_signature"), (
@@ -147,7 +147,7 @@ class TestSidecarCloseInProgressSuppression:
         If True, suppress with 'manage_flow_close_in_progress'.
         """
         import inspect
-        from apps.reference.domains.execution_position.position_policy_mediator import (
+        from apps.reference.domains.execution_position.sidecar.position_policy_mediator import (
             PositionPolicyMediator,
         )
 
@@ -164,7 +164,7 @@ class TestSidecarCloseInProgressSuppression:
     def test_mediator_checks_active_lifecycle_before_close(self):
         """Mediator must verify manage_flow has active lifecycle (not already closed)."""
         import inspect
-        from apps.reference.domains.execution_position.position_policy_mediator import (
+        from apps.reference.domains.execution_position.sidecar.position_policy_mediator import (
             PositionPolicyMediator,
         )
 
@@ -181,7 +181,7 @@ class TestSidecarCloseInProgressSuppression:
     def test_mediator_suppresses_when_no_manage_flow(self):
         """Mediator must suppress when no manage flow exists for symbol."""
         import inspect
-        from apps.reference.domains.execution_position.position_policy_mediator import (
+        from apps.reference.domains.execution_position.sidecar.position_policy_mediator import (
             PositionPolicyMediator,
         )
 
@@ -195,7 +195,7 @@ class TestSidecarCloseInProgressSuppression:
     def test_mediator_suppresses_partial_reduce_forbidden(self):
         """Mediator must not allow partial_reduce scope to be active (safety contract)."""
         import inspect
-        from apps.reference.domains.execution_position.position_policy_mediator import (
+        from apps.reference.domains.execution_position.sidecar.position_policy_mediator import (
             PositionPolicyMediator,
         )
 

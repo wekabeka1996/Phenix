@@ -47,7 +47,7 @@ def _make_mock_fsm():
 
 def _run_portfolio_close(mock_fsm, accumulated_fees=0.09, realized_pnl=-1.0):
     """Trigger POSITION_CLOSED — returns list of written dicts."""
-    import apps.reference.domains.execution_position.event_handlers as handlers_mod
+    import apps.reference.domains.execution_position.orchestration.event_handlers as handlers_mod
 
     mock_fsm._prev_position_amts = {"BTCUSDT": 1.0}
     mock_fsm._last_lifecycle_rid_by_symbol = {
@@ -65,7 +65,7 @@ def _run_portfolio_close(mock_fsm, accumulated_fees=0.09, realized_pnl=-1.0):
     written = []
     with patch.object(handlers_mod, "_trade_lifecycle", None), \
             patch.object(handlers_mod, "_get_order_logger") as mock_log_fn, \
-            patch("apps.reference.domains.execution_position.event_handlers.get_clock") as mock_clock:
+            patch("apps.reference.domains.execution_position.orchestration.event_handlers.get_clock") as mock_clock:
         mock_clock.return_value.now_sec.return_value = 1_700_000.0
         mock_clock.return_value.now_ms.return_value = 1_700_000_000_000
         mock_log_fn.return_value.write.side_effect = written.append

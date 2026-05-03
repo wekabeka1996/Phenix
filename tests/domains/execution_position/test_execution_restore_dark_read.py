@@ -11,9 +11,9 @@ from apps.reference.config_models import (
     ExecutionPositionStartupTruthArtifactConfig,
     ExecutionPositionStartupTruthArtifactMode,
 )
-from apps.reference.domains.execution_position.fsm_close import CloseState
-from apps.reference.domains.execution_position.fsm_manage import ManageState
-from apps.reference.domains.execution_position.restore_artifact import (
+from apps.reference.domains.execution_position.flows.close.fsm_close import CloseState
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageState
+from apps.reference.domains.execution_position.state.restore_artifact import (
     ExecutionPositionRestoreEnvelope,
     ExecutionPositionRestoreLifecycleRecord,
     TRUTH_SOURCE_RUNTIME_LOCAL,

@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from apps.reference.core.time import get_clock
-from apps.reference.domains.execution_position.position_policy_sidecar import PositionPolicySidecar
+from apps.reference.domains.execution_position.sidecar.position_policy_sidecar import PositionPolicySidecar
 from tests.domains.execution_position.test_position_policy_sidecar import (
     RecordingBus,
     DummyManageFlow,

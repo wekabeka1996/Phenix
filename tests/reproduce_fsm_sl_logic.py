@@ -3,7 +3,7 @@ import sys
 import unittest
 from decimal import Decimal
 from unittest.mock import MagicMock
-from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageFlowFSM
 
 class TestFSMSLLogic(unittest.TestCase):
     def test_calculate_bracket_prices_ignores_intent(self):

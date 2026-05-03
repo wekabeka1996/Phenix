@@ -287,7 +287,7 @@ class ExposureManager:
         EXP-FIX: Handle order cancellation events for exposure summary update.
         """
         from vfoundation.core.fsm_emit_compat import Message, emit_compat
-        from apps.reference.domains.execution_position.pending_brackets_wal import write_pending_brackets_cleared
+        from ..flows.manage.pending_brackets_wal import write_pending_brackets_cleared
 
         pld = msg.pld or {}
         symbol = pld.get("symbol")

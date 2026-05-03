@@ -31,6 +31,25 @@
     "entry_client_order_id": { "type": ["string", "null"] },
     "sl_order_id": { "type": ["string", "null"] },
     "tp_order_id": { "type": ["string", "null"] },
-    "details": { "type": ["string", "object", "null"] }
+    "details": {
+      "type": ["string", "object", "null"],
+      "properties": {
+        "correlation": {
+          "type": ["object", "null"],
+          "properties": {
+            "rid": { "type": ["string", "null"] },
+            "corr_id": { "type": ["string", "null"] },
+            "entry_order_id": { "type": ["string", "null"] },
+            "entry_client_order_id": { "type": ["string", "null"] }
+          },
+          "additionalProperties": true
+        },
+        "child_outcomes": {
+          "type": ["object", "null"],
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
   }
 }

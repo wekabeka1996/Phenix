@@ -22,11 +22,11 @@ import pytest
 from apps.reference.config_models import PositionPolicySidecarConfig
 from apps.reference.core.time import get_clock
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
-from apps.reference.domains.execution_position.fsm_manage import ManageState
-from apps.reference.domains.execution_position.position_policy_sidecar import (
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageState
+from apps.reference.domains.execution_position.sidecar.position_policy_sidecar import (
     PositionPolicySidecar,
 )
-from apps.reference.domains.execution_position.truth_hardening import (
+from apps.reference.domains.execution_position.state.truth_hardening import (
     build_position_signature,
 )
 from tests.domains.execution_position.test_position_policy_sidecar import DummyManageFlow

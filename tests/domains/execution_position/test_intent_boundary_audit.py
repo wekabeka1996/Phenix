@@ -9,7 +9,7 @@ from vfoundation.core.protocol import Message
 from vfoundation.core.fsm_core import FSMCore
 from vfoundation.core.schema_registry import init_global_registry
 
-from apps.reference.domains.execution_position.intent_boundary_audit import (
+from apps.reference.domains.execution_position.telemetry.intent_boundary_audit import (
     IntentBoundaryAudit,
 )
 
@@ -150,7 +150,7 @@ def test_boundary_audit_grants_submit_in_flight_grace_before_reject() -> None:
     assert pending is not None and pending.routed_ts_ms is not None
 
     submit_started_ts_ms = pending.routed_ts_ms + 600
-    with patch("apps.reference.domains.execution_position.intent_boundary_audit.get_clock") as mock_clock:
+    with patch("apps.reference.domains.execution_position.telemetry.intent_boundary_audit.get_clock") as mock_clock:
         mock_clock.return_value.now_ms.return_value = submit_started_ts_ms
         audit.mark_submit_started(
             rid="RID-IN-FLIGHT",

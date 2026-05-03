@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from apps.reference.domains.execution_position.bracket_health import BracketHealth
-from apps.reference.domains.execution_position.fsm_manage import ManageState
+from apps.reference.domains.execution_position.flows.manage.bracket_health import BracketHealth
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageState
 
 
 def _make_health_fsm(*, raw_orders=None, raw_error=None):

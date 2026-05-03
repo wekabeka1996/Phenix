@@ -39,18 +39,46 @@ def _metric_value(metric_name: str, **labels: str) -> float:
 
 
 class _BridgeStub:
-    def __init__(self, tmp_path: Path, *, short_circuit_reason=None, authority_mode=AuthorityMode.SHADOW, responder=None):
+    def __init__(
+        self,
+        tmp_path: Path,
+        *,
+        short_circuit_reason=None,
+        authority_mode=AuthorityMode.SHADOW,
+        responder=None,
+        journal_only_responder=None,
+        journal_only_capture_enabled: bool = False,
+        journal_only_response_journal_enabled: bool = False,
+        journal_only_emit_shadow_decision_logged: bool = False,
+    ):
         self.short_circuit_reason = short_circuit_reason
         self.authority_mode = authority_mode
         self.deadline_ms = 10
         self.data_dir = tmp_path
         self._responder = responder
+        self._journal_only_responder = journal_only_responder
+        self.journal_only_capture_enabled = journal_only_capture_enabled
+        self.journal_only_response_journal_enabled = (
+            journal_only_response_journal_enabled
+        )
+        self.journal_only_emit_shadow_decision_logged = (
+            journal_only_emit_shadow_decision_logged
+        )
+        self.journal_only_calls: list[object] = []
 
     def decide(self, request):
         if self._responder is None:
             raise AssertionError(
                 "responder must be configured when trust is enabled")
         return self._responder(request)
+
+    def journal_only_capture(self, request):
+        if self._journal_only_responder is None:
+            raise AssertionError(
+                "journal_only_responder must be configured when journal-only capture is enabled"
+            )
+        self.journal_only_calls.append(request)
+        return self._journal_only_responder(request)
 
 
 class _DMStub:
@@ -147,6 +175,69 @@ def test_trust_disabled_fast_path_skips_journals(tmp_path: Path) -> None:
     assert authority_context["apply_result"] == ControlDecisionApplyResult.TRUST_DISABLED_FASTPATH.value
     assert not (tmp_path / "authority_request_journal_v1.jsonl").exists()
     assert not (tmp_path / "authority_response_journal_v1.jsonl").exists()
+
+
+def test_trust_disabled_journal_only_capture_writes_journals_without_decide(
+    tmp_path: Path,
+) -> None:
+    def _journal_only(request):
+        return ControlDecisionResponse(
+            decision_id=request.decision_id,
+            action=ControlDecisionAction.ALLOW,
+            reason_code="JOURNAL_ONLY_CAPTURE",
+            reason_text="journal-only capture",
+            returned_at_ms=request.decision_basis_ts_ms + 1,
+            model_ref="journal_only_capture",
+            policy_ref="journal_only_capture",
+            idempotent_key=request.idempotent_key,
+            apply_result=ControlDecisionApplyResult.SHADOW_RECORDED,
+        )
+
+    bridge = _BridgeStub(
+        tmp_path,
+        short_circuit_reason="TRUST_DISABLED",
+        authority_mode=AuthorityMode.SHADOW,
+        journal_only_responder=_journal_only,
+        journal_only_capture_enabled=True,
+        journal_only_response_journal_enabled=True,
+        journal_only_emit_shadow_decision_logged=True,
+    )
+    bridge.decide = MagicMock(side_effect=AssertionError(
+        "kill switch must not call decide"))
+    dm = _DMStub(bridge, _projection())
+    gateway = StrategyGateway(dm)
+
+    authority_context, blocked = gateway._evaluate_neocortex_authority(
+        symbol="BTCUSDT",
+        side="BUY",
+        rid="rid-1",
+        strategy_id="aurora",
+        qty_dec=0.5,
+        entry_price_dec=50000.0,
+        decision_basis_ts_ms=1_700_000_000_000,
+        latest_risk=_latest_risk(),
+        gate_ctx=_gate_ctx(),
+        chain_result=_chain_result(),
+    )
+
+    assert blocked is False
+    assert authority_context["capture_mode"] == "journal_only"
+    assert authority_context["authority_applied"] is False
+    assert authority_context["no_effect"] is True
+    assert authority_context["apply_result"] == ControlDecisionApplyResult.SHADOW_RECORDED.value
+    assert bridge.decide.call_count == 0
+    assert len(bridge.journal_only_calls) == 1
+
+    request_rows = [json.loads(line) for line in (
+        tmp_path / "authority_request_journal_v1.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    response_rows = [json.loads(line) for line in (
+        tmp_path / "authority_response_journal_v1.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(request_rows) == 1
+    assert len(response_rows) == 1
+    assert request_rows[0]["capture_mode"] == "journal_only"
+    assert response_rows[0]["capture_mode"] == "journal_only"
+    assert response_rows[0]["authority_applied"] is False
+    assert response_rows[0]["no_effect"] is True
 
 
 def test_gated_deny_writes_journals_and_blocks(tmp_path: Path) -> None:

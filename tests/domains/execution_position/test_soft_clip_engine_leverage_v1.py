@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from apps.reference.domains.execution_position.soft_clip import SoftClipEngine, SoftLimitConfig
+from apps.reference.domains.execution_position.guards.soft_clip import SoftClipEngine, SoftLimitConfig
 
 
 def test_soft_clip_clips_by_margin_available_scaled_by_leverage():

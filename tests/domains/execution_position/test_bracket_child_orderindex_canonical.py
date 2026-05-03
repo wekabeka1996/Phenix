@@ -15,7 +15,7 @@ from apps.reference.adapters.binance_ws_client import BinanceWebSocketClient
 import json
 import pytest
 
-from apps.reference.domains.execution_position.order_index import (
+from apps.reference.domains.execution_position.state.order_index import (
     OrderIndex,
     OrderRef,
 )
@@ -488,7 +488,7 @@ class TestWSBracketChildOrderIndexMissFailClosed:
     def test_guardian_fallback_not_used(self, tmp_path, monkeypatch):
         """Even with guardian data, if OrderIndex misses, event is dropped (no fallback)."""
         monkeypatch.chdir(tmp_path)
-        from apps.reference.domains.execution_position.order_guardian import (
+        from apps.reference.domains.execution_position.guardian.order_guardian import (
             InMemoryStore,
             OrderGuardian,
         )

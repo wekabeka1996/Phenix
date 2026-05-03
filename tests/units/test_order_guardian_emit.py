@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from apps.reference.domains.execution_position.order_guardian import OrderGuardian, InMemoryStore
-import apps.reference.domains.execution_position.order_guardian as order_guardian_module
+from apps.reference.domains.execution_position.guardian.order_guardian import OrderGuardian, InMemoryStore
+import apps.reference.domains.execution_position.guardian.order_guardian as order_guardian_module
 
 
 class _OrphanCleanupAdapter:

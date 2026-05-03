@@ -3,7 +3,7 @@ import asyncio
 from unittest.mock import MagicMock, AsyncMock, patch
 from decimal import Decimal
 
-from apps.reference.domains.execution_position.watchdog import OrderTimeoutWatchdog, OrderTimeoutType, OrderDeadline
+from apps.reference.domains.execution_position.adapters.watchdog import OrderTimeoutWatchdog, OrderTimeoutType, OrderDeadline
 from apps.reference.core.time import get_clock
 
 
@@ -53,7 +53,7 @@ async def test_watchdog_disable(watchdog):
 
 
 def test_watchdog_track_and_ack(watchdog):
-    with patch("apps.reference.domains.execution_position.watchdog.get_clock") as mock_clock:
+    with patch("apps.reference.domains.execution_position.adapters.watchdog.get_clock") as mock_clock:
         mock_clock.return_value.now_ms.return_value = 10000
 
         watchdog.track_order_placed("o1", "c1", "BTCUSDT")
@@ -74,7 +74,7 @@ def test_watchdog_track_and_ack(watchdog):
 
 
 def test_watchdog_track_override_ttl(watchdog):
-    with patch("apps.reference.domains.execution_position.watchdog.get_clock") as mock_clock:
+    with patch("apps.reference.domains.execution_position.adapters.watchdog.get_clock") as mock_clock:
         mock_clock.return_value.now_ms.return_value = 10000
         watchdog.track_order_placed(
             "o1", "c1", "BTCUSDT", fill_ttl_override_ms=20000)
@@ -116,7 +116,7 @@ async def test_watchdog_timeout_handling(watchdog):
     cb = MagicMock()
     watchdog.on_timeout_callback = cb
 
-    with patch("apps.reference.domains.execution_position.watchdog.get_clock") as mock_clock:
+    with patch("apps.reference.domains.execution_position.adapters.watchdog.get_clock") as mock_clock:
         mock_clock.return_value.now_ms.return_value = 20000
 
         # pending o1 expired at 10000
@@ -149,7 +149,7 @@ async def test_poll_order_statuses_filled(watchdog):
         "o1", "c1", "BTC", 30000, OrderTimeoutType.ACK_TIMEOUT, rid="rid-o1", side="BUY"
     )
 
-    with patch("apps.reference.domains.execution_position.watchdog.get_clock") as mock_clock:
+    with patch("apps.reference.domains.execution_position.adapters.watchdog.get_clock") as mock_clock:
         mock_clock.return_value.now_ms.return_value = 10000
 
         # Poll should happen because next_poll_at is 0
@@ -188,7 +188,7 @@ async def test_poll_order_statuses_filled_without_emit_hook_keeps_tracking_for_r
         "o1", "c1", "BTC", 30000, OrderTimeoutType.FILL_TIMEOUT, rid="rid-o1", side="BUY"
     )
 
-    with patch("apps.reference.domains.execution_position.watchdog.get_clock") as mock_clock:
+    with patch("apps.reference.domains.execution_position.adapters.watchdog.get_clock") as mock_clock:
         mock_clock.return_value.now_ms.return_value = 10000
 
         with caplog.at_level("ERROR"):
@@ -210,7 +210,7 @@ async def test_poll_order_statuses_cancelled(watchdog):
     watchdog.acked_orders["o2"] = OrderDeadline(
         "o2", "c1", "BTC", 30000, OrderTimeoutType.FILL_TIMEOUT)
 
-    with patch("apps.reference.domains.execution_position.watchdog.get_clock") as mock_clock:
+    with patch("apps.reference.domains.execution_position.adapters.watchdog.get_clock") as mock_clock:
         mock_clock.return_value.now_ms.return_value = 10000
 
         await watchdog._poll_order_statuses()
@@ -245,7 +245,7 @@ async def test_poll_order_statuses_backoff(watchdog):
     watchdog.pending_orders["o1"] = OrderDeadline(
         "o1", "c1", "BTC", 30000, OrderTimeoutType.ACK_TIMEOUT)
 
-    with patch("apps.reference.domains.execution_position.watchdog.get_clock") as mock_clock:
+    with patch("apps.reference.domains.execution_position.adapters.watchdog.get_clock") as mock_clock:
         mock_clock.return_value.now_ms.return_value = 10000
 
         await watchdog._poll_order_statuses()
@@ -276,7 +276,7 @@ async def test_poll_order_statuses_rps_limit(watchdog):
     watchdog.pending_orders["o3"] = OrderDeadline(
         "o3", "c3", "LTC", 30000, OrderTimeoutType.ACK_TIMEOUT)
 
-    with patch("apps.reference.domains.execution_position.watchdog.get_clock") as mock_clock:
+    with patch("apps.reference.domains.execution_position.adapters.watchdog.get_clock") as mock_clock:
         mock_clock.return_value.now_ms.return_value = 10500  # within same second
 
         await watchdog._poll_order_statuses()

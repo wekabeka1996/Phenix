@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import Mock
-from apps.reference.domains.execution_position.utils_event_bus import LocalBus
+from apps.reference.domains.execution_position.support.utils_event_bus import LocalBus
 
 class TestLocalBus:
     @pytest.fixture

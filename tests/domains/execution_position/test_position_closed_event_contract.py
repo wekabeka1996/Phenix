@@ -41,7 +41,7 @@ def _make_mock_fsm():
 
 
 def test_terminal_close_emits_evt_position_closed_with_required_fields() -> None:
-    import apps.reference.domains.execution_position.event_handlers as handlers_mod
+    import apps.reference.domains.execution_position.orchestration.event_handlers as handlers_mod
 
     fsm = _make_mock_fsm()
     fsm._prev_position_amts = {"BTCUSDT": 1.0}
@@ -63,7 +63,7 @@ def test_terminal_close_emits_evt_position_closed_with_required_fields() -> None
 
     with patch.object(handlers_mod, "_trade_lifecycle", None), \
             patch.object(handlers_mod, "_get_order_logger") as mock_log_fn, \
-            patch("apps.reference.domains.execution_position.event_handlers.get_clock") as mock_clock:
+            patch("apps.reference.domains.execution_position.orchestration.event_handlers.get_clock") as mock_clock:
         mock_clock.return_value.now_sec.return_value = 1_700_000.0
         mock_clock.return_value.now_ms.return_value = 1_700_000_000_000
         mock_log_fn.return_value.write.side_effect = lambda *_args, **_kwargs: None
@@ -84,7 +84,7 @@ def test_terminal_close_emits_evt_position_closed_with_required_fields() -> None
 
 
 def test_terminal_close_emits_explicit_null_entry_epoch_when_unavailable() -> None:
-    import apps.reference.domains.execution_position.event_handlers as handlers_mod
+    import apps.reference.domains.execution_position.orchestration.event_handlers as handlers_mod
 
     fsm = _make_mock_fsm()
     fsm._prev_position_amts = {"BTCUSDT": 1.0}
@@ -101,7 +101,7 @@ def test_terminal_close_emits_explicit_null_entry_epoch_when_unavailable() -> No
 
     with patch.object(handlers_mod, "_trade_lifecycle", None), \
             patch.object(handlers_mod, "_get_order_logger") as mock_log_fn, \
-            patch("apps.reference.domains.execution_position.event_handlers.get_clock") as mock_clock:
+            patch("apps.reference.domains.execution_position.orchestration.event_handlers.get_clock") as mock_clock:
         mock_clock.return_value.now_sec.return_value = 1_700_000.0
         mock_clock.return_value.now_ms.return_value = 1_700_000_000_000
         mock_log_fn.return_value.write.side_effect = lambda *_args, **_kwargs: None

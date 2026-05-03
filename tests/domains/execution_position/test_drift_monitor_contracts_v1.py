@@ -1,6 +1,6 @@
 import pytest
 import time
-from apps.reference.domains.execution_position.drift_monitor import compute_drift, ConfusionMatrix, Mismatch, DriftReport, aggregate_drift_metrics
+from apps.reference.domains.execution_position.telemetry.drift_monitor import compute_drift, ConfusionMatrix, Mismatch, DriftReport, aggregate_drift_metrics
 
 def test_confusion_matrix_drift_pct():
     """Verify drift_pct calculation."""

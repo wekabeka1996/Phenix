@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from apps.reference.domains.neocortex.contracts.control_decision import (
     AuthorityMode,
     ControlDecisionAction,
+    ControlDecisionApplyResult,
     ControlDecisionRequest,
 )
 from apps.reference.domains.neocortex.contracts.observation_envelope import ObservationEnvelope
@@ -44,10 +45,25 @@ class _BaselineController:
         return self._decision
 
 
-def _config(tmp_path: Path, *, trust_enabled: bool, mode: AuthorityMode = AuthorityMode.SHADOW):
+def _config(
+    tmp_path: Path,
+    *,
+    trust_enabled: bool,
+    mode: AuthorityMode = AuthorityMode.SHADOW,
+    capture_mode: str = "disabled",
+    collect_authority_response: bool = False,
+    emit_shadow_decision_logged: bool = False,
+):
     return SimpleNamespace(
         trust_enabled=trust_enabled,
         authority=SimpleNamespace(mode=mode.value, deadline_ms=10),
+        evidence_capture=SimpleNamespace(
+            mode=capture_mode,
+            collect_observation=(capture_mode == "journal_only"),
+            collect_authority_request=(capture_mode == "journal_only"),
+            collect_authority_response=collect_authority_response,
+            emit_shadow_decision_logged=emit_shadow_decision_logged,
+        ),
         system=SimpleNamespace(data_dir=tmp_path),
     )
 
@@ -132,3 +148,34 @@ def test_bridge_falls_back_when_symbol_is_already_inflight(tmp_path: Path) -> No
         policy="authority_guard",
         reason_code="BRIDGE_UNAVAILABLE",
     ) == metric_before + 1.0
+
+
+def test_journal_only_capture_emits_shadow_payload_without_decide(tmp_path: Path) -> None:
+    shadow_events: list[tuple[str, dict, str]] = []
+    bridge = NeocortexAuthorityBridge(
+        config=_config(
+            tmp_path,
+            trust_enabled=False,
+            capture_mode="journal_only",
+            collect_authority_response=True,
+            emit_shadow_decision_logged=True,
+        ),
+        shadow_emit_fn=lambda event_name, payload, why: shadow_events.append(
+            (event_name, payload, why)),
+    )
+
+    response = bridge.journal_only_capture(_request())
+
+    assert response.action == ControlDecisionAction.ALLOW
+    assert response.apply_result == ControlDecisionApplyResult.SHADOW_RECORDED
+    assert shadow_events
+
+    event_name, payload, why = shadow_events[0]
+    assert event_name == "SHADOW:NEOCORTEX_DECISION_LOGGED"
+    assert why == "neocortex_authority_bridge"
+    assert payload["authority_applied"] is False
+    assert payload["no_effect"] is True
+    assert payload["capture_mode"] == "journal_only"
+    assert payload["data_quality_flags"]["capture_mode"] == "journal_only"
+    assert payload["data_quality_flags"]["authority_applied"] is False
+    assert payload["data_quality_flags"]["no_effect"] is True

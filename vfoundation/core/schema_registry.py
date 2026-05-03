@@ -30,11 +30,50 @@ class VerbSchemaRegistry:
         self._validators: Dict[Tuple[str, str], Draft7Validator] = {}
         self._unsupported_verbs: set[Tuple[str, str]] = set()
         self._dir_stores: Dict[Path, Dict[str, Any]] = {}
+        self._project_stores: Dict[Path, Dict[str, Any]] = {}
 
     @staticmethod
     def _directory_uri(schema_dir: Path) -> str:
         """Return a file URI suitable for resolving sibling JSON schemas."""
         return schema_dir.resolve().as_uri().rstrip("/") + "/"
+
+    def _load_project_store(self) -> Dict[str, Any]:
+        """Load all local schema documents so internal $id refs resolve locally."""
+        resolved_root = self.project_root.resolve()
+        cached = self._project_stores.get(resolved_root)
+        if cached is not None:
+            return cached
+
+        search_root = resolved_root / "apps" / "reference"
+        if not search_root.exists():
+            search_root = resolved_root
+
+        store: Dict[str, Any] = {}
+        seen_files: set[Path] = set()
+
+        for schema_dir in sorted(
+            path for path in search_root.rglob("schemas") if path.is_dir()
+        ):
+            for schema_file in sorted(schema_dir.rglob("*.json")):
+                resolved_file = schema_file.resolve()
+                if resolved_file in seen_files:
+                    continue
+                seen_files.add(resolved_file)
+                try:
+                    with open(resolved_file, "r", encoding="utf-8") as handle:
+                        schema_doc = json.load(handle)
+                except Exception as exc:
+                    logger.debug(
+                        "Skipping schema during project store load: %s (%s)",
+                        resolved_file,
+                        exc,
+                    )
+                    continue
+
+                store[resolved_file.as_uri()] = schema_doc
+
+        self._project_stores[resolved_root] = store
+        return store
 
     def _load_directory_store(self, schema_dir: Path) -> Dict[str, Any]:
         """Load and cache sibling schemas for local $ref resolution."""
@@ -60,6 +99,7 @@ class VerbSchemaRegistry:
             store[schema_file.name] = sibling_schema
             store[schema_uri] = sibling_schema
 
+        store.update(self._load_project_store())
         self._dir_stores[resolved_dir] = store
         return store
 

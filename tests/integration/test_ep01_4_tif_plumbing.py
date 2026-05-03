@@ -26,7 +26,7 @@ class TestCmdOpenPayload:
     
     def test_valid_payload_with_tif_gtx(self):
         """CmdOpenPayload should accept tif=GTX."""
-        from apps.reference.domains.execution_position.fsm_open import CmdOpenPayload
+        from apps.reference.domains.execution_position.flows.open.fsm_open import CmdOpenPayload
         
         payload = {
             "symbol": "BTCUSDT",
@@ -45,7 +45,7 @@ class TestCmdOpenPayload:
     
     def test_valid_payload_with_tif_null(self):
         """CmdOpenPayload should reject LIMIT with tif=None (fail-closed)."""
-        from apps.reference.domains.execution_position.fsm_open import CmdOpenPayload
+        from apps.reference.domains.execution_position.flows.open.fsm_open import CmdOpenPayload
         from pydantic import ValidationError
         
         payload = {
@@ -63,7 +63,7 @@ class TestCmdOpenPayload:
     
     def test_tif_normalized_to_uppercase(self):
         """CmdOpenPayload should normalize tif to uppercase."""
-        from apps.reference.domains.execution_position.fsm_open import CmdOpenPayload
+        from apps.reference.domains.execution_position.flows.open.fsm_open import CmdOpenPayload
         
         payload = {
             "symbol": "BTCUSDT",
@@ -80,7 +80,7 @@ class TestCmdOpenPayload:
     
     def test_extra_fields_rejected(self):
         """CmdOpenPayload should reject unknown fields (fail-closed)."""
-        from apps.reference.domains.execution_position.fsm_open import CmdOpenPayload
+        from apps.reference.domains.execution_position.flows.open.fsm_open import CmdOpenPayload
         from pydantic import ValidationError
         
         payload = {
@@ -97,7 +97,7 @@ class TestCmdOpenPayload:
     
     def test_invalid_tif_rejected(self):
         """CmdOpenPayload should reject invalid tif values."""
-        from apps.reference.domains.execution_position.fsm_open import CmdOpenPayload
+        from apps.reference.domains.execution_position.flows.open.fsm_open import CmdOpenPayload
         from pydantic import ValidationError
         
         payload = {
@@ -112,7 +112,7 @@ class TestCmdOpenPayload:
     
     def test_valid_for_ms_minimum_1000(self):
         """CmdOpenPayload should enforce valid_for_ms >= 1000."""
-        from apps.reference.domains.execution_position.fsm_open import CmdOpenPayload
+        from apps.reference.domains.execution_position.flows.open.fsm_open import CmdOpenPayload
         from pydantic import ValidationError
         
         payload = {

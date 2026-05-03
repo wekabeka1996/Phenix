@@ -97,7 +97,7 @@ def _read_jsonl(path: Path) -> list[dict]:
 
 
 def test_intent_router_produces_schema_valid_reject_payload() -> None:
-    from apps.reference.domains.execution_position.intent_router import IntentRouter
+    from apps.reference.domains.execution_position.flows.open.intent_router import IntentRouter
     from vfoundation.core.protocol import Message
 
     bus = _FakeBus()
@@ -140,7 +140,7 @@ def test_intent_router_produces_schema_valid_reject_payload() -> None:
 
 
 def test_intent_router_maps_local_lifecycle_conflict_to_specific_reason_code() -> None:
-    from apps.reference.domains.execution_position.intent_router import IntentRouter
+    from apps.reference.domains.execution_position.flows.open.intent_router import IntentRouter
     from vfoundation.core.protocol import Message
 
     bus = _FakeBus()
@@ -292,7 +292,7 @@ def test_fsmcore_normalizes_legacy_trade_intent_rejected_before_schema_validatio
 
 
 def test_canonical_trade_intent_reject_helper_writes_observability_and_closes_lifecycle(tmp_path) -> None:
-    from apps.reference.domains.execution_position.trade_intent_reject_contracts import (
+    from apps.reference.domains.execution_position.contract_layer.trade_intent_reject_contracts import (
         emit_canonical_trade_intent_rejected_event,
     )
     from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import (
@@ -327,7 +327,7 @@ def test_canonical_trade_intent_reject_helper_writes_observability_and_closes_li
     }
 
     with patch(
-        "apps.reference.domains.execution_position.trade_intent_reject_contracts.wal.append",
+        "apps.reference.domains.execution_position.contract_layer.trade_intent_reject_contracts.wal.append",
         side_effect=wal_records.append,
     ):
         normalized = emit_canonical_trade_intent_rejected_event(

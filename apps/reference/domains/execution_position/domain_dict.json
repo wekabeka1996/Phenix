@@ -85,11 +85,11 @@
   ],
   "documentation": "README.md",
   "ssot_notes": {
-    "order_state": "OrderIndex (order_index.py) is runtime SSOT for order tracking",
-    "position_state": "ManageFlowFSM (fsm_manage.py) is runtime SSOT for position tracking",
+    "order_state": "OrderIndex (state/order_index.py) is runtime SSOT for order tracking",
+    "position_state": "ManageFlowFSM (flows/manage/fsm_manage.py) is runtime SSOT for position tracking",
     "reasons": "reasons.py is canonical SSOT for cancel/reject reason constants",
     "contracts": "registered in verb_registry_v1.yaml",
-    "order_status_enums": "3 separate OrderStatus enums exist: contracts.py (domain), idempotent_cancel.py (Binance wire), infra/order_ledger.py (persistence) — intentionally layered, do not merge",
+    "order_status_enums": "3 separate OrderStatus enums exist: contracts.py (domain), guardian/idempotent_cancel.py (Binance wire), state/order_ledger.py (persistence) — intentionally layered, do not merge",
     "nrr_dependency": "NormalizedRejectReasons imported via apps.reference.shared.types (re-export facade), NOT direct DM import",
     "co_emission_policy": {
       "EVT:TRADE_INTENT_REJECTED": "EP co-emits (intent_router.py) when intent fails at execution boundary; owner=decision_making",

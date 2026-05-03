@@ -27,7 +27,7 @@ sys.modules["apps.reference.config_models"] = MagicMock()
 sys.path.append(os.getcwd())
 
 # Now import the target module
-from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageFlowFSM
 
 class TestFSMFix(unittest.TestCase):
     def test_intent_injection_overrides_config(self):

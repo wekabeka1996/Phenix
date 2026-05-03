@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 from types import SimpleNamespace
 
 from vfoundation.core.protocol import Message
-from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageFlowFSM
 from apps.reference.domains.execution_position.utils import generate_client_order_id
 
 

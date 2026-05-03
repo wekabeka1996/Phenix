@@ -97,7 +97,7 @@ def test_trade_lifecycle_snapshots_remain_searchable_after_restart(tmp_path):
 
 def test_execpos_portfolio_close_triggers_trade_lifecycle_close(tmp_path, monkeypatch):
     from apps.reference.telemetry.trade_lifecycle_logger import TradeLifecycleLogger
-    import apps.reference.domains.execution_position.event_handlers as handlers_mod
+    import apps.reference.domains.execution_position.orchestration.event_handlers as handlers_mod
     from apps.reference.domains.execution_position.fsm import ExecPosFSM
 
     log_path = tmp_path / "trade_lifecycle.jsonl"
@@ -121,8 +121,8 @@ def test_execpos_portfolio_close_triggers_trade_lifecycle_close(tmp_path, monkey
     event = SimpleNamespace(pld={"positions": [{"symbol": "BTCUSDT", "positionAmt": 0.0}]})
     
     # We need to patch BOTH the global logger in handlers_mod AND get_clock
-    with patch("apps.reference.domains.execution_position.event_handlers._trade_lifecycle", tl_logger), \
-         patch("apps.reference.domains.execution_position.event_handlers.get_clock") as mock_clock:
+    with patch("apps.reference.domains.execution_position.orchestration.event_handlers._trade_lifecycle", tl_logger), \
+         patch("apps.reference.domains.execution_position.orchestration.event_handlers.get_clock") as mock_clock:
         
         mock_clock.return_value.now_sec.return_value = 1000.0
         mock_clock.return_value.now_ms.return_value = 1000000

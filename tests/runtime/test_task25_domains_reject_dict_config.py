@@ -2,7 +2,7 @@ import pytest
 
 
 def test_task25_execpos_fsm_rejects_dict_config():
-    from apps.reference.domains.execution_position.exposure_guard import ExposureGuard
+    from apps.reference.domains.execution_position.guards.exposure_guard import ExposureGuard
 
     with pytest.raises(TypeError):
         ExposureGuard(fsm_core=object(), config={})

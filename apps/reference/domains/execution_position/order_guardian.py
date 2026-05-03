@@ -3,10 +3,6 @@
 from importlib import import_module as _import_module
 import sys as _sys
 
-from apps.reference.domains.execution_position.utils import (
-    coerce_exchange_bool as _coerce_exchange_bool,
-)
-
 _sys.modules[__name__] = _import_module(
     "apps.reference.domains.execution_position.guardian.order_guardian"
 )

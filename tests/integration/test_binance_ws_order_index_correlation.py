@@ -3,7 +3,7 @@ import json
 import pytest
 
 from apps.reference.adapters.binance_ws_client import BinanceWebSocketClient
-from apps.reference.domains.execution_position.order_index import OrderIndex
+from apps.reference.domains.execution_position.state.order_index import OrderIndex
 
 
 class _DummyFSMCore:

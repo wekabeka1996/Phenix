@@ -2,7 +2,7 @@ import pytest
 import asyncio
 from unittest.mock import MagicMock, AsyncMock, patch
 
-from apps.reference.domains.execution_position.entry_manager import EntryManager
+from apps.reference.domains.execution_position.flows.open.entry_manager import EntryManager
 from apps.reference.core.time import get_clock
 
 
@@ -187,12 +187,18 @@ async def test_process_queued_supersede(entry_manager, fsm):
         "decision": {"type": "OPEN"}, "queued_at": 1234}
 
     # Test with loop
-    fsm._submit_async = MagicMock()
+    submitted = []
+
+    def _capture_and_close(coro, loop):
+        submitted.append(coro.cr_code.co_name)
+        coro.close()
+
+    fsm._submit_async = _capture_and_close
     entry_manager.process_queued_supersede("BTCUSDT")
 
     assert "BTCUSDT" not in fsm._supersede_canceling
     assert "BTCUSDT" not in fsm._supersede_queue
-    assert fsm._submit_async.call_count == 1
+    assert submitted == ["_execute_decision"]
 
 
 def test_process_queued_supersede_no_loop(entry_manager, fsm):
@@ -219,7 +225,7 @@ async def test_handle_order_timeout_success(mock_emit, entry_manager, fsm):
 
     lifecycle = MagicMock()
     with patch(
-        "apps.reference.domains.execution_position.terminal_order_contracts._trade_lifecycle",
+        "apps.reference.domains.execution_position.contract_layer.terminal_order_contracts._trade_lifecycle",
         lifecycle,
     ):
         await entry_manager.handle_order_timeout(deadline)
@@ -268,7 +274,7 @@ async def test_handle_order_timeout_unknown_order(mock_emit, entry_manager, fsm)
 
     lifecycle = MagicMock()
     with patch(
-        "apps.reference.domains.execution_position.terminal_order_contracts._trade_lifecycle",
+        "apps.reference.domains.execution_position.contract_layer.terminal_order_contracts._trade_lifecycle",
         lifecycle,
     ):
         await entry_manager.handle_order_timeout(deadline)

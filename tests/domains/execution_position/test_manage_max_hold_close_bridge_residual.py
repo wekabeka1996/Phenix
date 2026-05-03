@@ -7,11 +7,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from apps.reference.core.time import MockClock, reset_clock, set_clock
-from apps.reference.domains.execution_position.close_producer_bridge import (
+from apps.reference.domains.execution_position.flows.close.close_producer_bridge import (
     CLOSE_PRODUCER_BRIDGE_CONTRACT,
 )
-from apps.reference.domains.execution_position.fsm_close import CloseFlowFSM
-from apps.reference.domains.execution_position.manage_max_hold_close_bridge import (
+from apps.reference.domains.execution_position.flows.close.fsm_close import CloseFlowFSM
+from apps.reference.domains.execution_position.flows.manage.manage_max_hold_close_bridge import (
     MANAGE_MAX_HOLD_CLOSE_CONTRACT,
     MANAGE_MAX_HOLD_CLOSE_TRIGGER,
     ManageMaxHoldCloseBridgeError,
@@ -224,7 +224,7 @@ def test_manage_max_hold_bypasses_cmd_close_producer_adapter(
     manage.position_open_ts = mock_clock.now_sec()
 
     with patch.object(manage, "_get_max_hold_sec", return_value=1), patch(
-        "apps.reference.domains.execution_position.fsm_close.adapt_cmd_close_to_dec_close"
+        "apps.reference.domains.execution_position.flows.close.fsm_close.adapt_cmd_close_to_dec_close"
     ) as producer_adapter:
         mock_clock.set_time_ms(1_002_000)
         result = manage.handle(

@@ -6,6 +6,7 @@ import queue
 import socket
 import threading
 import time
+from dataclasses import dataclass
 from typing import Any, Callable, Optional, Tuple
 from urllib.parse import urlparse
 
@@ -26,6 +27,67 @@ def parse_tcp_endpoint(endpoint: str) -> Tuple[str, int]:
     if not parsed.hostname or not parsed.port:
         raise ValueError(f"Invalid endpoint: {endpoint}")
     return parsed.hostname, int(parsed.port)
+
+
+@dataclass(frozen=True)
+class ShadowTapDeliveryFailure:
+    failure_class: str
+    phase: str
+    error_type: str
+    error_message: str
+    endpoint: str
+    attempt: int = 0
+
+
+def _classify_shadow_tap_delivery_failure(
+    exc: BaseException,
+    *,
+    phase: str,
+    endpoint: str,
+    attempt: int = 0,
+) -> ShadowTapDeliveryFailure:
+    error_type = type(exc).__name__
+    error_message = str(exc) or error_type
+    normalized_phase = str(phase).lower()
+
+    failure_class = "unknown"
+    if isinstance(exc, socket.timeout):
+        failure_class = "timeout"
+    elif isinstance(exc, ConnectionRefusedError):
+        failure_class = (
+            "endpoint_unavailable"
+            if normalized_phase in {"startup", "probe", "connect"}
+            else "send_failed"
+        )
+    elif isinstance(exc, (BrokenPipeError, ConnectionResetError)):
+        failure_class = "send_failed"
+    elif isinstance(exc, OSError):
+        errno = getattr(exc, "errno", None)
+        if errno in {110, 10060}:
+            failure_class = "timeout"
+        elif errno in {111, 61, 10061}:
+            failure_class = (
+                "endpoint_unavailable"
+                if normalized_phase in {"startup", "probe", "connect"}
+                else "send_failed"
+            )
+        elif normalized_phase == "send":
+            failure_class = "send_failed"
+        elif normalized_phase in {"startup", "probe", "connect"}:
+            failure_class = "connect_failed"
+        else:
+            failure_class = "unknown"
+    elif normalized_phase == "queue":
+        failure_class = "queue_overflow"
+
+    return ShadowTapDeliveryFailure(
+        failure_class=failure_class,
+        phase=normalized_phase,
+        error_type=error_type,
+        error_message=error_message,
+        endpoint=str(endpoint),
+        attempt=int(attempt),
+    )
 
 
 class JsonlTcpServer:
@@ -258,6 +320,7 @@ class JsonlTcpQueueClient:
         stop_timeout_ms: int,
         logger: Optional[logging.Logger] = None,
         name: str = "jsonl_tcp_client",
+        failure_reporter: Optional[Callable[[ShadowTapDeliveryFailure], None]] = None,
     ) -> None:
         self.endpoint = endpoint
         self.queue_maxsize = max(1, int(queue_maxsize))
@@ -267,6 +330,7 @@ class JsonlTcpQueueClient:
             raise ValueError("stop_timeout_ms must be >= 1")
         self.logger = logger or logging.getLogger(name)
         self.name = name
+        self._failure_reporter = failure_reporter
 
         self._queue: "queue.Queue[dict[str, Any]]" = queue.Queue(
             maxsize=self.queue_maxsize)
@@ -274,6 +338,9 @@ class JsonlTcpQueueClient:
         self._thread: Optional[threading.Thread] = None
         self._sock: Optional[socket.socket] = None
         self._sock_lock = threading.Lock()
+        self._delivery_state_lock = threading.Lock()
+        self._last_delivery_failure: Optional[ShadowTapDeliveryFailure] = None
+        self._delivery_failure_count = 0
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -305,6 +372,35 @@ class JsonlTcpQueueClient:
 
     def queue_depth(self) -> int:
         return int(self._queue.qsize())
+
+    def has_delivery_failure(self) -> bool:
+        with self._delivery_state_lock:
+            return self._last_delivery_failure is not None
+
+    def last_delivery_failure(self) -> Optional[ShadowTapDeliveryFailure]:
+        with self._delivery_state_lock:
+            return self._last_delivery_failure
+
+    def delivery_failure_count(self) -> int:
+        with self._delivery_state_lock:
+            return int(self._delivery_failure_count)
+
+    def mark_delivery_failure(self, failure: ShadowTapDeliveryFailure) -> None:
+        with self._delivery_state_lock:
+            self._delivery_failure_count += 1
+            self._last_delivery_failure = failure
+
+    def probe_endpoint(self, timeout_sec: float = 0.25) -> Optional[ShadowTapDeliveryFailure]:
+        try:
+            host, port = parse_tcp_endpoint(self.endpoint)
+            with socket.create_connection((host, port), timeout=timeout_sec):
+                return None
+        except Exception as exc:
+            return _classify_shadow_tap_delivery_failure(
+                exc,
+                phase="startup",
+                endpoint=self.endpoint,
+            )
 
     def wait_until_idle(self, timeout_sec: float) -> bool:
         deadline = time.monotonic() + max(0.0, float(timeout_sec))
@@ -373,56 +469,122 @@ class JsonlTcpQueueClient:
             try:
                 line = json.dumps(payload, separators=(
                     ",", ":"), ensure_ascii=True) + "\n"
-                ok = self._send_line(line.encode("utf-8"))
-                if not ok:
-                    record_failure_outcome(
-                        FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
-                        FailureReasonCode.BRIDGE_UNAVAILABLE,
-                        location="domains/shadow_telemetry/ipc.py:JsonlTcpQueueClient._worker",
-                        message="JSONL TCP queue client failed to deliver payload",
-                        detail=self.endpoint,
-                    )
-                    self.logger.warning(
-                        "%s failed to deliver payload to %s",
-                        self.name,
-                        self.endpoint,
-                    )
+                failure = self._send_line(line.encode("utf-8"))
+                if failure is not None:
+                    self._record_delivery_failure(failure)
             except Exception as exc:
-                record_failure_outcome(
-                    FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
-                    FailureReasonCode.HANDLER_FAILURE,
-                    location="domains/shadow_telemetry/ipc.py:JsonlTcpQueueClient._worker",
-                    message="JSONL TCP queue client worker failed",
-                    detail=type(exc).__name__,
+                failure = _classify_shadow_tap_delivery_failure(
+                    exc,
+                    phase="worker",
+                    endpoint=self.endpoint,
                 )
-                self.logger.exception("%s worker failed",
-                                      self.name, exc_info=exc)
+                self._record_delivery_failure(failure)
             finally:
                 self._queue.task_done()
 
-    def _send_line(self, data: bytes) -> bool:
+    def _record_delivery_failure(self, failure: ShadowTapDeliveryFailure) -> None:
+        self.mark_delivery_failure(failure)
+
+        reporter = self._failure_reporter
+        if reporter is not None:
+            try:
+                reporter(failure)
+                return
+            except Exception as exc:
+                self.logger.debug(
+                    "%s delivery failure reporter raised; falling back to generic logging: %s",
+                    self.name,
+                    exc,
+                )
+
+        reason_code = {
+            "timeout": FailureReasonCode.BRIDGE_TIMEOUT,
+        }.get(
+            failure.failure_class,
+            FailureReasonCode.BRIDGE_UNAVAILABLE if failure.failure_class in {
+                "endpoint_unavailable",
+                "connect_failed",
+                "send_failed",
+                "queue_overflow",
+            } else FailureReasonCode.HANDLER_FAILURE,
+        )
+        record_failure_outcome(
+            FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+            reason_code,
+            location="domains/shadow_telemetry/ipc.py:JsonlTcpQueueClient._worker",
+            message="JSONL TCP queue client failed to deliver payload",
+            detail={
+                "endpoint": self.endpoint,
+                "failure_class": failure.failure_class,
+                "phase": failure.phase,
+                "error_type": failure.error_type,
+                "error_message": failure.error_message,
+            },
+        )
+        self.logger.warning(
+            "%s failed to deliver payload to %s [failure_class=%s phase=%s error=%s: %s]",
+            self.name,
+            self.endpoint,
+            failure.failure_class,
+            failure.phase,
+            failure.error_type,
+            failure.error_message,
+        )
+
+    def _send_line(self, data: bytes) -> Optional[ShadowTapDeliveryFailure]:
         for _attempt in (1, 2):
             with self._sock_lock:
-                if self._sock is None and not self._connect_locked():
-                    continue
+                if self._sock is None:
+                    connect_failure = self._connect_locked()
+                    if connect_failure is not None:
+                        connect_failure = ShadowTapDeliveryFailure(
+                            failure_class=connect_failure.failure_class,
+                            phase="connect",
+                            error_type=connect_failure.error_type,
+                            error_message=connect_failure.error_message,
+                            endpoint=connect_failure.endpoint,
+                            attempt=_attempt,
+                        )
+                        if _attempt == 2:
+                            return connect_failure
+                        continue
                 try:
                     assert self._sock is not None
                     self._sock.sendall(data)
-                    return True
-                except Exception:
+                    return None
+                except Exception as exc:
                     self._close_socket_locked()
-        return False
+                    failure = _classify_shadow_tap_delivery_failure(
+                        exc,
+                        phase="send",
+                        endpoint=self.endpoint,
+                        attempt=_attempt,
+                    )
+                    if _attempt == 2:
+                        return failure
+                    continue
+        return ShadowTapDeliveryFailure(
+            failure_class="unknown",
+            phase="send",
+            error_type="RuntimeError",
+            error_message="shadow tap delivery failed without exception",
+            endpoint=self.endpoint,
+        )
 
-    def _connect_locked(self) -> bool:
+    def _connect_locked(self) -> Optional[ShadowTapDeliveryFailure]:
         try:
             host, port = parse_tcp_endpoint(self.endpoint)
             sock = socket.create_connection((host, port), timeout=1.5)
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             self._sock = sock
-            return True
-        except Exception:
+            return None
+        except Exception as exc:
             self._sock = None
-            return False
+            return _classify_shadow_tap_delivery_failure(
+                exc,
+                phase="connect",
+                endpoint=self.endpoint,
+            )
 
     def _close_socket(self) -> None:
         with self._sock_lock:

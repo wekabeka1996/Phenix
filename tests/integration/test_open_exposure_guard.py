@@ -3,7 +3,7 @@
 Integration test for portfolio exposure guard in open flow.
 """
 
-from apps.reference.domains.execution_position.exposure_guard import (
+from apps.reference.domains.execution_position.guards.exposure_guard import (
     ExposureGuard,
 )
 from apps.reference.domains.execution_position.fsm import ExecPosFSM

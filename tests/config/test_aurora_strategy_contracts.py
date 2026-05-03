@@ -263,6 +263,23 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     return data
 
 
+def _resolve_aurora_low_vol_rr(
+    asset_cfg: cm.AuroraInstrumentConfig,
+) -> tuple[float, str, float, float]:
+    regime_tpsl = asset_cfg.exit.regime_tpsl
+    assert regime_tpsl is not None
+    assert regime_tpsl.mode == "pct_mult"
+
+    tp_mult_map = dict(regime_tpsl.tp_mult)
+    tp_mult_source = "LOW_VOLATILITY" if "LOW_VOLATILITY" in tp_mult_map else "DEFAULT"
+    tp_low_ratio = float(asset_cfg.take_profit.tp_low_ratio)
+    tp_mult = float(tp_mult_map[tp_mult_source])
+    min_tp_rr = float(regime_tpsl.min_tp_rr)
+    max_tp_rr = float(regime_tpsl.max_tp_rr)
+    effective_rr = min(max(tp_low_ratio * tp_mult, min_tp_rr), max_tp_rr)
+    return effective_rr, tp_mult_source, tp_low_ratio, tp_mult
+
+
 def test_aurora_facade_reexports_are_exact_identity() -> None:
     for name in CONTRACT_CASES:
         assert getattr(cm, name) is getattr(strategy_aurora, name)
@@ -386,6 +403,33 @@ def test_aurora_strategy_config_accepts_execution_and_objective_from_strategy_ya
     assert cfg.assets
     first_asset = next(iter(cfg.assets.values()))
     assert type(first_asset) is cm.AuroraInstrumentConfig
+
+
+def test_aurora_low_vol_rr_contract_clears_low_vol_cost_floor_for_active_symbols() -> None:
+    cfg = ConfigLoader(CONFIG_DIR).load_config()
+    min_rr = cfg.domains.decision_making.low_vol_cost_floor_gate.thresholds.min_rr
+
+    active_symbols = sorted(
+        symbol
+        for symbol, strategy_ids in cfg.strategies_registry.assignments.items()
+        if isinstance(strategy_ids, list) and "aurora" in strategy_ids
+    )
+    assert active_symbols
+
+    for symbol in active_symbols:
+        asset_cfg = cfg.strategies.aurora.assets[symbol]
+        regime_tpsl = asset_cfg.exit.regime_tpsl
+        assert regime_tpsl is not None
+        assert regime_tpsl.mode == "pct_mult"
+        assert "LOW_VOLATILITY" in regime_tpsl.tp_mult
+
+        effective_rr, tp_mult_source, tp_low_ratio, tp_mult = _resolve_aurora_low_vol_rr(asset_cfg)
+        assert tp_mult_source == "LOW_VOLATILITY"
+        assert effective_rr >= min_rr, (
+            f"{symbol} low-vol effective RR {effective_rr:.6f} must clear "
+            f"domains.decision_making.low_vol_cost_floor_gate.thresholds.min_rr={min_rr:.6f}; "
+            f"tp_low_ratio={tp_low_ratio}, tp_mult={tp_mult}"
+        )
 
 
 def test_prior_strategy_rebuild_seams_survive_strategy_execution_and_regime_tpsl_move() -> None:
@@ -668,7 +712,7 @@ def test_direct_runtime_consumers_receive_extracted_aurora_types() -> None:
     import logging
 
     from apps.reference.domains.decision_making.core.config_resolver import DMConfigResolver
-    from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM
+    from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageFlowFSM
 
     cfg = ConfigLoader(CONFIG_DIR).load_config()
 
@@ -697,7 +741,7 @@ def test_aurora_runtime_import_smoke() -> None:
         "apps.reference.domains.strategies.runtimes.aurora.handler"
     )
     manage_mod = importlib.import_module(
-        "apps.reference.domains.execution_position.fsm_manage"
+        "apps.reference.domains.execution_position.flows.manage.fsm_manage"
     )
     plugin_mod = importlib.import_module(
         "apps.reference.domains.strategies.plugins.aurora_builtin"
@@ -749,6 +793,27 @@ def test_aurora_root_tpsl_ssot_validator_still_fails_closed_on_missing_preflight
     message = str(exc_info.value)
     assert "preflight_backoff_ms" in message
     assert "TP/SL preflight backoff" in message
+
+
+def test_aurora_root_tpsl_ssot_validator_fails_closed_on_low_vol_default_fallback(
+    tmp_path: Path,
+) -> None:
+    cfg_dir = _copy_config_to_tmp(tmp_path)
+    aurora_path = cfg_dir / "strategies" / "aurora.yaml"
+    aurora_data = _load_yaml(aurora_path)
+    eth_tp_mult = aurora_data["aurora"]["assets"]["ETHUSDT"]["exit"]["regime_tpsl"]["tp_mult"]
+    assert isinstance(eth_tp_mult, dict)
+    eth_tp_mult.pop("LOW_VOLATILITY", None)
+    _write_yaml(aurora_path, aurora_data)
+
+    with pytest.raises(ValidationError) as exc_info:
+        ConfigLoader(config_dir=cfg_dir).load_config()
+
+    message = str(exc_info.value)
+    assert "ETHUSDT" in message
+    assert "domains.decision_making.low_vol_cost_floor_gate.thresholds.min_rr" in message
+    assert "DEFAULT" in message
+    assert "low-vol effective RR" in message
 
 
 def test_aurora_objective_regime_coverage_negative_fixture_still_raises(

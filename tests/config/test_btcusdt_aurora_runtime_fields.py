@@ -113,7 +113,7 @@ def _mutate_btc_aurora_fields(cfg_dir: Path) -> None:
     btc["exit"]["max_hold_sec"] = 1234
 
     # Take profit / trailing stop (used by ExecPos manage flow)
-    btc["take_profit"]["tp_low_ratio"] = 0.55
+    btc["take_profit"]["tp_low_ratio"] = 1.0
     btc["take_profit"]["tp_high_ratio"] = 1.23
     btc["take_profit"]["partial_exit_pct"] = 0.66
 
@@ -252,10 +252,10 @@ class TestBtcusdtAuroraRuntimeFields:
         assert sig.get("tpsl_ctx", {}).get("mode") == "pct_mult"
 
         # ── ExecutionPosition ManageFlow: take_profit / trailing_stop / max_hold_sec wired ──
-        from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM
+        from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageFlowFSM
 
         manage = ManageFlowFSM(config=config)
-        assert manage._get_take_profit_params(symbol) == (0.55, 1.23, 0.66)
+        assert manage._get_take_profit_params(symbol) == (1.0, 1.23, 0.66)
         assert manage._get_trailing_stop_params(
             symbol) == (True, 0.031, 0.017, 7)
         assert manage._get_max_hold_sec(symbol) == 1234

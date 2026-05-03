@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
 from vfoundation.core.fsm_emit_compat import Message
 from decimal import Decimal
-from apps.reference.domains.execution_position.order_index import OrderIndex
+from apps.reference.domains.execution_position.state.order_index import OrderIndex
 
 
 @pytest.fixture
@@ -336,7 +336,7 @@ def test_fsm_is_cancel_success_all_cases(exec_pos_fsm):
     assert isc({"status": "NEW"}) is False
     assert isc(None) is False
 
-    from apps.reference.domains.execution_position.idempotent_cancel import IdempotentCancelResult
+    from apps.reference.domains.execution_position.guardian.idempotent_cancel import IdempotentCancelResult
     assert isc(IdempotentCancelResult(
         success=True, reason="ok", is_idempotent_success=True)) is True
     assert isc(IdempotentCancelResult(success=False,

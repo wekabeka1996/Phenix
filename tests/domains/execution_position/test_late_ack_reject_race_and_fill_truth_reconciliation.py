@@ -7,10 +7,10 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from apps.reference.config_loader import ConfigLoader
-from apps.reference.domains.execution_position.trade_intent_reject_contracts import (
+from apps.reference.domains.execution_position.contract_layer.trade_intent_reject_contracts import (
     emit_canonical_trade_intent_rejected_event,
 )
-from apps.reference.domains.execution_position.event_handlers import EPEventHandlers
+from apps.reference.domains.execution_position.orchestration.event_handlers import EPEventHandlers
 from apps.reference.telemetry.shadow_journal import (
     DEFAULT_CRITICAL_EVENTS,
     attach_shadow_journal,
@@ -114,7 +114,7 @@ def test_raced_boundary_reject_chain_converges_to_closed_lifecycle_without_orpha
     handlers = EPEventHandlers(fake_fsm)
     bus.listen("EVT:TRADE_EXECUTED", handlers.on_trade_executed)
 
-    with patch("apps.reference.domains.execution_position.event_handlers._trade_lifecycle", lifecycle):
+    with patch("apps.reference.domains.execution_position.orchestration.event_handlers._trade_lifecycle", lifecycle):
         emit_canonical_trade_intent_rejected_event(
             fsm=bus,
             payload={

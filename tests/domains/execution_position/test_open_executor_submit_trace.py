@@ -8,7 +8,7 @@ import jsonschema
 import pytest
 
 from apps.reference.adapters.binance_adapter import BinanceAPIError
-from apps.reference.domains.execution_position.open_submission_adapter import (
+from apps.reference.domains.execution_position.flows.open.open_submission_adapter import (
     OpenSubmissionPayload,
 )
 
@@ -43,7 +43,7 @@ def _limit_submission(
 
 @pytest.mark.asyncio
 async def test_collect_limit_submit_trace_includes_book_context():
-    from apps.reference.domains.execution_position.open_executor import OpenExecutor
+    from apps.reference.domains.execution_position.flows.open.open_executor import OpenExecutor
 
     fsm = MagicMock()
     fsm.adapter = MagicMock()
@@ -87,7 +87,7 @@ async def test_collect_limit_submit_trace_includes_book_context():
 
 @pytest.mark.asyncio
 async def test_collect_limit_submit_trace_fails_closed_without_book_api():
-    from apps.reference.domains.execution_position.open_executor import OpenExecutor
+    from apps.reference.domains.execution_position.flows.open.open_executor import OpenExecutor
 
     fsm = MagicMock()
     fsm.adapter = object()
@@ -109,10 +109,10 @@ async def test_collect_limit_submit_trace_fails_closed_without_book_api():
 
 @pytest.mark.asyncio
 async def test_place_limit_entry_recovers_uncertain_submit_by_client_order_id(monkeypatch):
-    from apps.reference.domains.execution_position.open_executor import OpenExecutor
+    from apps.reference.domains.execution_position.flows.open.open_executor import OpenExecutor
 
     monkeypatch.setattr(
-        "apps.reference.domains.execution_position.open_executor.order_logger.write",
+        "apps.reference.domains.execution_position.flows.open.open_executor.order_logger.write",
         lambda *_args, **_kwargs: None,
     )
 
@@ -171,18 +171,18 @@ async def test_place_limit_entry_recovers_uncertain_submit_by_client_order_id(mo
 
 @pytest.mark.asyncio
 async def test_place_limit_entry_raises_uncertain_submit_error_without_lookup(monkeypatch):
-    from apps.reference.domains.execution_position.open_executor import (
+    from apps.reference.domains.execution_position.flows.open.open_executor import (
         OpenExecutor,
         UncertainSubmitRecoveryError,
     )
 
     monkeypatch.setattr(
-        "apps.reference.domains.execution_position.open_executor.order_logger.write",
+        "apps.reference.domains.execution_position.flows.open.open_executor.order_logger.write",
         lambda *_args, **_kwargs: None,
     )
     fake_clock = _NoSleepClock()
     monkeypatch.setattr(
-        "apps.reference.domains.execution_position.open_executor.get_clock",
+        "apps.reference.domains.execution_position.flows.open.open_executor.get_clock",
         lambda: fake_clock,
     )
 
@@ -227,18 +227,18 @@ async def test_place_limit_entry_raises_uncertain_submit_error_without_lookup(mo
 
 @pytest.mark.asyncio
 async def test_place_limit_entry_raises_uncertain_submit_error_after_lookup_miss(monkeypatch):
-    from apps.reference.domains.execution_position.open_executor import (
+    from apps.reference.domains.execution_position.flows.open.open_executor import (
         OpenExecutor,
         UncertainSubmitRecoveryError,
     )
 
     monkeypatch.setattr(
-        "apps.reference.domains.execution_position.open_executor.order_logger.write",
+        "apps.reference.domains.execution_position.flows.open.open_executor.order_logger.write",
         lambda *_args, **_kwargs: None,
     )
     fake_clock = _NoSleepClock()
     monkeypatch.setattr(
-        "apps.reference.domains.execution_position.open_executor.get_clock",
+        "apps.reference.domains.execution_position.flows.open.open_executor.get_clock",
         lambda: fake_clock,
     )
 
@@ -280,18 +280,18 @@ async def test_place_limit_entry_raises_uncertain_submit_error_after_lookup_miss
 
 @pytest.mark.asyncio
 async def test_place_limit_entry_raises_uncertain_submit_error_after_lookup_exceptions(monkeypatch):
-    from apps.reference.domains.execution_position.open_executor import (
+    from apps.reference.domains.execution_position.flows.open.open_executor import (
         OpenExecutor,
         UncertainSubmitRecoveryError,
     )
 
     monkeypatch.setattr(
-        "apps.reference.domains.execution_position.open_executor.order_logger.write",
+        "apps.reference.domains.execution_position.flows.open.open_executor.order_logger.write",
         lambda *_args, **_kwargs: None,
     )
     fake_clock = _NoSleepClock()
     monkeypatch.setattr(
-        "apps.reference.domains.execution_position.open_executor.get_clock",
+        "apps.reference.domains.execution_position.flows.open.open_executor.get_clock",
         lambda: fake_clock,
     )
 

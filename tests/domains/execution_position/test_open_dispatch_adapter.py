@@ -8,14 +8,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from apps.reference.config_loader import get_config
-from apps.reference.domains.execution_position.intent_router import IntentRouter
-from apps.reference.domains.execution_position.open_dispatch_adapter import (
+from apps.reference.domains.execution_position.flows.open.intent_router import IntentRouter
+from apps.reference.domains.execution_position.flows.open.open_dispatch_adapter import (
     OPEN_DISPATCH_CONTRACT,
     OPEN_DISPATCH_PATH,
     OpenDispatchAdapterError,
     OpenDispatchPayload,
 )
-from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
+from apps.reference.domains.execution_position.flows.open.fsm_open import OpenFlowFSM
 from vfoundation.core.fsm_core import FSMCore
 from vfoundation.core.protocol import Message
 from vfoundation.core.schema_registry import get_global_registry, init_global_registry
@@ -209,7 +209,7 @@ def test_live_cmd_open_hot_path_is_runtime_governed_by_typed_open_dispatch_adapt
     fsm, _bus = _build_execpos_with_real_bus()
 
     with patch(
-        "apps.reference.domains.execution_position.fsm_open.OpenDispatchPayload.from_cmd_open",
+        "apps.reference.domains.execution_position.flows.open.fsm_open.OpenDispatchPayload.from_cmd_open",
         wraps=OpenDispatchPayload.from_cmd_open,
     ) as wrapped_dispatch, patch(
         "apps.reference.domains.execution_position.fsm.wal.append",
@@ -236,7 +236,7 @@ def test_open_dispatch_rejection_is_fail_closed_and_diagnostic() -> None:
         "apps.reference.domains.execution_position.fsm.wal.append",
         return_value="wal-ok",
     ), patch(
-        "apps.reference.domains.execution_position.fsm_open.OpenDispatchPayload.from_cmd_open",
+        "apps.reference.domains.execution_position.flows.open.fsm_open.OpenDispatchPayload.from_cmd_open",
         side_effect=OpenDispatchAdapterError("forced dispatch failure"),
     ):
         result = fsm.handle(_cmd_open_message(rid="RID-OPEN-DISPATCH-REJECT"))
@@ -279,7 +279,7 @@ def test_external_open_request_routes_through_runtime_typed_open_dispatch_adapte
         "handle",
         wraps=open_flow.handle,
     ) as wrapped_open_flow_handle, patch(
-        "apps.reference.domains.execution_position.fsm_open.OpenDispatchPayload.from_cmd_open",
+        "apps.reference.domains.execution_position.flows.open.fsm_open.OpenDispatchPayload.from_cmd_open",
         wraps=OpenDispatchPayload.from_cmd_open,
     ) as wrapped_dispatch, patch(
         "apps.reference.domains.execution_position.fsm.wal.append",
@@ -306,7 +306,7 @@ def test_handle_async_routes_through_same_typed_open_dispatch_adapter(fsm_config
     fsm = OpenFlowFSM(cooldown_sec=0.0, guard_enabled=True, config=fsm_config)
 
     with patch(
-        "apps.reference.domains.execution_position.fsm_open.OpenDispatchPayload.from_cmd_open",
+        "apps.reference.domains.execution_position.flows.open.fsm_open.OpenDispatchPayload.from_cmd_open",
         wraps=OpenDispatchPayload.from_cmd_open,
     ) as wrapped_dispatch:
         result = asyncio.run(
@@ -361,7 +361,7 @@ def test_real_router_emit_path_auto_enforces_dec_open_schema() -> None:
 
 
 def test_package1_intake_markers_remain_unaffected_before_dispatch_adapter_runs(fsm_harness) -> None:
-    from apps.reference.domains.execution_position.fsm_open import CmdOpenPayload
+    from apps.reference.domains.execution_position.flows.open.fsm_open import CmdOpenPayload
     from tests.domains.execution_position.test_trade_intent_open_intake import _make_intent_message
 
     fsm, _bus, _cfg = fsm_harness
@@ -380,7 +380,7 @@ def test_package1_intake_markers_remain_unaffected_before_dispatch_adapter_runs(
         return original_validate(payload)
 
     with patch.object(CmdOpenPayload, "model_validate", side_effect=_wrapped_validate), patch(
-        "apps.reference.domains.execution_position.fsm_open.OpenDispatchPayload.from_cmd_open",
+        "apps.reference.domains.execution_position.flows.open.fsm_open.OpenDispatchPayload.from_cmd_open",
         wraps=OpenDispatchPayload.from_cmd_open,
     ) as wrapped_dispatch:
         fsm._on_trade_intent_proposed(_make_intent_message())
@@ -395,7 +395,7 @@ def test_reduce_only_close_path_does_not_use_open_dispatch_adapter() -> None:
     router, fsm = _make_router()
 
     with patch(
-        "apps.reference.domains.execution_position.fsm_open.OpenDispatchPayload.from_cmd_open",
+        "apps.reference.domains.execution_position.flows.open.fsm_open.OpenDispatchPayload.from_cmd_open",
         wraps=OpenDispatchPayload.from_cmd_open,
     ) as wrapped_dispatch:
         router.on_trade_intent_proposed(_make_reduce_only_intent_message())
@@ -425,7 +425,7 @@ def test_fill_ingress_path_does_not_use_open_dispatch_adapter(fsm_harness) -> No
         "handle_canonical_fill_ingress",
         return_value=None,
     ) as wrapped_fill, patch(
-        "apps.reference.domains.execution_position.fsm_open.OpenDispatchPayload.from_cmd_open",
+        "apps.reference.domains.execution_position.flows.open.fsm_open.OpenDispatchPayload.from_cmd_open",
         wraps=OpenDispatchPayload.from_cmd_open,
     ) as wrapped_dispatch:
         fsm.handle(fill_msg)

@@ -10,9 +10,9 @@ def test_active_assigned_symbols_match_live_non_uncertain_allowlists() -> None:
         "SOLUSDT": {"TREND_UP", "TREND_DOWN", "LOW_VOLATILITY", "MEAN_REVERSION", "HIGH_VOLATILITY"},
         "BTCUSDT": {"TREND_UP", "TREND_DOWN", "LOW_VOLATILITY", "MEAN_REVERSION", "HIGH_VOLATILITY"},
         "BNBUSDT": {"TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY"},
-        "XRPUSDT": {"TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY"},
+        "XRPUSDT": {"TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"},
     }
-    low_vol_expected = {"BTCUSDT", "ETHUSDT", "SOLUSDT"}
+    low_vol_expected = {"BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT"}
     for symbol, expected in aurora_expected.items():
         actual = set(
             cfg.strategies.aurora.assets[symbol].allowed_regimes or [])

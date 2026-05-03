@@ -16,7 +16,7 @@ class TestWatchdogPartialFillDeltaOnly:
 
     def _make_watchdog(self):
         """Build a minimal OrderTimeoutWatchdog with emit_fn wired."""
-        from apps.reference.domains.execution_position.watchdog import OrderTimeoutWatchdog
+        from apps.reference.domains.execution_position.adapters.watchdog import OrderTimeoutWatchdog
 
         config = {
             "enabled": True,

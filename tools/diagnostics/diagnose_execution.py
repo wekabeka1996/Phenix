@@ -10,7 +10,7 @@ sys.path.append(os.getcwd())
 def test_guardian_config():
     print("\n--- TEST 1: Order Guardian Configuration Wiring ---")
     try:
-        from apps.reference.domains.execution_position.order_guardian import OrderGuardian
+        from apps.reference.domains.execution_position.guardian.order_guardian import OrderGuardian
 
         try:
             # Load real config (no network calls).
@@ -28,7 +28,7 @@ def test_guardian_config():
             # Try to discover underlying ledger path (if unified + LedgerStoreAdapter).
             db_path = "UNKNOWN"
             try:
-                from apps.reference.domains.execution_position.infra.ledger_store_adapter import LedgerStoreAdapter
+                from apps.reference.domains.execution_position.state.ledger_store_adapter import LedgerStoreAdapter
 
                 store = getattr(og, "store", None)
                 if isinstance(store, LedgerStoreAdapter):

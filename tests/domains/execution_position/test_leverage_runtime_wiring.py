@@ -211,7 +211,7 @@ def test_exec_pos_fsm_has_collect_leverage_configs_method():
 
 def test_open_flow_fsm_requires_leverage_service_in_live_mode():
     """OpenFlowFSM must raise RuntimeError if is_live_execution=True without leverage_service."""
-    from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
+    from apps.reference.domains.execution_position.flows.open.fsm_open import OpenFlowFSM
 
     mock_config = MagicMock()
     mock_config.domains.execution_position.fsm_open.idempotency_window_sec = 60
@@ -226,7 +226,7 @@ def test_open_flow_fsm_requires_leverage_service_in_live_mode():
 
 def test_open_flow_fsm_accepts_no_leverage_service_in_shadow_mode():
     """OpenFlowFSM should allow no leverage_service when is_live_execution=False."""
-    from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
+    from apps.reference.domains.execution_position.flows.open.fsm_open import OpenFlowFSM
 
     mock_config = MagicMock()
     mock_config.domains.execution_position.fsm_open.idempotency_window_sec = 60
@@ -244,7 +244,7 @@ def test_open_flow_fsm_accepts_no_leverage_service_in_shadow_mode():
 
 def test_open_flow_fsm_stores_leverage_service():
     """OpenFlowFSM must store leverage_service for verification before DEC:OPEN."""
-    from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
+    from apps.reference.domains.execution_position.flows.open.fsm_open import OpenFlowFSM
 
     mock_config = MagicMock()
     mock_config.domains.execution_position.fsm_open.idempotency_window_sec = 60
@@ -350,7 +350,7 @@ async def test_run_leverage_bootstrap_skipped_in_shadow_mode(mock_config, mock_f
 async def test_run_leverage_bootstrap_calls_bootstrapper(mock_config, mock_fsm):
     """run_leverage_bootstrap should call LeverageBootstrapper.run() with collected configs."""
     from apps.reference.domains.execution_position.fsm import ExecPosFSM
-    from apps.reference.domains.execution_position.bootstrapping.leverage_bootstrapper import (
+    from apps.reference.domains.execution_position.guards.bootstrapping.leverage_bootstrapper import (
         BootstrapResults,
         BootstrapResult,
         LeverageBootstrapper,
@@ -390,7 +390,7 @@ async def test_run_leverage_bootstrap_calls_bootstrapper(mock_config, mock_fsm):
 async def test_run_leverage_bootstrap_returns_failed_symbols(mock_config, mock_fsm):
     """run_leverage_bootstrap should return failed symbols from bootstrapper."""
     from apps.reference.domains.execution_position.fsm import ExecPosFSM
-    from apps.reference.domains.execution_position.bootstrapping.leverage_bootstrapper import (
+    from apps.reference.domains.execution_position.guards.bootstrapping.leverage_bootstrapper import (
         BootstrapResults,
         BootstrapResult,
         LeverageBootstrapper,

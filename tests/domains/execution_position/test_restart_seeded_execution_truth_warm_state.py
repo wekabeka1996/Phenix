@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 
 from apps.reference.config_loader import ConfigLoader
-from apps.reference.domains.execution_position.truth_hardening import (
+from apps.reference.domains.execution_position.state.truth_hardening import (
     attach_execution_truth_hardening,
 )
 from apps.reference.telemetry.shadow_journal import (

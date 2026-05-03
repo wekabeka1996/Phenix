@@ -8,16 +8,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from apps.reference.config_loader import ConfigLoader
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
-from apps.reference.domains.execution_position.watchdog import OrderTimeoutWatchdog
+from apps.reference.domains.execution_position.adapters.watchdog import OrderTimeoutWatchdog
 from apps.reference.domains.position_tracking.position_tracking import PositionTracking
 from apps.reference.telemetry.shadow_journal import (
     DEFAULT_CRITICAL_EVENTS,
     attach_shadow_journal,
 )
-from apps.reference.domains.execution_position.truth_hardening import (
+from apps.reference.domains.execution_position.state.truth_hardening import (
     attach_execution_truth_hardening,
 )
-from apps.reference.domains.execution_position.manage_max_hold_close_bridge import (
+from apps.reference.domains.execution_position.flows.manage.manage_max_hold_close_bridge import (
     MANAGE_MAX_HOLD_CLOSE_TRIGGER,
 )
 from vfoundation.core.fsm_core import FSMCore
@@ -418,7 +418,7 @@ def test_non_cmd_dec_close_guard_suppresses_repeated_execution_and_allows_after_
         ), patch(
             "apps.reference.domains.execution_position.fsm.ExecPosFSM._schedule_fsm_cleanup_loop"
         ), patch(
-            "apps.reference.domains.execution_position.watchdog.OrderTimeoutWatchdog.start"
+            "apps.reference.domains.execution_position.adapters.watchdog.OrderTimeoutWatchdog.start"
         ):
             guardian_cls.return_value.start = AsyncMock()
             bus = _Bus()

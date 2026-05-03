@@ -219,7 +219,7 @@ async def test_audit_02_zombie_fill_after_watchdog_timeout_is_not_swallowed() ->
       (ManageFlowFSM) and is processed idempotently.
     """
     from apps.reference.domains.execution_position.fsm import ExecPosFSM
-    from apps.reference.domains.execution_position.watchdog import OrderTimeoutType
+    from apps.reference.domains.execution_position.adapters.watchdog import OrderTimeoutType
 
     cfg = _make_execpos_config()
     # Avoid generating DEC:BATCH (which writes to WAL) during this audit repro.

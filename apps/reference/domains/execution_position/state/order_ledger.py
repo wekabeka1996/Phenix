@@ -80,7 +80,8 @@ class OrderLedger:
 
         if self._is_memory:
             # Shared connection for in-memory DB to support multi-threading
-            self._shared_conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            self._shared_conn = sqlite3.connect(
+                self.db_path, check_same_thread=False)
             self._shared_conn.row_factory = sqlite3.Row
             self._lock = threading.RLock()
         else:
@@ -142,7 +143,8 @@ class OrderLedger:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_entry_client_id ON orders(entry_client_id)"
             )
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_status ON orders(status)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_status ON orders(status)")
             conn.commit()
 
     def register_order(self, record: OrderRecord) -> None:
@@ -287,6 +289,42 @@ class OrderLedger:
             conn.commit()
             return result.rowcount > 0
 
+    def mark_order_terminal(
+        self,
+        *,
+        order_id: Optional[str] = None,
+        client_order_id: Optional[str] = None,
+        terminal_status: OrderStatus = OrderStatus.CANCELLED,
+    ) -> bool:
+        """Mark an order terminal by order_id or client_order_id.
+
+        This helper keeps terminal-state updates explicit and idempotent.
+        """
+        if terminal_status not in {
+            OrderStatus.CANCELLED,
+            OrderStatus.REJECTED,
+            OrderStatus.EXPIRED,
+            OrderStatus.FILLED,
+        }:
+            raise ValueError(
+                f"terminal_status must be terminal, got: {terminal_status}"
+            )
+
+        updated = False
+        order_id_text = str(order_id or "").strip()
+        client_id_text = str(client_order_id or "").strip()
+
+        if order_id_text:
+            updated = self.update_order_status(order_id_text, terminal_status)
+
+        if not updated and client_id_text:
+            updated = self.update_order_status_by_client_id(
+                client_id_text,
+                terminal_status,
+            )
+
+        return updated
+
     def get_orphaned_brackets(self, symbol: str) -> List[OrderRecord]:
         """Get bracket orders that may be orphaned (no active entry)"""
         with self._get_connection() as conn:
@@ -346,7 +384,8 @@ class OrderLedger:
             stats["by_role"] = {row["role"]: row["count"] for row in rows}
 
             # Total count
-            row = conn.execute("SELECT COUNT(*) as total FROM orders").fetchone()
+            row = conn.execute(
+                "SELECT COUNT(*) as total FROM orders").fetchone()
             stats["total"] = row["total"]
 
             return stats

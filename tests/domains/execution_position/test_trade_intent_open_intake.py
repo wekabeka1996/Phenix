@@ -9,8 +9,8 @@ from vfoundation.core.fsm_core import FSMCore
 from vfoundation.core.protocol import Message
 from vfoundation.core.schema_registry import init_global_registry
 
-from apps.reference.domains.execution_position.intent_router import IntentRouter
-from apps.reference.domains.execution_position.trade_intent_open_intake import (
+from apps.reference.domains.execution_position.flows.open.intent_router import IntentRouter
+from apps.reference.domains.execution_position.flows.open.trade_intent_open_intake import (
     INTENT_OPEN_INTAKE_CONTRACT,
 )
 
@@ -158,7 +158,7 @@ def test_reduce_only_close_routing_is_unchanged_and_does_not_use_typed_open_inta
         },
     )
 
-    with patch("apps.reference.domains.execution_position.intent_router.parse_trade_intent_open_intake") as mock_parse:
+    with patch("apps.reference.domains.execution_position.flows.open.intent_router.parse_trade_intent_open_intake") as mock_parse:
         router.on_trade_intent_proposed(msg)
 
     mock_parse.assert_not_called()
@@ -179,9 +179,9 @@ def test_live_execpos_open_path_does_not_bypass_typed_intake(fsm_harness) -> Non
     fsm.exposure_guard.on_portfolio(fsm._latest_portfolio_state)
 
     with patch(
-        "apps.reference.domains.execution_position.intent_router.parse_trade_intent_open_intake",
+        "apps.reference.domains.execution_position.flows.open.intent_router.parse_trade_intent_open_intake",
         wraps=__import__(
-            "apps.reference.domains.execution_position.intent_router",
+            "apps.reference.domains.execution_position.flows.open.intent_router",
             fromlist=["parse_trade_intent_open_intake"],
         ).parse_trade_intent_open_intake,
     ) as wrapped_parse:
@@ -235,7 +235,7 @@ def test_downstream_cmd_open_payload_validation_still_runs_after_typed_intake(fs
     }
     fsm.exposure_guard.on_portfolio(fsm._latest_portfolio_state)
 
-    from apps.reference.domains.execution_position.fsm_open import CmdOpenPayload
+    from apps.reference.domains.execution_position.flows.open.fsm_open import CmdOpenPayload
 
     original_validate = CmdOpenPayload.model_validate
     calls: list[dict] = []

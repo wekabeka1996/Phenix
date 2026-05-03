@@ -11,9 +11,9 @@ from apps.reference.config_models import (
     ExecutionPositionRestoreArtifactMode,
 )
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
-from apps.reference.domains.execution_position.fsm_close import CloseState
-from apps.reference.domains.execution_position.fsm_manage import ManageState
-from apps.reference.domains.execution_position.restore_artifact import (
+from apps.reference.domains.execution_position.flows.close.fsm_close import CloseState
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageState
+from apps.reference.domains.execution_position.state.restore_artifact import (
     TRUTH_SOURCE_RECONSTRUCTED_GUARDIAN,
     TRUTH_SOURCE_RESTORED_PENDING_WAL,
     TRUTH_SOURCE_RUNTIME_LOCAL,
@@ -345,7 +345,7 @@ def test_atomic_replace_preserves_previous_committed_artifact_on_failure(
     previous = path.read_text(encoding="utf-8")
 
     _set_runtime_state(fsm, manage_state=ManageState.TRACKING)
-    with patch("apps.reference.domains.execution_position.restore_artifact.os.replace", side_effect=OSError("disk full")):
+    with patch("apps.reference.domains.execution_position.state.restore_artifact.os.replace", side_effect=OSError("disk full")):
         wrote = fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot(
             trigger="transition:track",
             allow_empty=True,
@@ -389,7 +389,7 @@ async def test_periodic_flush_is_config_driven(fsm_harness, tmp_path: Path) -> N
             raise asyncio.CancelledError
         return None
 
-    with patch("apps.reference.domains.execution_position.startup_truth_orchestrator.get_clock", return_value=SimpleNamespace(sleep_ms=_fake_sleep_ms)):
+    with patch("apps.reference.domains.execution_position.state.startup_truth_orchestrator.get_clock", return_value=SimpleNamespace(sleep_ms=_fake_sleep_ms)):
         with patch.object(fsm._startup_truth_orchestrator, "_persist_restore_artifact_snapshot", side_effect=[True, asyncio.CancelledError]) as persist:
             with pytest.raises(asyncio.CancelledError):
                 await fsm._startup_truth_orchestrator._restore_artifact_loop()

@@ -449,7 +449,7 @@ class TestProtocolC_FullMarginFlip:
         return cfg
 
     def test_flip_allowed_with_is_flip_flag(self, exposure_guard_config):
-        from apps.reference.domains.execution_position.exposure_guard import ExposureGuard
+        from apps.reference.domains.execution_position.guards.exposure_guard import ExposureGuard
 
         guard = ExposureGuard(fsm_core=MagicMock(),
                               config=exposure_guard_config)
@@ -471,7 +471,7 @@ class TestProtocolC_FullMarginFlip:
             "allowed"] is True, f"Expected FLIP allowed, got: {result_with_flip}"
 
     def test_flip_subtracts_current_position_margin(self, exposure_guard_config):
-        from apps.reference.domains.execution_position.exposure_guard import ExposureGuard
+        from apps.reference.domains.execution_position.guards.exposure_guard import ExposureGuard
 
         exposure_guard_config.domains.execution_position.exposure_guard.max_equity_utilization_pct = "60.0"
         guard = ExposureGuard(fsm_core=MagicMock(),

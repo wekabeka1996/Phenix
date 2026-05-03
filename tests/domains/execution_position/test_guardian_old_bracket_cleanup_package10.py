@@ -4,11 +4,11 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from apps.reference.domains.execution_position.cancel_submission_adapter import (
+from apps.reference.domains.execution_position.guardian.cancel_submission_adapter import (
     CancelSubmissionAdapterError,
     CancelSubmissionPayload,
 )
-from apps.reference.domains.execution_position.order_guardian import (
+from apps.reference.domains.execution_position.guardian.order_guardian import (
     InMemoryStore,
     OrderGuardian,
 )
@@ -68,9 +68,11 @@ async def test_cleanup_other_brackets_routes_through_package4_typed_cancel_intak
     symbol = "BTCUSDT"
     adapter = AsyncMock()
     adapter.get_open_orders.return_value = [
-        _old_bracket_order(symbol=symbol, order_id="tp-old", client_order_id="TP-OLD"),
+        _old_bracket_order(symbol=symbol, order_id="tp-old",
+                           client_order_id="TP-OLD"),
     ]
-    adapter.cancel_order.return_value = {"status": "CANCELED", "orderId": "tp-old"}
+    adapter.cancel_order.return_value = {
+        "status": "CANCELED", "orderId": "tp-old"}
     store = InMemoryStore()
     store.put(
         "order:tp-old",
@@ -103,7 +105,8 @@ async def test_cleanup_other_brackets_routes_multiple_outdated_ids_exactly_once_
     symbol = "BTCUSDT"
     adapter = AsyncMock()
     adapter.get_open_orders.return_value = [
-        _old_bracket_order(symbol=symbol, order_id="tp-old", client_order_id="TP-OLD"),
+        _old_bracket_order(symbol=symbol, order_id="tp-old",
+                           client_order_id="TP-OLD"),
         _old_bracket_order(
             symbol=symbol,
             order_id="sl-old",
@@ -147,7 +150,8 @@ async def test_cleanup_other_brackets_routes_multiple_outdated_ids_exactly_once_
 
     assert cancelled == 2
     assert from_dec_cancel.call_count == 2
-    observed_ids = [call.kwargs["payload"]["order_id"] for call in from_dec_cancel.call_args_list]
+    observed_ids = [call.kwargs["payload"]["order_id"]
+                    for call in from_dec_cancel.call_args_list]
     assert observed_ids == ["tp-old", "sl-old"]
     assert adapter.cancel_order.await_count == 2
 
@@ -157,7 +161,8 @@ async def test_cleanup_other_brackets_fails_closed_without_raw_cancel_fallback()
     symbol = "BTCUSDT"
     adapter = AsyncMock()
     adapter.get_open_orders.return_value = [
-        _old_bracket_order(symbol=symbol, order_id="tp-old", client_order_id="TP-OLD"),
+        _old_bracket_order(symbol=symbol, order_id="tp-old",
+                           client_order_id="TP-OLD"),
     ]
     store = InMemoryStore()
     store.put(
@@ -191,9 +196,11 @@ async def test_background_cleanup_orphans_remains_unchanged() -> None:
     adapter = AsyncMock()
     adapter.get_open_positions.return_value = []
     adapter.get_open_orders.return_value = [
-        _old_bracket_order(symbol=symbol, order_id="tp-orphan", client_order_id="TP-ORPHAN"),
+        _old_bracket_order(symbol=symbol, order_id="tp-orphan",
+                           client_order_id="TP-ORPHAN"),
     ]
-    adapter.cancel_order.return_value = {"status": "CANCELED", "orderId": "tp-orphan"}
+    adapter.cancel_order.return_value = {
+        "status": "CANCELED", "orderId": "tp-orphan"}
     store = InMemoryStore()
     store.put(
         "order:tp-orphan",
@@ -225,9 +232,11 @@ async def test_cleanup_other_brackets_introduces_no_position_amt_or_restart_work
     symbol = "BTCUSDT"
     adapter = AsyncMock()
     adapter.get_open_orders.return_value = [
-        _old_bracket_order(symbol=symbol, order_id="tp-old", client_order_id="TP-OLD"),
+        _old_bracket_order(symbol=symbol, order_id="tp-old",
+                           client_order_id="TP-OLD"),
     ]
-    adapter.cancel_order.return_value = {"status": "CANCELED", "orderId": "tp-old"}
+    adapter.cancel_order.return_value = {
+        "status": "CANCELED", "orderId": "tp-old"}
     store = InMemoryStore()
     store.put(
         "order:tp-old",
@@ -246,3 +255,43 @@ async def test_cleanup_other_brackets_introduces_no_position_amt_or_restart_work
         )
 
     get_open_positions.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_other_brackets_prefers_raw_open_orders_for_bracket_flags() -> None:
+    symbol = "BTCUSDT"
+    adapter = AsyncMock()
+    # Normalized payload lacks reduceOnly/closePosition/type and must not be the only source.
+    adapter.get_open_orders.return_value = [
+        {
+            "symbol": symbol,
+            "orderId": "tp-old",
+            "clientOrderId": "TP-OLD",
+        }
+    ]
+    adapter.get_open_orders_raw.return_value = [
+        _old_bracket_order(symbol=symbol, order_id="tp-old",
+                           client_order_id="TP-OLD")
+    ]
+    adapter.cancel_order.return_value = {
+        "status": "CANCELED", "orderId": "tp-old"}
+
+    store = InMemoryStore()
+    store.put(
+        "order:tp-old",
+        _tracked_old_bracket_meta(
+            symbol=symbol,
+            parent_entry_id="parent-old",
+            client_order_id="TP-OLD",
+        ),
+    )
+    guardian = OrderGuardian(adapter=adapter, store=store, poll_interval_ms=0)
+
+    cancelled = await guardian.cleanup_other_brackets_for_symbol(
+        symbol=symbol,
+        keep_parent_order_id="parent-keep",
+    )
+
+    assert cancelled == 1
+    adapter.get_open_orders_raw.assert_awaited_once_with(symbol)
+    adapter.cancel_order.assert_awaited_once_with(symbol, "tp-old")

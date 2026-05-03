@@ -703,6 +703,14 @@ registry:
   schema: apps/reference/domains/alpha_search/judge/schemas/shadow_entry_plan_v1.json
   since: '2026-04-25'
   note: "J6-S3 shadow LIMIT plan ladder telemetry — hypothetical order shape, never executed"
+# --- LLM Judge Phase 6 (J6-S16): Policy Cortex shadow evaluation event (2026-05-03) ---
+- op: EVT
+  verb: JUDGE_POLICY_CORTEX_EVALUATED_V1
+  owner: alpha_search
+  status: experimental
+  schema: apps/reference/domains/alpha_search/judge/policy_cortex/schemas/policy_cortex_annotation_v1.json
+  since: '2026-05-03'
+  note: "J6-S16 shadow policy cortex evaluation — surface evidence lookup + deterministic classifier. Shadow-only. Never consumed by decision_making or execution."
 policies:
   wildcard:
     UPD: true

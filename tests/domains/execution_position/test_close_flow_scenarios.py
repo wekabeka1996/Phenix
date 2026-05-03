@@ -3,7 +3,7 @@ import pytest
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from vfoundation.core.protocol import Message
-from apps.reference.domains.execution_position.fsm_close import CloseFlowFSM, CloseState
+from apps.reference.domains.execution_position.flows.close.fsm_close import CloseFlowFSM, CloseState
 from apps.reference.core.time import get_clock
 
 class TestCloseFlowScenarios:
@@ -122,7 +122,7 @@ class TestCloseFlowScenarios:
         # Actually hydrate only accesses open_ts and sets state.
         # Let's mock get_clock to raise exception to trigger except block
         
-        with patch("apps.reference.domains.execution_position.fsm_close.get_clock", side_effect=Exception("Time error")):
+        with patch("apps.reference.domains.execution_position.flows.close.fsm_close.get_clock", side_effect=Exception("Time error")):
             # omit open_ts to force get_clock() call
             close_flow.hydrate({"symbol": "BTCUSDT"})
             

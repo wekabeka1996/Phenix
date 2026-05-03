@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from apps.reference.domains.execution_position.fsm_manage import (
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import (
     ManageFlowFSM,
     ManageState,
 )

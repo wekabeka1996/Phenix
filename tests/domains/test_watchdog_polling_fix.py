@@ -2,7 +2,7 @@ import pytest
 import asyncio
 import time
 from unittest.mock import AsyncMock, MagicMock
-from apps.reference.domains.execution_position.watchdog import OrderTimeoutWatchdog, OrderTimeoutType
+from apps.reference.domains.execution_position.adapters.watchdog import OrderTimeoutWatchdog, OrderTimeoutType
 
 
 @pytest.mark.asyncio

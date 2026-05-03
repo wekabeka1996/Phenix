@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from apps.reference.config_loader import ConfigLoader
-from apps.reference.domains.execution_position.order_guardian import InMemoryStore, OrderGuardian
+from apps.reference.domains.execution_position.guardian.order_guardian import InMemoryStore, OrderGuardian
 
 
 CONFIG_DIR = Path("config/aurora")
@@ -60,7 +60,7 @@ def test_order_guardian_explicit_unified_true_builds_ledger_store(tmp_path: Path
     cfg = _root_only_config({"unified": True, "ledger_db_path": db_path})
 
     with patch(
-        "apps.reference.domains.execution_position.order_guardian._get_ledger_store",
+        "apps.reference.domains.execution_position.guardian.order_guardian._get_ledger_store",
         return_value=(_FakeLedgerStoreAdapter, _FakeOrderLedger),
     ):
         guardian = OrderGuardian(adapter=None, config=cfg, poll_interval_ms=0)
@@ -112,7 +112,7 @@ def test_order_guardian_current_repo_config_still_builds_store() -> None:
     cfg = ConfigLoader(CONFIG_DIR).load_config()
 
     with patch(
-        "apps.reference.domains.execution_position.order_guardian._get_ledger_store",
+        "apps.reference.domains.execution_position.guardian.order_guardian._get_ledger_store",
         return_value=(_FakeLedgerStoreAdapter, _FakeOrderLedger),
     ):
         guardian = OrderGuardian(adapter=None, config=cfg, poll_interval_ms=0)
@@ -150,7 +150,7 @@ def test_order_guardian_root_guardian_migration_still_builds_store(tmp_path: Pat
     cfg = ConfigLoader(config_dir=tmp_path).load_config()
 
     with patch(
-        "apps.reference.domains.execution_position.order_guardian._get_ledger_store",
+        "apps.reference.domains.execution_position.guardian.order_guardian._get_ledger_store",
         return_value=(_FakeLedgerStoreAdapter, _FakeOrderLedger),
     ):
         guardian = OrderGuardian(adapter=None, config=cfg, poll_interval_ms=0)

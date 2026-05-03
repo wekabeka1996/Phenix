@@ -5,7 +5,7 @@ import pytest
 import yaml
 
 from apps.reference.config_loader import ConfigLoader
-from apps.reference.domains.execution_position.order_guardian import OrderGuardian
+from apps.reference.domains.execution_position.guardian.order_guardian import OrderGuardian
 
 
 CONFIG_DIR = Path("config/aurora")

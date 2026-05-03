@@ -24,6 +24,15 @@ run_mode: "backtest"
 # Global Neocortex kill-switch (neocortex.trust_enabled per §6.2)
 trust_enabled: false
 
+evidence_capture:
+  # disabled preserves current behavior; journal_only is opt-in
+  mode: disabled
+  # Explicit capture toggles remain false in the default config
+  collect_observation: false
+  collect_authority_request: false
+  collect_authority_response: false
+  emit_shadow_decision_logged: false
+
 authority:
   # Operating mode: shadow | advisory | gated
   mode: shadow

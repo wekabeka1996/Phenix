@@ -1,6 +1,6 @@
 import pytest
 from decimal import Decimal
-from apps.reference.domains.execution_position.watchdog import OrderTimeoutWatchdog
+from apps.reference.domains.execution_position.adapters.watchdog import OrderTimeoutWatchdog
 from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
 from apps.reference.config_loader import ConfigLoader
 from unittest.mock import MagicMock

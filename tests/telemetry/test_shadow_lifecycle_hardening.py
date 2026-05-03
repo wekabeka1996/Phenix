@@ -4,8 +4,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from apps.reference.domains.execution_position.fsm_close import CloseFlowFSM, CloseState
-from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM, ManageState
+from apps.reference.domains.execution_position.flows.close.fsm_close import CloseFlowFSM, CloseState
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageFlowFSM, ManageState
 from apps.reference.telemetry.shadow_journal import (
     DEFAULT_CRITICAL_EVENTS,
     ShadowCriticalEventJournal,

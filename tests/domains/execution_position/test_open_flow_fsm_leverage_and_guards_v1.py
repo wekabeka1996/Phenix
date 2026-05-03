@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, AsyncMock
 import pytest
 
 from vfoundation.core.protocol import Message
-from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
+from apps.reference.domains.execution_position.flows.open.fsm_open import OpenFlowFSM
 
 
 @dataclass

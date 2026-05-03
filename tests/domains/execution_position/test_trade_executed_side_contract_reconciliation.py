@@ -8,8 +8,8 @@ import pytest
 from jsonschema import validate
 
 from apps.reference.adapters.binance_ws_client import BinanceWebSocketClient
-from apps.reference.domains.execution_position.order_index import OrderIndex
-from apps.reference.domains.execution_position.watchdog import OrderTimeoutWatchdog
+from apps.reference.domains.execution_position.state.order_index import OrderIndex
+from apps.reference.domains.execution_position.adapters.watchdog import OrderTimeoutWatchdog
 from vfoundation.core.fsm_core import FSMCore, InvalidMessagePayloadError
 from vfoundation.core.schema_registry import init_global_registry
 

@@ -6,7 +6,7 @@ Tests for structured JSON logging and metrics aggregation.
 import pytest
 from decimal import Decimal
 from datetime import datetime
-from apps.reference.domains.execution_position.metrics_aggregator import (
+from apps.reference.domains.execution_position.telemetry.metrics_aggregator import (
     StructuredMetricsLogger,
     MetricEventType,
     ClipMetricEvent,

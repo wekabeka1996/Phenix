@@ -12,7 +12,7 @@ import logging
 import threading
 import time
 from typing import Dict, Optional, Any
-from apps.reference.domains.execution_position.terminal_order_contracts import (
+from apps.reference.domains.execution_position.contract_layer.terminal_order_contracts import (
     normalize_order_rejected_payload,
     normalize_order_state_changed_payload,
     sync_trade_lifecycle_terminal_order_event,
@@ -459,7 +459,7 @@ class BinanceWebSocketClient:
             is_maker_only_reject = False
             is_entry_order = False
             try:
-                from apps.reference.domains.execution_position.order_index import OrderIndex
+                from apps.reference.domains.execution_position.state.order_index import OrderIndex
                 is_entry_order = bool(
                     order_ref) and OrderIndex._is_entry_ref(order_ref)
             except Exception:

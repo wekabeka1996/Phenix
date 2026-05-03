@@ -58,7 +58,35 @@ class LedgerStoreAdapter:
         # Soft-delete: mark order as CANCELLED so stale ACTIVE records are not returned.
         if key.startswith("order:"):
             order_id = key.split(":", 1)[1]
-            self.ledger.update_order_status(order_id, OrderStatus.CANCELLED)
+            self.mark_order_terminal(order_id=order_id, status="CANCELLED")
+
+    def mark_order_terminal(
+        self,
+        *,
+        order_id: Optional[str] = None,
+        client_order_id: Optional[str] = None,
+        status: str = "CANCELLED",
+        reason: Optional[str] = None,
+        outcome_class: Optional[str] = None,
+    ) -> bool:
+        """Mark tracked order terminal so child truth does not remain falsely ACTIVE."""
+        status_text = str(status or "CANCELLED").strip().upper()
+        terminal_status = {
+            "CANCELED": OrderStatus.CANCELLED,
+            "CANCELLED": OrderStatus.CANCELLED,
+            "REJECTED": OrderStatus.REJECTED,
+            "EXPIRED": OrderStatus.EXPIRED,
+            "FILLED": OrderStatus.FILLED,
+        }.get(status_text)
+        if terminal_status is None:
+            raise ValueError(f"Unsupported terminal status: {status_text}")
+
+        _ = reason, outcome_class
+        return self.ledger.mark_order_terminal(
+            order_id=order_id,
+            client_order_id=client_order_id,
+            terminal_status=terminal_status,
+        )
 
     # --- Helpers ---
     def _get_order_meta(self, order_id: str) -> Optional[dict[str, Any]]:
@@ -142,16 +170,30 @@ class LedgerStoreAdapter:
         # try to resolve its client_order_id from ledger.
         entry_client_id = meta.get("entry_client_id")
         if not entry_client_id and parent_entry_id:
-            parent_rec = self.ledger.get_order_by_order_id(str(parent_entry_id))
+            parent_rec = self.ledger.get_order_by_order_id(
+                str(parent_entry_id))
             entry_client_id = parent_rec.client_order_id if parent_rec else None
+
+        raw_status = str(meta.get("status") or "ACTIVE").strip().upper()
+        status = {
+            "PENDING": OrderStatus.PENDING,
+            "ACTIVE": OrderStatus.ACTIVE,
+            "CANCELED": OrderStatus.CANCELLED,
+            "CANCELLED": OrderStatus.CANCELLED,
+            "FILLED": OrderStatus.FILLED,
+            "REJECTED": OrderStatus.REJECTED,
+            "EXPIRED": OrderStatus.EXPIRED,
+            "UNKNOWN": OrderStatus.UNKNOWN,
+        }.get(raw_status, OrderStatus.ACTIVE)
 
         record = OrderRecord(
             order_id=str(order_id),
-            client_order_id=str(client_order_id) if client_order_id else str(order_id),
+            client_order_id=str(
+                client_order_id) if client_order_id else str(order_id),
             symbol=symbol,
             side=side,
             order_type=str(order_type),
-            status=OrderStatus.ACTIVE,
+            status=status,
             role=role,
             entry_client_id=entry_client_id,
         )

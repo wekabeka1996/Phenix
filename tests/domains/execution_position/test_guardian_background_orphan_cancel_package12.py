@@ -17,15 +17,15 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from apps.reference.domains.execution_position.cancel_submission_adapter import (
+from apps.reference.domains.execution_position.guardian.cancel_submission_adapter import (
     CancelSubmissionAdapterError,
     CancelSubmissionPayload,
 )
-from apps.reference.domains.execution_position.guardian_background_orphan_cancel_bridge import (
+from apps.reference.domains.execution_position.guardian.guardian_background_orphan_cancel_bridge import (
     GuardianBackgroundOrphanCancelRequest,
     adapt_guardian_background_orphan_to_dec_cancel,
 )
-from apps.reference.domains.execution_position.order_guardian import (
+from apps.reference.domains.execution_position.guardian.order_guardian import (
     InMemoryStore,
     OrderGuardian,
 )
@@ -122,7 +122,7 @@ class TestBridgeContract:
         assert request.order_type == "STOP_MARKET"
 
     def test_bridge_rejects_missing_symbol(self) -> None:
-        from apps.reference.domains.execution_position.guardian_background_orphan_cancel_bridge import (
+        from apps.reference.domains.execution_position.guardian.guardian_background_orphan_cancel_bridge import (
             GuardianBackgroundOrphanCancelBridgeError,
         )
         with pytest.raises(GuardianBackgroundOrphanCancelBridgeError, match="symbol"):
@@ -133,7 +133,7 @@ class TestBridgeContract:
             )
 
     def test_bridge_rejects_missing_order_id(self) -> None:
-        from apps.reference.domains.execution_position.guardian_background_orphan_cancel_bridge import (
+        from apps.reference.domains.execution_position.guardian.guardian_background_orphan_cancel_bridge import (
             GuardianBackgroundOrphanCancelBridgeError,
         )
         with pytest.raises(GuardianBackgroundOrphanCancelBridgeError, match="order_id"):
@@ -265,20 +265,20 @@ async def test_package9_hard_path_remains_on_reconcile_bridge_not_background_bri
     store.put("order:sl-hard", _orphan_meta(symbol=symbol))
     guardian = _make_guardian(adapter, store)
 
-    from apps.reference.domains.execution_position.guardian_background_orphan_cancel_bridge import (
+    from apps.reference.domains.execution_position.guardian.guardian_background_orphan_cancel_bridge import (
         adapt_guardian_background_orphan_to_dec_cancel,
     )
-    from apps.reference.domains.execution_position.guardian_reconcile_cancel_bridge import (
+    from apps.reference.domains.execution_position.guardian.guardian_reconcile_cancel_bridge import (
         adapt_guardian_reconcile_to_dec_cancel,
     )
 
     with (
         patch(
-            "apps.reference.domains.execution_position.order_guardian.adapt_guardian_background_orphan_to_dec_cancel",
+            "apps.reference.domains.execution_position.guardian.order_guardian.adapt_guardian_background_orphan_to_dec_cancel",
             wraps=adapt_guardian_background_orphan_to_dec_cancel,
         ) as background_bridge,
         patch(
-            "apps.reference.domains.execution_position.order_guardian.adapt_guardian_reconcile_to_dec_cancel",
+            "apps.reference.domains.execution_position.guardian.order_guardian.adapt_guardian_reconcile_to_dec_cancel",
             wraps=adapt_guardian_reconcile_to_dec_cancel,
         ) as reconcile_bridge,
     ):
@@ -303,11 +303,11 @@ async def test_background_cleanup_orphans_does_not_invoke_reconcile_bridge() -> 
     store.put("order:sl-soft", _orphan_meta(symbol=symbol))
     guardian = _make_guardian(adapter, store)
 
-    from apps.reference.domains.execution_position.guardian_reconcile_cancel_bridge import (
+    from apps.reference.domains.execution_position.guardian.guardian_reconcile_cancel_bridge import (
         adapt_guardian_reconcile_to_dec_cancel,
     )
     with patch(
-        "apps.reference.domains.execution_position.order_guardian.adapt_guardian_reconcile_to_dec_cancel",
+        "apps.reference.domains.execution_position.guardian.order_guardian.adapt_guardian_reconcile_to_dec_cancel",
         wraps=adapt_guardian_reconcile_to_dec_cancel,
     ) as reconcile_bridge:
         await guardian.cleanup_orphans(symbol=symbol, hard=False)
@@ -335,11 +335,11 @@ async def test_package10_cleanup_other_brackets_remains_unchanged() -> None:
     )
     guardian = _make_guardian(adapter, store)
 
-    from apps.reference.domains.execution_position.guardian_background_orphan_cancel_bridge import (
+    from apps.reference.domains.execution_position.guardian.guardian_background_orphan_cancel_bridge import (
         adapt_guardian_background_orphan_to_dec_cancel,
     )
     with patch(
-        "apps.reference.domains.execution_position.order_guardian.adapt_guardian_background_orphan_to_dec_cancel",
+        "apps.reference.domains.execution_position.guardian.order_guardian.adapt_guardian_background_orphan_to_dec_cancel",
         wraps=adapt_guardian_background_orphan_to_dec_cancel,
     ) as background_bridge:
         cancelled = await guardian.cleanup_other_brackets_for_symbol(
@@ -374,11 +374,11 @@ async def test_package11_cleanup_before_close_remains_unchanged() -> None:
         kind="SL",
     )
 
-    from apps.reference.domains.execution_position.guardian_background_orphan_cancel_bridge import (
+    from apps.reference.domains.execution_position.guardian.guardian_background_orphan_cancel_bridge import (
         adapt_guardian_background_orphan_to_dec_cancel,
     )
     with patch(
-        "apps.reference.domains.execution_position.order_guardian.adapt_guardian_background_orphan_to_dec_cancel",
+        "apps.reference.domains.execution_position.guardian.order_guardian.adapt_guardian_background_orphan_to_dec_cancel",
         wraps=adapt_guardian_background_orphan_to_dec_cancel,
     ) as background_bridge:
         cancelled = await guardian.cleanup_before_close(

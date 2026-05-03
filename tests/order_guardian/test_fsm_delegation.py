@@ -11,7 +11,7 @@ Tests:
 import pytest
 import asyncio
 from unittest.mock import Mock, AsyncMock, patch
-from apps.reference.domains.execution_position.order_guardian import OrderGuardian
+from apps.reference.domains.execution_position.guardian.order_guardian import OrderGuardian
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
 
 

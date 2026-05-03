@@ -3,7 +3,7 @@ import time
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from vfoundation.core.protocol import Message
-from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM, ManageState
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageFlowFSM, ManageState
 from tests.harness.execpos_scenarios import feed_opened_position, collect_emits, get_last_emit_by_verb
 
 def test_manage_no_action_when_not_opened(fsm_harness):

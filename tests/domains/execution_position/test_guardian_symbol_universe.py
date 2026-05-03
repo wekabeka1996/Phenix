@@ -16,12 +16,12 @@ from apps.reference.config_models import (
     ExecutionPositionStartupTruthArtifactConfig,
     ExecutionPositionStartupTruthArtifactMode,
 )
-from apps.reference.domains.execution_position.config_resolver import ConfigResolverMixin
-from apps.reference.domains.execution_position.order_guardian import (
+from apps.reference.domains.execution_position.adapters.config_resolver import ConfigResolverMixin
+from apps.reference.domains.execution_position.guardian.order_guardian import (
     InMemoryStore,
     OrderGuardian,
 )
-from apps.reference.domains.execution_position.restore_artifact import (
+from apps.reference.domains.execution_position.state.restore_artifact import (
     BRACKET_STATE_UNKNOWN,
     ExecutionPositionRestoreEnvelope,
     ExecutionPositionRestoreLifecycleRecord,

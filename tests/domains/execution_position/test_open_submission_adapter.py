@@ -7,14 +7,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pydantic import ValidationError
 
-from apps.reference.domains.execution_position.fsm_open import CmdOpenPayload
-from apps.reference.domains.execution_position.open_executor import OpenExecutor
-from apps.reference.domains.execution_position.open_submission_adapter import (
+from apps.reference.domains.execution_position.flows.open.fsm_open import CmdOpenPayload
+from apps.reference.domains.execution_position.flows.open.open_executor import OpenExecutor
+from apps.reference.domains.execution_position.flows.open.open_submission_adapter import (
     OPEN_SUBMISSION_CONTRACT,
     OpenSubmissionAdapterError,
     OpenSubmissionPayload,
 )
-from apps.reference.domains.execution_position.trade_intent_open_intake import (
+from apps.reference.domains.execution_position.flows.open.trade_intent_open_intake import (
     parse_trade_intent_open_intake,
 )
 from vfoundation.core.protocol import Message
@@ -262,7 +262,7 @@ async def test_open_submission_rejection_emits_internal_order_rejected_with_trac
     decision = _dec_open_message(order_type="MARKET")
 
     with patch(
-        "apps.reference.domains.execution_position.open_executor.OpenSubmissionPayload.from_dec_open",
+        "apps.reference.domains.execution_position.flows.open.open_executor.OpenSubmissionPayload.from_dec_open",
         side_effect=OpenSubmissionAdapterError("forced seam rejection"),
     ), patch(
         "vfoundation.core.fsm_emit_compat.emit_compat",
@@ -338,7 +338,7 @@ async def test_execpos_dec_open_hot_path_cannot_bypass_typed_submission(fsm_harn
     )
 
     with patch(
-        "apps.reference.domains.execution_position.open_executor.OpenSubmissionPayload.from_dec_open",
+        "apps.reference.domains.execution_position.flows.open.open_executor.OpenSubmissionPayload.from_dec_open",
         wraps=OpenSubmissionPayload.from_dec_open,
     ) as wrapped_submission:
         await fsm._execute_decision(decision)
@@ -377,7 +377,7 @@ async def test_dec_close_path_does_not_use_open_submission_adapter(fsm_harness) 
     )
 
     with patch(
-        "apps.reference.domains.execution_position.open_executor.OpenSubmissionPayload.from_dec_open",
+        "apps.reference.domains.execution_position.flows.open.open_executor.OpenSubmissionPayload.from_dec_open",
         wraps=OpenSubmissionPayload.from_dec_open,
     ) as wrapped_submission:
         await fsm._execute_decision(decision)
@@ -404,7 +404,7 @@ def test_fill_ingress_path_does_not_use_open_submission_adapter(fsm_harness) -> 
         "handle_canonical_fill_ingress",
         return_value=None,
     ) as wrapped_fill, patch(
-        "apps.reference.domains.execution_position.open_executor.OpenSubmissionPayload.from_dec_open",
+        "apps.reference.domains.execution_position.flows.open.open_executor.OpenSubmissionPayload.from_dec_open",
         wraps=OpenSubmissionPayload.from_dec_open,
     ) as wrapped_submission:
         fsm.handle(fill_msg)

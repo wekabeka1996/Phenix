@@ -9,6 +9,7 @@ _MODULES = (
     "idempotent_cancel",
     "cancel_submission_adapter",
     "cancel_bridge_utils",
+    "guardian_reconcile_cancel_bridge",
     "guardian_background_orphan_cancel_bridge",
     "guardian_old_bracket_cleanup_bridge",
     "guardian_pre_close_cleanup_bridge",

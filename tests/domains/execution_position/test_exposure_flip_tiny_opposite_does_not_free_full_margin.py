@@ -88,7 +88,7 @@ class TestExposureFlipSizeAware:
 
     def test_can_open_accepts_flip_fraction_parameter(self):
         """DEF-E06: ExposureGuard.can_open must accept flip_fraction parameter."""
-        from apps.reference.domains.execution_position.exposure_guard import ExposureGuard
+        from apps.reference.domains.execution_position.guards.exposure_guard import ExposureGuard
         import inspect
         sig = inspect.signature(ExposureGuard.can_open)
         assert "flip_fraction" in sig.parameters, (
@@ -155,7 +155,7 @@ class TestExposureDecimalNoFloatShadowNotional:
 
     def test_exposure_guard_breach_payload_stringifies_financial_values(self, fsm_config):
         """DEF-E19: breach payloads must not convert financial Decimals through float()."""
-        from apps.reference.domains.execution_position.exposure_guard import ExposureGuard
+        from apps.reference.domains.execution_position.guards.exposure_guard import ExposureGuard
 
         eg = fsm_config.domains.execution_position.exposure_guard
         eg.max_portfolio_fraction = "0.1"
@@ -184,7 +184,7 @@ class TestExposureDecimalNoFloatShadowNotional:
 
     def test_exposure_summary_stringifies_financial_totals(self, fsm_config):
         """DEF-E19: summary payloads must keep financial totals string-encoded."""
-        from apps.reference.domains.execution_position.exposure_guard import ExposureGuard
+        from apps.reference.domains.execution_position.guards.exposure_guard import ExposureGuard
 
         fsm_config.trading.execution.exposure.leverage_defaults = {
             "BTCUSDT": 20}
@@ -204,7 +204,7 @@ class TestSoftClipHardClampBehavior:
 
     def test_soft_clip_engine_docstring_documents_hard_zero(self):
         """DEF-E20: SoftClipEngine docstring must mention hard-zero behavior."""
-        from apps.reference.domains.execution_position.soft_clip import SoftClipEngine
+        from apps.reference.domains.execution_position.guards.soft_clip import SoftClipEngine
         doc = SoftClipEngine.__doc__ or ""
         assert "DEF-E20" in doc or "hard" in doc.lower(), (
             "DEF-E20: SoftClipEngine must document that it is a hard clamp, not proportional"
@@ -212,7 +212,7 @@ class TestSoftClipHardClampBehavior:
 
     def test_clip_result_allowed_false_means_hard_block(self):
         """When clip returns allowed=False, the order is hard-blocked (not scaled)."""
-        from apps.reference.domains.execution_position.soft_clip import ClipResult
+        from apps.reference.domains.execution_position.guards.soft_clip import ClipResult
         result = ClipResult(
             allowed=False,
             reason="MARGIN_LIMIT_EXCEEDED",
@@ -227,7 +227,7 @@ class TestSoftClipHardClampBehavior:
 
     def test_soft_clip_reason_strings_use_decimal_rounding(self):
         """DEF-E19: clip reason strings must be formatted from Decimal, not float()."""
-        from apps.reference.domains.execution_position.soft_clip import SoftClipEngine, SoftLimitConfig
+        from apps.reference.domains.execution_position.guards.soft_clip import SoftClipEngine, SoftLimitConfig
 
         engine = SoftClipEngine(SoftLimitConfig())
         result = engine.calculate_clipped_size(

@@ -17,20 +17,26 @@ import re
 from pathlib import Path
 
 EP_DIR = Path("apps/reference/domains/execution_position")
+FLOWS_MANAGE_DIR = EP_DIR / "flows" / "manage"
+FLOWS_CLOSE_DIR = EP_DIR / "flows" / "close"
+ORCHESTRATION_DIR = EP_DIR / "orchestration"
+SIDECAR_DIR = EP_DIR / "sidecar"
+STATE_DIR = EP_DIR / "state"
+GUARDIAN_DIR = EP_DIR / "guardian"
 
 # Extracted peer modules (not fsm.py itself)
 PEER_MODULES = [
-    EP_DIR / "bracket_health.py",
-    EP_DIR / "bracket_ownership.py",
-    EP_DIR / "fill_ingress_coordinator.py",
-    EP_DIR / "startup_truth_orchestrator.py",
-    EP_DIR / "startup_reconstruction.py",
-    EP_DIR / "position_policy_mediator.py",
-    EP_DIR / "position_policy_sidecar.py",
-    EP_DIR / "order_guardian.py",
-    EP_DIR / "close_executor.py",
+    FLOWS_MANAGE_DIR / "bracket_health.py",
+    FLOWS_MANAGE_DIR / "bracket_ownership.py",
+    ORCHESTRATION_DIR / "fill_ingress_coordinator.py",
+    STATE_DIR / "startup_truth_orchestrator.py",
+    STATE_DIR / "startup_reconstruction.py",
+    SIDECAR_DIR / "position_policy_mediator.py",
+    SIDECAR_DIR / "position_policy_sidecar.py",
+    GUARDIAN_DIR / "order_guardian.py",
+    FLOWS_CLOSE_DIR / "close_executor.py",
     EP_DIR / "exposure_manager.py",
-    EP_DIR / "event_handlers.py",
+    ORCHESTRATION_DIR / "event_handlers.py",
 ]
 
 
@@ -127,7 +133,7 @@ class TestCrossPeerViolationBaseline:
 
     def test_fill_ingress_coordinator_does_not_access_bracket_ownership(self):
         """fill_ingress_coordinator must not access _bracket_ownership (cross-peer chain)."""
-        content = _read_module(EP_DIR / "fill_ingress_coordinator.py")
+        content = _read_module(ORCHESTRATION_DIR / "fill_ingress_coordinator.py")
         assert "_bracket_ownership" not in content, (
             "fill_ingress_coordinator must not access _bracket_ownership directly. "
             "Use FSM delegator if needed."
@@ -135,7 +141,7 @@ class TestCrossPeerViolationBaseline:
 
     def test_position_policy_mediator_does_not_access_bracket_ownership(self):
         """position_policy_mediator must not access _bracket_ownership (cross-peer chain)."""
-        content = _read_module(EP_DIR / "position_policy_mediator.py")
+        content = _read_module(SIDECAR_DIR / "position_policy_mediator.py")
         assert "_bracket_ownership" not in content, (
             "position_policy_mediator must not access _bracket_ownership. "
             "Use FSM delegator if needed."
@@ -143,7 +149,7 @@ class TestCrossPeerViolationBaseline:
 
     def test_close_executor_does_not_access_bracket_ownership_via_fsm(self):
         """close_executor must not access _bracket_ownership through FSM back-ref."""
-        content = _read_module(EP_DIR / "close_executor.py")
+        content = _read_module(FLOWS_CLOSE_DIR / "close_executor.py")
         assert "self._fsm._bracket_ownership" not in content, (
             "close_executor must not chain to _bracket_ownership via self._fsm._bracket_ownership. "
             "Use FSM delegator instead."
@@ -155,27 +161,27 @@ class TestKeyTypedStructuresExist:
 
     def test_close_position_truth_classification_exists(self):
         """ClosePositionTruth classification enum must exist in close_executor."""
-        content = _read_module(EP_DIR / "close_executor.py")
+        content = _read_module(FLOWS_CLOSE_DIR / "close_executor.py")
         assert "ClosePositionTruth" in content or "_ClosePositionTruth" in content, (
             "close_executor.py must contain ClosePositionTruth typed structure"
         )
 
     def test_exposure_check_result_or_typed_return_exists(self):
         """ExposureGuard must use typed result, not raw dict."""
-        from apps.reference.domains.execution_position.soft_clip import ClipResult
+        from apps.reference.domains.execution_position.guards.soft_clip import ClipResult
         import inspect
         assert inspect.isclass(ClipResult), "ClipResult must be a typed class"
 
     def test_clip_result_has_allowed_field(self):
         """ClipResult must have 'allowed' field."""
-        from apps.reference.domains.execution_position.soft_clip import ClipResult
+        from apps.reference.domains.execution_position.guards.soft_clip import ClipResult
         import dataclasses
         fields = {f.name for f in dataclasses.fields(ClipResult)}
         assert "allowed" in fields, "ClipResult must have 'allowed' field"
 
     def test_position_policy_close_request_is_typed(self):
         """PositionPolicyCloseRequest must be a typed model, not a plain dict."""
-        from apps.reference.domains.execution_position.position_policy_sidecar import (
+        from apps.reference.domains.execution_position.sidecar.position_policy_sidecar import (
             PositionPolicyCloseRequest,
         )
         assert hasattr(PositionPolicyCloseRequest, "model_fields") or hasattr(
@@ -194,10 +200,10 @@ class TestNoPeerMutatesEachOtherPrivateState:
         update handler). Other extracted modules must not write it.
         """
         for module_path in [
-            EP_DIR / "bracket_health.py",
-            EP_DIR / "fill_ingress_coordinator.py",
-            EP_DIR / "position_policy_mediator.py",
-            EP_DIR / "close_executor.py",
+            FLOWS_MANAGE_DIR / "bracket_health.py",
+            ORCHESTRATION_DIR / "fill_ingress_coordinator.py",
+            SIDECAR_DIR / "position_policy_mediator.py",
+            FLOWS_CLOSE_DIR / "close_executor.py",
         ]:
             content = _read_module(module_path)
             # Check for assignment to _latest_portfolio_state (writes, not reads)
@@ -214,10 +220,10 @@ class TestNoPeerMutatesEachOtherPrivateState:
     def test_no_peer_writes_symbol_brackets_directly(self):
         """Only FSM itself and bracket_ownership should write _symbol_brackets."""
         for module_path in [
-            EP_DIR / "fill_ingress_coordinator.py",
-            EP_DIR / "position_policy_mediator.py",
-            EP_DIR / "close_executor.py",
-            EP_DIR / "event_handlers.py",
+            ORCHESTRATION_DIR / "fill_ingress_coordinator.py",
+            SIDECAR_DIR / "position_policy_mediator.py",
+            FLOWS_CLOSE_DIR / "close_executor.py",
+            ORCHESTRATION_DIR / "event_handlers.py",
         ]:
             content = _read_module(module_path)
             write_pattern = re.compile(

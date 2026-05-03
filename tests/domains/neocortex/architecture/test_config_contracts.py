@@ -120,6 +120,11 @@ def test_actual_neocortex_ssot_yaml_is_explicit_and_loads():
     assert config.oracle.reward_matrix_enabled is True
     # Phase 2: §6.2 keys must be present
     assert config.trust_enabled is False
+    assert config.evidence_capture.mode == "disabled"
+    assert config.evidence_capture.collect_observation is False
+    assert config.evidence_capture.collect_authority_request is False
+    assert config.evidence_capture.collect_authority_response is False
+    assert config.evidence_capture.emit_shadow_decision_logged is False
     assert config.authority.mode == "shadow"
     assert config.authority.deadline_ms == 10
     assert config.authority.fallback_policy == "baseline_yaml"
@@ -296,7 +301,7 @@ def test_neocortex_config_load_fails_closed_on_missing_required_files(tmp_path: 
         load_config(tmp_path)
 
     (tmp_path / "system.yaml").write_text(
-        "trust_enabled: false\nauthority: {mode: shadow, deadline_ms: 10, fallback_policy: baseline_yaml, max_inflight_per_symbol: 1, modulation_allowlist: [bias], signal_threshold_bias_bounds: [-0.5, 0.5], cooldown_mult_bounds: [1.0, 3.0]}\n", encoding="utf-8")
+        "trust_enabled: false\nevidence_capture: {mode: disabled, collect_observation: false, collect_authority_request: false, collect_authority_response: false, emit_shadow_decision_logged: false}\nauthority: {mode: shadow, deadline_ms: 10, fallback_policy: baseline_yaml, max_inflight_per_symbol: 1, modulation_allowlist: [bias], signal_threshold_bias_bounds: [-0.5, 0.5], cooldown_mult_bounds: [1.0, 3.0]}\n", encoding="utf-8")
 
     with pytest.raises(FileNotFoundError, match="Missing ingest config"):
         load_config(tmp_path)

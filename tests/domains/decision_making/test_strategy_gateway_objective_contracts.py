@@ -45,14 +45,16 @@ class _DMStub:
                     risk_skew=SimpleNamespace(until_refresh_retry_sec=1)
                 ),
                 risk_management=SimpleNamespace(
-                    trading_allowed_thresholds=SimpleNamespace(max_risk_score=0.9)
+                    trading_allowed_thresholds=SimpleNamespace(
+                        max_risk_score=0.9)
                 ),
                 position_tracking=SimpleNamespace(positions_stale_ttl_sec=30),
             ),
             system=SimpleNamespace(
                 market_data=SimpleNamespace(bar_ttl_ms=600_000)
             ),
-            strategies=SimpleNamespace(mean_reversion=SimpleNamespace(decision=SimpleNamespace(), safety_gates=SimpleNamespace(enabled=True))),
+            strategies=SimpleNamespace(mean_reversion=SimpleNamespace(
+                decision=SimpleNamespace(), safety_gates=SimpleNamespace(enabled=True))),
         )
 
     def _emit_trade_intent_rejected(self, **kwargs):
@@ -65,7 +67,8 @@ class _DMStub:
         return {"allowed": True, "reason": None}
 
     def _emit_reduce_only_close(self, **kwargs):
-        raise AssertionError("mean_reversion entry test should not route to reduce-only close")
+        raise AssertionError(
+            "mean_reversion entry test should not route to reduce-only close")
 
     def _get_portfolio_position_qty_signed(self, symbol: str):
         return decimal.Decimal("0"), {"symbol": symbol}
@@ -123,6 +126,10 @@ def test_mean_reversion_entry_preserves_canonical_objective_trace_through_gatewa
             "score": 0.61,
             "scoring": {
                 "score": 0.61,
+                "decision_score": 0.61,
+                "thr_buy": 0.5,
+                "thr_sell": 0.45,
+                "psi_vector": {"threshold_factor": 0.2},
                 "objective": _objective_trace(),
                 "regime": "FLAT_NORMAL",
             },
@@ -132,6 +139,7 @@ def test_mean_reversion_entry_preserves_canonical_objective_trace_through_gatewa
                 "target_price": "0.13000",
             },
             "regime": "FLAT_NORMAL",
+            "bar_close_ts": 1_700_000_000_299,
             "tf_sec": 300,
             "ts_ms": 1_700_000_000_000,
             "rid": "mr-entry-objective-1",
@@ -150,6 +158,14 @@ def test_mean_reversion_entry_preserves_canonical_objective_trace_through_gatewa
     proposal = dm.proposals[0]
     assert proposal["strategy_id"] == "mean_reversion"
     assert proposal["strategy_trace"]["objective"]["trace_id"] == "obj-mr-1"
+    assert proposal["strategy_trace"]["signal_score"] == 0.61
+    assert proposal["strategy_trace"]["signal_score_abs"] == 0.61
+    assert proposal["strategy_trace"]["active_threshold"] == 0.5
+    assert proposal["strategy_trace"]["aurora_threshold_factor"] == 0.2
+    assert proposal["strategy_trace"]["aurora_pillar_confidence_candidate"] == 1.0
+    assert proposal["strategy_trace"]["aurora_raw_score_to_threshold_ratio"] == 3.05
+    assert proposal["strategy_trace"]["features_ts_ms"] == 1_700_000_000_000
+    assert proposal["strategy_trace"]["detector_event"]["bar_close_ts_ms"] == 1_700_000_000_299
 
 
 def test_mean_reversion_invalid_objective_trace_fails_closed() -> None:

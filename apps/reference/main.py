@@ -79,6 +79,7 @@ from apps.reference.domains.strategies.plugins.mean_reversion import MeanReversi
 from apps.reference.domains.strategies.plugins.md_amr import MDAMRPlugin
 from apps.reference.domains.strategies.plugins.llm_microstructure import LlmMicrostructurePlugin
 from apps.reference.domains.shadow_telemetry.main_bridge import (
+    ShadowTapDeliveryCriticalError,
     ShadowEventTapPublisher,
     LLMIntentIngressBridge,
     register_llm_command_mapper,
@@ -154,6 +155,24 @@ def build_emit_with_monitoring(
 
         entropy_monitor.track_event(tracking_msg)
 
+        shadow_event_tap_publisher = shadow_event_tap_getter()
+        shadow_event_tap_required = (
+            getattr(shadow_event_tap_publisher, "required_for_mode", False) is True
+            if shadow_event_tap_publisher is not None
+            else False
+        )
+        if shadow_event_tap_publisher is not None and shadow_event_tap_required:
+            preflight_outcome = shadow_event_tap_publisher.preflight(
+                tracking_event_name
+            )
+            if getattr(preflight_outcome, "fatal", False) is True:
+                raise ShadowTapDeliveryCriticalError(
+                    "Shadow event tap required_for_mode=true cannot accept event "
+                    f"{tracking_event_name}: "
+                    f"failure_class={getattr(preflight_outcome, 'failure_class', 'unknown') or 'unknown'} "
+                    f"endpoint={getattr(preflight_outcome, 'endpoint', '')}"
+                )
+
         if isinstance(event_name, Message):
             result = original_emit(event_name)
         else:
@@ -165,15 +184,25 @@ def build_emit_with_monitoring(
                 **emit_kwargs,
             )
 
-        shadow_event_tap_publisher = shadow_event_tap_getter()
         if shadow_event_tap_publisher is not None:
             try:
-                shadow_event_tap_publisher.publish(
+                publish_outcome = shadow_event_tap_publisher.publish(
                     event_name=tracking_event_name,
                     payload=tracking_payload,
                     why=tracking_why,
                 )
+                if getattr(publish_outcome, "fatal", False) is True:
+                    raise ShadowTapDeliveryCriticalError(
+                        "Shadow event tap delivery must fail closed: "
+                        f"event={tracking_event_name} "
+                        f"failure_class={getattr(publish_outcome, 'failure_class', 'unknown') or 'unknown'} "
+                        f"endpoint={getattr(publish_outcome, 'endpoint', '')}"
+                    )
+            except ShadowTapDeliveryCriticalError:
+                raise
             except Exception as bridge_error:
+                if shadow_event_tap_required:
+                    raise
                 logger.warning(
                     "Shadow event tap publish failed for %s: %s",
                     tracking_event_name,
@@ -302,7 +331,7 @@ def _init_order_index(fsm: FSMCore, config: Any) -> None:
 
     Kept here (composition root) to avoid coupling vfoundation.core to app domains.
     """
-    from apps.reference.domains.execution_position.order_index import OrderIndex
+    from apps.reference.domains.execution_position.state.order_index import OrderIndex
 
     ttl_sec: int | None = None
 
@@ -827,36 +856,43 @@ def main() -> None:
         if shadow_cfg is not None and bool(getattr(shadow_cfg, "enabled", False)):
             shadow_shutdown_timeout_sec = float(
                 shadow_cfg.lifecycle.stop_timeout_ms) / 1000.0
-            shadow_event_tap_publisher = ShadowEventTapPublisher(
-                shadow_cfg, logger=LOG.getChild("shadow_telemetry"))
-            shadow_event_tap_publisher.start()
-            shadow_telemetry_sink = ShadowTelemetrySink(
-                path=Path("logs") / "shadow_telemetry" /
-                "decision_ledger_v1.jsonl",
-                queue_maxsize=shadow_cfg.ledger.queue_maxsize,
-                overflow_policy=shadow_cfg.ledger.overflow_policy,
-                enqueue_timeout_ms=shadow_cfg.ledger.enqueue_timeout_ms,
-                shutdown_timeout_ms=shadow_cfg.ledger.shutdown_timeout_ms,
-                logger=LOG.getChild("shadow_telemetry.ledger"),
-            )
-            shadow_telemetry_sink.start()
-            shadow_telemetry_sink.register(fsm)
-            llm_intent_ingress_bridge = LLMIntentIngressBridge(
-                fsm=fsm,
-                config=config,
-                logger=LOG.getChild("shadow_telemetry"),
-            )
-            llm_intent_ingress_bridge.start()
-            register_llm_command_mapper(
-                fsm, logger=LOG.getChild("shadow_telemetry"))
-            LOG.info(
-                " Shadow telemetry bridges started (tap=%s, ingress=%s, ledger=%s)",
-                bool(shadow_event_tap_publisher),
-                bool(llm_intent_ingress_bridge),
-                bool(shadow_telemetry_sink),
-            )
+            try:
+                shadow_event_tap_publisher = ShadowEventTapPublisher(
+                    shadow_cfg, logger=LOG.getChild("shadow_telemetry"))
+                shadow_event_tap_publisher.start()
+                shadow_telemetry_sink = ShadowTelemetrySink(
+                    path=Path("logs") / "shadow_telemetry" /
+                    "decision_ledger_v1.jsonl",
+                    queue_maxsize=shadow_cfg.ledger.queue_maxsize,
+                    overflow_policy=shadow_cfg.ledger.overflow_policy,
+                    enqueue_timeout_ms=shadow_cfg.ledger.enqueue_timeout_ms,
+                    shutdown_timeout_ms=shadow_cfg.ledger.shutdown_timeout_ms,
+                    logger=LOG.getChild("shadow_telemetry.ledger"),
+                )
+                shadow_telemetry_sink.start()
+                shadow_telemetry_sink.register(fsm)
+                llm_intent_ingress_bridge = LLMIntentIngressBridge(
+                    fsm=fsm,
+                    config=config,
+                    logger=LOG.getChild("shadow_telemetry"),
+                )
+                llm_intent_ingress_bridge.start()
+                register_llm_command_mapper(
+                    fsm, logger=LOG.getChild("shadow_telemetry"))
+                LOG.info(
+                    " Shadow telemetry bridges started (tap=%s, ingress=%s, ledger=%s)",
+                    bool(shadow_event_tap_publisher),
+                    bool(llm_intent_ingress_bridge),
+                    bool(shadow_telemetry_sink),
+                )
+            except ShadowTapDeliveryCriticalError as e:
+                LOG.critical("Shadow telemetry startup fail-closed: %s", e)
+                raise
         else:
             LOG.info(" Shadow telemetry bridges disabled by config")
+    except ShadowTapDeliveryCriticalError as e:
+        LOG.critical(f"Failed to initialize shadow telemetry bridges: {e}")
+        raise
     except Exception as e:
         LOG.error(f"Failed to initialize shadow telemetry bridges: {e}")
 

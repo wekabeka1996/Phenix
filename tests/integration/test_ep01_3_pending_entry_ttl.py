@@ -118,7 +118,7 @@ class TestWatchdogTTLOverride:
     
     def test_track_order_with_override(self):
         """When fill_ttl_override_ms is set, it should be stored in OrderDeadline."""
-        from apps.reference.domains.execution_position.watchdog import (
+        from apps.reference.domains.execution_position.adapters.watchdog import (
             OrderTimeoutWatchdog,
             OrderDeadline,
         )
@@ -140,7 +140,7 @@ class TestWatchdogTTLOverride:
     
     def test_on_ack_uses_override_ttl(self):
         """on_order_ack should use override TTL instead of global fill_ttl_ms."""
-        from apps.reference.domains.execution_position.watchdog import (
+        from apps.reference.domains.execution_position.adapters.watchdog import (
             OrderTimeoutWatchdog,
         )
         
@@ -170,7 +170,7 @@ class TestWatchdogTTLOverride:
     
     def test_on_ack_uses_global_when_no_override(self):
         """on_order_ack should use global fill_ttl_ms when override is None."""
-        from apps.reference.domains.execution_position.watchdog import (
+        from apps.reference.domains.execution_position.adapters.watchdog import (
             OrderTimeoutWatchdog,
         )
         
@@ -380,7 +380,7 @@ class TestPanicKillswitch:
     
     def test_fsm_open_rejects_when_panic_active(self):
         """OpenFlowFSM should reject CMD:OPEN when panic_killswitch=true."""
-        from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
+        from apps.reference.domains.execution_position.flows.open.fsm_open import OpenFlowFSM
         from apps.reference.config_models import AuroraConfig, TradingConfig, OpsConfig
         from vfoundation.core.protocol import Message
         from unittest.mock import MagicMock
@@ -452,7 +452,7 @@ class TestSupersedeAck:
     
     def test_cancel_all_pending_collects_symbols(self):
         """_cancel_all_pending_entries should collect all symbols with pending orders."""
-        from apps.reference.domains.execution_position.watchdog import (
+        from apps.reference.domains.execution_position.adapters.watchdog import (
             OrderTimeoutWatchdog,
             OrderDeadline,
             OrderTimeoutType,

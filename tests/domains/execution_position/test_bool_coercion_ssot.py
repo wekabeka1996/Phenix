@@ -140,13 +140,13 @@ class TestDeterminism:
 
 
 class TestConsumerImportDriftGuard:
-    """Verify that production consumers import from the canonical location."""
+    """Verify that moved implementation consumers import from the canonical location."""
 
     _CONSUMER_FILES = [
-        "apps/reference/domains/execution_position/order_guardian.py",
-        "apps/reference/domains/execution_position/bracket_health.py",
-        "apps/reference/domains/execution_position/fsm_manage.py",
-        "apps/reference/domains/execution_position/close_executor.py",
+        "apps/reference/domains/execution_position/guardian/order_guardian.py",
+        "apps/reference/domains/execution_position/flows/manage/bracket_health.py",
+        "apps/reference/domains/execution_position/flows/manage/fsm_manage.py",
+        "apps/reference/domains/execution_position/flows/close/close_executor.py",
     ]
 
     @pytest.mark.parametrize("filepath", _CONSUMER_FILES)

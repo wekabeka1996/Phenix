@@ -2,7 +2,7 @@ import pytest
 import time
 import threading
 from collections import defaultdict
-from apps.reference.domains.execution_position.metrics_collector import MetricsCollector
+from apps.reference.domains.execution_position.telemetry.metrics_collector import MetricsCollector
 
 class TestMetricsCollector:
     

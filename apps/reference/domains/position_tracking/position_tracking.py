@@ -28,7 +28,7 @@ from apps.reference.telemetry.trade_lifecycle_logger import (
     POSITION_DISAPPEARANCE_RECORD_KIND,
     append_trade_lifecycle_record,
 )
-from apps.reference.domains.execution_position.truth_hardening import (
+from apps.reference.domains.execution_position.state.truth_hardening import (
     attach_execution_truth_hardening,
 )
 

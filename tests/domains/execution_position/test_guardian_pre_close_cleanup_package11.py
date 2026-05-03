@@ -5,15 +5,15 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from apps.reference.adapters.binance_adapter import BinanceAPIError
-from apps.reference.domains.execution_position.cancel_submission_adapter import (
+from apps.reference.domains.execution_position.guardian.cancel_submission_adapter import (
     CancelSubmissionAdapterError,
     CancelSubmissionPayload,
 )
-from apps.reference.domains.execution_position.guardian_pre_close_cleanup_bridge import (
+from apps.reference.domains.execution_position.guardian.guardian_pre_close_cleanup_bridge import (
     GuardianPreCloseCleanupRequest,
     adapt_guardian_pre_close_cleanup_to_dec_cancel,
 )
-from apps.reference.domains.execution_position.order_guardian import (
+from apps.reference.domains.execution_position.guardian.order_guardian import (
     InMemoryStore,
     OrderGuardian,
 )

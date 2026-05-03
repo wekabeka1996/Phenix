@@ -1,7 +1,7 @@
 from decimal import Decimal
 from vfoundation.core.protocol import Message
-from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
-from apps.reference.domains.execution_position.exposure_guard import ExposureGuard
+from apps.reference.domains.execution_position.flows.open.fsm_open import OpenFlowFSM
+from apps.reference.domains.execution_position.guards.exposure_guard import ExposureGuard
 import pytest
 
 

@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import AsyncMock
 
 from vfoundation.core import FSMCore
-from apps.reference.domains.execution_position.order_guardian import OrderGuardian, InMemoryStore
+from apps.reference.domains.execution_position.guardian.order_guardian import OrderGuardian, InMemoryStore
 
 
 @pytest.mark.asyncio

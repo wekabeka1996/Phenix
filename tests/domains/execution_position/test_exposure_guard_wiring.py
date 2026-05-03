@@ -2,9 +2,9 @@ import pytest
 from unittest.mock import MagicMock, patch
 from decimal import Decimal
 from types import SimpleNamespace
-from apps.reference.domains.execution_position.exposure_guard import ExposureGuard
+from apps.reference.domains.execution_position.guards.exposure_guard import ExposureGuard
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
-from apps.reference.domains.execution_position.soft_clip import (
+from apps.reference.domains.execution_position.guards.soft_clip import (
     RegimeAdaptationConfig,
     SoftLimitConfigModel,
     SoftLimitConfig,
@@ -106,7 +106,7 @@ def test_exposure_guard_wiring(mock_config):
     fsm_core = MockFSM()
 
     # Patch DomainConfigResolver to bypass complex config resolution and provide valid values
-    with patch("apps.reference.domains.execution_position.exposure_guard.DomainConfigResolver") as MockResolver:
+    with patch("apps.reference.domains.execution_position.guards.exposure_guard.DomainConfigResolver") as MockResolver:
         mock_resolver_inst = MockResolver.return_value
         eg_mock = MagicMock()
         # Provide float/int values which _to_dec handles (str(val))

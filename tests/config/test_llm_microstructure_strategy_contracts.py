@@ -185,7 +185,7 @@ def test_llm_microstructure_runtime_import_smoke() -> None:
         "apps.reference.domains.shadow_telemetry.main_bridge"
     )
     intent_router_mod = importlib.import_module(
-        "apps.reference.domains.execution_position.intent_router"
+        "apps.reference.domains.execution_position.flows.open.intent_router"
     )
 
     assert hasattr(plugin_mod, "LlmMicrostructurePlugin")

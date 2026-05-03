@@ -33,11 +33,13 @@ from .judge.experts.expert_output_bridge import (
     alpha_score_to_expert_output,
     write_jsonl_chamber_log,
     write_jsonl_envelope_log,
+    write_jsonl_policy_cortex_log,
     write_jsonl_shadow_log,
     write_jsonl_verdict_log,
 )
 from .judge.chamber import ChamberAggregator
 from .judge.envelope import assemble_evidence_envelope
+from .judge.policy_cortex.cortex_evaluator import evaluate_policy_cortex
 from .judge.shadow_entry_plan import (
     derive_shadow_entry_plans,
     write_jsonl_shadow_entry_plan_log,
@@ -1358,11 +1360,103 @@ class AlphaSearchBacktestPlugin:
                 verdict.dissent_noted,
             )
 
+            # ── J6-S16.1 Policy Cortex Shadow Annotation ─────────────────────
+            # Called AFTER verdict and shadow plan are emitted.
+            # Does NOT change verdict output or shadow plan logic.
+            # Produces EVT:JUDGE_POLICY_CORTEX_EVALUATED_V1 (shadow-only).
+            # Linked to verdict/shadow-plan by cycle_key.
+            if chamber_result.verdict_scope == "ENTRY":
+                self._emit_policy_cortex_annotation(
+                    verdict=verdict,
+                    judge_cfg=judge_cfg,
+                    regime=regime,
+                    ts_ms=bar_close_ts,
+                )
+            # ─────────────────────────────────────────────────────────────────
+
         except Exception:
             LOG.warning(
                 "[%s] Phase 4 verdict assembly failed for %s chamber (fail-closed)",
                 symbol,
                 chamber_result.verdict_scope,
+                exc_info=True,
+            )
+
+    def _emit_policy_cortex_annotation(
+        self,
+        verdict: "JudgeVerdict",
+        judge_cfg: Any,
+        regime: Optional[str],
+        ts_ms: int,
+    ) -> None:
+        """J6-S16.1 — Evaluate and emit the Policy Cortex shadow annotation.
+
+        Called once per ENTRY verdict cycle, AFTER verdict and shadow plans
+        are fully emitted. Does NOT alter any verdict field or shadow plan.
+
+        Emits: EVT:JUDGE_POLICY_CORTEX_EVALUATED_V1 (shadow-only)
+        Writes: policy_cortex_{symbol}_{date}.jsonl (when shadow_log.enabled)
+
+        Fail-closed:
+        - Any exception inside evaluate_policy_cortex() already degrades to UNKNOWN.
+        - Any exception in this method is caught and logged — never propagated.
+        - If judge_cfg is missing or invalid, skips silently with a DEBUG log.
+        """
+        symbol = verdict.symbol
+        try:
+            # Resolve entry side from verdict
+            side: Optional[str] = None
+            if verdict.entry_verdict == "OPEN_LONG":
+                side = "BUY"
+            elif verdict.entry_verdict == "OPEN_SHORT":
+                side = "SELL"
+
+            # evaluate_policy_cortex is already error-safe (degrades to UNKNOWN)
+            annotation = evaluate_policy_cortex(
+                symbol=symbol,
+                tf_sec=verdict.tf_sec,
+                side=side,
+                regime=regime,
+                strategy_id=verdict.strategy_id,
+                cycle_key=verdict.cycle_key,
+            )
+
+            # Emit EVT:JUDGE_POLICY_CORTEX_EVALUATED_V1 (shadow-only)
+            payload = annotation.model_dump()
+            payload["ts_ms"] = ts_ms          # add timestamp for joinability
+            payload["emitted_at_ms"] = ts_ms
+            payload["verdict_id"] = verdict.verdict_id
+            self.event_bus.emit(
+                event_name="EVT:JUDGE_POLICY_CORTEX_EVALUATED_V1",
+                payload=payload,
+                why=f"judge_policy_cortex_{symbol}",
+            )
+
+            # Write sidecar JSONL log (same guard as all other judge shadow logs)
+            if judge_cfg and judge_cfg.shadow_log and judge_cfg.shadow_log.enabled:
+                try:
+                    write_jsonl_policy_cortex_log(
+                        annotation,
+                        log_dir=judge_cfg.shadow_log.log_dir,
+                        ts_ms=ts_ms,
+                    )
+                except Exception:
+                    LOG.exception(
+                        "[%s] Failed to write policy cortex log", symbol
+                    )
+
+            LOG.debug(
+                "[%s] Policy cortex: surface=%s label=%s output=%s (shadow)",
+                symbol,
+                annotation.surface_key,
+                annotation.matched_surface_label,
+                annotation.classifier_output,
+            )
+
+        except Exception:
+            LOG.warning(
+                "[%s] Policy cortex annotation failed (shadow-only, skipped)",
+                symbol,
                 exc_info=True,
             )
 

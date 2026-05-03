@@ -275,11 +275,12 @@ apps/reference/domains/execution_position/
     adapter_init.py
     exchange_submission.py
 
-  utils/
+  support/
     __init__.py
-    utils.py
     stopprice_validation.py
 ```
+
+Note: the accepted Phase 8/9 skeleton retained root `utils.py` as an intentional root anchor and moved `stopprice_validation.py` under `support/`. Do not create `execution_position/utils/`.
 
 ### 3.3 Ownership rules by folder
 

@@ -26,13 +26,14 @@ class TestPendingBracketsWALCorruptRowPolicy:
         import tempfile
         import os
         from pathlib import Path
-        from apps.reference.domains.execution_position.pending_brackets_wal import (
+        from apps.reference.domains.execution_position.flows.manage.pending_brackets_wal import (
             CriticalStartupError,
+            PENDING_BRACKETS_WAL_FILENAME,
             read_pending_brackets_from_wal,
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            wal_file = os.path.join(tmpdir, "brackets_wal_000.jsonl")
+            wal_file = os.path.join(tmpdir, PENDING_BRACKETS_WAL_FILENAME)
             with open(wal_file, "w") as f:
                 f.write(json.dumps({
                     "verb": "PENDING_BRACKETS_STORED",
@@ -62,9 +63,55 @@ class TestPendingBracketsWALCorruptRowPolicy:
                 f"Got critical records: {critical_msgs}"
             )
 
+    def test_legacy_shared_wal_ignores_unrelated_corrupt_rows(self):
+        import tempfile
+        from pathlib import Path
+        from apps.reference.domains.execution_position.flows.manage.pending_brackets_wal import (
+            read_pending_brackets_from_wal,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            wal_file = Path(tmpdir) / "2026-04-30.jsonl"
+            wal_file.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {"verb": "BAR_CLOSED", "pld": {"symbol": "BTCUSDT"}}),
+                        "FEATURES_CALCULATED\"}, \"state_vector\": [\"ETHUSDT\", NaN]",
+                        json.dumps(
+                            {
+                                "verb": "PENDING_BRACKETS_STORED",
+                                "pld": {
+                                    "entry_order_id": "legacy-order-001",
+                                    "symbol": "BTCUSDT",
+                                    "side": "BUY",
+                                    "sl": 100.0,
+                                    "tp": 110.0,
+                                    "qty": 1.0,
+                                    "rid": "rid-legacy-001",
+                                    "idem_key": "idem-legacy-001",
+                                    "tick_size": 0.1,
+                                },
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            mock_config = MagicMock()
+            mock_config.wal_dir = Path(tmpdir)
+
+            with patch("vfoundation.config.config", mock_config):
+                restored = read_pending_brackets_from_wal()
+
+            assert restored["legacy-order-001"]["symbol"] == "BTCUSDT"
+            assert restored["legacy-order-001"]["rid"] == "rid-legacy-001"
+
     def test_execpos_startup_fails_closed_on_corrupt_wal(self, fsm_config):
         from apps.reference.domains.execution_position.fsm import ExecPosFSM
-        from apps.reference.domains.execution_position.pending_brackets_wal import CriticalStartupError
+        from apps.reference.domains.execution_position.flows.manage.pending_brackets_wal import CriticalStartupError
 
         with patch(
             "apps.reference.domains.execution_position.fsm.read_pending_brackets_from_wal",
@@ -87,7 +134,7 @@ class TestOrderGuardianStoreProtocol:
         It must use public methods (get_all_tracked_symbols or get_all).
         """
         import inspect
-        from apps.reference.domains.execution_position.order_guardian import OrderGuardian
+        from apps.reference.domains.execution_position.guardian.order_guardian import OrderGuardian
 
         source = inspect.getsource(OrderGuardian._iter_symbols_for_poll)
         assert '"_data"' not in source and "'_data'" not in source, (
@@ -98,7 +145,7 @@ class TestOrderGuardianStoreProtocol:
     def test_iter_symbols_uses_public_store_method(self):
         """DEF-E13: _iter_symbols_for_poll must try get_all_tracked_symbols() or get_all()."""
         import inspect
-        from apps.reference.domains.execution_position.order_guardian import OrderGuardian
+        from apps.reference.domains.execution_position.guardian.order_guardian import OrderGuardian
 
         source = inspect.getsource(OrderGuardian._iter_symbols_for_poll)
         assert ("get_all_tracked_symbols" in source or "get_all" in source), (
@@ -147,7 +194,7 @@ class TestPartialFillKeepsPendingEntryMeta:
     def test_event_handlers_partial_fill_guards_meta_pop(self):
         """DEF-E17: event_handlers.py must have PARTIALLY_FILLED guard before meta pop."""
         import inspect
-        from apps.reference.domains.execution_position.event_handlers import EPEventHandlers
+        from apps.reference.domains.execution_position.orchestration.event_handlers import EPEventHandlers
 
         source = inspect.getsource(EPEventHandlers.on_order_fill)
         # The guard must appear before the pop

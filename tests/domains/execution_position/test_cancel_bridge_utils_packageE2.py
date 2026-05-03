@@ -5,36 +5,36 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from apps.reference.domains.execution_position.cancel_bridge_utils import (
+from apps.reference.domains.execution_position.guardian.cancel_bridge_utils import (
     clean_optional_str,
     clean_required_str,
 )
-from apps.reference.domains.execution_position.guardian_background_orphan_cancel_bridge import (
+from apps.reference.domains.execution_position.guardian.guardian_background_orphan_cancel_bridge import (
     GuardianBackgroundOrphanCancelBridgeError,
     GuardianBackgroundOrphanCancelRequest,
     build_guardian_background_orphan_cancel_trace_ref,
 )
-from apps.reference.domains.execution_position.guardian_old_bracket_cleanup_bridge import (
+from apps.reference.domains.execution_position.guardian.guardian_old_bracket_cleanup_bridge import (
     GuardianOldBracketCleanupBridgeError,
     GuardianOldBracketCleanupRequest,
     build_guardian_old_bracket_cleanup_trace_ref,
 )
-from apps.reference.domains.execution_position.guardian_pre_close_cleanup_bridge import (
+from apps.reference.domains.execution_position.guardian.guardian_pre_close_cleanup_bridge import (
     GuardianPreCloseCleanupBridgeError,
     GuardianPreCloseCleanupRequest,
     build_guardian_pre_close_cleanup_trace_ref,
 )
-from apps.reference.domains.execution_position.guardian_reconcile_cancel_bridge import (
+from apps.reference.domains.execution_position.guardian.guardian_reconcile_cancel_bridge import (
     GuardianReconcileCancelBridgeError,
     GuardianReconcileCancelRequest,
     build_guardian_reconcile_cancel_trace_ref,
 )
-from apps.reference.domains.execution_position.reconcile_close_cancel_bridge import (
+from apps.reference.domains.execution_position.flows.close.reconcile_close_cancel_bridge import (
     ReconcileCloseCancelBridgeError,
     ReconcileCloseCancelRequest,
     build_reconcile_close_cancel_trace_ref,
 )
-from apps.reference.domains.execution_position.tracked_close_teardown_cancel_bridge import (
+from apps.reference.domains.execution_position.flows.close.tracked_close_teardown_cancel_bridge import (
     TrackedCloseTeardownCancelBridgeError,
     TrackedCloseTeardownCancelRequest,
     build_tracked_close_teardown_cancel_trace_ref,

@@ -1,7 +1,7 @@
 import pytest
 from decimal import Decimal
 from unittest.mock import MagicMock
-from apps.reference.domains.execution_position.fsm_open import OpenFlowFSM
+from apps.reference.domains.execution_position.flows.open.fsm_open import OpenFlowFSM
 from apps.reference.config_models import AuroraConfig, InstrumentPrecisionSpec
 
 class TestOpenFlowFSMConfigValidation:

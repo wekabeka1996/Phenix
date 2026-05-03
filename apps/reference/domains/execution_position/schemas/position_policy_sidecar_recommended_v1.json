@@ -35,49 +35,7 @@
     "score_snapshot": { "type": "object" },
     "policy_source": { "type": "string", "pattern": "^position_policy_sidecar(:[a-z_]+)?$" },
     "peak_giveback_snapshot": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "policy_enabled",
-        "mark_price",
-        "entry_price",
-        "position_qty",
-        "side",
-        "unrealized_pnl_usdt",
-        "unrealized_pnl_pct",
-        "peak_edge_usd",
-        "current_edge_usd",
-        "giveback_pct",
-        "is_armed",
-        "arm_threshold_usd",
-        "giveback_trigger_pct",
-        "threshold_crossed",
-        "peak_giveback_state",
-        "reason_codes",
-        "null_reasons"
-      ],
-      "properties": {
-        "policy_enabled": { "type": "boolean" },
-        "mark_price": { "type": ["number", "null"] },
-        "entry_price": { "type": ["number", "null"] },
-        "position_qty": { "type": ["number", "null"] },
-        "side": { "type": ["string", "null"] },
-        "unrealized_pnl_usdt": { "type": ["number", "null"] },
-        "unrealized_pnl_pct": { "type": ["number", "null"] },
-        "peak_edge_usd": { "type": "number" },
-        "current_edge_usd": { "type": ["number", "null"] },
-        "giveback_pct": { "type": ["number", "null"] },
-        "is_armed": { "type": "boolean" },
-        "arm_threshold_usd": { "type": "number" },
-        "giveback_trigger_pct": { "type": "number" },
-        "threshold_crossed": { "type": ["boolean", "null"] },
-        "peak_giveback_state": { "type": "string", "minLength": 1 },
-        "reason_codes": { "type": "array", "items": { "type": "string" } },
-        "null_reasons": {
-          "type": "object",
-          "additionalProperties": { "type": "string" }
-        }
-      }
+      "$ref": "https://aurora.internal/schemas/common/peak_giveback_snapshot_v1.json"
     }
   }
 }

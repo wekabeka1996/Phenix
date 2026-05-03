@@ -1,22 +1,30 @@
-# Архітектура домену Execution Position
+# Execution Position Architecture
 
-## 1. Трьохфазний FSM Життєвий Цикл
-Виконання кожної торгової ідеї проходить через три ізольовані потоки логіки:
-1. **Open Flow (`fsm_open.py`)**: Валідація наміру, перевірка лімітів експозиції через `ExposureGuard`, встановлення плеча та виставлення `ENTRY` ордера.
-2. **Manage Flow (`fsm_manage.py`)**: Активація після отримання `FILL` події. Відповідає за виставлення брекетів (TP/SL), трейлінг-стоп та моніторинг часткового закриття.
-3. **Close Flow (`fsm_close.py`)**: Оркестрація виходу з позиції за командою. Блокує автоматичні брекети (`ManageFlow`) для уникнення конфліктів.
+> Package-local architecture summary. The authoritative physical layout is
+> described in `../README.md`.
 
-## 2. Exposure Guard та Soft Clipping
-Механізм захисту капіталу працює на двох рівнях:
-- **Hard Block**: Повна відмова в операції, якщо порушено критичні ліміти (напр. недостатньо маржі).
-- **Soft Clip**: Зменшення кількості (`qty`) ордера до максимально допустимого ліміту концентрації без повної відмови.
+## Three-phase lifecycle
 
-## 3. Механізми ідемпотентності та реконсиляції
-- **OrderIndex**: Зв'язує внутрішні `rid` стратегії з біржовими `orderId`. Запобігає дублюванню ордерів при повторних сигналах.
-- **Leverage Bootstrapping**: Обов'язкова фаза перед початком торгів для синхронізації режиму маржі (Cross/Isolated) та плеча.
-- **Watchdog Polling**: Якщо WebSocket події від біржі затримуються, Watchdog ініціює REST-запити для перевірки статусу ордерів.
+Execution flows through three specialized FSM implementations:
 
-## 4. Гарантії безпеки (Fail-Closed)
-- **Anti-2021**: Перевірка, щоб ціна тригера стоп-лосу не була "пройдена" ринком на момент виставлення, що запобігає негайному спрацюванню ордера.
-- **Warmup Readiness**: Домен не починає торгівлю, поки не отримає підтвердження готовності (warmup) від всіх залежних систем.
-- **Config Enforcement**: Відсутність параметрів символу в SSOT (YAML) призводить до негайного відхилення ордера.
+1. `flows/open/fsm_open.py`
+   Validates open intents, enforces exposure/leverage gates, and prepares entry submission.
+2. `flows/manage/fsm_manage.py`
+   Activates after fills, manages brackets, tracks live position state, and routes max-hold behavior.
+3. `flows/close/fsm_close.py`
+   Orchestrates explicit close commands and protects close flow semantics from bracket conflicts.
+
+## Root orchestration anchor
+
+`fsm.py` remains the root orchestration anchor for `ExecPosFSM`. That is
+intentional and frozen by Phase 9A guardrails; it is not unfinished migration debt.
+
+## Supporting layers
+
+- `guards/` holds exposure, leverage, qty, and soft-clip logic.
+- `state/` holds order ledger, restore, and startup-truth modules.
+- `guardian/` holds orphan cleanup and cancel bridges.
+- `telemetry/` holds metrics and observability utilities.
+- `sidecar/` holds position-policy sidecar and mediator logic.
+- `orchestration/` holds event ingress helpers.
+- `support/` holds non-shadowing support utilities.

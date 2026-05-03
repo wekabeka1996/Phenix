@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from apps.reference.domains.decision_making.intent.builder import IntentBuilder
-from apps.reference.domains.execution_position.order_index import OrderIndex
+from apps.reference.domains.execution_position.state.order_index import OrderIndex
 
 
 class _FakeSG:

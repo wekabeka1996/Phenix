@@ -4,9 +4,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from apps.reference.domains.execution_position.bracket_math import compute_bracket_targets
-from apps.reference.domains.execution_position.fsm_manage import ManageFlowFSM
-from apps.reference.domains.execution_position.open_executor import OpenExecutor
+from apps.reference.domains.execution_position.flows.manage.bracket_math import compute_bracket_targets
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageFlowFSM
+from apps.reference.domains.execution_position.flows.open.open_executor import OpenExecutor
 
 
 def _build_open_executor(

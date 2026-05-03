@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from apps.reference.domains.execution_position.idempotent_cancel import IdempotentCancelHelper
+from apps.reference.domains.execution_position.guardian.idempotent_cancel import IdempotentCancelHelper
 
 @pytest.mark.asyncio
 class TestIdempotentCancelLogic:

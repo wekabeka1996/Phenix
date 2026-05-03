@@ -2,7 +2,7 @@ import pytest
 import os
 import logging
 from pathlib import Path
-from apps.reference.domains.execution_position.aurora_log_adapter import AuroraLogAdapter
+from apps.reference.domains.execution_position.telemetry.aurora_log_adapter import AuroraLogAdapter
 
 @pytest.fixture
 def log_file(tmp_path):

@@ -213,7 +213,7 @@ class TestWSClientIntegration:
 
     def test_adapter_init_creates_ws_client(self):
         """AdapterInitMixin should create and start a BinanceWebSocketClient."""
-        from apps.reference.domains.execution_position.adapter_init import AdapterInitMixin
+        from apps.reference.domains.execution_position.adapters.adapter_init import AdapterInitMixin
 
         mixin = AdapterInitMixin()
 
@@ -284,7 +284,7 @@ class TestWSClientIntegration:
 
     def test_adapter_init_uses_registered_async_loop_for_ws_client(self):
         """Adapter bootstrap should reuse the execution async loop outside async context."""
-        from apps.reference.domains.execution_position.adapter_init import AdapterInitMixin
+        from apps.reference.domains.execution_position.adapters.adapter_init import AdapterInitMixin
 
         mixin = AdapterInitMixin()
         mixin.shadow_mode = False
@@ -331,7 +331,7 @@ class TestPartialFillDedupFix:
 
     def test_truth_hardening_key_includes_trade_id(self):
         """Different trade_ids for same order → different dedup keys."""
-        from apps.reference.domains.execution_position.truth_hardening import (
+        from apps.reference.domains.execution_position.state.truth_hardening import (
             resolve_trade_executed_identity,
         )
 
@@ -358,7 +358,7 @@ class TestPartialFillDedupFix:
 
     def test_truth_hardening_key_backward_compat_no_trade_id(self):
         """Payload without tradeId → key unchanged from old format."""
-        from apps.reference.domains.execution_position.truth_hardening import (
+        from apps.reference.domains.execution_position.state.truth_hardening import (
             resolve_trade_executed_identity,
         )
 
@@ -399,7 +399,7 @@ class TestPartialFillDedupFix:
 
     def test_watchdog_retains_order_on_partial_fill(self):
         """Watchdog must NOT remove order from tracking on PARTIALLY_FILLED."""
-        from apps.reference.domains.execution_position.watchdog import (
+        from apps.reference.domains.execution_position.adapters.watchdog import (
             OrderTimeoutWatchdog,
         )
 

@@ -27,7 +27,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from apps.reference.domains.execution_position.cancel_bridge_utils import (
+from .cancel_bridge_utils import (
     build_trace_ref,
     clean_required_str,
 )

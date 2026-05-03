@@ -9,6 +9,7 @@ emits overlay-only artifacts, and never mutates canonical YAML automatically.
 from __future__ import annotations
 
 import argparse
+import copy
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -25,6 +26,8 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from apps.reference.config.strategies.md_amr import MDAMRAssetConfig, MDAMRStrategyConfig
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -37,6 +40,37 @@ _LOAD_RECORDER_900: Any | None = None
 _COMPUTE_MD_AMR_FEATURES: Any | None = None
 _MD_AMR_STRATEGY_V11: Any | None = None
 _REGIME_ALLOWLIST_CONTRACT: Any | None = None
+
+LIVE_ASSIGNED = "LIVE_ASSIGNED"
+NOT_LIVE_ASSIGNED = "NOT_LIVE_ASSIGNED"
+
+_NUMERIC_BASE_PARAM_MUTATION_SPECS: dict[str, dict[str, Any]] = {
+    "threshold_z": {"field_name": "threshold_z", "kind": "float", "step": 0.2, "steps_down": 4, "steps_up": 4},
+    "thr_base": {"field_name": "thr_base", "kind": "float", "step": 0.05, "steps_down": 3, "steps_up": 3},
+    "thr_floor": {"field_name": "thr_floor", "kind": "float", "step": 0.02, "steps_down": 2, "steps_up": 2},
+    "hysteresis_mult": {"field_name": "hysteresis_mult", "kind": "float", "step": 0.1, "steps_down": 4, "steps_up": 4},
+    "volatility_dampening_factor": {"field_name": "volatility_dampening_factor", "kind": "float", "step": 0.1, "steps_down": 3, "steps_up": 3},
+    "alpha": {"field_name": "alpha", "kind": "float", "step": 0.05, "steps_down": 4, "steps_up": 4},
+    "conf_min": {"field_name": "conf_min", "kind": "float", "step": 0.05, "steps_down": 3, "steps_up": 3},
+    "channel_window_bars": {"field_name": "channel_window_bars", "kind": "int", "step": 2, "steps_down": 3, "steps_up": 3},
+    "atr_window": {"field_name": "atr_window", "kind": "int", "step": 2, "steps_down": 3, "steps_up": 3},
+    "atr_stats_window": {"field_name": "atr_stats_window", "kind": "int", "step": 8, "steps_down": 3, "steps_up": 3},
+    "max_hold_bars": {"field_name": "max_hold_bars", "kind": "int", "step": 2, "steps_down": 4, "steps_up": 4},
+    "target_approach_pct": {"field_name": "target_approach_pct", "kind": "float", "step": 0.0025, "steps_down": 0, "steps_up": 4},
+}
+
+_BASE_PARAM_MUTATION_ORDER = tuple(
+    _NUMERIC_BASE_PARAM_MUTATION_SPECS.keys()) + ("allowed_regimes",)
+_ALLOWED_REGIME_MUTATION_UNIVERSE = (
+    "MEAN_REVERSION",
+    "TREND_UP",
+    "TREND_DOWN",
+    "HIGH_VOLATILITY",
+    "LOW_VOLATILITY",
+    "FLAT_LOW",
+    "FLAT_NORMAL",
+    "FLAT_HIGH",
+)
 
 
 class CalibrationError(RuntimeError):
@@ -51,6 +85,7 @@ class SearchCfg:
     trials: int
     top_k: int
     warmup_bars: int
+    freeze_weights: bool
 
 
 @dataclass(frozen=True)
@@ -67,6 +102,21 @@ class WindowSpec:
     train_days: list[str]
     validation_days: list[str]
     forward_days: list[str]
+
+
+@dataclass(frozen=True)
+class MutationSurfaceCfg:
+    requested_dimensions: tuple[str, ...]
+    search_space: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class SymbolScope:
+    symbol: str
+    tf_sec: int
+    live_status: str
+    base_config_source: str
+    strategies_registry_source: str
 
 
 def _require_md_amr_runtime() -> None:
@@ -482,8 +532,378 @@ def _extract_asset_configs(md_amr_cfg: dict[str, Any], symbols: Iterable[str]) -
                 f"md_amr.assets.{symbol}.exit requires sl_pct and tp_rr",
                 details={"symbol": symbol},
             )
-        out[symbol] = dict(asset_cfg)
+        normalized_asset_cfg = copy.deepcopy(asset_cfg)
+        normalized_asset_cfg["allowed_regimes"] = [
+            _normalize_regime_for_calibrator(item)
+            for item in list(asset_cfg.get("allowed_regimes") or [])
+            if str(item or "").strip()
+        ]
+        out[symbol] = normalized_asset_cfg
     return out
+
+
+def _load_strategies_registry(path: Path) -> dict[str, Any]:
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict) or not isinstance(raw.get("assignments"), dict):
+        raise CalibrationError(
+            "CONFIG_INVALID",
+            f"Invalid strategies registry YAML (expected top-level 'assignments'): {path}",
+        )
+    return raw
+
+
+def _resolve_symbol_scope(
+    *,
+    symbols: Sequence[str],
+    tf_sec: int,
+    strategies_cfg: dict[str, Any],
+    strategies_yaml: Path,
+    md_amr_yaml: Path,
+) -> list[dict[str, Any]]:
+    assignments = strategies_cfg.get("assignments") or {}
+    scope: list[dict[str, Any]] = []
+    for raw_symbol in symbols:
+        symbol = str(raw_symbol).upper()
+        assigned = assignments.get(symbol) or []
+        if not isinstance(assigned, list):
+            raise CalibrationError(
+                "CONFIG_INVALID",
+                f"strategies.yaml assignments for {symbol} must be a list",
+                details={"symbol": symbol},
+            )
+        live_status = LIVE_ASSIGNED if "md_amr" in [
+            str(item) for item in assigned] else NOT_LIVE_ASSIGNED
+        scope.append(
+            {
+                "symbol": symbol,
+                "tf_sec": int(tf_sec),
+                "live_status": live_status,
+                "base_config_source": str(md_amr_yaml),
+                "strategies_registry_source": str(strategies_yaml),
+            }
+        )
+    return scope
+
+
+def _parse_mutation_dimensions(raw: str | None) -> tuple[str, ...]:
+    if raw is None:
+        return tuple()
+    requested: list[str] = []
+    for part in str(raw).replace(";", ",").split(","):
+        dim = str(part).strip()
+        if not dim or dim.lower() == "none":
+            continue
+        if dim not in _BASE_PARAM_MUTATION_ORDER:
+            raise CalibrationError(
+                "INPUT_CONTRACT_VIOLATION",
+                f"Unsupported md_amr mutation dimension '{dim}'. Supported: {list(_BASE_PARAM_MUTATION_ORDER)}",
+                details={"dimension": dim, "supported_dimensions": list(
+                    _BASE_PARAM_MUTATION_ORDER)},
+            )
+        if dim not in requested:
+            requested.append(dim)
+    return tuple(requested)
+
+
+def _field_bounds_from_model(*, model_cls: type[Any], field_name: str) -> dict[str, Any]:
+    field_info = model_cls.model_fields.get(field_name)
+    if field_info is None:
+        raise CalibrationError(
+            "INPUT_CONTRACT_VIOLATION",
+            f"Unable to derive SSOT bounds for field '{field_name}' from model {model_cls.__name__}",
+            details={"field_name": field_name, "model": model_cls.__name__},
+        )
+    lower = None
+    upper = None
+    lower_inclusive = True
+    upper_inclusive = True
+    for meta in getattr(field_info, "metadata", []):
+        if hasattr(meta, "ge"):
+            lower = float(getattr(meta, "ge"))
+            lower_inclusive = True
+        if hasattr(meta, "gt"):
+            lower = float(getattr(meta, "gt"))
+            lower_inclusive = False
+        if hasattr(meta, "le"):
+            upper = float(getattr(meta, "le"))
+            upper_inclusive = True
+        if hasattr(meta, "lt"):
+            upper = float(getattr(meta, "lt"))
+            upper_inclusive = False
+    return {
+        "model": model_cls.__name__,
+        "field_name": field_name,
+        "lower": lower,
+        "upper": upper,
+        "lower_inclusive": lower_inclusive,
+        "upper_inclusive": upper_inclusive,
+    }
+
+
+def _mutation_precision(step: float) -> int:
+    text = f"{float(step):.10f}".rstrip("0")
+    if "." not in text:
+        return 0
+    return len(text.split(".", 1)[1])
+
+
+def _coerce_mutation_value(value: float, *, kind: str, step: float) -> int | float:
+    if kind == "int":
+        return int(round(float(value)))
+    return round(float(value), _mutation_precision(step))
+
+
+def _value_within_bounds(value: int | float, bounds: dict[str, Any]) -> bool:
+    numeric_value = float(value)
+    lower = bounds.get("lower")
+    upper = bounds.get("upper")
+    if lower is not None:
+        if bounds.get("lower_inclusive", True):
+            if numeric_value < float(lower):
+                return False
+        elif numeric_value <= float(lower):
+            return False
+    if upper is not None:
+        if bounds.get("upper_inclusive", True):
+            if numeric_value > float(upper):
+                return False
+        elif numeric_value >= float(upper):
+            return False
+    return True
+
+
+def _build_numeric_mutation_search_space(base_params: dict[str, Any], *, dimension: str) -> dict[str, Any]:
+    spec = _NUMERIC_BASE_PARAM_MUTATION_SPECS[dimension]
+    bounds = _field_bounds_from_model(
+        model_cls=MDAMRStrategyConfig, field_name=str(spec["field_name"]))
+    step = float(spec["step"])
+    base_value = base_params[dimension]
+    candidates: list[int | float] = []
+    seen: set[int | float] = set()
+    for offset in range(-int(spec["steps_down"]), int(spec["steps_up"]) + 1):
+        raw_value = float(base_value) + (float(offset) * step)
+        candidate_value = _coerce_mutation_value(
+            raw_value, kind=str(spec["kind"]), step=step)
+        if candidate_value in seen:
+            continue
+        if not _value_within_bounds(candidate_value, bounds):
+            continue
+        seen.add(candidate_value)
+        candidates.append(candidate_value)
+    if base_value not in seen and _value_within_bounds(base_value, bounds):
+        candidates.append(base_value)
+    if not candidates:
+        raise CalibrationError(
+            "INPUT_CONTRACT_VIOLATION",
+            f"No candidate values remained within SSOT bounds for md_amr dimension '{dimension}'",
+            details={"dimension": dimension, "bounds": bounds},
+        )
+    ordered = sorted(candidates)
+    return {
+        "dimension": dimension,
+        "kind": str(spec["kind"]),
+        "baseline": base_value,
+        "step": step,
+        "steps_down": int(spec["steps_down"]),
+        "steps_up": int(spec["steps_up"]),
+        "bounds": bounds,
+        "candidate_values": ordered,
+    }
+
+
+def _build_allowed_regimes_search_space(
+    asset_cfgs: dict[str, dict[str, Any]],
+    *,
+    symbols: Sequence[str],
+) -> dict[str, Any]:
+    by_symbol: dict[str, Any] = {}
+    for raw_symbol in symbols:
+        symbol = str(raw_symbol).upper()
+        baseline = [
+            _normalize_regime_for_calibrator(item)
+            for item in list(asset_cfgs[symbol].get("allowed_regimes") or [])
+            if str(item or "").strip()
+        ]
+        if not baseline:
+            raise CalibrationError(
+                "CONFIG_INVALID",
+                f"md_amr.assets.{symbol}.allowed_regimes must be non-empty for mutation surface search",
+                details={"symbol": symbol},
+            )
+        options: list[list[str]] = []
+        seen: set[tuple[str, ...]] = set()
+
+        def add_option(candidate: list[str]) -> None:
+            normalized = tuple(
+                _normalize_regime_for_calibrator(item)
+                for item in candidate
+                if str(item or "").strip()
+            )
+            if not normalized or normalized in seen:
+                return
+            seen.add(normalized)
+            options.append(list(normalized))
+
+        add_option(list(baseline))
+        if len(baseline) > 1:
+            for idx in range(len(baseline)):
+                candidate = list(baseline[:idx]) + list(baseline[idx + 1:])
+                add_option(candidate)
+        for regime in sorted(_ALLOWED_REGIME_MUTATION_UNIVERSE):
+            if regime not in baseline:
+                add_option(list(baseline) + [regime])
+
+        by_symbol[symbol] = {
+            "baseline": list(baseline),
+            "model": MDAMRAssetConfig.__name__,
+            "field_name": "allowed_regimes",
+            "candidate_values": options,
+            "max_added_regimes": 1,
+            "max_removed_regimes": 1 if len(baseline) > 1 else 0,
+        }
+    return {
+        "dimension": "allowed_regimes",
+        "kind": "asset_allowed_regimes",
+        "by_symbol": by_symbol,
+    }
+
+
+def _build_mutation_surface_cfg(
+    *,
+    base_params: dict[str, Any],
+    asset_cfgs: dict[str, dict[str, Any]],
+    symbols: Sequence[str],
+    requested_dimensions: Sequence[str],
+) -> MutationSurfaceCfg:
+    search_space: dict[str, Any] = {}
+    for dimension in requested_dimensions:
+        if dimension == "allowed_regimes":
+            search_space[dimension] = _build_allowed_regimes_search_space(
+                asset_cfgs, symbols=symbols)
+            continue
+        search_space[dimension] = _build_numeric_mutation_search_space(
+            base_params, dimension=dimension)
+    return MutationSurfaceCfg(
+        requested_dimensions=tuple(str(item) for item in requested_dimensions),
+        search_space=search_space,
+    )
+
+
+def _sample_candidate_surface(
+    rng: np.random.Generator,
+    *,
+    base_params: dict[str, Any],
+    asset_cfgs: dict[str, dict[str, Any]],
+    mutation_surface: MutationSurfaceCfg,
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    candidate_base_params = dict(base_params)
+    candidate_asset_cfgs = copy.deepcopy(asset_cfgs)
+    for dimension in mutation_surface.requested_dimensions:
+        spec = mutation_surface.search_space[dimension]
+        if dimension == "allowed_regimes":
+            for symbol, symbol_spec in (spec.get("by_symbol") or {}).items():
+                options = list(symbol_spec.get("candidate_values") or [])
+                if not options:
+                    continue
+                selected = options[int(rng.integers(0, len(options)))]
+                candidate_asset_cfgs[str(
+                    symbol)]["allowed_regimes"] = list(selected)
+            continue
+        options = list(spec.get("candidate_values") or [])
+        if not options:
+            continue
+        candidate_base_params[dimension] = options[int(
+            rng.integers(0, len(options)))]
+    return candidate_base_params, candidate_asset_cfgs
+
+
+def _candidate_signature(
+    *,
+    weights: dict[str, float],
+    base_params: dict[str, Any],
+    asset_cfgs: dict[str, dict[str, Any]],
+    mutation_surface: MutationSurfaceCfg,
+) -> tuple[Any, ...]:
+    parts: list[Any] = [_weight_signature(weights)]
+    for dimension in mutation_surface.requested_dimensions:
+        if dimension == "allowed_regimes":
+            parts.append(
+                (
+                    dimension,
+                    tuple(
+                        (symbol, tuple(asset_cfgs[symbol].get(
+                            "allowed_regimes") or []))
+                        for symbol in sorted(asset_cfgs)
+                    ),
+                )
+            )
+            continue
+        parts.append((dimension, base_params[dimension]))
+    return tuple(parts)
+
+
+def _build_mutation_values_payload(
+    *,
+    baseline_weights: dict[str, float],
+    candidate_weights: dict[str, float],
+    base_params: dict[str, Any],
+    candidate_base_params: dict[str, Any],
+    asset_cfgs: dict[str, dict[str, Any]],
+    candidate_asset_cfgs: dict[str, dict[str, Any]],
+    mutation_surface: MutationSurfaceCfg,
+) -> dict[str, Any]:
+    old_base_params: dict[str, Any] = {}
+    candidate_base_param_values: dict[str, Any] = {}
+    old_assets: dict[str, Any] = {}
+    candidate_assets: dict[str, Any] = {}
+    actual_changed_dimensions: list[str] = []
+    weights_changed = any(
+        not math.isclose(
+            float(baseline_weights[key]),
+            float(candidate_weights[key]),
+            rel_tol=1.0e-12,
+            abs_tol=1.0e-12,
+        )
+        for key in WEIGHT_KEYS
+    )
+    for dimension in mutation_surface.requested_dimensions:
+        if dimension == "allowed_regimes":
+            for symbol in sorted(asset_cfgs):
+                before = list(asset_cfgs[symbol].get("allowed_regimes") or [])
+                after = list(candidate_asset_cfgs[symbol].get(
+                    "allowed_regimes") or [])
+                old_assets.setdefault(symbol, {})["allowed_regimes"] = before
+                candidate_assets.setdefault(
+                    symbol, {})["allowed_regimes"] = after
+                if before != after and dimension not in actual_changed_dimensions:
+                    actual_changed_dimensions.append(dimension)
+            continue
+        before = base_params[dimension]
+        after = candidate_base_params[dimension]
+        old_base_params[dimension] = before
+        candidate_base_param_values[dimension] = after
+        if before != after:
+            actual_changed_dimensions.append(dimension)
+    return {
+        "requested_base_param_dimensions": list(mutation_surface.requested_dimensions),
+        "mutated_dimensions": (["weights"] if weights_changed else []) + actual_changed_dimensions,
+        "old_values": {
+            "weights": {key: float(baseline_weights[key]) for key in WEIGHT_KEYS},
+            "base_params": old_base_params,
+            "assets": old_assets,
+        },
+        "candidate_values": {
+            "weights": {key: float(candidate_weights[key]) for key in WEIGHT_KEYS},
+            "base_params": candidate_base_param_values,
+            "assets": candidate_assets,
+        },
+    }
+
+
+def _has_requested_non_weight_change(payload: dict[str, Any]) -> bool:
+    changed = [item for item in list(payload.get(
+        "mutated_dimensions") or []) if item != "weights"]
+    return bool(changed)
 
 
 def _normalize_weights(raw: dict[str, float]) -> dict[str, float]:
@@ -788,14 +1208,16 @@ def _compute_regime_labels(df: pd.DataFrame) -> pd.Series:
 
     # Priority 1: Volatility
     regime = regime.where(~(vol_ratio > 2.0), "HIGH_VOLATILITY")
-    regime = regime.where(~((vol_ratio < 0.7) & (regime == "UNCERTAIN")), "LOW_VOLATILITY")
+    regime = regime.where(~((vol_ratio < 0.7) & (
+        regime == "UNCERTAIN")), "LOW_VOLATILITY")
 
     # Priority 2: Mean Reversion (only where still UNCERTAIN)
     mask_unc = regime == "UNCERTAIN"
     sma_spread = (sma_short - sma_long).abs() / sma_long
     dev_short = (close - sma_short).abs() / sma_short
     dev_long = (close - sma_long).abs() / sma_long
-    mr_mask = mask_unc & (sma_spread < 0.005) & (dev_short < 0.005) & (dev_long < 0.005)
+    mr_mask = mask_unc & (sma_spread < 0.005) & (
+        dev_short < 0.005) & (dev_long < 0.005)
     regime = regime.where(~mr_mask, "MEAN_REVERSION")
 
     # Priority 3: SMA Trend (only where still UNCERTAIN)
@@ -817,9 +1239,12 @@ def _run_per_regime_analysis(
     df_raw: pd.DataFrame,
     *,
     symbols: list[str],
-    base_params: dict[str, Any],
-    weights: dict[str, float],
-    asset_cfgs: dict[str, dict[str, Any]],
+    baseline_base_params: dict[str, Any],
+    baseline_weights: dict[str, float],
+    baseline_asset_cfgs: dict[str, dict[str, Any]],
+    candidate_base_params: dict[str, Any] | None,
+    candidate_weights: dict[str, float] | None,
+    candidate_asset_cfgs: dict[str, dict[str, Any]] | None,
     tf_sec: int,
     warmup_bars: int,
     guardrails: GuardrailCfg,
@@ -828,7 +1253,7 @@ def _run_per_regime_analysis(
     """Run per-regime breakdown on computed-regime data.
 
     For each unique regime label found in df_raw["regime"], filter to only those
-    rows, evaluate with baseline weights, and collect per-regime metrics.
+    rows, evaluate baseline and candidate surfaces, and collect per-regime metrics.
     Prints a summary table and writes per_regime_analysis.json.
     """
     all_regimes = sorted(df_raw["regime"].dropna().unique().tolist())
@@ -837,69 +1262,145 @@ def _run_per_regime_analysis(
     regimes = [r for r in all_regimes if r not in passthrough]
 
     results: dict[str, dict[str, Any]] = {}
+
+    def _serialize_regime_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "rows": int(metrics.get("rows", 0)),
+            "entry_count": int(metrics.get("entry_count", 0)),
+            "total_trades": int(metrics.get("total_trades", 0)),
+            "win_rate": float(metrics.get("win_rate", 0.0)),
+            "profit_factor": float(metrics.get("profit_factor") or 0.0),
+            "net_return_ratio": float(metrics.get("net_return_ratio", 0.0)),
+            "max_drawdown_ratio": float(metrics.get("max_drawdown_ratio", 0.0)),
+            "selection_score": metrics.get("selection_score"),
+            "entries_per_day": float(metrics.get("entries_per_day", 0.0)),
+            "avg_holding_bars": float(metrics.get("avg_holding_bars", 0.0)),
+            "regime_blocked_count": int(sum(
+                symbol_metrics.get("regime_blocked_count", 0)
+                for symbol_metrics in (metrics.get("per_symbol") or {}).values()
+            )),
+        }
+
     for regime_label in regimes:
         regime_df = df_raw[df_raw["regime"] == regime_label].copy()
         if regime_df.empty:
             continue
-        metrics = _evaluate_window(
+        baseline_metrics = _evaluate_window(
             regime_df,
             symbols=symbols,
-            base_params=base_params,
-            weights=weights,
-            asset_cfgs=asset_cfgs,
+            base_params=baseline_base_params,
+            weights=baseline_weights,
+            asset_cfgs=baseline_asset_cfgs,
             tf_sec=tf_sec,
             warmup_bars=warmup_bars,
             guardrails=guardrails,
         )
-        results[regime_label] = metrics
+        candidate_metrics = None
+        if candidate_base_params is not None and candidate_weights is not None and candidate_asset_cfgs is not None:
+            candidate_metrics = _evaluate_window(
+                regime_df,
+                symbols=symbols,
+                base_params=candidate_base_params,
+                weights=candidate_weights,
+                asset_cfgs=candidate_asset_cfgs,
+                tf_sec=tf_sec,
+                warmup_bars=warmup_bars,
+                guardrails=guardrails,
+            )
+        results[regime_label] = {
+            "baseline": baseline_metrics,
+            "candidate": candidate_metrics,
+        }
+
+    candidate_positive_regimes: list[str] = []
+    candidate_positive_trades = 0
+    candidate_negative_regimes: list[str] = []
+    for regime_label, payload in results.items():
+        candidate_metrics = payload.get("candidate")
+        if not isinstance(candidate_metrics, dict):
+            continue
+        net_return = float(candidate_metrics.get("net_return_ratio", 0.0))
+        trade_count = int(candidate_metrics.get("total_trades", 0))
+        if net_return > 0.0 and trade_count > 0:
+            candidate_positive_regimes.append(regime_label)
+            candidate_positive_trades += trade_count
+        elif trade_count > 0:
+            candidate_negative_regimes.append(regime_label)
 
     # Print table
-    header = f"{'Regime':<20} {'Bars':>6} {'Entries':>8} {'Trades':>7} {'WR%':>6} {'PF':>7} {'Net%':>8} {'DD%':>7}"
+    has_candidate = candidate_base_params is not None and candidate_weights is not None and candidate_asset_cfgs is not None
+    if has_candidate:
+        header = (
+            f"{'Regime':<20} {'BaseTrd':>7} {'CandTrd':>7} {'BaseNet%':>9} "
+            f"{'CandNet%':>9} {'ΔNet%':>8} {'CandDD%':>8}"
+        )
+    else:
+        header = f"{'Regime':<20} {'Bars':>6} {'Entries':>8} {'Trades':>7} {'WR%':>6} {'PF':>7} {'Net%':>8} {'DD%':>7}"
     print("\n" + "=" * len(header))
-    print("PER-REGIME BREAKDOWN (baseline weights)")
+    print("PER-REGIME BREAKDOWN")
     print("=" * len(header))
     print(header)
     print("-" * len(header))
     for regime_label in regimes:
-        m = results.get(regime_label)
-        if m is None:
+        payload = results.get(regime_label)
+        if payload is None:
             continue
-        wr = float(m.get("win_rate") or 0.0) * 100
-        pf = float(m.get("profit_factor") or 0.0)
-        net = float(m.get("net_return_ratio") or 0.0) * 100
-        dd = float(m.get("max_drawdown_ratio") or 0.0) * 100
+        baseline_metrics = payload.get("baseline") or {}
+        if has_candidate:
+            candidate_metrics = payload.get("candidate") or {}
+            base_net = float(baseline_metrics.get(
+                "net_return_ratio") or 0.0) * 100.0
+            cand_net = float(candidate_metrics.get(
+                "net_return_ratio") or 0.0) * 100.0
+            cand_dd = float(candidate_metrics.get(
+                "max_drawdown_ratio") or 0.0) * 100.0
+            print(
+                f"{regime_label:<20} {baseline_metrics.get('total_trades', 0):>7} {candidate_metrics.get('total_trades', 0):>7} "
+                f"{base_net:>+8.2f}% {cand_net:>+8.2f}% {cand_net - base_net:>+7.2f}% {cand_dd:>7.2f}%"
+            )
+            continue
+        wr = float(baseline_metrics.get("win_rate") or 0.0) * 100
+        pf = float(baseline_metrics.get("profit_factor") or 0.0)
+        net = float(baseline_metrics.get("net_return_ratio") or 0.0) * 100
+        dd = float(baseline_metrics.get("max_drawdown_ratio") or 0.0) * 100
         print(
-            f"{regime_label:<20} {m.get('rows', 0):>6} {m.get('entry_count', 0):>8} "
-            f"{m.get('total_trades', 0):>7} {wr:>5.1f}% {pf:>7.2f} {net:>+7.2f}% {dd:>6.2f}%"
+            f"{regime_label:<20} {baseline_metrics.get('rows', 0):>6} {baseline_metrics.get('entry_count', 0):>8} "
+            f"{baseline_metrics.get('total_trades', 0):>7} {wr:>5.1f}% {pf:>7.2f} {net:>+7.2f}% {dd:>6.2f}%"
         )
     print("-" * len(header))
 
     # Serialize
+    candidate_regime_concentration = {
+        "positive_regimes": list(candidate_positive_regimes),
+        "negative_or_flat_regimes": list(candidate_negative_regimes),
+        "single_positive_regime_only": bool(len(candidate_positive_regimes) == 1 and candidate_positive_trades > 0),
+        "positive_trade_count": int(candidate_positive_trades),
+    }
     payload = {
         "regime_labels": regimes,
-        "weights_used": weights,
+        "baseline_surface": {
+            "weights": {key: float(baseline_weights[key]) for key in WEIGHT_KEYS},
+        },
+        "candidate_surface": None if not has_candidate else {
+            "weights": {key: float(candidate_weights[key]) for key in WEIGHT_KEYS},
+        },
+        "candidate_regime_concentration": candidate_regime_concentration,
         "per_regime": {
             label: {
-                "rows": int(m.get("rows", 0)),
-                "entry_count": int(m.get("entry_count", 0)),
-                "total_trades": int(m.get("total_trades", 0)),
-                "win_rate": float(m.get("win_rate", 0.0)),
-                "profit_factor": float(m.get("profit_factor") or 0.0),
-                "net_return_ratio": float(m.get("net_return_ratio", 0.0)),
-                "max_drawdown_ratio": float(m.get("max_drawdown_ratio", 0.0)),
-                "selection_score": m.get("selection_score"),
-                "entries_per_day": float(m.get("entries_per_day", 0.0)),
-                "avg_holding_bars": float(m.get("avg_holding_bars", 0.0)),
-                "regime_blocked_count": int(sum(
-                    sm.get("regime_blocked_count", 0)
-                    for sm in (m.get("per_symbol") or {}).values()
-                )),
+                "baseline": _serialize_regime_metrics(payload.get("baseline") or {}),
+                "candidate": None if payload.get("candidate") is None else _serialize_regime_metrics(payload.get("candidate") or {}),
+                "delta": None if payload.get("candidate") is None else {
+                    "net_return_ratio": float((payload.get("candidate") or {}).get("net_return_ratio", 0.0) - (payload.get("baseline") or {}).get("net_return_ratio", 0.0)),
+                    "total_trades": int((payload.get("candidate") or {}).get("total_trades", 0) - (payload.get("baseline") or {}).get("total_trades", 0)),
+                    "max_drawdown_ratio": float((payload.get("candidate") or {}).get("max_drawdown_ratio", 0.0) - (payload.get("baseline") or {}).get("max_drawdown_ratio", 0.0)),
+                },
             }
-            for label, m in results.items()
+            for label, payload in results.items()
         },
     }
     _write_json(out_dir / "per_regime_analysis.json", payload)
-    print(f"\nPer-regime analysis written to {out_dir / 'per_regime_analysis.json'}")
+    print(
+        f"\nPer-regime analysis written to {out_dir / 'per_regime_analysis.json'}")
     return payload
 
 
@@ -1240,11 +1741,13 @@ def _evaluate_symbol_window(
 
     # GAP 3: Pre-compute expanded allowed regimes (production parity with handler)
     raw_allowed = list(asset_cfg.get("allowed_regimes") or [])
-    effective_allowed_regimes = _expand_allowed_regimes(raw_allowed) if raw_allowed else []
+    effective_allowed_regimes = _expand_allowed_regimes(
+        raw_allowed) if raw_allowed else []
     # Regimes that indicate recorder hasn't captured a valid regime label yet.
     # When the recorder regime is unknown/pending, we SKIP the entry gate
     # (otherwise calibration produces 0 entries on recorder data without regime).
-    _REGIME_PASSTHROUGH = frozenset({"", "DEFAULT", "UNKNOWN", "PENDING", "NONE"})
+    _REGIME_PASSTHROUGH = frozenset(
+        {"", "DEFAULT", "UNKNOWN", "PENDING", "NONE"})
 
     _empty_position: dict[str, Any] = {
         "is_open": False,
@@ -1309,7 +1812,8 @@ def _evaluate_symbol_window(
                 position["bars_held"] = int(position["bars_held"]) + 1
 
             # GAP 2: Extract per-bar regime context from recorder data
-            bar_regime_raw = str(getattr(row, "regime", "DEFAULT") or "DEFAULT")
+            bar_regime_raw = str(
+                getattr(row, "regime", "DEFAULT") or "DEFAULT")
             bar_regime = _normalize_regime_for_calibrator(bar_regime_raw)
             bar_regime_conf = float(getattr(row, "regime_conf", 0.0) or 0.0)
             # If the regime is not a real captured label, treat it as passthrough
@@ -1542,6 +2046,10 @@ def _build_comparison_artifact(
 ) -> dict[str, Any]:
     baseline_score = baseline_metrics.get("selection_score")
     candidate_score = candidate_metrics.get("selection_score")
+    baseline_avg_trade_return = float(
+        baseline_metrics.get("avg_trade_return_ratio", 0.0) or 0.0)
+    candidate_avg_trade_return = float(
+        candidate_metrics.get("avg_trade_return_ratio", 0.0) or 0.0)
     delta = {
         "selection_score": None if baseline_score is None or candidate_score is None else float(candidate_score - baseline_score),
         "net_return_ratio": float(candidate_metrics["net_return_ratio"] - baseline_metrics["net_return_ratio"]),
@@ -1549,7 +2057,9 @@ def _build_comparison_artifact(
         "total_trades": int(candidate_metrics["total_trades"] - baseline_metrics["total_trades"]),
         "entry_count": int(candidate_metrics["entry_count"] - baseline_metrics["entry_count"]),
         "win_rate": float(candidate_metrics["win_rate"] - baseline_metrics["win_rate"]),
+        "avg_trade_return_ratio": float(candidate_avg_trade_return - baseline_avg_trade_return),
     }
+    warnings: list[str] = []
 
     results: list[dict[str, Any]] = []
     results.append(
@@ -1568,6 +2078,15 @@ def _build_comparison_artifact(
             "actual": float(candidate_metrics["max_drawdown_ratio"]),
             "threshold": float(guardrails.max_drawdown_ratio),
             "comparator": "<=",
+        }
+    )
+    results.append(
+        {
+            "name": f"{window_name}_net_return_not_worse_vs_baseline",
+            "passed": float(candidate_metrics["net_return_ratio"]) >= float(baseline_metrics["net_return_ratio"]),
+            "actual": float(delta["net_return_ratio"]),
+            "threshold": 0.0,
+            "comparator": ">=",
         }
     )
 
@@ -1593,9 +2112,10 @@ def _build_comparison_artifact(
         )
 
     baseline_entries = int(baseline_metrics["entry_count"])
+    candidate_entries = int(candidate_metrics["entry_count"])
     if baseline_entries > 0:
         activity_ratio = float(
-            candidate_metrics["entry_count"] / baseline_entries)
+            candidate_entries / baseline_entries)
         results.append(
             {
                 "name": f"{window_name}_activity_ratio_min",
@@ -1614,6 +2134,26 @@ def _build_comparison_artifact(
                 "comparator": "<=",
             }
         )
+        if candidate_entries > baseline_entries:
+            results.append(
+                {
+                    "name": f"{window_name}_expectancy_not_worse_when_activity_increases",
+                    "passed": candidate_avg_trade_return >= baseline_avg_trade_return,
+                    "actual": float(delta["avg_trade_return_ratio"]),
+                    "threshold": 0.0,
+                    "comparator": ">=",
+                }
+            )
+        else:
+            results.append(
+                {
+                    "name": f"{window_name}_expectancy_not_worse_when_activity_increases_not_applicable",
+                    "passed": True,
+                    "actual": None,
+                    "threshold": None,
+                    "comparator": "n/a",
+                }
+            )
     else:
         results.append(
             {
@@ -1625,22 +2165,101 @@ def _build_comparison_artifact(
             }
         )
 
+    if float(delta["max_drawdown_ratio"]) > 0.0:
+        warnings.append(
+            f"{window_name}: candidate drawdown worsened vs baseline by {_fmt_ratio(delta['max_drawdown_ratio'])}"
+        )
+    if candidate_entries > baseline_entries and float(delta["avg_trade_return_ratio"]) < 0.0:
+        warnings.append(
+            f"{window_name}: activity increased while expectancy per trade worsened by {_fmt_ratio(delta['avg_trade_return_ratio'])}"
+        )
+
     return {
         "window": window_name,
         "baseline": baseline_metrics,
         "candidate": candidate_metrics,
         "delta": delta,
         "guardrails": results,
+        "warnings": warnings,
         "all_passed": all(bool(item["passed"]) for item in results),
     }
 
 
-def _overlay_from_weights(weights: dict[str, float]) -> dict[str, Any]:
+def _failed_guardrail_names(artifact: dict[str, Any] | None) -> list[str]:
+    if not artifact:
+        return []
+    return [
+        str(item["name"])
+        for item in list(artifact.get("guardrails") or [])
+        if not bool(item.get("passed", False))
+    ]
+
+
+def _build_candidate_stability_summary(
+    *,
+    train_metrics: dict[str, Any],
+    validation_metrics: dict[str, Any],
+    forward_metrics: dict[str, Any],
+) -> dict[str, Any]:
+    trade_counts = [
+        int(train_metrics.get("total_trades", 0)),
+        int(validation_metrics.get("total_trades", 0)),
+        int(forward_metrics.get("total_trades", 0)),
+    ]
+    net_returns = [
+        float(train_metrics.get("net_return_ratio", 0.0)),
+        float(validation_metrics.get("net_return_ratio", 0.0)),
+        float(forward_metrics.get("net_return_ratio", 0.0)),
+    ]
+    drawdowns = [
+        float(train_metrics.get("max_drawdown_ratio", 0.0)),
+        float(validation_metrics.get("max_drawdown_ratio", 0.0)),
+        float(forward_metrics.get("max_drawdown_ratio", 0.0)),
+    ]
     return {
-        "md_amr": {
-            "weights": {key: float(weights[key]) for key in WEIGHT_KEYS},
-        }
+        "trade_count_min": int(min(trade_counts)) if trade_counts else 0,
+        "trade_count_max": int(max(trade_counts)) if trade_counts else 0,
+        "net_return_range": float(max(net_returns) - min(net_returns)) if net_returns else 0.0,
+        "max_drawdown_range": float(max(drawdowns) - min(drawdowns)) if drawdowns else 0.0,
+        "train_validation_forward_trade_counts": {
+            "train": trade_counts[0],
+            "validation": trade_counts[1],
+            "forward": trade_counts[2],
+        },
     }
+
+
+def _overlay_from_candidate_surface(
+    *,
+    weights: dict[str, float],
+    baseline_base_params: dict[str, Any],
+    candidate_base_params: dict[str, Any],
+    baseline_asset_cfgs: dict[str, dict[str, Any]],
+    candidate_asset_cfgs: dict[str, dict[str, Any]],
+    mutation_surface: MutationSurfaceCfg,
+) -> dict[str, Any]:
+    md_amr_overlay: dict[str, Any] = {
+        "weights": {key: float(weights[key]) for key in WEIGHT_KEYS},
+    }
+    asset_overrides: dict[str, Any] = {}
+    for dimension in mutation_surface.requested_dimensions:
+        if dimension == "allowed_regimes":
+            for symbol in sorted(candidate_asset_cfgs):
+                before = list(baseline_asset_cfgs[symbol].get(
+                    "allowed_regimes") or [])
+                after = list(candidate_asset_cfgs[symbol].get(
+                    "allowed_regimes") or [])
+                if before == after:
+                    continue
+                asset_overrides.setdefault(symbol, {})[
+                    "allowed_regimes"] = after
+            continue
+        if candidate_base_params[dimension] == baseline_base_params[dimension]:
+            continue
+        md_amr_overlay[dimension] = candidate_base_params[dimension]
+    if asset_overrides:
+        md_amr_overlay["assets"] = asset_overrides
+    return {"md_amr": md_amr_overlay}
 
 
 def _fmt_ratio(value: float | None) -> str:
@@ -1714,8 +2333,21 @@ def _render_report(
     failure: CalibrationError | None,
 ) -> str:
     verdict = str(manifest.get("verdict") or "NO_GO_CANDIDATE")
+    mutation_surface = manifest.get("mutation_surface") or {}
+    symbol_scope = list(mutation_surface.get("symbol_scope") or [])
+    requested_dimensions = list(mutation_surface.get(
+        "requested_base_param_dimensions") or [])
     candidate_weights = ((candidate_payload or {}).get(
         "selected_candidate") or {}).get("weights") or {}
+    mutation_values = ((candidate_payload or {}).get(
+        "selected_candidate") or {}).get("mutation_values") or {}
+    candidate_base_params = ((mutation_values.get(
+        "candidate_values") or {}).get("base_params") or {})
+    candidate_assets = ((mutation_values.get(
+        "candidate_values") or {}).get("assets") or {})
+    stability_summary = ((candidate_payload or {}).get(
+        "selected_candidate") or {}).get("stability_summary") or {}
+    per_regime_summary = manifest.get("per_regime_summary") or {}
     baseline_train = ((baseline_metrics or {}).get("train") or {})
     baseline_validation = ((baseline_metrics or {}).get("validation") or {})
     baseline_forward = ((baseline_metrics or {}).get("forward") or {})
@@ -1724,6 +2356,20 @@ def _render_report(
     candidate_validation = (validation_artifact or {}).get("candidate") or {}
     candidate_forward = (forward_artifact or {}).get("candidate") or {}
     dataset_days = ((dataset_audit or {}).get("unique_days") or [])
+    live_symbols = [
+        str(item.get("symbol"))
+        for item in symbol_scope
+        if str(item.get("live_status") or "") == LIVE_ASSIGNED
+    ]
+    not_live_symbols = [
+        str(item.get("symbol"))
+        for item in symbol_scope
+        if str(item.get("live_status") or "") == NOT_LIVE_ASSIGNED
+    ]
+    strategies_registry_source = str(
+        (symbol_scope[0] or {}).get(
+            "strategies_registry_source") or "config/aurora/strategies.yaml"
+    ) if symbol_scope else "config/aurora/strategies.yaml"
     failure_lines = []
     if failure is not None:
         failure_lines = [
@@ -1762,28 +2408,61 @@ def _render_report(
         "- Effect: baseline-vs-candidate ordering is explicit, but absolute profitability remains approximate.\n"
         "- Operational risk: over-trusting the proxy could promote a candidate that degrades under real routing or fill semantics."
     )
-    risk_conclusions.append(
-        "### Conclusion: Runtime-surface evidence is partially conflicted\n"
-        "- Facts: config/docs/md_amr_strategy_passport.md claims active MD-AMR assignments for XRPUSDT and BNBUSDT, but config/aurora/strategies.yaml in the current workspace does not list md_amr assignments.\n"
-        "- Inferences: the weights surface itself is still a real typed/runtime contract, but assignment-level active-scope proof is not fully aligned on disk.\n"
-        "- Assumptions: user-requested symbols plus md_amr asset blocks define the intended calibration scope for this package.\n"
-        "- Unknowns: whether the live deployment uses a different registry snapshot than the checked-in strategies.yaml.\n"
-        "- Symptom: active-surface status is strong for md_amr.weights, weaker for current assignment evidence.\n"
-        "- Root cause: passport and runtime config are out of sync in the inspected workspace.\n"
-        "- Contributing factor: repository documentation still reflects a different assignment state.\n"
-        "- Masking layer: typed config and strategy code can make the assignment drift easy to miss.\n"
-        "- Cause: checked-in registry and passport disagree.\n"
-        "- Mechanism: one source lists md_amr live symbols while the other omits md_amr assignments.\n"
-        "- Effect: the calibrator can be reused, but assignment proof should be reconciled before calling it fully live-scoped.\n"
-        "- Operational risk: users may calibrate non-live symbol scope while assuming current deployment alignment."
-    )
+    if symbol_scope and not not_live_symbols:
+        risk_conclusions.append(
+            "### Conclusion: Runtime assignment scope is explicit for the requested symbols\n"
+            f"- Facts: {strategies_registry_source} marks the requested md_amr symbols as live-assigned: {json.dumps(live_symbols)}.\n"
+            "- Inferences: the calibrated surface is not just typed; it is also aligned with the checked-in strategy registry for this symbol scope.\n"
+            "- Assumptions: the checked-in registry matches the intended deployment snapshot.\n"
+            "- Unknowns: live routing, arbitration, and exchange behavior still remain outside this calibrator's proof boundary.\n"
+            "- Symptom: assignment-level scope evidence is aligned on disk for the requested symbols.\n"
+            "- Root cause: symbol scope is resolved directly from the current strategies registry instead of inferred from stale docs.\n"
+            "- Contributing factor: live_status is now emitted into the manifest and report, making scope explicit.\n"
+            "- Masking layer: documentation drift can still exist elsewhere, even when the registry is correct.\n"
+            "- Cause: runtime assignment evidence is read from the active config source.\n"
+            "- Mechanism: symbol_scope records per-symbol live assignment state from strategies.yaml.\n"
+            "- Effect: users can distinguish live-scoped from non-live-scoped calibrations without inspecting YAML manually.\n"
+            "- Operational risk: low for scope identification, but still non-zero if deployment uses an untracked registry snapshot."
+        )
+    elif symbol_scope:
+        risk_conclusions.append(
+            "### Conclusion: Runtime assignment scope is mixed across the requested symbols\n"
+            f"- Facts: {strategies_registry_source} marks live-assigned md_amr symbols={json.dumps(live_symbols)} and not-live-assigned symbols={json.dumps(not_live_symbols)}.\n"
+            "- Inferences: the calibrated weights surface remains typed and valid, but active deployment scope differs by symbol.\n"
+            "- Assumptions: user-requested symbols plus md_amr asset blocks define the intended calibration scope for this package.\n"
+            "- Unknowns: whether operators intended a shadow-only or future rollout for non-live-assigned symbols.\n"
+            "- Symptom: active-surface status is explicit, but not uniform, across the requested symbols.\n"
+            "- Root cause: strategy registry assignment is symbol-specific.\n"
+            "- Contributing factor: documentation and historical reports may lag registry changes.\n"
+            "- Masking layer: typed config and strategy code can make assignment drift easy to miss without registry inspection.\n"
+            "- Cause: checked-in registry lists md_amr for some symbols and omits it for others.\n"
+            "- Mechanism: symbol_scope records per-symbol live assignment state from strategies.yaml.\n"
+            "- Effect: the calibrator can support both live and shadow scopes, but promotion claims must respect the live_status split.\n"
+            "- Operational risk: users may overstate live applicability if they ignore the non-live-assigned subset."
+        )
+    else:
+        risk_conclusions.append(
+            "### Conclusion: Runtime assignment scope could not be resolved from the current manifest\n"
+            "- Facts: no symbol_scope payload was present in the manifest.\n"
+            "- Inferences: the calibrated surface may still be typed, but assignment-level evidence is missing from this run.\n"
+            "- Assumptions: the requested symbols were intentionally chosen for tooling-only calibration.\n"
+            "- Unknowns: whether the current strategies registry would mark these symbols as live-assigned.\n"
+            "- Symptom: scope identification is incomplete.\n"
+            "- Root cause: manifest generation did not provide symbol_scope details for this run.\n"
+            "- Contributing factor: older artifacts may predate live_status reporting.\n"
+            "- Masking layer: typed config alone can make missing assignment evidence easy to overlook.\n"
+            "- Cause: assignment reporting boundary was not populated.\n"
+            "- Mechanism: report rendering had no per-symbol live-status facts to summarize.\n"
+            "- Effect: users should not treat this run as live-scoped without checking strategies.yaml directly.\n"
+            "- Operational risk: overstating live applicability despite missing assignment evidence."
+        )
 
     report = [
-        "# MD-AMR Weight Calibration Report",
+        "# MD-AMR Mutation-Surface Calibration Report",
         "",
         "## Scope",
         f"- Calibrator: {Path(__file__).name}",
-        "- Calibration class: production-aligned stage-1 calibrator for md_amr.weights.",
+        "- Calibration class: production-aligned tooling-only calibrator for md_amr weights plus explicit selected strategy-local params.",
         "- Mode: overlay-only. No canonical YAML mutation is performed.",
         f"- Symbols: {', '.join(str(symbol).upper() for symbol in args.symbols)}",
         f"- Date range: start={args.start.isoformat()} end_exclusive={args.end.isoformat()}",
@@ -1815,12 +2494,18 @@ def _render_report(
             "## Runtime Surface Under Calibration",
             "- Primary runtime anchor: config/docs/md_amr_strategy_passport.md",
             "- Governance anchors: config/docs/CALIBRATION_STANDARD_V1.md and tools/calibration/README.md",
-            "- Surface under calibration: md_amr.weights.d1/h1/m30/m15",
+            f"- Surface under calibration: md_amr.weights.d1/h1/m30/m15{'' if not requested_dimensions else ' + ' + ', '.join(requested_dimensions)}",
             "- Overlay artifact: candidate_md_amr_strategy_overlay.yaml",
             "",
             "## Baseline",
         ]
     )
+    if symbol_scope:
+        report.extend(["", "## Symbol Scope"])
+        for scope in symbol_scope:
+            report.append(
+                f"- {scope.get('symbol')} tf_sec={scope.get('tf_sec')} live_status={scope.get('live_status')} base_config_source={scope.get('base_config_source')}"
+            )
     if not baseline_metrics:
         report.append("- Baseline metrics unavailable.")
     else:
@@ -1842,12 +2527,24 @@ def _render_report(
         report.extend(
             [
                 f"- Selected weights: {json.dumps(candidate_weights, sort_keys=True)}",
+                f"- Requested base-param dimensions: {json.dumps(requested_dimensions)}",
+                f"- Actual changed dimensions: {json.dumps(list(mutation_values.get('mutated_dimensions') or []))}",
                 f"- Selection basis: {candidate_payload.get('selection_basis')}",
                 f"- Train score: {_fmt_score(candidate_train.get('selection_score'))}",
                 f"- Train trades: {candidate_train.get('total_trades', 0)}",
                 f"- Train net return: {_fmt_ratio(candidate_train.get('net_return_ratio'))}",
+                f"- Promotion status: {((candidate_payload.get('selected_candidate') or {}).get('promotion_status') or 'REJECTED')}",
             ]
         )
+        if candidate_base_params:
+            report.append(
+                f"- Candidate base params: {json.dumps(candidate_base_params, sort_keys=True)}")
+        if candidate_assets:
+            report.append(
+                f"- Candidate asset mutations: {json.dumps(candidate_assets, sort_keys=True)}")
+        if stability_summary:
+            report.append(
+                f"- Stability summary: {json.dumps(stability_summary, sort_keys=True)}")
     report.extend(["", "## Validation"])
     if not validation_artifact:
         report.append("- Validation comparison unavailable.")
@@ -1860,6 +2557,8 @@ def _render_report(
                 f"- Guardrails passed: {validation_artifact.get('all_passed')}",
             ]
         )
+        for warning in list(validation_artifact.get("warnings") or []):
+            report.append(f"- Warning: {warning}")
     report.extend(["", "## Forward Evaluation"])
     if not forward_artifact:
         report.append("- Forward comparison unavailable.")
@@ -1870,6 +2569,17 @@ def _render_report(
                 f"- Baseline score: {_fmt_score(baseline_forward.get('selection_score'))}",
                 f"- Score delta: {_fmt_score(forward_artifact['delta'].get('selection_score'))}",
                 f"- Guardrails passed: {forward_artifact.get('all_passed')}",
+            ]
+        )
+        for warning in list(forward_artifact.get("warnings") or []):
+            report.append(f"- Warning: {warning}")
+    if per_regime_summary:
+        report.extend(["", "## Per-Regime Concentration"])
+        report.extend(
+            [
+                f"- Positive regimes: {json.dumps(list(per_regime_summary.get('positive_regimes') or []))}",
+                f"- Negative/flat regimes: {json.dumps(list(per_regime_summary.get('negative_or_flat_regimes') or []))}",
+                f"- Single positive regime only: {bool(per_regime_summary.get('single_positive_regime_only', False))}",
             ]
         )
     report.extend(["", "## Guardrails"])
@@ -1902,6 +2612,15 @@ def _render_report(
 
 def _write_failure_bundle(args: argparse.Namespace, out_dir: Path, error: CalibrationError) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        requested_mutations = list(
+            _parse_mutation_dimensions(args.mutate_base_params))
+    except CalibrationError:
+        requested_mutations = [
+            str(item).strip()
+            for item in str(args.mutate_base_params or "").replace(";", ",").split(",")
+            if str(item).strip()
+        ]
     manifest = {
         "calibrator": "calibrate_md_amr_weights.py",
         "calibration_class": "production",
@@ -1919,9 +2638,12 @@ def _write_failure_bundle(args: argparse.Namespace, out_dir: Path, error: Calibr
             "start": args.start.isoformat(),
             "end_exclusive": args.end.isoformat(),
             "tf_sec": int(args.tf_sec),
+            "md_amr_yaml": str(Path(args.md_amr_yaml)),
+            "strategies_yaml": str(Path(args.strategies_yaml)),
             "trials": int(args.trials),
             "validation_days": int(args.validation_days),
             "forward_days": int(args.forward_days),
+            "mutate_base_params": requested_mutations,
         },
         "canonical_yaml_writeback": False,
         "artifact_paths": {
@@ -1954,12 +2676,16 @@ def _write_failure_bundle(args: argparse.Namespace, out_dir: Path, error: Calibr
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Production-grade MD-AMR weight calibrator. Uses recorder data, emits overlay-only artifacts, "
+            "Production-grade MD-AMR calibrator. Uses recorder data, emits overlay-only artifacts, "
             "compares baseline versus candidate across train/validation/forward windows, and never mutates canonical YAML."
         )
     )
     parser.add_argument(
         "--md-amr-yaml", default="config/aurora/strategies/md_amr.yaml")
+    parser.add_argument(
+        "--strategies-yaml", default="config/aurora/strategies.yaml",
+        help="Strategies registry YAML used only for live-status reporting; canonical config is never mutated.",
+    )
     parser.add_argument("--recorder-dir", default="data/recorder")
     parser.add_argument("--symbols", nargs="+", required=True,
                         help="Symbols to calibrate. Must exist under md_amr.assets.")
@@ -1970,9 +2696,22 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tf-sec", type=int, default=900,
                         help="Recorder timeframe seconds. Current MD-AMR contract supports only 900.")
     parser.add_argument("--trials", type=int, default=400,
-                        help="Random search trials over the long-only weights simplex.")
+                        help="Random search trials over the long-only weights simplex plus any requested base-param surface.")
     parser.add_argument("--top-k", type=int, default=5,
                         help="How many top train candidates to carry into validation selection.")
+    parser.add_argument(
+        "--freeze-weights",
+        action="store_true",
+        help="Keep md_amr weights fixed at the baseline profile and search only the requested explicit base-param surface.",
+    )
+    parser.add_argument(
+        "--mutate-base-params",
+        default="",
+        help=(
+            "Comma-separated explicit allowlist of already-extracted md_amr base params to mutate in addition to weights. "
+            f"Supported: {', '.join(_BASE_PARAM_MUTATION_ORDER)}"
+        ),
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--validation-days", type=int, default=2,
                         help="Number of trailing unique days reserved for validation.")
@@ -2032,13 +2771,36 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         _require_md_amr_runtime()
 
-        md_amr_cfg = _load_md_amr_yaml(Path(args.md_amr_yaml))
+        md_amr_yaml = Path(args.md_amr_yaml)
+        strategies_yaml = Path(args.strategies_yaml)
+        md_amr_cfg = _load_md_amr_yaml(md_amr_yaml)
+        strategies_cfg = _load_strategies_registry(strategies_yaml)
         base_params = _extract_base_params(md_amr_cfg)
         baseline_weights = _normalize_weights(
             _extract_baseline_weights(md_amr_cfg))
         asset_cfgs = _extract_asset_configs(md_amr_cfg, args.symbols)
+        requested_mutation_dimensions = _parse_mutation_dimensions(
+            args.mutate_base_params)
+        if bool(args.freeze_weights) and not requested_mutation_dimensions:
+            raise CalibrationError(
+                "INPUT_CONTRACT_VIOLATION",
+                "--freeze-weights requires at least one explicit --mutate-base-params dimension.",
+            )
+        mutation_surface = _build_mutation_surface_cfg(
+            base_params=base_params,
+            asset_cfgs=asset_cfgs,
+            symbols=args.symbols,
+            requested_dimensions=requested_mutation_dimensions,
+        )
+        symbol_scope = _resolve_symbol_scope(
+            symbols=args.symbols,
+            tf_sec=int(args.tf_sec),
+            strategies_cfg=strategies_cfg,
+            strategies_yaml=strategies_yaml,
+            md_amr_yaml=md_amr_yaml,
+        )
         search_cfg = SearchCfg(trials=max(1, int(args.trials)), top_k=max(
-            1, int(args.top_k)), warmup_bars=max(1, int(args.warmup_bars)))
+            1, int(args.top_k)), warmup_bars=max(1, int(args.warmup_bars)), freeze_weights=bool(args.freeze_weights))
         guardrails = GuardrailCfg(
             min_trades=max(1, int(args.min_trades)),
             max_drawdown_ratio=float(args.max_dd_limit),
@@ -2143,19 +2905,42 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         rng = np.random.default_rng(int(args.seed))
         candidate_records: list[dict[str, Any]] = []
-        seen_weights: set[tuple[float, float, float, float]] = set()
+        seen_candidates: set[tuple[Any, ...]] = set()
         for _ in range(int(search_cfg.trials)):
-            weights = _normalize_weights(_sample_weights(rng))
-            signature = _weight_signature(weights)
-            if signature in seen_weights:
+            weights = dict(baseline_weights) if search_cfg.freeze_weights else _normalize_weights(
+                _sample_weights(rng))
+            candidate_base_params, candidate_asset_cfgs = _sample_candidate_surface(
+                rng,
+                base_params=base_params,
+                asset_cfgs=asset_cfgs,
+                mutation_surface=mutation_surface,
+            )
+            mutation_values = _build_mutation_values_payload(
+                baseline_weights=baseline_weights,
+                candidate_weights=weights,
+                base_params=base_params,
+                candidate_base_params=candidate_base_params,
+                asset_cfgs=asset_cfgs,
+                candidate_asset_cfgs=candidate_asset_cfgs,
+                mutation_surface=mutation_surface,
+            )
+            if mutation_surface.requested_dimensions and not _has_requested_non_weight_change(mutation_values):
                 continue
-            seen_weights.add(signature)
+            signature = _candidate_signature(
+                weights=weights,
+                base_params=candidate_base_params,
+                asset_cfgs=candidate_asset_cfgs,
+                mutation_surface=mutation_surface,
+            )
+            if signature in seen_candidates:
+                continue
+            seen_candidates.add(signature)
             train_metrics = _evaluate_window(
                 train_df,
                 symbols=args.symbols,
-                base_params=base_params,
+                base_params=candidate_base_params,
                 weights=weights,
-                asset_cfgs=asset_cfgs,
+                asset_cfgs=candidate_asset_cfgs,
                 tf_sec=int(args.tf_sec),
                 warmup_bars=search_cfg.warmup_bars,
                 guardrails=guardrails,
@@ -2163,6 +2948,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             candidate_records.append(
                 {
                     "weights": weights,
+                    "base_params": candidate_base_params,
+                    "asset_cfgs": candidate_asset_cfgs,
+                    "mutation_values": mutation_values,
+                    "signature": signature,
                     "train": train_metrics,
                     "train_score": train_metrics.get("selection_score"),
                 }
@@ -2179,9 +2968,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             validation_metrics = _evaluate_window(
                 validation_df,
                 symbols=args.symbols,
-                base_params=base_params,
+                base_params=candidate["base_params"],
                 weights=candidate["weights"],
-                asset_cfgs=asset_cfgs,
+                asset_cfgs=candidate["asset_cfgs"],
                 tf_sec=int(args.tf_sec),
                 warmup_bars=search_cfg.warmup_bars,
                 guardrails=guardrails,
@@ -2195,9 +2984,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         selected_candidate["forward"] = _evaluate_window(
             forward_df,
             symbols=args.symbols,
-            base_params=base_params,
+            base_params=selected_candidate["base_params"],
             weights=selected_candidate["weights"],
-            asset_cfgs=asset_cfgs,
+            asset_cfgs=selected_candidate["asset_cfgs"],
             tf_sec=int(args.tf_sec),
             warmup_bars=search_cfg.warmup_bars,
             guardrails=guardrails,
@@ -2221,29 +3010,70 @@ def main(argv: Sequence[str] | None = None) -> int:
             guardrails=guardrails,
         )
 
+        per_regime_payload = None
+        if bool(getattr(args, "per_regime", False)):
+            per_regime_payload = _run_per_regime_analysis(
+                df_raw,
+                symbols=args.symbols,
+                baseline_base_params=base_params,
+                baseline_weights=baseline_weights,
+                baseline_asset_cfgs=asset_cfgs,
+                candidate_base_params=selected_candidate["base_params"],
+                candidate_weights=selected_candidate["weights"],
+                candidate_asset_cfgs=selected_candidate["asset_cfgs"],
+                tf_sec=int(args.tf_sec),
+                warmup_bars=search_cfg.warmup_bars,
+                guardrails=guardrails,
+                out_dir=out_dir,
+            )
+
         verdict = "GO_CANDIDATE" if validation_artifact[
             "all_passed"] and forward_artifact["all_passed"] else "NO_GO_CANDIDATE"
         verdict_reasons: list[str] = []
         if not validation_artifact["all_passed"]:
-            failed = [item["name"]
-                      for item in validation_artifact["guardrails"] if not item["passed"]]
+            failed = _failed_guardrail_names(validation_artifact)
             verdict_reasons.append(
                 f"Validation guardrails failed: {', '.join(failed)}")
         if not forward_artifact["all_passed"]:
-            failed = [item["name"]
-                      for item in forward_artifact["guardrails"] if not item["passed"]]
+            failed = _failed_guardrail_names(forward_artifact)
             verdict_reasons.append(
                 f"Forward guardrails failed: {', '.join(failed)}")
-        if not verdict_reasons:
+        concentration_summary = (per_regime_payload or {}).get(
+            "candidate_regime_concentration") or {}
+        single_positive_regime_only = bool(
+            concentration_summary.get("single_positive_regime_only", False))
+        promotion_status = "PROMOTABLE"
+        if single_positive_regime_only:
+            verdict = "NO_GO_CANDIDATE"
+            promotion_status = "SHADOW_ONLY"
+            verdict_reasons.append(
+                "Per-regime analysis shows candidate profit concentrated in a single positive regime."
+            )
+        elif verdict != "GO_CANDIDATE":
+            promotion_status = "REJECTED"
+        if not verdict_reasons and verdict == "GO_CANDIDATE":
             verdict_reasons.append(
                 "Candidate satisfied validation and forward guardrails against baseline.")
 
+        top_candidates_sorted = sorted(
+            top_candidates, key=_candidate_sort_key, reverse=True)
         selected_payload = {
             "weights": {key: float(selected_candidate["weights"][key]) for key in WEIGHT_KEYS},
+            "mutation_values": selected_candidate["mutation_values"],
             "train": selected_candidate["train"],
             "validation_score": selected_candidate.get("validation_score"),
             "validation": selected_candidate["validation"],
-            "rank_within_top_k": 1 + next(index for index, item in enumerate(sorted(top_candidates, key=_candidate_sort_key, reverse=True)) if _weight_signature(item["weights"]) == _weight_signature(selected_candidate["weights"])),
+            "forward": selected_candidate["forward"],
+            "stability_summary": _build_candidate_stability_summary(
+                train_metrics=selected_candidate["train"],
+                validation_metrics=selected_candidate["validation"],
+                forward_metrics=selected_candidate["forward"],
+            ),
+            "symbol_scope": symbol_scope,
+            "base_config_source": str(md_amr_yaml),
+            "rank_within_top_k": 1 + next(index for index, item in enumerate(top_candidates_sorted) if item["signature"] == selected_candidate["signature"]),
+            "promotion_status": promotion_status,
+            "rejection_reasons": [] if verdict == "GO_CANDIDATE" else list(verdict_reasons),
         }
 
         candidate_payload = {
@@ -2252,23 +3082,40 @@ def main(argv: Sequence[str] | None = None) -> int:
             "top_candidates": [
                 {
                     "weights": {key: float(item["weights"][key]) for key in WEIGHT_KEYS},
+                    "mutation_values": item["mutation_values"],
                     "train_score": item.get("train_score"),
                     "validation_score": item.get("validation_score"),
                     "train_total_trades": int(item["train"]["total_trades"]),
                     "validation_total_trades": int((item.get("validation") or {}).get("total_trades", 0)),
                 }
-                for item in sorted(top_candidates, key=_candidate_sort_key, reverse=True)
+                for item in top_candidates_sorted
             ],
             "search_space": {
-                "type": "dirichlet_simplex_long_only",
+                "type": (
+                    "explicit_base_params_only"
+                    if search_cfg.freeze_weights
+                    else "weights_plus_explicit_base_params"
+                ) if mutation_surface.requested_dimensions else "dirichlet_simplex_long_only",
                 "weight_keys": list(WEIGHT_KEYS),
+                "weights_frozen": bool(search_cfg.freeze_weights),
                 "trials": int(search_cfg.trials),
                 "top_k": int(search_cfg.top_k),
                 "seed": int(args.seed),
+                "requested_base_param_dimensions": list(mutation_surface.requested_dimensions),
+                "supported_base_param_dimensions": list(_BASE_PARAM_MUTATION_ORDER),
+                "base_param_dimensions": mutation_surface.search_space,
+                "symbol_scope": symbol_scope,
             },
         }
 
-        overlay = _overlay_from_weights(selected_candidate["weights"])
+        overlay = _overlay_from_candidate_surface(
+            weights=selected_candidate["weights"],
+            baseline_base_params=base_params,
+            candidate_base_params=selected_candidate["base_params"],
+            baseline_asset_cfgs=asset_cfgs,
+            candidate_asset_cfgs=selected_candidate["asset_cfgs"],
+            mutation_surface=mutation_surface,
+        )
         manifest = {
             "calibrator": "calibrate_md_amr_weights.py",
             "calibration_class": "production",
@@ -2294,11 +3141,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "start": args.start.isoformat(),
                 "end_exclusive": args.end.isoformat(),
                 "tf_sec": int(args.tf_sec),
+                "md_amr_yaml": str(md_amr_yaml),
+                "strategies_yaml": str(strategies_yaml),
                 "search": {
                     "trials": int(search_cfg.trials),
                     "top_k": int(search_cfg.top_k),
                     "seed": int(args.seed),
                     "warmup_bars": int(search_cfg.warmup_bars),
+                    "freeze_weights": bool(search_cfg.freeze_weights),
+                    "mutate_base_params": list(mutation_surface.requested_dimensions),
                 },
                 "evaluation_windows": {
                     "train_days": list(windows.train_days),
@@ -2315,7 +3166,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "validation_must_outperform_baseline": True,
                 "forward_must_not_degrade_vs_baseline": True,
             },
+            "mutation_surface": {
+                "weights_enabled": not search_cfg.freeze_weights,
+                "requested_base_param_dimensions": list(mutation_surface.requested_dimensions),
+                "supported_base_param_dimensions": list(_BASE_PARAM_MUTATION_ORDER),
+                "search_space": {
+                    "weights": {
+                        "type": "baseline_fixed" if search_cfg.freeze_weights else "dirichlet_simplex_long_only",
+                        "weight_keys": list(WEIGHT_KEYS),
+                        "baseline": {key: float(baseline_weights[key]) for key in WEIGHT_KEYS},
+                    },
+                    "base_params": mutation_surface.search_space,
+                },
+                "symbol_scope": symbol_scope,
+                "overlay_only": True,
+            },
             "dataset": dataset_audit,
+            "per_regime_summary": concentration_summary if per_regime_payload is not None else {},
             "canonical_yaml_writeback": False,
             "artifact_paths": {
                 "run_manifest": "run_manifest.json",
@@ -2327,6 +3194,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "report": "report.md",
             },
         }
+        if per_regime_payload is not None:
+            manifest["artifact_paths"]["per_regime_analysis"] = "per_regime_analysis.json"
 
         out_dir.mkdir(parents=True, exist_ok=True)
         _write_json(out_dir / "run_manifest.json", manifest)
@@ -2357,20 +3226,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"validation_score_delta={_fmt_score(validation_artifact['delta'].get('selection_score'))}")
         print(
             f"forward_score_delta={_fmt_score(forward_artifact['delta'].get('selection_score'))}")
-
-        # Per-regime breakdown (additive, after main calibration output)
-        if bool(getattr(args, "per_regime", False)):
-            _run_per_regime_analysis(
-                df_raw,
-                symbols=args.symbols,
-                base_params=base_params,
-                weights=baseline_weights,
-                asset_cfgs=asset_cfgs,
-                tf_sec=int(args.tf_sec),
-                warmup_bars=search_cfg.warmup_bars,
-                guardrails=guardrails,
-                out_dir=out_dir,
-            )
+        print(
+            f"mutated_dimensions={json.dumps(list(selected_candidate['mutation_values'].get('mutated_dimensions') or []))}")
 
         return 0
     except CalibrationError as error:

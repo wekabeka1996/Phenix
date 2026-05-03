@@ -1278,6 +1278,8 @@ class AuroraConfig(BaseModel):
 
         This prevents silent runtime fallbacks that can quantize DOGE to 0.10000/0.20000 when tick_size is wrong
         or when per-asset exit/take_profit config is missing.
+        It also requires active Aurora LOW_VOL geometry to clear the downstream
+        low_vol_cost_floor_gate RR floor before runtime.
         """
         # TP/SL placement preflight (A3): required in YAML, no defaults.
         exec_cfg = getattr(self.trading, "execution", None)
@@ -1316,6 +1318,24 @@ class AuroraConfig(BaseModel):
             raise ValueError(
                 "strategies.aurora is required: TP/SL SSOT lives in config/aurora/strategies/aurora.yaml"
             )
+
+        decision_making = getattr(self.domains, "decision_making", None)
+        gate_cfg = getattr(decision_making, "low_vol_cost_floor_gate", None)
+        gate_thresholds = (
+            getattr(gate_cfg, "thresholds", None) if gate_cfg is not None else None
+        )
+        if gate_thresholds is None or getattr(gate_thresholds, "min_rr", None) is None:
+            raise ValueError(
+                "domains.decision_making.low_vol_cost_floor_gate.thresholds.min_rr is "
+                "required for Aurora LOW_VOL TP/SL validation"
+            )
+        low_vol_min_rr = float(gate_thresholds.min_rr)
+
+        def _coerce_float(raw_value: Any) -> float | None:
+            try:
+                return float(raw_value)
+            except (TypeError, ValueError):
+                return None
 
         missing: list[str] = []
         for symbol in aurora_symbols:
@@ -1368,6 +1388,80 @@ class AuroraConfig(BaseModel):
                     missing.append(
                         f"{symbol} invalid strategies.aurora.assets.{symbol}.take_profit.partial_exit_pct={tp_cfg.partial_exit_pct}"
                     )
+
+            regime_tpsl = exit_cfg.regime_tpsl
+            if regime_tpsl is None:
+                missing.append(
+                    f"{symbol} missing strategies.aurora.assets.{symbol}.exit.regime_tpsl")
+                continue
+
+            regime_mode = getattr(regime_tpsl, "mode", None)
+            if regime_mode == "pct_mult":
+                if tp_cfg is None or tp_cfg.tp_low_ratio is None:
+                    continue
+
+                tp_mult_map = dict(getattr(regime_tpsl, "tp_mult", None) or {})
+                if "DEFAULT" not in tp_mult_map:
+                    missing.append(
+                        f"{symbol} missing strategies.aurora.assets.{symbol}.exit.regime_tpsl.tp_mult.DEFAULT")
+                    continue
+
+                tp_mult_source = (
+                    "LOW_VOLATILITY" if "LOW_VOLATILITY" in tp_mult_map else "DEFAULT"
+                )
+                tp_low = _coerce_float(tp_cfg.tp_low_ratio)
+                tp_mult = _coerce_float(tp_mult_map.get(tp_mult_source))
+                min_tp_rr = _coerce_float(getattr(regime_tpsl, "min_tp_rr", None))
+                max_tp_rr = _coerce_float(getattr(regime_tpsl, "max_tp_rr", None))
+                if (
+                    tp_low is None
+                    or tp_mult is None
+                    or min_tp_rr is None
+                    or max_tp_rr is None
+                ):
+                    missing.append(
+                        f"{symbol} invalid strategies.aurora.assets.{symbol}.exit.regime_tpsl.pct_mult geometry")
+                    continue
+
+                effective_rr = max(min_tp_rr, min(tp_low * tp_mult, max_tp_rr))
+                if effective_rr < low_vol_min_rr:
+                    missing.append(
+                        f"{symbol} low-vol effective RR={effective_rr:.6f} below "
+                        f"domains.decision_making.low_vol_cost_floor_gate.thresholds.min_rr={low_vol_min_rr:.6f} "
+                        f"(strategies.aurora.assets.{symbol}.exit.regime_tpsl.tp_mult."
+                        f"{tp_mult_source}={tp_mult}, take_profit.tp_low_ratio={tp_low}, "
+                        f"min_tp_rr={min_tp_rr}, max_tp_rr={max_tp_rr})"
+                    )
+            elif regime_mode == "atr":
+                rr_map = dict(getattr(regime_tpsl, "rr_by_regime", None) or {})
+                if "DEFAULT" not in rr_map:
+                    missing.append(
+                        f"{symbol} missing strategies.aurora.assets.{symbol}.exit.regime_tpsl.rr_by_regime.DEFAULT")
+                    continue
+
+                rr_source = (
+                    "LOW_VOLATILITY" if "LOW_VOLATILITY" in rr_map else "DEFAULT"
+                )
+                rr = _coerce_float(rr_map.get(rr_source))
+                min_tp_rr = _coerce_float(getattr(regime_tpsl, "min_tp_rr", None))
+                max_tp_rr = _coerce_float(getattr(regime_tpsl, "max_tp_rr", None))
+                if rr is None or min_tp_rr is None or max_tp_rr is None:
+                    missing.append(
+                        f"{symbol} invalid strategies.aurora.assets.{symbol}.exit.regime_tpsl.atr geometry")
+                    continue
+
+                effective_rr = max(min_tp_rr, min(rr, max_tp_rr))
+                if effective_rr < low_vol_min_rr:
+                    missing.append(
+                        f"{symbol} low-vol effective RR={effective_rr:.6f} below "
+                        f"domains.decision_making.low_vol_cost_floor_gate.thresholds.min_rr={low_vol_min_rr:.6f} "
+                        f"(strategies.aurora.assets.{symbol}.exit.regime_tpsl.rr_by_regime."
+                        f"{rr_source}={rr}, min_tp_rr={min_tp_rr}, max_tp_rr={max_tp_rr})"
+                    )
+            else:
+                missing.append(
+                    f"{symbol} invalid strategies.aurora.assets.{symbol}.exit.regime_tpsl.mode={regime_mode!r}"
+                )
 
         if missing:
             raise ValueError("TP/SL SSOT validation failed: " +

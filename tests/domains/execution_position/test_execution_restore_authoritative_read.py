@@ -11,10 +11,10 @@ from apps.reference.config_models import (
     ExecutionPositionStartupTruthArtifactConfig,
     ExecutionPositionStartupTruthArtifactMode,
 )
-from apps.reference.domains.execution_position.fsm_close import CloseState
-from apps.reference.domains.execution_position.fsm_manage import ManageState
-from apps.reference.domains.execution_position.order_index import OrderIndex
-from apps.reference.domains.execution_position.restore_artifact import (
+from apps.reference.domains.execution_position.flows.close.fsm_close import CloseState
+from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageState
+from apps.reference.domains.execution_position.state.order_index import OrderIndex
+from apps.reference.domains.execution_position.state.restore_artifact import (
     BRACKET_STATE_DEFERRED_PENDING_WAL,
     BRACKET_STATE_LINKED_ACTIVE,
     BRACKET_STATE_UNKNOWN,

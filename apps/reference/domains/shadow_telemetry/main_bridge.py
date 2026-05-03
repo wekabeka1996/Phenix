@@ -1,14 +1,43 @@
 from __future__ import annotations
 
+import threading
 import logging
 import time
+from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from vfoundation.core.protocol import Message, truncate_why
 from vfoundation.dr import wal
 
+from apps.reference.domains.neocortex.contracts.failure_taxonomy import (
+    FailureOutcomeTaxonomy,
+    FailureReasonCode,
+    record_failure_outcome,
+)
 from apps.reference.domains.shadow_telemetry.contracts import CmdLlmIntentSubmitV1
-from apps.reference.domains.shadow_telemetry.ipc import JsonlTcpQueueClient, JsonlTcpServer
+from apps.reference.domains.shadow_telemetry.ipc import (
+    JsonlTcpQueueClient,
+    JsonlTcpServer,
+    ShadowTapDeliveryFailure,
+)
+from apps.reference.telemetry.metrics import (
+    inc_shadow_tap_delivery_failure,
+    inc_shadow_tap_delivery_log_suppressed,
+)
+
+
+@dataclass(frozen=True)
+class ShadowTapPublishOutcome:
+    accepted: bool
+    fatal: bool
+    degraded_observability: bool
+    failure_class: str | None = None
+    endpoint: str = ""
+    reason: str = ""
+
+
+class ShadowTapDeliveryCriticalError(RuntimeError):
+    """Raised when shadow tap delivery must fail closed."""
 
 
 def _append_wal_event(verb: str, rid: str, payload: Dict[str, Any], why: str) -> None:
@@ -39,35 +68,263 @@ class ShadowEventTapPublisher:
 
         ingest_cfg = cfg.ingest
         self._enabled = bool(getattr(cfg, "enabled", False))
+        self.required_for_mode = bool(getattr(cfg, "required_for_mode", False))
         self._allowlist = set(str(x) for x in getattr(
             ingest_cfg, "allowlist_events", []) or [])
-        self._required = bool(getattr(cfg, "required_for_mode", False))
+        self._endpoint = str(ingest_cfg.ipc_endpoint)
+        self._delivery_failure_lock = threading.Lock()
+        self._delivery_failure_log_state: dict[str, dict[str, float | int]] = {}
+        self._delivery_failure_log_every_n = 25
+        self._delivery_failure_log_interval_sec = 60.0
         self._client: JsonlTcpQueueClient | None = None
         if self._enabled:
             self._client = JsonlTcpQueueClient(
-                endpoint=str(ingest_cfg.ipc_endpoint),
+                endpoint=self._endpoint,
                 queue_maxsize=int(ingest_cfg.queue_maxsize),
                 overflow_policy=str(ingest_cfg.overflow_policy),
                 stop_timeout_ms=int(cfg.lifecycle.stop_timeout_ms),
                 logger=self.logger.getChild("event_tap"),
                 name="shadow_event_tap_client",
+                failure_reporter=self._handle_client_delivery_failure,
             )
+
+    def _handle_client_delivery_failure(
+        self,
+        failure: ShadowTapDeliveryFailure,
+    ) -> None:
+        self._record_delivery_failure(
+            failure,
+            source="worker",
+            required_for_mode=self.required_for_mode,
+        )
+
+    def _record_delivery_failure(
+        self,
+        failure: ShadowTapDeliveryFailure,
+        *,
+        source: str,
+        required_for_mode: bool,
+    ) -> ShadowTapPublishOutcome:
+        failure_class = str(failure.failure_class or "unknown").strip() or "unknown"
+        inc_shadow_tap_delivery_failure(
+            component="shadow_event_tap_client",
+            failure_class=failure_class,
+            required_for_mode=required_for_mode,
+        )
+
+        reason_code = (
+            FailureReasonCode.BRIDGE_TIMEOUT
+            if failure_class == "timeout"
+            else FailureReasonCode.BRIDGE_UNAVAILABLE
+        )
+        record_failure_outcome(
+            FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+            reason_code,
+            location="domains/shadow_telemetry/main_bridge.py:ShadowEventTapPublisher._record_delivery_failure",
+            message="Shadow event tap delivery failed",
+            detail={
+                "source": source,
+                "phase": failure.phase,
+                "endpoint": failure.endpoint,
+                "error_type": failure.error_type,
+                "error_message": failure.error_message,
+                "failure_class": failure_class,
+                "required_for_mode": required_for_mode,
+            },
+        )
+
+        now = time.monotonic()
+        with self._delivery_failure_lock:
+            state = self._delivery_failure_log_state.setdefault(
+                failure_class,
+                {
+                    "count": 0,
+                    "suppressed": 0,
+                    "last_emitted_monotonic": 0.0,
+                },
+            )
+            state["count"] = int(state["count"]) + 1
+            count = int(state["count"])
+            suppressed = int(state["suppressed"])
+            last_emitted = float(state["last_emitted_monotonic"])
+            should_emit = (
+                count == 1
+                or count % self._delivery_failure_log_every_n == 0
+                or (now - last_emitted >= self._delivery_failure_log_interval_sec and suppressed > 0)
+            )
+            if should_emit:
+                state["suppressed"] = 0
+                state["last_emitted_monotonic"] = now
+            else:
+                state["suppressed"] = suppressed + 1
+                inc_shadow_tap_delivery_log_suppressed(
+                    component="shadow_event_tap_client",
+                    failure_class=failure_class,
+                )
+                return ShadowTapPublishOutcome(
+                    accepted=False,
+                    fatal=bool(required_for_mode),
+                    degraded_observability=True,
+                    failure_class=failure_class,
+                    endpoint=failure.endpoint,
+                    reason=source,
+                )
+
+        summary_suppressed = suppressed
+        message = (
+            "Shadow event tap delivery degraded "
+            "(endpoint=%s required_for_mode=%s failure_class=%s source=%s phase=%s error=%s: %s)"
+        )
+        args = (
+            failure.endpoint,
+            required_for_mode,
+            failure_class,
+            source,
+            failure.phase,
+            failure.error_type,
+            truncate_why(str(failure.error_message), 160),
+        )
+
+        if required_for_mode:
+            self.logger.critical(message, *args)
+        elif summary_suppressed > 0:
+            self.logger.warning(
+                "%s suppressed %d additional shadow tap delivery failures "
+                "(endpoint=%s failure_class=%s source=%s phase=%s)",
+                self.logger.name,
+                summary_suppressed,
+                failure.endpoint,
+                failure_class,
+                source,
+                failure.phase,
+            )
+        else:
+            self.logger.warning(message, *args)
+
+        return ShadowTapPublishOutcome(
+            accepted=False,
+            fatal=bool(required_for_mode),
+            degraded_observability=True,
+            failure_class=failure_class,
+            endpoint=failure.endpoint,
+            reason=source,
+        )
 
     def start(self) -> None:
         if not self._enabled or self._client is None:
             return
+        startup_failure = self._client.probe_endpoint()
+        if startup_failure is not None:
+            self._client.mark_delivery_failure(startup_failure)
+            self._record_delivery_failure(
+                startup_failure,
+                source="startup",
+                required_for_mode=self.required_for_mode,
+            )
+            if self.required_for_mode:
+                raise ShadowTapDeliveryCriticalError(
+                    "Shadow event tap required_for_mode=true but endpoint is unavailable "
+                    f"at startup: {startup_failure.endpoint} ({startup_failure.failure_class})"
+                )
         self._client.start()
-        self.logger.info("Shadow event tap publisher started")
+        self.logger.info(
+            "Shadow event tap publisher started "
+            "(endpoint=%s required_for_mode=%s delivery_mode=%s queue_maxsize=%s overflow_policy=%s)",
+            self._endpoint,
+            self.required_for_mode,
+            "fail_closed" if self.required_for_mode else "degraded_observability",
+            self._client.queue_maxsize,
+            self._client.overflow_policy,
+        )
 
     def stop(self) -> None:
         if self._client is not None:
             self._client.stop()
 
-    def publish(self, event_name: str, payload: Dict[str, Any], why: str) -> None:
+    def preflight(self, event_name: str) -> ShadowTapPublishOutcome:
         if not self._enabled or self._client is None:
-            return
+            return ShadowTapPublishOutcome(
+                accepted=False,
+                fatal=False,
+                degraded_observability=False,
+                reason="disabled",
+            )
         if self._allowlist and event_name not in self._allowlist:
-            return
+            return ShadowTapPublishOutcome(
+                accepted=False,
+                fatal=False,
+                degraded_observability=False,
+                reason="allowlist_skip",
+            )
+
+        if not self.required_for_mode:
+            return ShadowTapPublishOutcome(
+                accepted=True,
+                fatal=False,
+                degraded_observability=False,
+                endpoint=self._endpoint,
+                reason="non_required_mode",
+            )
+
+        prior_failure = self._client.last_delivery_failure()
+        if prior_failure is not None:
+            return ShadowTapPublishOutcome(
+                accepted=False,
+                fatal=True,
+                degraded_observability=True,
+                failure_class=prior_failure.failure_class,
+                endpoint=prior_failure.endpoint,
+                reason="prior_delivery_failure",
+            )
+
+        if self._client.queue_depth() >= self._client.queue_maxsize:
+            failure = ShadowTapDeliveryFailure(
+                failure_class="queue_overflow",
+                phase="preflight",
+                error_type="queue.Full",
+                error_message="shadow tap queue is full",
+                endpoint=self._endpoint,
+            )
+            return self._record_delivery_failure(
+                failure,
+                source="preflight",
+                required_for_mode=True,
+            )
+
+        return ShadowTapPublishOutcome(
+            accepted=True,
+            fatal=False,
+            degraded_observability=False,
+            endpoint=self._endpoint,
+            reason="preflight_ok",
+        )
+
+    def publish(self, event_name: str, payload: Dict[str, Any], why: str) -> ShadowTapPublishOutcome:
+        if not self._enabled or self._client is None:
+            return ShadowTapPublishOutcome(
+                accepted=False,
+                fatal=False,
+                degraded_observability=False,
+                reason="disabled",
+            )
+        if self._allowlist and event_name not in self._allowlist:
+            return ShadowTapPublishOutcome(
+                accepted=False,
+                fatal=False,
+                degraded_observability=False,
+                reason="allowlist_skip",
+            )
+
+        prior_failure = self._client.last_delivery_failure()
+        if self.required_for_mode and prior_failure is not None:
+            return ShadowTapPublishOutcome(
+                accepted=False,
+                fatal=True,
+                degraded_observability=True,
+                failure_class=prior_failure.failure_class,
+                endpoint=prior_failure.endpoint,
+                reason="prior_delivery_failure",
+            )
 
         frame = {
             "frame_id": f"tap-{int(time.time() * 1000)}",
@@ -77,10 +334,27 @@ class ShadowEventTapPublisher:
             "why": truncate_why(str(why), 80),
         }
         ok = self._client.enqueue(frame)
-        if not ok and self._required:
-            self.logger.critical(
-                "Shadow tap queue overflow with required_for_mode=true; event=%s", event_name
+        if ok:
+            return ShadowTapPublishOutcome(
+                accepted=True,
+                fatal=False,
+                degraded_observability=False,
+                endpoint=self._endpoint,
+                reason="enqueued",
             )
+
+        failure = ShadowTapDeliveryFailure(
+            failure_class="queue_overflow",
+            phase="enqueue",
+            error_type="queue.Full",
+            error_message=f"shadow tap queue overflow while publishing {event_name}",
+            endpoint=self._endpoint,
+        )
+        return self._record_delivery_failure(
+            failure,
+            source="enqueue",
+            required_for_mode=self.required_for_mode,
+        )
 
 
 class LLMIntentIngressBridge:

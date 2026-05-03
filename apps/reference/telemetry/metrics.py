@@ -167,6 +167,17 @@ h_order_lifecycle_seconds = Histogram(
     buckets=(1, 5, 10, 30, 60, 300, 600),
 )
 
+c_shadow_tap_delivery_failures_total = Counter(
+    "shadow_tap_delivery_failures_total",
+    "Shadow event tap delivery failures by class and required_for_mode",
+    ["component", "failure_class", "required_for_mode"],
+)
+c_shadow_tap_delivery_log_suppressed_total = Counter(
+    "shadow_tap_delivery_log_suppressed_total",
+    "Shadow event tap delivery failure log suppressions",
+    ["component", "failure_class"],
+)
+
 
 # Metrics for hybrid coherence
 AURORA_HYBRID_COHERENT = Gauge(
@@ -318,6 +329,31 @@ def inc_order_state(status: str) -> None:
 
 def observe_order_lifecycle(duration_seconds: float) -> None:
     h_order_lifecycle_seconds.observe(duration_seconds)
+
+
+def inc_shadow_tap_delivery_failure(
+    *,
+    component: str,
+    failure_class: str,
+    required_for_mode: bool,
+) -> None:
+    c_shadow_tap_delivery_failures_total.labels(
+        component=_metric_label(component, default="shadow_event_tap_client"),
+        failure_class=_metric_label(failure_class, default="unknown").lower(),
+        required_for_mode=_metric_label(
+            required_for_mode, default="false").lower(),
+    ).inc()
+
+
+def inc_shadow_tap_delivery_log_suppressed(
+    *,
+    component: str,
+    failure_class: str,
+) -> None:
+    c_shadow_tap_delivery_log_suppressed_total.labels(
+        component=_metric_label(component, default="shadow_event_tap_client"),
+        failure_class=_metric_label(failure_class, default="unknown").lower(),
+    ).inc()
 
 
 # Task 17: Config Contract Violation Metric

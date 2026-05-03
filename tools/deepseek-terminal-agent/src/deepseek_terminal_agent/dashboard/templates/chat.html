@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DeepSeek Agent OS</title>
+  <link rel="stylesheet" href="/static/dashboard.css?v=20260502g">
+</head>
+<body class="cockpit-page">
+
+  <header class="global-header" id="global-header">
+    <div class="header-brand-cluster">
+      <a class="header-brand" href="/chat">Агентна ОС DeepSeek</a>
+      <span class="header-brand-tag">Operator Cockpit</span>
+    </div>
+
+    <div class="header-controls">
+      <button type="button" class="header-control header-select-control" id="project-selector-btn">
+        <span class="header-control-label">Проєкт</span>
+        <span class="header-control-value" id="header-project-name">Не завантажено</span>
+      </button>
+      <button type="button" class="header-control header-select-control" id="header-model-btn">
+        <span class="header-control-label">Модель</span>
+        <span class="header-control-value" id="header-model-name">—</span>
+      </button>
+      <button type="button" class="header-control header-toggle-control" id="header-reasoning-btn" aria-pressed="{{ 'true' if bootstrap.reasoningEnabled else 'false' }}">
+        <span class="header-control-label">Reasoning</span>
+        <span class="header-control-value" id="header-reasoning-status">{{ 'on' if bootstrap.reasoningEnabled else 'off' }}</span>
+      </button>
+      <div class="header-control header-path-control">
+        <span class="header-control-label">Workspace</span>
+        <span class="header-control-value mono header-workspace-val">{{ workspace }}</span>
+      </div>
+    </div>
+
+    <div class="header-status-group">
+      <span class="badge {% if api_key_present %}badge-ok{% else %}badge-error{% endif %}">
+        API {% if api_key_present %}✓{% else %}✗{% endif %}
+      </span>
+      <span class="badge badge-muted" id="header-session-status">idle</span>
+      <button type="button" class="btn-ghost header-btn" id="header-inspector-toggle">Інспектор</button>
+      <button type="button" class="btn-ghost header-btn" id="cmd-palette-btn" title="Командна палітра (Ctrl+K)">⌘ K</button>
+      <a class="btn-ghost nav-link header-btn" href="/">Запуски</a>
+      <div class="header-user-card" aria-label="Поточний оператор">
+        <span class="header-user-avatar">OP</span>
+        <div class="header-user-meta">
+          <span class="header-user-name">Local Operator</span>
+          <span class="header-user-role">Safe mode</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="app-shell">
+    <nav class="left-nav" id="left-nav">
+      <div class="nav-group">
+        <button type="button" class="nav-item is-active" data-module="workspace">
+          <span class="nav-icon">⬡</span>
+          <span class="nav-label">Агентна робоча область</span>
+        </button>
+        <button type="button" class="nav-item" data-module="monitoring">
+          <span class="nav-icon">◎</span>
+          <span class="nav-label">Моніторинг</span>
+        </button>
+        <button type="button" class="nav-item" data-module="reports-module">
+          <span class="nav-icon">▤</span>
+          <span class="nav-label">Звіти</span>
+        </button>
+        <button type="button" class="nav-item" data-module="memory-module">
+          <span class="nav-icon">◈</span>
+          <span class="nav-label">Пам'ять</span>
+        </button>
+        <button type="button" class="nav-item" data-module="playbooks-module">
+          <span class="nav-icon">▶</span>
+          <span class="nav-label">Сценарії</span>
+        </button>
+        <button type="button" class="nav-item" data-module="models-module">
+          <span class="nav-icon">◆</span>
+          <span class="nav-label">Моделі</span>
+        </button>
+        <button type="button" class="nav-item" data-module="tools-module">
+          <span class="nav-icon">⚙</span>
+          <span class="nav-label">Інструменти</span>
+        </button>
+        <button type="button" class="nav-item" data-module="settings-module">
+          <span class="nav-icon">☰</span>
+          <span class="nav-label">Налаштування</span>
+        </button>
+      </div>
+
+      <div class="nav-footer">
+        <div class="nav-footer-card">
+          <span class="nav-footer-kicker">Команда</span>
+          <strong>Phenix Ops</strong>
+          <span class="nav-footer-meta">Local cockpit / bounded tools</span>
+        </div>
+        <button type="button" class="nav-item nav-footer-btn" id="nav-collapse-btn" title="Згорнути або розгорнути навігацію">
+          <span class="nav-icon">◂</span>
+          <span class="nav-label">Згорнути rail</span>
+        </button>
+      </div>
+    </nav>
+
+    <div class="panel-resizer panel-resizer--left-nav resize-handle resize-handle--horizontal" id="left-nav-resizer" data-panel-resize="leftNav" role="separator" aria-label="Змінити ширину лівої навігації" tabindex="0"></div>
+
+    <div class="module-area">
+      <div class="module is-active" id="module-workspace">
+        <div class="workspace-tabs-shell">
+          <div class="workspace-tabs" id="workspace-tabs">
+            <button type="button" class="tab-button is-active" data-ws-tab="agent">Агентна робоча область</button>
+            <button type="button" class="tab-button" data-ws-tab="monitoring-tab">Моніторинг</button>
+            <button type="button" class="tab-button" data-ws-tab="llm-lab">LLM Strategy Lab</button>
+            <button type="button" class="btn-ghost add-tab-btn" id="add-tab-btn">+ Нова вкладка</button>
+          </div>
+          <div class="workspace-tabs-status">
+            <span class="field-label">Сесія</span>
+            <span class="workspace-session-pill" id="workspace-session-pill">Не обрано</span>
+          </div>
+        </div>
+
+        <div class="ws-tab is-active" id="ws-tab-agent">
+          <div class="workspace-mode-bar" id="workspace-mode-bar">
+            <div class="workspace-mode-switch" id="workspace-mode-switch" role="tablist" aria-label="Режим робочої області">
+              <button type="button" class="workspace-mode-btn" id="layout-mode-simple" data-layout-mode="simple" aria-pressed="false">Simple Chat</button>
+              <button type="button" class="workspace-mode-btn is-active" id="layout-mode-cockpit" data-layout-mode="cockpit" aria-pressed="true">Cockpit Mode</button>
+              <button type="button" class="workspace-mode-btn" id="layout-mode-board" data-layout-mode="board" aria-pressed="false">Board Mode</button>
+            </div>
+            <p class="workspace-mode-note">Board Mode відкриває bounded canvas із рухомими панелями та окремим layout state.</p>
+            <div class="workspace-mode-actions">
+              <button type="button" class="btn-ghost" id="board-reset-btn">Reset board layout</button>
+            </div>
+          </div>
+
+          <div class="board-canvas-shell" id="board-canvas-shell">
+            <div class="board-canvas" id="board-canvas" data-board-root="true">
+              <div class="cockpit-layout" id="cockpit-layout">
+                <aside class="sessions-column shell-column board-panel board-panel--window board-panel--sessions" id="sessions-column" data-board-panel="sessions" data-board-title="Сесії">
+                  <div class="board-panel-header board-panel-header--shell" data-board-drag-handle>
+                    <div class="board-panel-heading">
+                      <span class="board-panel-kicker">Workspace</span>
+                      <h2>Сесії</h2>
+                    </div>
+                    <div class="board-panel-header-actions">
+                      <span class="badge badge-muted">drag</span>
+                    </div>
+                  </div>
+              <section class="card collapsible-card is-open sessions-card" data-collapsible-section>
+                <div class="section-head">
+                  <div>
+                    <h2>Сесії</h2>
+                    <p class="section-note">Останні робочі контексти, створення й пошук стартової точки.</p>
+                  </div>
+                  <div class="section-head-actions">
+                    <button type="button" class="btn-primary" id="new-session-btn">Нова сесія</button>
+                    <button type="button" class="section-toggle" data-collapse-target="sessions-card-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                  </div>
+                </div>
+                <div class="card-body" id="sessions-card-body">
+                  <div class="form-stack compact-stack">
+                    <label class="field-label" for="new-session-title">Назва</label>
+                    <input id="new-session-title" type="text" placeholder="Назва сесії">
+                    <label class="field-label" for="new-session-profile">Профіль</label>
+                    <select id="new-session-profile"></select>
+                  </div>
+                  <div class="session-list" id="session-list"></div>
+                </div>
+              </section>
+
+              <section class="card collapsible-card is-open tasks-card" data-collapsible-section>
+                <div class="section-head">
+                  <div>
+                    <h2>Задачі</h2>
+                    <p class="section-note">Швидкий погляд на те, що в роботі й що вже завершено.</p>
+                  </div>
+                  <div class="section-head-actions">
+                    <span class="badge badge-muted">placeholder</span>
+                    <button type="button" class="section-toggle" data-collapse-target="tasks-card-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                  </div>
+                </div>
+                <div class="card-body" id="tasks-card-body">
+                  <div class="task-group">
+                    <div class="field-label">У роботі</div>
+                    <div class="mini-empty" id="tasks-in-progress">Задач поки немає.</div>
+                  </div>
+                  <div class="task-group task-group-spaced">
+                    <div class="field-label">Завершено</div>
+                    <div class="mini-empty" id="tasks-done">—</div>
+                  </div>
+                </div>
+              </section>
+              <div class="board-panel-resizers" aria-hidden="true">
+                <span class="board-resize-handle board-resize-handle--n" data-board-resize="n"></span>
+                <span class="board-resize-handle board-resize-handle--e" data-board-resize="e"></span>
+                <span class="board-resize-handle board-resize-handle--s" data-board-resize="s"></span>
+                <span class="board-resize-handle board-resize-handle--w" data-board-resize="w"></span>
+                <span class="board-resize-handle board-resize-handle--ne" data-board-resize="ne"></span>
+                <span class="board-resize-handle board-resize-handle--nw" data-board-resize="nw"></span>
+                <span class="board-resize-handle board-resize-handle--se" data-board-resize="se"></span>
+                <span class="board-resize-handle board-resize-handle--sw" data-board-resize="sw"></span>
+              </div>
+            </aside>
+
+            <div class="panel-resizer panel-resizer--session resize-handle resize-handle--horizontal" id="session-panel-resizer" data-panel-resize="sessionPanel" role="separator" aria-label="Змінити ширину панелі сесій" tabindex="0"></div>
+
+            <main class="chat-column shell-column central-workspace board-panel board-panel--window" id="central-workspace" data-layout-preset="balanced" data-board-surface="workspace" data-board-panel="chat" data-board-title="Unified Chat">
+              <div class="board-panel-header board-panel-header--shell" data-board-drag-handle>
+                <div class="board-panel-heading"><h2>Unified Chat</h2></div>
+              </div>
+              <div class="central-workspace__header">
+                <div class="central-workspace__identity">
+                  <span class="workspace-shell-kicker">Central Workspace</span>
+                  <h2 id="session-title">Агентна робоча область</h2>
+                  <p class="section-note" id="session-meta">Оберіть або створіть сесію.</p>
+                </div>
+                <div class="central-workspace__header-actions">
+                  <div class="form-stack compact-stack conversation-toolbar-group">
+                    <label class="field-label" for="profile-select">Активний профіль</label>
+                    <select id="profile-select"></select>
+                  </div>
+                  <div class="form-stack compact-stack conversation-toolbar-group">
+                    <label class="field-label" for="workspace-preset-select">Layout preset</label>
+                    <select id="workspace-preset-select" class="workspace-preset-select">
+                      <option value="balanced">Баланс</option>
+                      <option value="compact">Компактний</option>
+                      <option value="debug">Debug</option>
+                      <option value="custom">Власний</option>
+                    </select>
+                  </div>
+                  <button type="button" class="btn-ghost layout-reset-button" id="workspace-reset-btn">Скинути layout</button>
+                </div>
+              </div>
+
+              <div class="central-workspace__toolbar">
+                <div class="workspace-metadata-strip">
+                  <span class="badge badge-muted" id="chat-status-badge">idle</span>
+                  <span class="workspace-hint">Shift+click лише вставляє шаблон. Alt+click робить safe quick-run тільки для read-only сценаріїв.</span>
+                </div>
+                <div class="quick-buttons central-workspace__quick-actions">
+                  <button type="button" class="btn-ghost" id="refresh-session-btn">Оновити</button>
+                  <button type="button" class="btn-ghost" id="inspect-context-btn">Контекст</button>
+                  <button type="button" class="btn-ghost" id="compress-btn">Стиснути</button>
+                  <button type="button" class="btn-ghost" id="spawn-scout-btn">Scout</button>
+                </div>
+              </div>
+
+              <div class="central-workspace__stack" id="central-workspace-stack">
+                <section class="card workspace-section workspace-section--scenarios collapsible-card is-open" data-collapsible-section data-section-role="scenarios" data-layout-section="scenarios" data-min-height="44" data-max-height="160" data-="scenarios">
+                  <div class="workspace-section__header section-head" data-board-drag-handle>
+                    <div class="workspace-section__heading">
+                      <span class="workspace-section__eyebrow">Scenarios</span>
+                      <h2>Сценарії / швидкі кнопки</h2>
+                      <p class="section-note">Операторські шаблони для коду, тестів, логів і звітів з окремим preview для risky flow.</p>
+                    </div>
+                    <div class="workspace-section__controls section-head-actions">
+                      <span class="badge badge-muted" id="scenario-section-status">8 templates</span>
+                      <div class="section-menu">
+                        <details class="section-actions-menu" data-section-actions-menu="scenarios">
+                          <summary class="section-menu__btn section-menu__btn--menu" aria-label="Дії секції сценаріїв">...</summary>
+                          <div class="section-actions-menu__panel" role="menu" aria-label="Дії секції сценаріїв">
+                            <button type="button" class="section-menu__btn section-actions-menu__item" disabled title="Закріплення буде додано пізніше">Pin</button>
+                            <button type="button" class="section-menu__btn section-actions-menu__item" data-section-move="up" data-section-key="scenarios">Перемістити вище</button>
+                            <button type="button" class="section-menu__btn section-actions-menu__item" data-section-move="down" data-section-key="scenarios">Перемістити нижче</button>
+                          </div>
+                        </details>
+                        <button type="button" class="section-toggle" data-collapse-target="scenario-rail-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="workspace-section__body card-body" id="scenario-rail-body">
+                    <div class="scenario-rail" id="scenario-buttons-bar">
+                      <div class="scenario-group">
+                        <span class="field-label">Код</span>
+                        <button type="button" class="btn-quick scenario-btn scenario-button" data-playbook="scout_context" data-template-id="scout_context" data-source-file="playbooks/scout_context.md" data-group="Код" data-mode="prepare" data-risk-level="safe" data-quick-run="true">Зібрати контекст</button>
+                        <button type="button" class="btn-quick scenario-btn scenario-button" data-playbook="build_plan" data-template-id="build_plan" data-source-file="playbooks/build_plan.md" data-group="Код" data-mode="prepare" data-risk-level="safe" data-quick-run="true">Побудувати план</button>
+                        <button type="button" class="btn-quick scenario-btn scenario-button" data-playbook="audit_patch" data-template-id="audit_patch" data-source-file="playbooks/audit_patch.md" data-group="Код" data-mode="review" data-risk-level="guarded" data-quick-run="false">Аудит патчу</button>
+                      </div>
+                      <div class="scenario-group">
+                        <span class="field-label">Тести</span>
+                        <button type="button" class="btn-quick scenario-btn scenario-button" data-playbook="run_focused_tests" data-template-id="run_focused_tests" data-source-file="playbooks/run_focused_tests.md" data-group="Тести" data-mode="validate" data-risk-level="guarded" data-quick-run="false">Запустити тести</button>
+                        <button type="button" class="btn-quick scenario-btn scenario-button" data-playbook="triage_failures" data-template-id="triage_failures" data-source-file="playbooks/triage_failures.md" data-group="Тести" data-mode="triage" data-risk-level="guarded" data-quick-run="false">Розібрати падіння</button>
+                      </div>
+                      <div class="scenario-group">
+                        <span class="field-label">Логи</span>
+                        <button type="button" class="btn-quick scenario-btn scenario-button" data-playbook="analyze_logs" data-template-id="analyze_logs" data-source-file="playbooks/analyze_logs.md" data-group="Логи" data-mode="observe" data-risk-level="safe" data-quick-run="true">Аналіз логів</button>
+                        <button type="button" class="btn-quick scenario-btn scenario-button" data-playbook="trace_failure_path" data-template-id="trace_failure_path" data-source-file="playbooks/trace_failure_path.md" data-group="Логи" data-mode="observe" data-risk-level="safe" data-quick-run="true">Trace path</button>
+                      </div>
+                      <div class="scenario-group">
+                        <span class="field-label">Звіти</span>
+                        <button type="button" class="btn-quick scenario-btn scenario-button" data-playbook="generate_report" data-template-id="generate_report" data-source-file="playbooks/generate_report.md" data-group="Звіти" data-mode="summarize" data-risk-level="safe" data-quick-run="true">Створити звіт</button>
+                        <button type="button" class="btn-quick scenario-btn scenario-button" data-playbook="memory_patch" data-template-id="memory_patch" data-source-file="playbooks/memory_patch.md" data-group="Звіти" data-mode="patch" data-risk-level="guarded" data-quick-run="false">Патч пам'яті</button>
+                      </div>
+                    </div>
+                    <div class="scenario-preview-panel" id="scenario-preview-panel">
+                      <div class="mini-empty" id="scenario-preview-empty">Виберіть сценарій, щоб побачити metadata, risk gate і доступні дії.</div>
+                      <article class="scenario-preview-card hidden" id="scenario-preview-card">
+                        <div class="scenario-preview-card__head">
+                          <div>
+                            <h3 id="scenario-preview-title">Сценарій</h3>
+                            <p class="mini-card-text" id="scenario-preview-description">Опис з'явиться після вибору шаблону.</p>
+                          </div>
+                          <div class="scenario-preview-card__badges">
+                            <span class="badge badge-info" id="scenario-preview-group">—</span>
+                            <span class="badge badge-muted" id="scenario-preview-mode">prepare</span>
+                            <span class="badge badge-muted" id="scenario-preview-risk">safe</span>
+                          </div>
+                        </div>
+                        <div class="mini-stats scenario-preview-stats">
+                          <div class="mini-stat"><span class="status-label">template_id</span><span class="status-value mono" id="scenario-preview-template">—</span></div>
+                          <div class="mini-stat"><span class="status-label">source</span><span class="status-value mono" id="scenario-preview-source">—</span></div>
+                        </div>
+                        <p class="warning-text hidden" id="scenario-preview-warning"></p>
+                        <div class="composer-actions scenario-preview-actions">
+                          <button type="button" class="btn-primary" id="scenario-apply-btn">Вставити в composer</button>
+                          <button type="button" class="btn-secondary" id="scenario-run-btn">Швидкий запуск</button>
+                          <button type="button" class="btn-ghost" id="scenario-open-source-btn">Показати source</button>
+                        </div>
+                      </article>
+                    </div>
+                  </div>
+                  <div class="workspace-section__resize resize-handle resize-handle--vertical" data-layout-resize="scenarios" role="separator" aria-label="Змінити висоту секції сценаріїв" tabindex="0"></div>
+                  <div class="board-panel-resizers" aria-hidden="true">
+                    <span class="board-resize-handle board-resize-handle--n" data-board-resize="n"></span>
+                    <span class="board-resize-handle board-resize-handle--e" data-board-resize="e"></span>
+                    <span class="board-resize-handle board-resize-handle--s" data-board-resize="s"></span>
+                    <span class="board-resize-handle board-resize-handle--w" data-board-resize="w"></span>
+                    <span class="board-resize-handle board-resize-handle--ne" data-board-resize="ne"></span>
+                    <span class="board-resize-handle board-resize-handle--nw" data-board-resize="nw"></span>
+                    <span class="board-resize-handle board-resize-handle--se" data-board-resize="se"></span>
+                    <span class="board-resize-handle board-resize-handle--sw" data-board-resize="sw"></span>
+                  </div>
+                </section>
+
+                <section class="card workspace-section workspace-section--chat collapsible-card is-open thread-card" data-collapsible-section data-section-role="chat" data-layout-section="chat" data-min-height="120" data-max-height="600" data-="chat">
+                  <div class="workspace-section__header section-head" data-board-drag-handle>
+                    <div class="workspace-section__heading">
+                      <span class="workspace-section__eyebrow">Chat Stream</span>
+                      <h2>Чат-потік</h2>
+                      <p class="section-note">Поточний операторський діалог, публічні відповіді агента, system events і subagent cards без raw reasoning.</p>
+                    </div>
+                    <div class="workspace-section__controls section-head-actions">
+                      <span class="badge badge-muted" id="chat-stream-status">0 items</span>
+                      <div class="section-menu">
+                        <details class="section-actions-menu" data-section-actions-menu="chat">
+                          <summary class="section-menu__btn section-menu__btn--menu" aria-label="Дії чат-потоку">...</summary>
+                          <div class="section-actions-menu__panel" role="menu" aria-label="Дії чат-потоку">
+                            <button type="button" class="section-menu__btn section-actions-menu__item" disabled title="Закріплення буде додано пізніше">Pin</button>
+                            <button type="button" class="section-menu__btn section-actions-menu__item" data-section-move="up" data-section-key="chat">Перемістити вище</button>
+                            <button type="button" class="section-menu__btn section-actions-menu__item" data-section-move="down" data-section-key="chat">Перемістити нижче</button>
+                          </div>
+                        </details>
+                        <button type="button" class="section-toggle" data-collapse-target="chat-thread-panel" aria-expanded="true" title="Згорнути секцію">▾</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="workspace-section__body card-body" id="chat-thread-panel">
+                    <div class="chat-stream-shell">
+                      <div class="chat-thread chat-thread--workspace" id="chat-thread">
+                        <div class="chat-empty">Сесію не обрано.</div>
+                      </div>
+                      <div class="mini-empty" id="chat-subagent-empty">Системні події та субагенти з'являться тут лише коли вони реально існують у payload.</div>
+                    </div>
+                  </div>
+                  <div class="workspace-section__resize resize-handle resize-handle--vertical" data-layout-resize="chat" role="separator" aria-label="Змінити висоту чат-потоку" tabindex="0"></div>
+                  <div class="board-panel-resizers" aria-hidden="true">
+                    <span class="board-resize-handle board-resize-handle--n" data-board-resize="n"></span>
+                    <span class="board-resize-handle board-resize-handle--e" data-board-resize="e"></span>
+                    <span class="board-resize-handle board-resize-handle--s" data-board-resize="s"></span>
+                    <span class="board-resize-handle board-resize-handle--w" data-board-resize="w"></span>
+                    <span class="board-resize-handle board-resize-handle--ne" data-board-resize="ne"></span>
+                    <span class="board-resize-handle board-resize-handle--nw" data-board-resize="nw"></span>
+                    <span class="board-resize-handle board-resize-handle--se" data-board-resize="se"></span>
+                    <span class="board-resize-handle board-resize-handle--sw" data-board-resize="sw"></span>
+                  </div>
+                </section>
+
+                <section class="card workspace-section workspace-section--trace collapsible-card is-open reasoning-card board-panel board-panel--window" data-collapsible-section data-section-role="trace" data-layout-section="workTrace" data-min-height="100" data-max-height="600" data-board-panel="workTrace" data-board-title="Work Trace">
+                  <div class="workspace-section__header section-head" data-board-drag-handle>
+                    <div class="workspace-section__heading">
+                      <span class="workspace-section__eyebrow">Work Trace</span>
+                      <h2>Міркування / хід роботи</h2>
+                      <p class="section-note">Компактний, керований operator-facing trace без hidden reasoning та без вигаданих кроків.</p>
+                    </div>
+                    <div class="workspace-section__controls section-head-actions">
+                      <div class="trace-mode-switcher" id="trace-mode-switcher" role="tablist" aria-label="Режим trace">
+                        <button type="button" class="trace-mode-btn is-active" data-trace-mode="compact">Компактний</button>
+                        <button type="button" class="trace-mode-btn" data-trace-mode="working">Робочий</button>
+                        <button type="button" class="trace-mode-btn" data-trace-mode="detailed">Детальний trace</button>
+                      </div>
+                      <div class="section-menu">
+                        <details class="section-actions-menu" data-section-actions-menu="workTrace">
+                          <summary class="section-menu__btn section-menu__btn--menu" aria-label="Дії work trace">...</summary>
+                          <div class="section-actions-menu__panel" role="menu" aria-label="Дії work trace">
+                            <button type="button" class="section-menu__btn section-actions-menu__item" disabled title="Закріплення буде додано пізніше">Pin</button>
+                            <button type="button" class="section-menu__btn section-actions-menu__item" data-section-move="up" data-section-key="workTrace">Перемістити вище</button>
+                            <button type="button" class="section-menu__btn section-actions-menu__item" data-section-move="down" data-section-key="workTrace">Перемістити нижче</button>
+                          </div>
+                        </details>
+                        <span class="badge badge-muted" id="reasoning-mode-badge">Компактний</span>
+                        <button type="button" class="section-toggle reasoning-toggle" id="reasoning-toggle-btn" data-collapse-target="reasoning-body" aria-expanded="true" title="Згорнути reasoning summary">▾</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="workspace-section__body card-body reasoning-body" id="reasoning-body">
+                    <div class="reasoning-toolbar">
+                      <span class="badge badge-muted" id="reasoning-coverage-badge">payload-driven</span>
+                      <span class="reasoning-toolbar-note">Compact = high level, Working = current flow, Detailed trace = nested subagent events та evidence links.</span>
+                    </div>
+                    <div class="reasoning-tree-shell">
+                      <ol class="reasoning-tree" id="reasoning-tree"></ol>
+                      <div class="mini-empty" id="reasoning-empty-state">Після запуску тут з'явиться trace з реальних turns, events, subagents та artifacts.</div>
+                    </div>
+                  </div>
+                  <div class="workspace-section__resize resize-handle resize-handle--vertical" data-layout-resize="workTrace" role="separator" aria-label="Змінити висоту work trace" tabindex="0"></div>
+                  <div class="board-panel-resizers" aria-hidden="true">
+                    <span class="board-resize-handle board-resize-handle--n" data-board-resize="n"></span>
+                    <span class="board-resize-handle board-resize-handle--e" data-board-resize="e"></span>
+                    <span class="board-resize-handle board-resize-handle--s" data-board-resize="s"></span>
+                    <span class="board-resize-handle board-resize-handle--w" data-board-resize="w"></span>
+                    <span class="board-resize-handle board-resize-handle--ne" data-board-resize="ne"></span>
+                    <span class="board-resize-handle board-resize-handle--nw" data-board-resize="nw"></span>
+                    <span class="board-resize-handle board-resize-handle--se" data-board-resize="se"></span>
+                    <span class="board-resize-handle board-resize-handle--sw" data-board-resize="sw"></span>
+                  </div>
+                </section>
+
+                <section class="card workspace-section workspace-section--result collapsible-card is-open output-panel-card" data-collapsible-section data-section-role="result" data-layout-section="result" data-min-height="90" data-max-height="400" data-="result">
+                  <div class="workspace-section__header section-head" data-board-drag-handle>
+                    <div class="workspace-section__heading">
+                      <span class="workspace-section__eyebrow">Result</span>
+                      <h2>Результат / статус</h2>
+                      <p class="section-note">Останній публічний результат, warnings і artifact handoff surface для execution-safe feedback.</p>
+                    </div>
+                    <div class="workspace-section__controls section-head-actions">
+                      <span class="badge badge-muted" id="result-section-status">idle</span>
+                      <div class="section-menu">
+                        <button type="button" class="section-menu__btn" id="result-copy-btn">Copy</button>
+                        <button type="button" class="section-menu__btn" id="result-add-memory-btn">Memory</button>
+                        <details class="section-actions-menu" data-section-actions-menu="result">
+                          <summary class="section-menu__btn section-menu__btn--menu" aria-label="Дії секції результату">...</summary>
+                          <div class="section-actions-menu__panel" role="menu" aria-label="Дії секції результату">
+                            <button type="button" class="section-menu__btn section-actions-menu__item" data-section-move="up" data-section-key="result">Перемістити вище</button>
+                            <button type="button" class="section-menu__btn section-actions-menu__item" data-section-move="down" data-section-key="result">Перемістити нижче</button>
+                          </div>
+                        </details>
+                        <button type="button" class="section-toggle" data-collapse-target="output-panel-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="workspace-section__body card-body" id="output-panel-body">
+                    <div class="output-surface result-panel">
+                      <div class="output-status-row">
+                        <span class="badge badge-muted" id="output-status-badge">idle</span>
+                        <span class="output-status-line" id="output-status-line">Публічний результат з'явиться після першої дії.</span>
+                      </div>
+                      <pre class="output compact-output" id="output-result-box">Немає результатів.</pre>
+                      <div class="result-panel__actions">
+                        <button type="button" class="btn-ghost" id="result-focus-trace-btn">До trace</button>
+                        <button type="button" class="btn-ghost" id="result-focus-artifacts-btn">Артефакти</button>
+                      </div>
+                      <div class="result-artifacts" id="result-artifact-links">
+                        <div class="mini-empty">Артефакти та підсумки subagent runs з'являться після першого результату.</div>
+                      </div>
+                      <p class="warning-text hidden" id="chat-warning"></p>
+                    </div>
+                  </div>
+                  <div class="workspace-section__resize resize-handle resize-handle--vertical" data-layout-resize="result" role="separator" aria-label="Змінити висоту секції результату" tabindex="0"></div>
+                  <div class="board-panel-resizers" aria-hidden="true">
+                    <span class="board-resize-handle board-resize-handle--n" data-board-resize="n"></span>
+                    <span class="board-resize-handle board-resize-handle--e" data-board-resize="e"></span>
+                    <span class="board-resize-handle board-resize-handle--s" data-board-resize="s"></span>
+                    <span class="board-resize-handle board-resize-handle--w" data-board-resize="w"></span>
+                    <span class="board-resize-handle board-resize-handle--ne" data-board-resize="ne"></span>
+                    <span class="board-resize-handle board-resize-handle--nw" data-board-resize="nw"></span>
+                    <span class="board-resize-handle board-resize-handle--se" data-board-resize="se"></span>
+                    <span class="board-resize-handle board-resize-handle--sw" data-board-resize="sw"></span>
+                  </div>
+                </section>
+
+                <section class="card workspace-section workspace-section--composer composer-card composer-panel is-open" id="composer" data-section-role="composer" data-layout-section="composer" data-min-height="118" data-max-height="520" data-="composer">
+                  <div class="workspace-section__header section-head" data-board-drag-handle>
+                    <div class="workspace-section__heading">
+                      <span class="workspace-section__eyebrow">Composer</span>
+                      <h2>Composer / поле керування запитом</h2>
+                      <p class="section-note">Основний prompt surface. Ctrl+Enter запускає bounded message flow, clear та expand зберігаються локально.</p>
+                    </div>
+                    <div class="workspace-section__controls section-head-actions">
+                      <span class="badge badge-muted" id="chat-char-count">0 chars</span>
+                      <div class="section-menu">
+                        <button type="button" class="section-menu__btn" id="composer-clear-btn">Clear</button>
+                        <button type="button" class="section-menu__btn" id="composer-default-btn">Default</button>
+                        <button type="button" class="section-menu__btn" id="composer-expand-btn">Expand</button>
+                        <details class="section-actions-menu" data-section-actions-menu="composer">
+                          <summary class="section-menu__btn section-menu__btn--menu" aria-label="Дії composer">...</summary>
+                          <div class="section-actions-menu__panel" role="menu" aria-label="Дії composer">
+                            <button type="button" class="section-menu__btn section-actions-menu__item" data-section-move="up" data-section-key="composer">Перемістити вище</button>
+                            <button type="button" class="section-menu__btn section-actions-menu__item" data-section-move="down" data-section-key="composer">Перемістити нижче</button>
+                          </div>
+                        </details>
+                        <button type="button" class="section-toggle" data-collapse-target="composer-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="workspace-section__body card-body composer-body" id="composer-body">
+                    <div class="composer-actions">
+                      <button type="button" class="btn-ghost" id="context-preview-btn" title="Переглянути контекст">Контекст</button>
+                      <button type="button" class="btn-ghost" id="composer-use-scenario-btn" title="Вставити вибраний сценарій">Сценарій</button>
+                      <select id="model-selector" class="model-selector" title="Обрати модель">
+                        <option value="">Модель…</option>
+                      </select>
+                    </div>
+                    <div class="form-stack composer-form-stack">
+                      <label class="field-label" for="chat-input">Запит</label>
+                      <div class="composer-textarea-shell">
+                        <textarea id="chat-input" class="composer-textarea" rows="5" placeholder="Опишіть задачу… (Ctrl+Enter — Запустити, Shift+Enter — новий рядок)"></textarea>
+                      </div>
+                    </div>
+                    <div class="composer-toolbar">
+                      <div class="composer-toolbar__hint">Безпечний prompt dock для code, tests, logs, reports.</div>
+                      <div class="form-actions">
+                        <button type="button" class="btn-primary" id="send-btn">Запустити</button>
+                        <button type="button" class="btn-secondary hidden" id="cancel-subagent-btn">Зупинити</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="workspace-section__resize resize-handle resize-handle--vertical composer-resize-handle" id="composer-resize-handle" data-layout-resize="composer" role="separator" aria-label="Змінити висоту composer" tabindex="0"></div>
+                  <div class="board-panel-resizers" aria-hidden="true">
+                    <span class="board-resize-handle board-resize-handle--n" data-board-resize="n"></span>
+                    <span class="board-resize-handle board-resize-handle--e" data-board-resize="e"></span>
+                    <span class="board-resize-handle board-resize-handle--s" data-board-resize="s"></span>
+                    <span class="board-resize-handle board-resize-handle--w" data-board-resize="w"></span>
+                    <span class="board-resize-handle board-resize-handle--ne" data-board-resize="ne"></span>
+                    <span class="board-resize-handle board-resize-handle--nw" data-board-resize="nw"></span>
+                    <span class="board-resize-handle board-resize-handle--se" data-board-resize="se"></span>
+                    <span class="board-resize-handle board-resize-handle--sw" data-board-resize="sw"></span>
+                  </div>
+                </section>
+              </div>
+              <div class="panel-resizer panel-resizer--central-vertical resize-handle resize-handle--vertical" id="central-workspace-resizer" data-panel-resize="centralWorkspace" role="separator" aria-label="Змінити висоту центральної області" tabindex="0"></div>
+            </main>
+
+            <div class="panel-resizer panel-resizer--inspector resize-handle resize-handle--horizontal" id="inspector-panel-resizer" data-panel-resize="rightInspector" role="separator" aria-label="Змінити ширину правого inspector" tabindex="0"></div>
+
+            <aside class="inspector-column shell-column board-panel board-panel--window board-panel--inspector" id="inspector-column" data-board-panel="inspector" data-board-title="Inspector">
+              <div class="board-panel-header board-panel-header--shell" data-board-drag-handle>
+                <div class="board-panel-heading">
+                  <span class="board-panel-kicker">Control</span>
+                  <h2>Inspector</h2>
+                </div>
+                <div class="board-panel-header-actions">
+                  <span class="badge badge-muted">drag</span>
+                </div>
+              </div>
+              <div class="inspector-shell-head">
+                <div>
+                  <span class="nav-footer-kicker">Inspector</span>
+                  <h2>Control Surface</h2>
+                </div>
+                <button type="button" class="btn-ghost inspector-toggle-btn" id="inspector-toggle-btn">Сховати</button>
+              </div>
+
+              <div class="inspector-tabs" id="inspector-tabs">
+                <button type="button" class="tab-button is-active" data-inspector="inspector-main">Інспектор</button>
+                <button type="button" class="tab-button" data-inspector="inspector-context">Контекст</button>
+                <button type="button" class="tab-button" data-inspector="inspector-run">Запуск</button>
+                <button type="button" class="tab-button" data-inspector="inspector-artifacts">Артефакти</button>
+                <button type="button" class="tab-button" data-inspector="inspector-approval">Approval</button>
+                <button type="button" class="tab-button" data-inspector="inspector-memory">Пам'ять</button>
+                <button type="button" class="tab-button" data-inspector="inspector-scenarios">Сценарії</button>
+              </div>
+
+              <div class="inspector-panel is-active" id="inspector-main">
+                <section class="card collapsible-card is-open" data-collapsible-section>
+                  <div class="section-head">
+                    <div>
+                      <h2>Капсула проєкту</h2>
+                      <p class="section-note">Поточний стан проєкту, режиму та ризиків у стислій control-surface формі.</p>
+                    </div>
+                    <div class="section-head-actions">
+                      <span class="badge badge-muted" id="capsule-phase-status">unknown</span>
+                      <button type="button" class="section-toggle" data-collapse-target="capsule-card-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                    </div>
+                  </div>
+                  <div class="card-body" id="capsule-card-body">
+                    <div class="mini-stats">
+                      <div class="mini-stat"><span class="status-label">Проєкт</span><span class="status-value" id="capsule-project-name">-</span></div>
+                      <div class="mini-stat"><span class="status-label">Режим</span><span class="status-value" id="capsule-project-mode">-</span></div>
+                      <div class="mini-stat"><span class="status-label">Фаза</span><span class="status-value" id="capsule-project-phase">-</span></div>
+                      <div class="mini-stat"><span class="status-label">Ризики</span><span class="status-value" id="capsule-risk-count">0</span></div>
+                    </div>
+                    <p class="mini-card-text small" id="capsule-search-mode">Капсулу не завантажено.</p>
+                    <div class="mini-list" id="capsule-rules-list"></div>
+                    <div class="mini-list" id="capsule-risks-list"></div>
+                    <div class="mini-list" id="capsule-next-steps-list"></div>
+                  </div>
+                </section>
+
+                <section class="card collapsible-card is-open" data-collapsible-section>
+                  <div class="section-head">
+                    <div>
+                      <h2>Правила SSOT</h2>
+                      <p class="section-note">Контрактні обмеження та readonly surface перед редагуванням.</p>
+                    </div>
+                    <div class="section-head-actions">
+                      <span class="badge badge-muted">не перевірено</span>
+                      <button type="button" class="section-toggle" data-collapse-target="ssot-rules-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                    </div>
+                  </div>
+                  <div class="card-body" id="ssot-rules-body">
+                    <div class="quick-buttons">
+                      <button type="button" class="btn-ghost" disabled title="Ще не реалізовано">Перевірити</button>
+                      <button type="button" class="btn-ghost" disabled title="Ще не реалізовано">Відкрити файл</button>
+                    </div>
+                    <div class="mini-list" id="ssot-rules-list"><div class="mini-empty">Правила завантажуються через Капсулу проєкту.</div></div>
+                  </div>
+                </section>
+
+                <section class="card collapsible-card is-open" data-collapsible-section>
+                  <div class="section-head">
+                    <div>
+                      <h2>Маршрутизатор задач</h2>
+                      <p class="section-note">Стисла картина того, як workbench маршрутизував поточний prompt.</p>
+                    </div>
+                    <div class="section-head-actions">
+                      <span class="badge badge-muted" id="router-route">direct</span>
+                      <button type="button" class="section-toggle" data-collapse-target="router-card-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                    </div>
+                  </div>
+                  <div class="card-body" id="router-card-body">
+                    <div class="mini-stats">
+                      <div class="mini-stat"><span class="status-label">Тип задачі</span><span class="status-value" id="router-task-type">direct_answer</span></div>
+                      <div class="mini-stat"><span class="status-label">Приєднано</span><span class="status-value" id="router-attach-status">0 / 0</span></div>
+                    </div>
+                    <p class="mini-card-text" id="router-reason">Задачу не маршрутизовано.</p>
+                    <div class="mini-list" id="router-suggested-list"></div>
+                  </div>
+                </section>
+              </div>
+
+              <div class="inspector-panel" id="inspector-context">
+                <section class="card collapsible-card is-open" data-collapsible-section>
+                  <div class="section-head">
+                    <div>
+                      <h2>Завантажений контекст</h2>
+                      <p class="section-note">Turns, memory atoms та artifacts у публічному context pack.</p>
+                    </div>
+                    <div class="section-head-actions">
+                      <span class="badge badge-muted" id="context-usage">0 chars</span>
+                      <button type="button" class="section-toggle" data-collapse-target="context-card-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                    </div>
+                  </div>
+                  <div class="card-body" id="context-card-body">
+                    <div class="mini-stats" id="context-summary">
+                      <div class="mini-stat"><span class="status-label">Попередження</span><span class="status-value" id="context-warning-count">0</span></div>
+                      <div class="mini-stat"><span class="status-label">Повідомлення</span><span class="status-value" id="context-turn-count">0</span></div>
+                      <div class="mini-stat"><span class="status-label">Пам'ять</span><span class="status-value" id="context-memory-count">0</span></div>
+                      <div class="mini-stat"><span class="status-label">Артефакти</span><span class="status-value" id="context-artifact-count">0</span></div>
+                    </div>
+                    <div class="quick-buttons">
+                      <button type="button" class="btn-ghost" id="inspect-context-btn2" title="Інспектувати контекст">Переглянути</button>
+                      <button type="button" class="btn-ghost" id="compress-btn2" title="Стиснути контекст">Стиснути</button>
+                    </div>
+                    <pre class="output compact-output" id="context-pack-view">Звіт контексту відсутній.</pre>
+                  </div>
+                </section>
+
+                <section class="card collapsible-card is-open" id="tools-panel" data-collapsible-section>
+                  <div class="section-head">
+                    <div>
+                      <h2>Реєстр інструментів</h2>
+                      <p class="section-note">Tool permissions, risk levels та bounded execution rules.</p>
+                    </div>
+                    <div class="section-head-actions">
+                      <span class="badge badge-muted" id="tools-count">0</span>
+                      <button type="button" class="section-toggle" data-collapse-target="tools-card-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                    </div>
+                  </div>
+                  <div class="card-body" id="tools-card-body">
+                    <div class="quick-buttons">
+                      <button type="button" class="btn-ghost" id="tools-reload-btn">Оновити</button>
+                    </div>
+                    <div class="mini-list" id="tools-list"><div class="mini-empty">Завантаження…</div></div>
+                  </div>
+                </section>
+              </div>
+
+              <div class="inspector-panel" id="inspector-run">
+                <section class="card collapsible-card is-open" data-collapsible-section>
+                  <div class="section-head">
+                    <div>
+                      <h2>Поточний запуск</h2>
+                      <p class="section-note">Остання активність run/subagent без raw reasoning surface.</p>
+                    </div>
+                    <div class="section-head-actions">
+                      <span class="badge badge-muted" id="current-run-status">idle</span>
+                      <button type="button" class="section-toggle" data-collapse-target="current-run-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                    </div>
+                  </div>
+                  <div class="card-body" id="current-run-body">
+                    <div class="mini-stats">
+                      <div class="mini-stat"><span class="status-label">Задача</span><span class="status-value" id="current-run-task">—</span></div>
+                      <div class="mini-stat"><span class="status-label">Агент</span><span class="status-value" id="current-run-agent">—</span></div>
+                      <div class="mini-stat"><span class="status-label">Модель</span><span class="status-value" id="current-run-model">—</span></div>
+                      <div class="mini-stat"><span class="status-label">Тривалість</span><span class="status-value" id="current-run-elapsed">—</span></div>
+                    </div>
+                    <div class="quick-buttons">
+                      <button type="button" class="btn-ghost" disabled title="Ще не реалізовано">Пауза</button>
+                      <button type="button" class="btn-ghost" disabled title="Ще не реалізовано">Snapshot</button>
+                      <button type="button" class="btn-ghost" disabled title="Ще не реалізовано">Trace</button>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="card collapsible-card is-open" data-collapsible-section>
+                  <div class="section-head">
+                    <div>
+                      <h2>Граф агентів</h2>
+                      <p class="section-note">Візуальний rail для child runs, handoff-ів і bounded agent graph.</p>
+                    </div>
+                    <div class="section-head-actions">
+                      <span class="badge badge-muted">placeholder</span>
+                      <button type="button" class="section-toggle" data-collapse-target="agent-graph-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                    </div>
+                  </div>
+                  <div class="card-body" id="agent-graph-body">
+                    <div class="agent-graph" id="agent-graph">
+                      <div class="mini-empty">Після запуску сценарію тут з'явиться граф агентів.</div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="card collapsible-card is-open" data-collapsible-section>
+                  <div class="section-head">
+                    <div>
+                      <h2>Субагенти</h2>
+                      <p class="section-note">Актуальні bounded child runs та приєднані артефакти.</p>
+                    </div>
+                    <div class="section-head-actions">
+                      <span class="badge badge-muted" id="subagent-count">0 runs</span>
+                      <button type="button" class="section-toggle" data-collapse-target="subagents-card-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                    </div>
+                  </div>
+                  <div class="card-body" id="subagents-card-body">
+                    <div class="mini-list" id="subagent-list"></div>
+                    <div class="mini-list" id="artifact-list"></div>
+                  </div>
+                </section>
+              </div>
+
+              <div class="inspector-panel" id="inspector-artifacts">
+                <section class="card collapsible-card is-open" id="evidence-bundles-panel" data-collapsible-section>
+                  <div class="section-head">
+                    <div>
+                      <h2>Пакет доказів</h2>
+                      <p class="section-note">Скан логів, зібрані bundles і короткі evidence surfaces.</p>
+                    </div>
+                    <div class="section-head-actions">
+                      <span class="badge badge-muted" id="bundles-count">0</span>
+                      <button type="button" class="section-toggle" data-collapse-target="bundles-card-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                    </div>
+                  </div>
+                  <div class="card-body" id="bundles-card-body">
+                    <div class="quick-buttons">
+                      <button type="button" class="btn-ghost" id="bundles-scan-btn">Сканувати логи</button>
+                      <button type="button" class="btn-ghost" id="bundles-reload-btn">Оновити</button>
+                    </div>
+                    <div class="mini-list" id="bundles-list"><div class="mini-empty">Пакетів доказів немає.</div></div>
+                  </div>
+                </section>
+
+                <section class="card collapsible-card is-open" id="reports-panel" data-collapsible-section>
+                  <div class="section-head">
+                    <div>
+                      <h2>Звіти</h2>
+                      <p class="section-note">Validation reports, accepted artifacts і швидкий доступ до останніх підсумків.</p>
+                    </div>
+                    <div class="section-head-actions">
+                      <span class="badge badge-muted" id="reports-count">0</span>
+                      <button type="button" class="section-toggle" data-collapse-target="reports-card-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                    </div>
+                  </div>
+                  <div class="card-body" id="reports-card-body">
+                    <div class="quick-buttons">
+                      <button type="button" class="btn-ghost" id="reports-scan-btn">Сканувати звіти</button>
+                      <button type="button" class="btn-ghost" id="reports-reload-btn">Оновити</button>
+                    </div>
+                    <div class="mini-list" id="reports-list"><div class="mini-empty">Звітів не проіндексовано.</div></div>
+                  </div>
+                </section>
+              </div>
+
+              <div class="inspector-panel" id="inspector-approval">
+                <section class="card collapsible-card is-open" id="approvals-panel" data-collapsible-section>
+                  <div class="section-head">
+                    <div>
+                      <h2>Черга підтверджень</h2>
+                      <p class="section-note">Pending approvals для ризикових або privilege-guarded дій.</p>
+                    </div>
+                    <div class="section-head-actions">
+                      <span class="badge badge-muted" id="approvals-count">0 pending</span>
+                      <button type="button" class="section-toggle" data-collapse-target="approvals-card-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                    </div>
+                  </div>
+                  <div class="card-body" id="approvals-card-body">
+                    <div class="form-stack compact-stack" id="approval-create-form">
+                      <input id="approval-action" type="text" placeholder="Запитувана дія (напр. оновлення конфіга)">
+                      <input id="approval-reason" type="text" placeholder="Причина">
+                      <div class="split-fields">
+                        <select id="approval-risk">
+                          <option value="low">low</option>
+                          <option value="medium" selected>medium</option>
+                          <option value="high">high</option>
+                          <option value="critical">critical</option>
+                        </select>
+                        <button type="button" class="btn-ghost" id="approval-create-btn">Запит</button>
+                      </div>
+                    </div>
+                    <div class="quick-buttons">
+                      <button type="button" class="btn-ghost" id="approvals-reload-btn">Оновити</button>
+                    </div>
+                    <div class="mini-list" id="approvals-list"><div class="mini-empty">Запитів на підтвердження немає.</div></div>
+                  </div>
+                </section>
+
+                <section class="card collapsible-card is-open" id="decisions-panel" data-collapsible-section>
+                  <div class="section-head">
+                    <div>
+                      <h2>Журнал рішень</h2>
+                      <p class="section-note">Операторські рішення, активні гіпотези та deprecation flow.</p>
+                    </div>
+                    <div class="section-head-actions">
+                      <span class="badge badge-muted" id="decisions-count">0 active</span>
+                      <button type="button" class="section-toggle" data-collapse-target="decisions-card-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                    </div>
+                  </div>
+                  <div class="card-body" id="decisions-card-body">
+                    <div class="form-stack compact-stack">
+                      <input id="decision-text" type="text" placeholder="Формулювання рішення">
+                      <div class="split-fields">
+                        <input id="decision-scope" type="text" placeholder="scope (напр. execution)">
+                        <button type="button" class="btn-ghost" id="decision-add-btn">Додати</button>
+                      </div>
+                    </div>
+                    <div class="quick-buttons">
+                      <button type="button" class="btn-ghost" id="decisions-reload-btn">Оновити</button>
+                      <label class="field-label inline-field-label">
+                        <input type="checkbox" id="decisions-active-only" checked> Активні
+                      </label>
+                    </div>
+                    <div class="mini-list" id="decisions-list"><div class="mini-empty">Рішень не записано.</div></div>
+                  </div>
+                </section>
+              </div>
+
+              <div class="inspector-panel" id="inspector-memory">
+                <section class="card collapsible-card is-open" data-collapsible-section>
+                  <div class="section-head">
+                    <div>
+                      <h2>Пам'ять</h2>
+                      <p class="section-note">Memory atoms, пошук і pin/unpin surface для поточної сесії.</p>
+                    </div>
+                    <div class="section-head-actions">
+                      <span class="badge badge-muted" id="memory-count">0 atoms</span>
+                      <button type="button" class="section-toggle" data-collapse-target="memory-card-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                    </div>
+                  </div>
+                  <div class="card-body" id="memory-card-body">
+                    <div class="form-stack compact-stack">
+                      <input id="memory-text" type="text" placeholder="Додати атом пам'яті">
+                      <div class="split-fields">
+                        <select id="memory-kind">
+                          <option value="fact">fact</option>
+                          <option value="decision">decision</option>
+                          <option value="constraint">constraint</option>
+                          <option value="todo">todo</option>
+                          <option value="risk">risk</option>
+                        </select>
+                        <button type="button" class="btn-ghost" id="add-memory-btn">Додати</button>
+                      </div>
+                      <div class="split-fields">
+                        <input id="memory-search-text" type="text" placeholder="Пошук атомів пам'яті">
+                        <button type="button" class="btn-ghost" id="search-memory-btn">Пошук</button>
+                      </div>
+                    </div>
+                    <div class="mini-list" id="memory-search-results"></div>
+                    <div class="mini-list" id="memory-list"></div>
+                  </div>
+                </section>
+
+                <section class="card collapsible-card is-open" id="memory-patches-panel" data-collapsible-section>
+                  <div class="section-head">
+                    <div>
+                      <h2>Патчі пам'яті</h2>
+                      <p class="section-note">Запропоновані memory patches з approval gate і risk label.</p>
+                    </div>
+                    <div class="section-head-actions">
+                      <span class="badge badge-muted" id="patches-count">0</span>
+                      <button type="button" class="section-toggle" data-collapse-target="patches-card-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                    </div>
+                  </div>
+                  <div class="card-body" id="patches-card-body">
+                    <div class="form-stack compact-stack">
+                      <input id="patch-change" type="text" placeholder="Запропонована зміна">
+                      <input id="patch-section" type="text" placeholder="Зачеплена секція (напр. project_context)">
+                      <input id="patch-reason" type="text" placeholder="Причина">
+                      <div class="split-fields">
+                        <select id="patch-risk">
+                          <option value="low" selected>low</option>
+                          <option value="medium">medium</option>
+                          <option value="high">high</option>
+                        </select>
+                        <button type="button" class="btn-ghost" id="patch-create-btn">Створити</button>
+                      </div>
+                    </div>
+                    <div class="quick-buttons">
+                      <button type="button" class="btn-ghost" id="patches-reload-btn">Оновити</button>
+                    </div>
+                    <div class="mini-list" id="patches-list"><div class="mini-empty">Патчів пам'яті немає.</div></div>
+                  </div>
+                </section>
+              </div>
+
+              <div class="inspector-panel" id="inspector-scenarios">
+                <section class="card collapsible-card is-open" id="playbooks-panel" data-collapsible-section>
+                  <div class="section-head">
+                    <div>
+                      <h2>Сценарії</h2>
+                      <p class="section-note">Операторські playbooks, hotkeys і готові bounded workflows.</p>
+                    </div>
+                    <div class="section-head-actions">
+                      <span class="badge badge-muted" id="playbooks-count">0</span>
+                      <button type="button" class="section-toggle" data-collapse-target="playbooks-card-body" aria-expanded="true" title="Згорнути секцію">▾</button>
+                    </div>
+                  </div>
+                  <div class="card-body" id="playbooks-card-body">
+                    <div class="quick-buttons">
+                      <button type="button" class="btn-ghost" id="playbooks-reload-btn">Оновити</button>
+                      <label class="field-label inline-field-label">
+                        <input type="checkbox" id="playbooks-enabled-only" checked> Активні
+                      </label>
+                    </div>
+                    <div class="mini-list" id="playbooks-list"><div class="mini-empty">Завантаження…</div></div>
+                  </div>
+                </section>
+              </div>
+              <div class="board-panel-resizers" aria-hidden="true">
+                <span class="board-resize-handle board-resize-handle--n" data-board-resize="n"></span>
+                <span class="board-resize-handle board-resize-handle--e" data-board-resize="e"></span>
+                <span class="board-resize-handle board-resize-handle--s" data-board-resize="s"></span>
+                <span class="board-resize-handle board-resize-handle--w" data-board-resize="w"></span>
+                <span class="board-resize-handle board-resize-handle--ne" data-board-resize="ne"></span>
+                <span class="board-resize-handle board-resize-handle--nw" data-board-resize="nw"></span>
+                <span class="board-resize-handle board-resize-handle--se" data-board-resize="se"></span>
+                <span class="board-resize-handle board-resize-handle--sw" data-board-resize="sw"></span>
+              </div>
+            </aside>
+
+            <div class="bottom-drawer board-panel board-panel--window board-panel--artifacts" id="bottom-drawer" data-board-panel="artifacts" data-board-title="Artifacts">
+              <div class="bottom-drawer__resize resize-handle resize-handle--vertical" id="bottom-drawer-resizer" data-panel-resize="bottomDrawer" role="separator" aria-label="Змінити висоту нижнього drawer" tabindex="0"></div>
+              <div class="drawer-header" data-board-drag-handle>
+                <div class="drawer-header-intro">
+                  <span class="nav-footer-kicker">Utility Drawer</span>
+                  <h2>Recent Runs</h2>
+                </div>
+                <div class="drawer-tabs" id="drawer-tabs">
+                  <button type="button" class="tab-button is-active" data-drawer-tab="runs">Останні запуски</button>
+                  <button type="button" class="tab-button" data-drawer-tab="events">Журнал подій</button>
+                  <button type="button" class="tab-button" data-drawer-tab="artifacts">Артефакти</button>
+                  <button type="button" class="tab-button" data-drawer-tab="tests">Тести</button>
+                  <button type="button" class="tab-button" data-drawer-tab="trace">Trace</button>
+                </div>
+                <div class="drawer-header-actions">
+                  <button type="button" class="btn-ghost header-btn" id="drawer-refresh-btn">Оновити</button>
+                  <button type="button" class="btn-ghost drawer-toggle-btn" id="drawer-toggle-btn" title="Відкрити або закрити drawer">▾</button>
+                </div>
+              </div>
+              <div class="drawer-content" id="drawer-content">
+                <div class="drawer-tab-panel is-active" id="drawer-tab-runs">
+                  <div class="runs-table-shell">
+                    <table class="runs-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Run</th>
+                          <th scope="col">Статус</th>
+                          <th scope="col">Фаза</th>
+                          <th scope="col">Старт</th>
+                          <th scope="col">Тривалість</th>
+                        </tr>
+                      </thead>
+                      <tbody id="recent-runs-body">
+                        <tr>
+                          <td colspan="5" class="table-empty">Останніх запусків немає.</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div class="drawer-tab-panel" id="drawer-tab-events">
+                  <pre class="output compact-output drawer-output" id="event-log-view">Журнал подій порожній.</pre>
+                </div>
+                <div class="drawer-tab-panel" id="drawer-tab-artifacts">
+                  <pre class="output compact-output drawer-output" id="drawer-artifacts-view">Артефактів немає.</pre>
+                </div>
+                <div class="drawer-tab-panel" id="drawer-tab-tests">
+                  <pre class="output compact-output drawer-output" id="test-result-view">Результатів тестів немає.</pre>
+                </div>
+                <div class="drawer-tab-panel" id="drawer-tab-trace">
+                  <pre class="output compact-output drawer-output" id="trace-view">Трейс відсутній.</pre>
+                </div>
+              </div>
+              <div class="board-panel-resizers" aria-hidden="true">
+                <span class="board-resize-handle board-resize-handle--n" data-board-resize="n"></span>
+                <span class="board-resize-handle board-resize-handle--e" data-board-resize="e"></span>
+                <span class="board-resize-handle board-resize-handle--s" data-board-resize="s"></span>
+                <span class="board-resize-handle board-resize-handle--w" data-board-resize="w"></span>
+                <span class="board-resize-handle board-resize-handle--ne" data-board-resize="ne"></span>
+                <span class="board-resize-handle board-resize-handle--nw" data-board-resize="nw"></span>
+                <span class="board-resize-handle board-resize-handle--se" data-board-resize="se"></span>
+                <span class="board-resize-handle board-resize-handle--sw" data-board-resize="sw"></span>
+              </div>
+            </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ws-tab" id="ws-tab-monitoring-tab">
+          <div class="monitoring-container">
+            <div class="section-head">
+              <h2>Моніторинг</h2>
+              <span class="badge badge-warn">placeholder</span>
+            </div>
+            <p class="muted">Моніторинг буде підключено в наступному пакеті.</p>
+            <div class="monitoring-grid">
+              <div class="card">
+                <div class="section-head"><h3>Стан системи</h3></div>
+                <div class="mini-empty">Дані відсутні.</div>
+                <div class="quick-buttons">
+                  <button type="button" class="btn-ghost" disabled title="Ще не реалізовано">Пояснити аномалію</button>
+                  <button type="button" class="btn-ghost" disabled title="Ще не реалізовано">Знайти причину</button>
+                </div>
+              </div>
+              <div class="card">
+                <div class="section-head"><h3>Запити / Помилки</h3></div>
+                <div class="mini-empty">Метрики недоступні.</div>
+              </div>
+              <div class="card">
+                <div class="section-head"><h3>Активні сервіси</h3></div>
+                <div class="mini-empty">Сервіси не виявлено.</div>
+              </div>
+              <div class="card">
+                <div class="section-head"><h3>Потік логів</h3></div>
+                <div class="mini-empty">Потік логів не підключено.</div>
+                <div class="quick-buttons">
+                  <button type="button" class="btn-ghost" disabled title="Ще не реалізовано">Зіставити з логами</button>
+                  <button type="button" class="btn-ghost" disabled title="Ще не реалізовано">Incident report</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ws-tab" id="ws-tab-llm-lab">
+          <div class="monitoring-container">
+            <div class="section-head">
+              <h2>LLM Strategy Lab</h2>
+              <span class="badge badge-warn">placeholder</span>
+            </div>
+            <div class="mini-empty">LLM Strategy Lab — буде реалізовано в наступному пакеті.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="module" id="module-monitoring">
+        <div class="monitoring-container">
+          <div class="section-head"><h2>Моніторинг</h2></div>
+          <div class="mini-empty">Моніторинг буде підключено в наступному пакеті.</div>
+        </div>
+      </div>
+
+      <div class="module" id="module-reports-module">
+        <div class="monitoring-container">
+          <div class="section-head"><h2>Звіти</h2></div>
+          <div class="mini-empty">Відкрийте вкладку «Артефакти» в правому інспекторі.</div>
+        </div>
+      </div>
+
+      <div class="module" id="module-memory-module">
+        <div class="monitoring-container">
+          <div class="section-head"><h2>Пам'ять</h2></div>
+          <div class="mini-empty">Відкрийте вкладку «Пам'ять» в правому інспекторі.</div>
+        </div>
+      </div>
+
+      <div class="module" id="module-playbooks-module">
+        <div class="monitoring-container">
+          <div class="section-head"><h2>Сценарії</h2></div>
+          <div class="mini-empty">Відкрийте вкладку «Сценарії» в правому інспекторі.</div>
+        </div>
+      </div>
+
+      <div class="module" id="module-models-module">
+        <div class="monitoring-container">
+          <div class="section-head"><h2>Моделі</h2></div>
+          <div class="mini-empty">Оберіть модель у composer або у верхньому header control.</div>
+        </div>
+      </div>
+
+      <div class="module" id="module-tools-module">
+        <div class="monitoring-container">
+          <div class="section-head"><h2>Інструменти</h2></div>
+          <div class="mini-empty">Відкрийте вкладку «Контекст» в правому інспекторі.</div>
+        </div>
+      </div>
+
+      <div class="module" id="module-settings-module">
+        <div class="monitoring-container">
+          <div class="section-head"><h2>Налаштування</h2></div>
+          <p class="muted">
+            <a href="/config-status" class="nav-link">/config-status</a> ·
+            <a href="/chat/models" class="nav-link">/chat/models</a> ·
+            <a href="/" class="nav-link">/runs</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="cmd-palette-modal">
+    <div class="modal-backdrop" id="cmd-palette-backdrop"></div>
+    <div class="modal-content">
+      <div class="section-head">
+        <h2>Командна палітра</h2>
+        <span class="badge badge-muted">Ctrl+K · Esc — закрити</span>
+      </div>
+      <input type="text" id="cmd-palette-input" placeholder="Пошук команд…">
+      <div class="cmd-palette-list" id="cmd-palette-list">
+        <div class="mini-empty">Введіть команду…</div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="simple-chat-drawer simple-chat-drawer--left" id="simple-chat-left-drawer">
+    <button type="button" class="simple-chat-drawer__collapse" id="simple-chat-left-drawer-collapse" title="Collapse Left Drawer">❮</button>
+    <div class="simple-chat-drawer__header">
+      <h3 class="simple-chat-drawer__title">Панель управління чатами</h3>
+      <button type="button" class="btn-ghost" id="simple-chat-left-drawer-close">✕</button>
+    </div>
+    <div class="simple-chat-drawer__body">
+      <div class="simple-chat-drawer__empty">Тут з’являться елементи керування чатами та сесіями.</div>
+    </div>
+  </div>
+
+  <div class="simple-chat-shell" id="simple-chat-shell">
+    <div class="simple-chat-topbar">
+      <div class="simple-chat-topbar__left">
+        <!-- New Session removed to keep UI minimal. Available in menu. -->
+      </div>
+      <div class="simple-chat-topbar__center">
+        <span class="simple-chat-session-title" id="simple-chat-session-title">Нова сесія</span>
+        <select class="simple-chat-model-pill" id="simple-chat-model">
+          <option value="">deepseek-v4-pro</option>
+        </select>
+      </div>
+      <div class="simple-chat-topbar__right">
+        <select class="simple-chat-mode-switch" id="simple-chat-mode-switch">
+          <option value="simple">Simple Chat</option>
+          <option value="cockpit">Cockpit Mode</option>
+          <option value="board">Board Mode</option>
+        </select>
+        <details class="section-actions-menu simple-chat-menu" data-section-actions-menu="simpleChat">
+          <summary class="btn-ghost" title="Меню" style="cursor: pointer;">⋯</summary>
+          <div class="section-actions-menu__panel" role="menu" aria-label="Меню чату" style="right: 0; left: auto; min-width: 200px;">
+            <button type="button" class="section-menu__btn section-actions-menu__item" id="simple-menu-new">Нова сесія</button>
+            <button type="button" class="section-menu__btn section-actions-menu__item" id="simple-menu-copy-id">Копіювати ID сесії</button>
+            <button type="button" class="section-menu__btn section-actions-menu__item" id="simple-menu-drawer">Відкрити advanced drawer</button>
+            <button type="button" class="section-menu__btn section-actions-menu__item" id="simple-menu-left-drawer">Відкрити панель управління чатами</button>
+            <hr style="border-color: rgba(255,255,255,0.1); margin: 4px 0;">
+            <button type="button" class="section-menu__btn section-actions-menu__item" disabled title="Not implemented">Експортувати transcript</button>
+          </div>
+        </details>
+      </div>
+    </div>
+    <div class="simple-chat-thread" id="simple-chat-thread">
+      <!-- messages go here -->
+    </div>
+    <div class="simple-chat-composer">
+      <div class="simple-chat-composer__input-wrapper">
+        <button type="button" class="simple-chat-composer__plus-btn" id="simple-chat-plus-btn">+</button>
+        <textarea class="simple-chat-composer__input" id="simple-chat-input" placeholder="Напишіть повідомлення..." rows="1"></textarea>
+        <button type="button" class="simple-chat-composer__send-btn" id="simple-chat-send-btn">➤</button>
+      </div>
+      <div class="simple-chat-composer__footer">Enter/Ctrl+Enter — відправити · Shift+Enter — новий рядок</div>
+    </div>
+  </div>
+
+  <div class="simple-chat-drawer simple-chat-drawer--right simple-chat-advanced-drawer" id="simple-chat-advanced-drawer">
+    <button type="button" class="simple-chat-drawer__collapse" id="simple-chat-right-drawer-collapse" title="Collapse Right Drawer">❯</button>
+    <div class="simple-chat-drawer__header simple-chat-advanced-drawer__header">
+      <h3 class="simple-chat-drawer__title">Advanced Details</h3>
+      <button type="button" class="btn-ghost" id="simple-chat-drawer-close">✕</button>
+    </div>
+    <div class="simple-chat-drawer__body simple-chat-advanced-drawer__body" id="simple-chat-advanced-drawer-body">
+      <div class="simple-chat-drawer__empty">
+        Тут зʼявляться розширені деталі: trace, tools, artifacts, context.
+      </div>
+    </div>
+  </div>
+
+  <script id="chat-bootstrap" type="application/json">{{ bootstrap | tojson }}</script>
+  <script src="/static/chat.js?v=20260502g"></script>
+</body>
+</html>

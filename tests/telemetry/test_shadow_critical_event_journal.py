@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 from apps.reference.config_models import ShadowCriticalEventJournalConfig
 from apps.reference.config_loader import ConfigLoader
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
-from apps.reference.domains.execution_position.fsm_close import CloseFlowFSM
+from apps.reference.domains.execution_position.flows.close.fsm_close import CloseFlowFSM
 from apps.reference.domains.position_tracking.position_tracking import PositionTracking
 from apps.reference.telemetry.shadow_journal import (
     DEFAULT_CRITICAL_EVENTS,

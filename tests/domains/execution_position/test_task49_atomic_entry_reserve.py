@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from apps.reference.domains.execution_position.order_index import OrderIndex, OrderRef
+from apps.reference.domains.execution_position.state.order_index import OrderIndex, OrderRef
 
 
 class TestTryReserveEntry:

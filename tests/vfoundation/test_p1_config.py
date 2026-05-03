@@ -37,7 +37,7 @@ class TestP1ExposureGuardFallbackConfig:
 
     def test_exposure_guard_rejects_missing_fallback_config(self):
         """ExposureGuard must raise ConfigContractError if fallback config is missing."""
-        from apps.reference.domains.execution_position.exposure_guard import ExposureGuard
+        from apps.reference.domains.execution_position.guards.exposure_guard import ExposureGuard
 
         # Build mock config - same pattern as test_fail_closed_config.py
         mock_config = MagicMock()
@@ -82,7 +82,7 @@ class TestP1ExposureGuardFallbackConfig:
 
     def test_exposure_guard_loads_fallback_from_config(self):
         """ExposureGuard must read fallback config from domains.execution_position.fallback."""
-        from apps.reference.domains.execution_position.exposure_guard import ExposureGuard
+        from apps.reference.domains.execution_position.guards.exposure_guard import ExposureGuard
 
         # Build mock config - same pattern as test_fail_closed_config.py
         mock_config = MagicMock()

@@ -8,7 +8,7 @@ Verifies fail-closed semantics: no silent bump-ups, explicit NRR codes.
 import pytest
 from decimal import Decimal
 
-from apps.reference.domains.execution_position.qty_normalizer import (
+from apps.reference.domains.execution_position.guards.qty_normalizer import (
     normalize_qty,
     verify_ack_qty,
     QtyNormalizeResult,

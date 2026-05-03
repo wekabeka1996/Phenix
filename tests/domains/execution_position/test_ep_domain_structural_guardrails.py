@@ -162,7 +162,7 @@ class TestTripleOrderStatusLayered:
             OrderStatus, "PARTIAL"), "contracts.OrderStatus must have PARTIAL"
 
     def test_idempotent_cancel_order_status_exists(self):
-        from apps.reference.domains.execution_position.idempotent_cancel import OrderStatus
+        from apps.reference.domains.execution_position.guardian.idempotent_cancel import OrderStatus
         # Binance wire format uses different naming
         assert hasattr(
             OrderStatus, "NEW"), "idempotent_cancel.OrderStatus must have NEW"
@@ -171,7 +171,7 @@ class TestTripleOrderStatusLayered:
         )
 
     def test_ledger_order_status_exists(self):
-        from apps.reference.domains.execution_position.infra.order_ledger import OrderStatus
+        from apps.reference.domains.execution_position.state.order_ledger import OrderStatus
         assert hasattr(
             OrderStatus, "ACTIVE"), "ledger.OrderStatus must have ACTIVE"
         assert hasattr(
@@ -181,10 +181,10 @@ class TestTripleOrderStatusLayered:
         from apps.reference.domains.execution_position.contracts import (
             OrderStatus as DomainOS,
         )
-        from apps.reference.domains.execution_position.idempotent_cancel import (
+        from apps.reference.domains.execution_position.guardian.idempotent_cancel import (
             OrderStatus as WireOS,
         )
-        from apps.reference.domains.execution_position.infra.order_ledger import (
+        from apps.reference.domains.execution_position.state.order_ledger import (
             OrderStatus as LedgerOS,
         )
         assert DomainOS is not WireOS, "Domain and Wire OrderStatus must be distinct"

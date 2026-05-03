@@ -2253,100 +2253,184 @@ class ExecPosFSM(
             await self._open_exec.execute_open(decision)
 
         except Exception as e:
-            LOG.error(
-                f" Adapter failed to execute decision {decision.verb} for "
-                f"{decision.pld.get('symbol') if decision.pld else 'unknown'}: {e}",
-                exc_info=True)
+            await self._emit_outer_execution_failure(
+                decision,
+                e,
+                propagation_source="_execute_decision",
+            )
 
-            if self.alert_manager:
-                try:
-                    symbol = decision.pld["symbol"] if decision.pld and "symbol" in decision.pld else "unknown"
-                    error_key = f"exec_error_{symbol}"
-                    if not hasattr(self, '_exec_error_counts'):
-                        self._exec_error_counts = {}
-                    self._exec_error_counts[error_key] = (
-                        self._exec_error_counts.get(error_key, 0) + 1)
-                    if self._exec_error_counts[error_key] >= 2:
-                        self.alert_manager.check_circuit_breaker(True, 600)
-                except Exception as alert_e:
-                    LOG.error(
-                        f"Error triggering execution error alert: {alert_e}")
+    async def _emit_outer_execution_failure(
+        self,
+        decision: Message,
+        error: Exception,
+        *,
+        propagation_source: str,
+    ) -> None:
+        """Emit the generic outer failure sink for escaped execution exceptions."""
+        decision_pld = decision.pld or {}
+        decision_symbol = decision_pld.get("symbol", "")
+        decision_verb = str(getattr(decision, "verb", "") or "")
+        is_close_path = decision_verb in {"CLOSE", "CLOSE_POSITION"}
 
-            decision_pld = decision.pld or {}
-            reason_code = "ADAPTER_ERROR"
-            reason_text = str(e)[:200]
-            order_reject_metadata = {
-                "error": str(e),
-                "decision_verb": decision.verb,
-            }
-            terminal_payload_extra: dict[str, Any] = {}
-            if isinstance(e, UncertainSubmitRecoveryError):
-                reason_code = "UNCERTAIN_SUBMIT_UNRECOVERED"
-                reason_text = (
-                    "Submit status unknown and recovery by clientOrderId failed: "
-                    f"{e.original_error}"
-                )[:200]
-                order_reject_metadata.update({
-                    "uncertain_submit": True,
-                    "client_order_id": e.entry_id,
-                    "binance_code": e.binance_code,
-                    "recovery_attempts": e.attempts,
-                    "original_exception_class": type(e.original_error).__name__,
-                })
-                terminal_payload_extra = {
-                    "uncertain_submit": True,
-                    "client_order_id": e.entry_id,
-                    "binance_code": e.binance_code,
-                    "recovery_attempts": e.attempts,
-                    "original_exception_class": type(e.original_error).__name__,
-                }
+        LOG.error(
+            " Adapter failed to execute decision %s for %s: %s",
+            decision_verb,
+            decision_symbol or "unknown",
+            error,
+            exc_info=True,
+        )
 
-            order_logger.write({
-                "rid": decision.rid,
-                "event_type": "ORDER_REJECTED",
-                "symbol": decision_pld.get("symbol", ""),
-                "side": decision_pld.get("side", "NONE"),
-                "quantity": float(decision_pld.get("qty", 0)),
-                "nrr_code": "NRR-015",
-                "why": f"Adapter execution failed: {reason_text}",
-                "source_fsm": "ExecPosFSM",
-                "origin_class": "execution_adapter",
-                "metadata": order_reject_metadata,
+        if self.alert_manager:
+            try:
+                symbol = decision_symbol or "unknown"
+                error_key = f"exec_error_{symbol}"
+                if not hasattr(self, "_exec_error_counts"):
+                    self._exec_error_counts = {}
+                self._exec_error_counts[error_key] = (
+                    self._exec_error_counts.get(error_key, 0) + 1)
+                if self._exec_error_counts[error_key] >= 2:
+                    self.alert_manager.check_circuit_breaker(True, 600)
+            except Exception as alert_e:
+                LOG.error("Error triggering execution error alert: %s", alert_e)
+
+        reason_code = "ADAPTER_ERROR"
+        reason_text = str(error)[:200]
+
+        side_value = decision_pld.get("side")
+        if side_value in (None, ""):
+            side_value = "UNKNOWN_CLOSE_SIDE" if is_close_path else "NONE"
+
+        qty_value = decision_pld.get("qty")
+        quantity_value = 0.0
+        quantity_from_payload = False
+        if qty_value not in (None, ""):
+            try:
+                quantity_value = float(qty_value)
+                quantity_from_payload = True
+            except (TypeError, ValueError):
+                quantity_value = 0.0
+
+        close_client_order_id = ""
+        if is_close_path:
+            close_client_order_id = str(
+                decision_pld.get("client_order_id")
+                or decision_pld.get("clientOrderId")
+                or decision_pld.get("execution_client_order_id")
+                or ""
+            ).strip()
+
+        correlation_basis = "rid+symbol+source_fsm+reject_stage"
+        if is_close_path:
+            correlation_basis = "rid+symbol+reject_stage"
+            if close_client_order_id:
+                correlation_basis = "rid+symbol+client_order_id+reject_stage"
+
+        order_reject_metadata: dict[str, Any] = {
+            "error": str(error),
+            "decision_verb": decision_verb,
+            "reject_stage": "outer_propagation",
+            "correlation_basis": correlation_basis,
+            "propagation_source": propagation_source,
+        }
+        terminal_payload_extra: dict[str, Any] = {
+            "reject_stage": "outer_propagation",
+            "correlation_basis": correlation_basis,
+            "propagation_source": propagation_source,
+        }
+        if is_close_path:
+            order_reject_metadata.update({
+                "link_to_inner_reject": True,
+                "inner_reject_owner": "CloseExecutor",
+                "identity_scope": "rid_symbol_only",
+                "quantity_from_payload": quantity_from_payload,
+            })
+            terminal_payload_extra.update({
+                "link_to_inner_reject": True,
+                "identity_scope": "rid_symbol_only",
+            })
+            if close_client_order_id:
+                order_reject_metadata["client_order_id"] = close_client_order_id
+                order_reject_metadata["identity_scope"] = "rid_symbol_client_order_id"
+                terminal_payload_extra["client_order_id"] = close_client_order_id
+                terminal_payload_extra["identity_scope"] = "rid_symbol_client_order_id"
+
+        if isinstance(error, UncertainSubmitRecoveryError):
+            reason_code = "UNCERTAIN_SUBMIT_UNRECOVERED"
+            reason_text = (
+                "Submit status unknown and recovery by clientOrderId failed: "
+                f"{error.original_error}"
+            )[:200]
+            order_reject_metadata.update({
+                "uncertain_submit": True,
+                "client_order_id": error.entry_id,
+                "binance_code": error.binance_code,
+                "recovery_attempts": error.attempts,
+                "original_exception_class": type(error.original_error).__name__,
+            })
+            terminal_payload_extra.update({
+                "uncertain_submit": True,
+                "client_order_id": error.entry_id,
+                "binance_code": error.binance_code,
+                "recovery_attempts": error.attempts,
+                "original_exception_class": type(error.original_error).__name__,
             })
 
-            try:
-                await emit_canonical_terminal_order_event(
-                    fsm=self.fsm,
-                    event_name="EVT:ORDER_REJECTED",
-                    payload={
-                        "symbol": decision_pld.get("symbol", ""),
-                        "side": decision_pld.get("side", "NONE"),
-                        "reason_code": reason_code,
-                        "reason_text": reason_text,
-                        "exception_class": type(e).__name__,
-                        "origin_class": "execution_adapter",
-                        "ts_ms": get_clock().now_ms(),
-                        **terminal_payload_extra,
-                    },
-                    rid=decision.rid,
-                    src="execution_position",
-                    dst="observability",
-                    why="adapter_execution_failed",
-                    logger=LOG,
-                    write_wal=True,
-                    fallback_ts_ms=get_clock().now_ms(),
-                )
-            except Exception as emit_e:
-                LOG.warning(
-                    "Failed to emit EVT:ORDER_REJECTED canonical seam: %s", emit_e)
+        order_reject_payload = {
+            "rid": decision.rid,
+            "event_type": "ORDER_REJECTED",
+            "symbol": decision_symbol,
+            "side": side_value,
+            "quantity": quantity_value,
+            "nrr_code": "NRR-015",
+            "why": f"Adapter execution failed: {reason_text}",
+            "source_fsm": "ExecPosFSM",
+            "origin_class": "execution_adapter",
+            "metadata": order_reject_metadata,
+        }
+        if close_client_order_id:
+            order_reject_payload["client_order_id"] = close_client_order_id
 
-            exec_failed_msg = Message(
-                op="ERR", verb="EXECUTION_FAILED", src="execution_position",
-                dst="monitoring", rid=decision.rid,
-                pld={"error": str(
-                    e), "original_decision": decision.model_dump()},
-                why="Execution failed due to adapter error")
-            await emit_compat(self.fsm, exec_failed_msg, logger=LOG)
+        order_logger.write(order_reject_payload)
+
+        try:
+            await emit_canonical_terminal_order_event(
+                fsm=self.fsm,
+                event_name="EVT:ORDER_REJECTED",
+                payload={
+                    "symbol": decision_symbol,
+                    "side": side_value,
+                    "reason_code": reason_code,
+                    "reason_text": reason_text,
+                    "exception_class": type(error).__name__,
+                    "origin_class": "execution_adapter",
+                    "ts_ms": get_clock().now_ms(),
+                    **terminal_payload_extra,
+                },
+                rid=decision.rid,
+                src="execution_position",
+                dst="observability",
+                why="adapter_execution_failed",
+                logger=LOG,
+                write_wal=True,
+                fallback_ts_ms=get_clock().now_ms(),
+            )
+        except Exception as emit_e:
+            LOG.warning(
+                "Failed to emit EVT:ORDER_REJECTED canonical seam: %s", emit_e)
+
+        exec_failed_msg = Message(
+            op="ERR", verb="EXECUTION_FAILED", src="execution_position",
+            dst="monitoring", rid=decision.rid,
+            pld={
+                "error": str(error),
+                "original_decision": decision.model_dump(),
+                "reject_stage": "outer_propagation",
+                "correlation_basis": correlation_basis,
+                "propagation_source": propagation_source,
+            },
+            why="Execution failed due to adapter error",
+        )
+        await emit_compat(self.fsm, exec_failed_msg, logger=LOG)
 
     # Phase 14.2: get_metrics
     #  extracted to HealthMetricsMixin (health_metrics.py)
@@ -2558,7 +2642,14 @@ class ExecPosFSM(
             },
             why="BRACKET_PROTECTION_MISSING",
         )
-        await self._close_exec.execute_close(close_msg)
+        try:
+            await self._close_exec.execute_close(close_msg)
+        except Exception as close_exc:
+            await self._emit_outer_execution_failure(
+                close_msg,
+                close_exc,
+                propagation_source="_handle_bracket_protection_missing",
+            )
         return remediation_action
 
     def _entry_order_in_flight_guard(
