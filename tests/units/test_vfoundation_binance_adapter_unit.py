@@ -1,73 +1,110 @@
-import hashlib
-import hmac
-from decimal import Decimal
-from urllib.parse import urlencode, quote_plus
+from decimal import Decimal, ROUND_DOWN, ROUND_UP
+from unittest.mock import AsyncMock, patch
 
 import pytest
-import importlib.util
-import pathlib
-import sys
 
-# Load module by file path so tests don't depend on package installation
-_p = pathlib.Path(__file__).resolve().parents[2] / "vfoundation" / "adapters" / "binance_adapter.py"
-spec = importlib.util.spec_from_file_location("vfoundation.adapters.binance_adapter", str(_p))
-ba_mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(ba_mod)
-sys.modules["vfoundation.adapters.binance_adapter"] = ba_mod
+from apps.reference.adapters.binance_adapter import BinanceAdapter, _make_binance_error
 
 
-def test_norm_params_converts_and_filters():
-    a = ba_mod.BinanceAdapter(api_key="k", api_secret="s", base_url="https://test")
-    params = {"a": None, "b": True, "c": Decimal("1.2300"), "d": 5}
-    out = a._norm_params(params)
-    assert "a" not in out
-    assert out["b"] == "true"
-    assert out["c"] == "1.23"
-    assert out["d"] == "5"
+def _make_adapter() -> BinanceAdapter:
+    with patch("httpx.AsyncClient"):
+        return BinanceAdapter(api_key="k", api_secret="s", base_url="https://test")
 
 
-def test_to_decimal_and_rounding_and_errors():
-    a = ba_mod.BinanceAdapter(api_key="k", api_secret="s", base_url="https://test")
-    assert a._to_decimal("1.5") == Decimal("1.5")
-    assert a._to_decimal(2) == Decimal("2")
-    with pytest.raises(ValueError):
-        a._to_decimal(None)
-    # dict with markPrice
-    assert a._to_decimal({"markPrice": "3.14"}) == Decimal("3.14")
-    # rounding step
-    from decimal import Decimal as D
-    r = a._round_step(D("123.456"), D("0.01"))
-    assert isinstance(r, D)
+def test_to_decimal_supports_scalar_and_price_dict():
+    pytest.importorskip("httpx")
+    adapter = _make_adapter()
+
+    assert adapter._to_decimal("1.5") == Decimal("1.5")
+    assert adapter._to_decimal(2) == Decimal("2")
+    assert adapter._to_decimal({"markPrice": "3.14"}) == Decimal("3.14")
+    assert adapter._to_decimal({"price": "7.00"}) == Decimal("7.00")
 
 
-def test_sign_build_is_deterministic(monkeypatch):
-    a = ba_mod.BinanceAdapter(api_key="KKEY", api_secret="SSECRET", base_url="https://test")
-    # set time to fixed value
-    monkeypatch.setattr(ba_mod.time, "time", lambda: 1000.0)
-    a._time_offset_ms = 0
-    a._recv_window_ms = 20000
+def test_to_decimal_rejects_invalid_inputs():
+    pytest.importorskip("httpx")
+    adapter = _make_adapter()
 
-    base = {"symbol": "BTCUSDT", "side": "BUY"}
-    qs, final = a._sign_build(base)
-
-    # replicate expected signature
-    base_norm = a._norm_params({"symbol": "BTCUSDT", "side": "BUY"})
-    ts = int(1000.0 * 1000)
-    base_norm["timestamp"] = str(ts)
-    base_norm.setdefault("recvWindow", str(a._recv_window_ms))
-    expected_qs = urlencode(base_norm, doseq=True, quote_via=quote_plus)
-    expected_sig = hmac.new(a.api_secret, expected_qs.encode(), hashlib.sha256).hexdigest()
-
-    assert final["signature"] == expected_sig
-    assert expected_sig in qs
+    with pytest.raises(ValueError, match="cannot be None"):
+        adapter._to_decimal(None)
+    with pytest.raises(ValueError, match="markPrice"):
+        adapter._to_decimal({"foo": "bar"})
 
 
-def test_is_code_1021_and_make_error():
-    err = {"code": -1021, "msg": "time"}
-    assert ba_mod._is_code_1021(err) is True
-    class DummyResp:
-        status = 400
+def test_round_step_supports_down_and_up_modes():
+    pytest.importorskip("httpx")
+    adapter = _make_adapter()
 
-    bin_err = ba_mod._make_binance_error(DummyResp(), err)
-    assert isinstance(bin_err, ba_mod.BinanceAPIError)
-    assert bin_err.code == -1021
+    qty = Decimal("123.456")
+    step = Decimal("0.01")
+    assert adapter._round_step(qty, step, ROUND_DOWN) == Decimal("123.45")
+    assert adapter._round_step(qty, step, ROUND_UP) == Decimal("123.46")
+    assert adapter._round_step(qty, Decimal("0")) == qty
+
+
+def test_make_binance_error_accepts_code_msg_style():
+    """Coverage for helper compatibility mode: _make_binance_error(code, msg)."""
+    err = _make_binance_error(-2010, "Order would trigger immediately.")
+    assert err.code == -2010
+    assert err.msg == "Order would trigger immediately."
+    assert err.nrr_code == "NRR-018"
+
+
+@pytest.mark.anyio
+async def test_get_open_orders_raw_preserves_exchange_bracket_fields():
+    adapter = _make_adapter()
+    raw_orders = [
+        {
+            "orderId": "101",
+            "clientOrderId": "SL-101",
+            "symbol": "BTCUSDT",
+            "side": "SELL",
+            "origQty": "0.01",
+            "executedQty": "0",
+            "price": "0",
+            "status": "NEW",
+            "time": 1700000000000,
+            "type": "STOP_MARKET",
+            "reduceOnly": True,
+            "closePosition": False,
+        },
+    ]
+    adapter._request = AsyncMock(return_value=raw_orders)
+
+    result = await adapter.get_open_orders_raw("BTCUSDT")
+
+    assert result == raw_orders
+    adapter._request.assert_awaited_once_with(
+        "GET", "/fapi/v1/openOrders", {"symbol": "BTCUSDT"})
+
+
+@pytest.mark.anyio
+async def test_get_open_orders_normalizes_away_exchange_bracket_fields():
+    adapter = _make_adapter()
+    adapter._request = AsyncMock(
+        return_value=[
+            {
+                "orderId": "101",
+                "clientOrderId": "SL-101",
+                "symbol": "BTCUSDT",
+                "side": "SELL",
+                "origQty": "0.01",
+                "executedQty": "0",
+                "price": "0",
+                "status": "NEW",
+                "time": 1700000000000,
+                "type": "STOP_MARKET",
+                "reduceOnly": True,
+                "closePosition": False,
+            }
+        ]
+    )
+
+    result = await adapter.get_open_orders("BTCUSDT")
+
+    assert len(result) == 1
+    payload = result[0].to_dict()
+    assert payload["orderId"] == "101"
+    assert payload.get("type") is None
+    assert payload.get("reduceOnly") is None
+    assert payload.get("closePosition") is None

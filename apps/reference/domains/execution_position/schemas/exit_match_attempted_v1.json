@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "exit_match_attempted_v1.json",
+  "title": "EVT:EXIT_MATCH_ATTEMPTED payload schema",
+  "description": "Structured forensic telemetry for execution exit matcher attempts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ts_ms",
+    "symbol",
+    "event_type",
+    "incoming_order_id",
+    "incoming_client_order_id",
+    "normalized_client_order_id",
+    "inferred_role",
+    "local_expected_ids",
+    "matched",
+    "match_reason",
+    "why"
+  ],
+  "properties": {
+    "ts_ms": { "type": "integer", "minimum": 0 },
+    "symbol": { "type": "string", "minLength": 1 },
+    "rid": { "type": ["string", "null"] },
+    "event_type": { "type": "string", "minLength": 1 },
+    "incoming_order_id": { "type": ["string", "null"] },
+    "incoming_client_order_id": { "type": "string" },
+    "normalized_client_order_id": { "type": "string" },
+    "inferred_role": { "type": "string", "minLength": 1 },
+    "local_expected_ids": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "entry_order_id": { "type": ["string", "null"] },
+        "entry_client_order_id": { "type": ["string", "null"] },
+        "sl_order_id": { "type": ["string", "null"] },
+        "tp_order_id": { "type": ["string", "null"] },
+        "tp1_order_id": { "type": ["string", "null"] },
+        "tp2_order_id": { "type": ["string", "null"] }
+      }
+    },
+    "local_expected_ids_after": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "entry_order_id": { "type": ["string", "null"] },
+        "entry_client_order_id": { "type": ["string", "null"] },
+        "sl_order_id": { "type": ["string", "null"] },
+        "tp_order_id": { "type": ["string", "null"] },
+        "tp1_order_id": { "type": ["string", "null"] },
+        "tp2_order_id": { "type": ["string", "null"] }
+      }
+    },
+    "matched": { "type": "boolean" },
+    "match_reason": { "type": "string", "minLength": 1 },
+    "local_state_before": { "type": "string" },
+    "local_state_after": { "type": "string" },
+    "position_qty_before": { "type": ["string", "null"] },
+    "position_qty_after": { "type": ["string", "null"] },
+    "why": { "type": "string", "maxLength": 80 }
+  }
+}

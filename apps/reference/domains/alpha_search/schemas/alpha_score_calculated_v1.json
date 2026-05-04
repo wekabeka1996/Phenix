@@ -1,0 +1,86 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://aurora.internal/schemas/alpha_score_calculated_v1.json",
+    "title": "EVT:ALPHA_SCORE_CALCULATED payload schema",
+    "description": "Provider-scoped alpha_search score emitted for one provider, symbol, and bar at the scoring decision boundary.",
+    "type": "object",
+    "required": [
+        "provider_id",
+        "model_name",
+        "symbol",
+        "tf_sec",
+        "bar_close_ts",
+        "score",
+        "confidence",
+        "threshold",
+        "shadow",
+        "signal_id",
+        "why",
+        "features_used"
+    ],
+    "additionalProperties": false,
+    "properties": {
+        "provider_id": {
+            "type": "string",
+            "description": "Alpha Search provider identifier"
+        },
+        "symbol": {
+            "type": "string",
+            "description": "Trading symbol (e.g., BTCUSDT)"
+        },
+        "model_name": {
+            "type": "string",
+            "description": "Name of the scoring model (single-score variant)"
+        },
+        "score": {
+            "type": [
+                "number",
+                "string",
+                "null"
+            ],
+            "description": "Alpha score direction [-1.0, 1.0] — single-score variant from backtest_plugin"
+        },
+        "confidence": {
+            "type": [
+                "number",
+                "string",
+                "null"
+            ],
+            "description": "Confidence in the provider score [0.0, 1.0]"
+        },
+        "features_used": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "List of feature names used in the provider calculation"
+        },
+        "why": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Truncated reasoning chain"
+        },
+        "tf_sec": {
+            "type": "integer",
+            "description": "Timeframe in seconds"
+        },
+        "bar_close_ts": {
+            "type": "integer",
+            "description": "Bar close timestamp in milliseconds"
+        },
+        "threshold": {
+            "type": "number",
+            "description": "Signal threshold used"
+        },
+        "shadow": {
+            "type": "boolean",
+            "description": "True if emitted in shadow mode or fail-closed shadow path"
+        },
+        "signal_id": {
+            "type": "string",
+            "description": "Unique signal identifier"
+        }
+    }
+}

@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Judge Simulator Outcome Input v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "outcomes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "outcomes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "strategy_id",
+          "symbol",
+          "tf_sec",
+          "bar_close_ts",
+          "matched_trade"
+        ],
+        "properties": {
+          "strategy_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "symbol": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tf_sec": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "bar_close_ts": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "matched_trade": {
+            "type": "boolean"
+          },
+          "entry_price": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "exit_price": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "exit_ts_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "matched_trade": {
+                  "const": true
+                }
+              },
+              "required": [
+                "matched_trade"
+              ]
+            },
+            "then": {
+              "required": [
+                "entry_price",
+                "exit_price",
+                "exit_ts_ms"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

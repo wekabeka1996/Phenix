@@ -20,6 +20,9 @@ def test_fsm_core_logs_exceptions(caplog):
 
     # Assert: there is an ERROR or CRITICAL log with our message
     logged = "\n".join([r.getMessage() for r in caplog.records])
-    assert "CRITICAL: Unhandled exception in listener for event 'EVT:TEST'" in logged or "CRITICAL: Unhandled exception in listener for event 'TEST'" in logged
+    assert (
+        "CRITICAL: Unhandled exception in listener for event 'EVT:TEST'" in logged
+        or "CRITICAL: Unhandled exception in listener for event 'TEST'" in logged
+    )
     # Also ensure stacktrace present in logs (ValueError text should be visible)
     assert "listener failure" in logged

@@ -1,20 +1,67 @@
-config_version: 1.0.0
-hmm:
+basis_tf_sec: 300
+uncertain_cutoff: 0.15
+liveness_factor: 3
+basis_import_buffer: 20
+hysteresis_bars: 2
+vol_slope_gate_enabled: true
+vol_slope_gate_eps: -0.005
+vol_slope_gate_confirm_bars: 5
+models:
+  sma_trend:
+    sma_short_period: 48
+    sma_long_period: 192
+    confidence_multiplier: 80.0
+    confidence_min: 0.15
+    confidence_max: 0.85
+  volatility:
+    enabled: true
+    atr_period: 14
+    atr_sma_length: 288
+    allow_close_to_close_atr: true
+    threshold_multiplier: 2.0
+    low_vol_multiplier: 0.7
+    high_vol_confidence_multiplier: 2.5
+    low_vol_confidence_multiplier: 3.0
+  mean_reversion:
+    threshold: 0.005
+    confidence_multiplier: 120.0
+system_stress:
   enabled: true
-  K: 3               # number of hidden states (>=2)
-  emission:
-    cov_kind: diag    # diag | full
-  sticky_kappa: 0.15  # self-transition bias (0=no bias)
-  update_interval: 250  # semi-online EM update cadence (observations)
-  history_hours: 48    # offline training lookback window
-  confidence_threshold: 0.75
-features:
-  rv_window: 120      # samples for realized volatility
-  trend_window: 180   # samples for trend slope regression
-  obi_window: 60      # samples for order book imbalance smoothing
-  spread_min_ticks: 1 # used for normalization safeguards
-  micro_return_window: 1
-hotreload_whitelist:
-  - hmm.sticky_kappa
-  - hmm.update_interval
-  - hmm.change_conf_min
+  sources_enabled:
+  - price
+  require_l2_if_enabled: true
+  baseline_method: rolling
+  baseline_window: 100
+  burn_in_bars: 120
+  robust_method: none
+  thresholds:
+    atr_sigma: 2.0
+    vol_sigma: 2.0
+    gap_sigma: 3.0
+    range_sigma: 2.5
+    volume_sigma: 0.0
+    spread_sigma: 0.0
+    depth_drop_pct: 0.0
+  aggregation:
+    method: weighted_vote
+    weights:
+      atr: 0.3
+      vol: 0.3
+      gap: 0.2
+      range: 0.2
+    k: 2
+  state_mapping:
+    enter_stress: 0.6
+    exit_stress: 0.4
+    enter_extreme: 0.85
+    exit_extreme: 0.7
+    consecutive_bars_enter: 6
+    consecutive_bars_exit: 4
+    min_duration_bars: 15
+    switch_window_bars: 200
+    max_switches_per_window: 2
+    circuit_breaker_mode: halt
+regime_shift_inception:
+  enabled: false
+  action: none
+  micro_size_fraction: 0.25

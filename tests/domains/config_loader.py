@@ -14,12 +14,14 @@ from dataclasses import dataclass
 
 try:
     import yaml
+
     HAS_YAML = True
 except ImportError:
     HAS_YAML = False
 
 try:
     from dotenv import load_dotenv
+
     HAS_DOTENV = True
 except ImportError:
     HAS_DOTENV = False
@@ -31,6 +33,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AuroraConfig:
     """Aurora Core configuration container."""
+
     trading: Dict[str, Any]
     system: Dict[str, Any]
     binance_api_key: str
@@ -42,13 +45,13 @@ class AuroraConfig:
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary."""
         return {
-            'trading': self.trading,
-            'system': self.system,
-            'binance_api_key': self.binance_api_key,
-            'binance_api_secret': self.binance_api_secret,
-            'use_testnet': self.use_testnet,
-            'log_level': self.log_level,
-            'trading_env': self.trading_env
+            "trading": self.trading,
+            "system": self.system,
+            "binance_api_key": self.binance_api_key,
+            "binance_api_secret": self.binance_api_secret,
+            "use_testnet": self.use_testnet,
+            "log_level": self.log_level,
+            "trading_env": self.trading_env,
         }
 
 
@@ -61,7 +64,9 @@ class ConfigLoader:
         Args:
             config_dir: Directory containing YAML config files (default: config/aurora)
         """
-        self.config_dir = config_dir or Path(__file__).parent.parent.parent / "config" / "aurora"
+        self.config_dir = (
+            config_dir or Path(__file__).parent.parent.parent / "config" / "aurora"
+        )
         self._configs: Dict[str, Dict[str, Any]] = {}
 
         # Load environment variables from .env file if available
@@ -75,13 +80,15 @@ class ConfigLoader:
     def _load_yaml(self, filename: str) -> Dict[str, Any]:
         """Load YAML configuration file."""
         if not HAS_YAML:
-            raise ImportError("PyYAML is required for YAML config loading. Install with: pip install PyYAML")
+            raise ImportError(
+                "PyYAML is required for YAML config loading. Install with: pip install PyYAML"
+            )
 
         config_path = self.config_dir / filename
         if not config_path.exists():
             raise FileNotFoundError(f"Config file not found: {config_path}")
 
-        with open(config_path, 'r', encoding='utf-8') as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f)
 
     def _get_env_var(self, name: str, default: str = "", required: bool = False) -> str:
@@ -109,12 +116,20 @@ class ConfigLoader:
         use_testnet = self._get_env_var("USE_TESTNET", "true").lower() == "true"
 
         if use_testnet:
-            binance_api_key = self._get_env_var("BINANCE_TESTNET_API_KEY", required=True)
-            binance_api_secret = self._get_env_var("BINANCE_TESTNET_API_SECRET", required=True)
+            binance_api_key = self._get_env_var(
+                "BINANCE_TESTNET_API_KEY", required=True
+            )
+            binance_api_secret = self._get_env_var(
+                "BINANCE_TESTNET_API_SECRET", required=True
+            )
         else:
             # For mainnet, try mainnet keys first, fallback to testnet keys (for safety)
-            binance_api_key = self._get_env_var("BINANCE_MAINNET_API_KEY") or self._get_env_var("BINANCE_TESTNET_API_KEY", required=True)
-            binance_api_secret = self._get_env_var("BINANCE_MAINNET_API_SECRET") or self._get_env_var("BINANCE_TESTNET_API_SECRET", required=True)
+            binance_api_key = self._get_env_var(
+                "BINANCE_MAINNET_API_KEY"
+            ) or self._get_env_var("BINANCE_TESTNET_API_KEY", required=True)
+            binance_api_secret = self._get_env_var(
+                "BINANCE_MAINNET_API_SECRET"
+            ) or self._get_env_var("BINANCE_TESTNET_API_SECRET", required=True)
         log_level = self._get_env_var("LOG_LEVEL", "DEBUG")
         trading_env = self._get_env_var("TRADING_ENV", "dev")
 
@@ -126,27 +141,31 @@ class ConfigLoader:
             binance_api_secret=binance_api_secret,
             use_testnet=use_testnet,
             log_level=log_level,
-            trading_env=trading_env
+            trading_env=trading_env,
         )
 
         logger.info(f"✅ Configuration loaded for environment: {trading_env}")
-        logger.info(f"   Trading config version: {trading_config.get('config_version', 'unknown')}")
-        logger.info(f"   System config version: {system_config.get('config_version', 'unknown')}")
+        logger.info(
+            f"   Trading config version: {trading_config.get('config_version', 'unknown')}"
+        )
+        logger.info(
+            f"   System config version: {system_config.get('config_version', 'unknown')}"
+        )
         logger.info(f"   Log level: {log_level}")
 
         return config
 
     def get_trading_config(self) -> Dict[str, Any]:
         """Get trading configuration section."""
-        if 'trading' not in self._configs:
-            self._configs['trading'] = self._load_yaml("trading.yaml")
-        return self._configs['trading']
+        if "trading" not in self._configs:
+            self._configs["trading"] = self._load_yaml("trading.yaml")
+        return self._configs["trading"]
 
     def get_system_config(self) -> Dict[str, Any]:
         """Get system configuration section."""
-        if 'system' not in self._configs:
-            self._configs['system'] = self._load_yaml("system.yaml")
-        return self._configs['system']
+        if "system" not in self._configs:
+            self._configs["system"] = self._load_yaml("system.yaml")
+        return self._configs["system"]
 
 
 # Global config instance for easy access

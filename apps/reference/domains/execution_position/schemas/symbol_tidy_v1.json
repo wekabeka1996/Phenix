@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "symbol_tidy_v1.json",
+  "title": "EVT:SYMBOL_TIDY payload schema",
+  "description": "Tidy-only symbol readiness event for execution_position entry gating.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ts_ms",
+    "symbol",
+    "source",
+    "tidy_reason",
+    "business_close_reconciled",
+    "why"
+  ],
+  "properties": {
+    "ts_ms": { "type": "integer", "minimum": 0 },
+    "symbol": { "type": "string", "minLength": 1 },
+    "rid": { "type": ["string", "null"] },
+    "source": { "type": "string", "minLength": 1 },
+    "tidy_reason": { "type": "string", "minLength": 1 },
+    "business_close_reconciled": { "type": "boolean", "const": false },
+    "why": { "type": "string", "maxLength": 80 }
+  }
+}

@@ -1,0 +1,8 @@
+"""Compatibility alias for Phase 8J guardian reconcile cancel bridge move."""
+
+from importlib import import_module as _import_module
+import sys as _sys
+
+_sys.modules[__name__] = _import_module(
+    "apps.reference.domains.execution_position.guardian.guardian_reconcile_cancel_bridge"
+)

@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://phenix.aurora/schemas/account_update_received_v1.json",
+  "title": "EVT:ACCOUNT_UPDATE_RECEIVED Payload",
+  "type": "object",
+  "required": ["totalWalletBalance", "totalUnrealizedProfit", "totalCrossWalletBalance", "positions", "updateTime"],
+  "properties": {
+    "totalWalletBalance": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+    },
+    "totalUnrealizedProfit": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+    },
+    "totalCrossWalletBalance": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+    },
+    "positions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["symbol", "positionAmt", "entryPrice", "unRealizedProfit", "leverage", "marginType", "markPrice", "liquidationPrice"],
+        "properties": {
+          "symbol": { "type": "string", "minLength": 1 },
+          "positionAmt": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+          },
+          "entryPrice": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+          },
+          "unRealizedProfit": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+          },
+          "leverage": { "type": "integer", "minimum": 1 },
+          "marginType": { "type": "string", "minLength": 1 },
+          "markPrice": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+          },
+          "liquidationPrice": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "updateTime": { "type": "integer", "minimum": 0 }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/order_state_changed_v1.json",
+  "title": "EVT:ORDER_STATE_CHANGED payload schema",
+  "description": "Canonical additive contract for order state changes, including terminal non-fill states.",
+  "type": "object",
+  "required": [
+    "symbol",
+    "status",
+    "event_ts_ms",
+    "identity_quality",
+    "canonical_identity_key",
+    "terminal_non_fill",
+    "compatibility_aliases_retained"
+  ],
+  "properties": {
+    "symbol": { "type": "string", "minLength": 1 },
+    "rid": { "type": ["string", "null"] },
+    "side": { "type": "string" },
+    "status": { "type": "string", "minLength": 1 },
+    "state": { "type": "string" },
+    "orderId": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "integer" }
+      ]
+    },
+    "order_id": { "type": "string", "minLength": 1 },
+    "clientOrderId": { "type": "string", "minLength": 1 },
+    "client_order_id": { "type": "string" },
+    "event_ts_ms": { "type": "integer", "minimum": 0 },
+    "ts_ms": { "type": "integer", "minimum": 0 },
+    "identity_quality": {
+      "type": "string",
+      "enum": [
+        "order_identity_exact",
+        "order_identity_degraded",
+        "order_identity_weak"
+      ]
+    },
+    "canonical_identity_key": { "type": "string", "minLength": 1 },
+    "terminal_non_fill": { "type": "boolean" },
+    "terminal_state_kind": {
+      "type": "string",
+      "enum": ["CANCELED", "EXPIRED", "REJECTED"]
+    },
+    "compatibility_aliases_retained": { "type": "boolean" },
+    "reason": { "type": "string" },
+    "reason_code": { "type": "string" }
+  },
+  "anyOf": [
+    { "required": ["orderId"] },
+    { "required": ["order_id"] },
+    { "required": ["clientOrderId"] },
+    { "required": ["client_order_id"] },
+    { "required": ["rid"] }
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "terminal_non_fill": { "const": true }
+        }
+      },
+      "then": {
+        "required": ["terminal_state_kind"]
+      }
+    }
+  ],
+  "additionalProperties": true
+}

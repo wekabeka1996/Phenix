@@ -1,11 +1,98 @@
 config_version: 1.0.1
-# NEW: Defines the operational mode for the trading bot.
-# Options: "live", "testnet", "hybrid_live_data_testnet_exec"
-trading_mode: "hybrid_live_data_testnet_exec"
-
-# NOTE: binance_api is now defined in trading.yaml with correct env var names
-# pointing to .env file (BINANCE_FUTURES_API_KEY_LIVE, BINANCE_TESTNET_API_KEY, etc.)
-
+trading_mode: hybrid_live_data_testnet_exec
+system:
+  market_data:
+    queue_maxsize: 10000
+    local_queue_maxsize: 10000
+    emit_workers: 4
+    tick_ttl_ms: 2000
+    bar_ttl_ms: 10000
+    bar_event_age_mode: received
+    ws_heartbeat_sec: 20.0
+    ws_receive_timeout_sec: 60.0
+    trade_silence_reconnect_sec: 120.0
+    proxy_batch_size: 100
+    proxy_queue_get_timeout_sec: 0.01
+    proxy_idle_sleep_sec: 0.01
+  validate_instruments_on_startup: true
+  warn_only_filters: false
+  debug_event_listener_enabled: false
+ops:
+  panic_killswitch: false
+  metrics_url: http://127.0.0.1:8000/metrics
+  reports_dir: reports
+execution:
+  manage:
+    brackets:
+      sl:
+        fixed_bps: 40
+      tp:
+        fixed_bps: 80
+      oco_emulation: true
+      offset_bps: 5
+    emergency:
+      enabled: false
+      wait_mode_bars: 2
+      emergency_sl_bps: 100
+    auto: true
+    orphan_monitor:
+      enabled: true
+      run_on_startup: true
+      periodic_interval_sec: 300
+      min_order_age_sec: 0
+      batch_cancel_limit: 50
+      rate_limit_per_min: 120
+  exposure:
+    max_equity_utilization_pct: 150.0
+    max_portfolio_fraction: 150.0
+    max_directional_ratio: 50.0
+    pending_ttl_sec: 90
+    post_fill_hold_ttl_sec: 5
+    leverage_defaults:
+      BTCUSDT: 20
+      ETHUSDT: 20
+      SOLUSDT: 20
+      XRPUSDT: 20
+      DOGEUSDT: 20
+      __default__: 20
+    count_pending_orders: true
+    exclude_reduce_only: true
+  watchdog:
+    ack_ttl_ms: 8000
+    fill_ttl_ms: 3600000
+    check_interval_ms: 1000
+    rps_limit: 10
+  fallback: null
+  limit_orders: null
+  orders: null
+  fsm_periodic_cleanup_enabled: false
+  cooldown_after_close_ms: 60000
+  anti_race_close_ms: 800
+  order_params:
+    LIMIT:
+      timeInForce: GTC
+    STOP_MARKET:
+      workingType: MARK_PRICE
+    TAKE_PROFIT_MARKET:
+      workingType: MARK_PRICE
+    TRAILING_STOP_MARKET:
+      callbackRate: '0.5'
+  preflight_backoff_ms:
+  - 120
+  - 250
+  - 400
+  - 800
+  - 1200
+  - 1800
+  allow_trade_with_guardian_tidy_only: false
+  order_guardian:
+    unified: true
+    ledger_db_path: data/order_ledger.db
+brackets: null
+trailing:
+  activation_pct: 0.003
+  trail_pct: 0.006
+  min_update_interval_sec: 5
 sequential_tests:
   wald:
     alpha: 0.05
@@ -20,13 +107,13 @@ sequential_tests:
 risk_core:
   cvar_threshold_bps: 120
   stress_scenarios:
-    - flash_crash
-    - volatility_spike
+  - flash_crash
+  - volatility_spike
   inventory_limits:
-    max_abs_position: 500  # МАКСИМАЛЬНО під x50 plече
-    max_daily_notional: 10000000  # $10M денний ліміт для x50
+    max_abs_position: 500
+    max_daily_notional: 10000000
 kelly:
-  fraction_cap: 0.85  # Increased for full testnet operation
+  fraction_cap: 0.85
   decay_half_life_days: 5
 calibrator:
   state_store:
@@ -42,60 +129,27 @@ hawkes:
   update_interval_ms: 100
   window_ms: 1000
   bivariate: false
-hotreload_whitelist:
-  - sequential_tests.wald.mu1
-  - sequential_tests.glr.min_samples
-  - kelly.fraction_cap
-  - hawkes.update_interval_ms
-  - hawkes.window_ms
-  - hawkes.eta_max
-logging:
-  level: "DEBUG"  # DEBUG, INFO, WARNING, ERROR
-  file: "logs/aurora_core.log"
-  format: "json"  # 'json' or 'text'
-  rotation:
-    max_bytes: 10485760  # 10 MB
-    backup_count: 5
-
-# AURORA_HARDENING_V1 - Enterprise reliability features
 hardening:
   ttl_config:
-    entry_place_ttl_ms: 5000    # 5 seconds for entry orders
-    bracket_place_ttl_ms: 3000  # 3 seconds for bracket orders
-    cancel_ttl_ms: 2000         # 2 seconds for cancellations
+    entry_place_ttl_ms: 5000
+    bracket_place_ttl_ms: 3000
+    cancel_ttl_ms: 2000
   retry_config:
-    max_tries: 3                # Maximum retry attempts
-    backoff_ms: 1000            # Base backoff time
-    jitter: true                # Add random jitter
+    max_tries: 3
+    backoff_ms: 1000
+    jitter: true
   circuit_breaker:
-    fail_max: 5                 # Number of failures to open circuit
-    reset_timeout_sec: 30       # Time in OPEN state before HALF_OPEN
-    exclude:                    # Exceptions NOT counted as failures
-      - 'binance.error.ClientError:.*-2010'  # Insufficient balance
-      - 'binance.error.ClientError:.*-1021'  # Timestamp out of window
-    open_threshold_pct: 20      # Open if >20% calls fail in window
-    error_rate_window_sec: 60   # Rolling window for error rate
-    half_open_attempts: 3       # Test calls in HALF_OPEN state
+    fail_max: 5
+    reset_timeout_sec: 30
+    exclude:
+    - binance.error.ClientError:.*-2010
+    - binance.error.ClientError:.*-1021
+    open_threshold_pct: 20
+    error_rate_window_sec: 60
+    half_open_attempts: 3
   market_data:
-    max_allowed_lag_ms: 1000    # Maximum allowed market data lag
-    sequence_check_enabled: true # Enable sequence number validation
+    max_allowed_lag_ms: 1000
+    sequence_check_enabled: true
   wal:
-    integrity_check_enabled: true # Enable WAL integrity verification
-    hash_algorithm: "sha256"     # Hash algorithm for integrity checks
-account_observer:
-  poll_interval: 5  # seconds between trade polls
-  symbols: [ETHUSDT]  # symbols to monitor
-  trade_limit: 50  # max trades to fetch per symbol
-
-trading:
-  # Централізована конфігурація для операційних параметрів системи
-  symbols_to_track:
-    - "BTCUSDT"
-    - "ETHUSDT"
-  
-  market_data:
-    # Стріми, які буде слухати MarketDataConnector
-    websocket_streams:
-      - "bookTicker"  # Для OBI (Order Book Imbalance)
-      - "trade"       # Для TFI (Trade Flow Imbalance) та delta_price
-
+    integrity_check_enabled: true
+    hash_algorithm: sha256

@@ -1,0 +1,67 @@
+{
+    "$id": "https://phenix.local/schemas/str_decision_blocked_v1.json",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "Strategy Decision Blocked Event",
+    "description": "Schema for EVT:STRATEGY_DECISION_BLOCKED events (emitted by decision-making).",
+    "type": "object",
+    "properties": {
+        "symbol": {
+            "type": "string",
+            "description": "The symbol the block relates to (e.g. 'BTCUSDT')"
+        },
+        "reason_code": {
+            "type": "string"
+        },
+        "reason": {
+            "type": "string",
+            "description": "The description block for why the order/intent was blocked."
+        },
+        "stage": {
+            "type": "string",
+            "enum": ["STRATEGY"],
+            "description": "Truth-class stage for strategy-side blocked decisions."
+        },
+        "context": {
+            "type": "string"
+        },
+        "why": {
+            "type": "string",
+            "description": "Compact human explanation for forensic reconstruction."
+        },
+        "ts_ms": {
+            "type": "integer"
+        },
+        "rid": {
+            "type": "string"
+        },
+        "span_id": {
+            "type": "string"
+        },
+        "tf_sec": {
+            "type": "integer"
+        },
+        "bar_close_ts": {
+            "type": "integer"
+        },
+        "why_chain": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "details": {
+            "type": "object",
+            "additionalProperties": true
+        }
+    },
+    "required": [
+        "symbol",
+        "reason_code",
+        "reason",
+        "stage",
+        "context",
+        "why",
+        "ts_ms",
+        "why_chain"
+    ]
+}

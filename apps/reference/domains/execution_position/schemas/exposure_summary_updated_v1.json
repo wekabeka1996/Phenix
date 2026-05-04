@@ -1,0 +1,54 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://aurora.internal/schemas/exposure_summary_updated_v1.json",
+    "title": "EVT:EXPOSURE_SUMMARY_UPDATED payload schema",
+    "description": "Emitted by execution_position after a fill or portfolio update with current margin exposure summary.",
+    "type": "object",
+    "required": [
+        "exposure_summary",
+        "timestamp_ms"
+    ],
+    "additionalProperties": true,
+    "properties": {
+        "exposure_summary": {
+            "type": "object",
+            "description": "Current margin exposure summary from ExposureGuard",
+            "additionalProperties": true
+        },
+        "portfolio_state": {
+            "type": [
+                "object",
+                "null"
+            ],
+            "description": "Latest portfolio state at time of emission",
+            "additionalProperties": true
+        },
+        "fill_order_id": {
+            "type": [
+                "string",
+                "integer",
+                "null"
+            ],
+            "description": "Order ID that triggered this update (fill path only)"
+        },
+        "fill_symbol": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "description": "Symbol of the fill that triggered this update"
+        },
+        "fill_quantity": {
+            "type": [
+                "string",
+                "number",
+                "null"
+            ],
+            "description": "Fill quantity that triggered this update"
+        },
+        "timestamp_ms": {
+            "type": "integer",
+            "description": "Timestamp of the exposure summary in milliseconds"
+        }
+    }
+}

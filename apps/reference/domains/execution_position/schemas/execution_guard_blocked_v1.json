@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "execution_guard_blocked_v1.json",
+  "title": "EVT:EXECUTION_GUARD_BLOCKED payload schema",
+  "description": "Structured fail-closed execution guard telemetry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ts_ms",
+    "symbol",
+    "block_reason",
+    "current_local_state",
+    "why"
+  ],
+  "properties": {
+    "ts_ms": { "type": "integer", "minimum": 0 },
+    "symbol": { "type": "string", "minLength": 1 },
+    "rid": { "type": ["string", "null"] },
+    "lifecycle_id": { "type": ["string", "null"] },
+    "tracked_rid": { "type": ["string", "null"] },
+    "block_reason": { "type": "string", "minLength": 1 },
+    "reason": { "type": "string", "minLength": 1 },
+    "current_local_state": { "type": "string", "minLength": 1 },
+    "local_manage_state": { "type": "string", "minLength": 1 },
+    "portfolio_truth_state": { "type": "string", "minLength": 1 },
+    "portfolio_state": { "type": "string", "minLength": 1 },
+    "divergence_detected": { "type": "boolean" },
+    "has_active_lifecycle": { "type": "boolean" },
+    "closing_position": { "type": "boolean" },
+    "position_qty": { "type": ["string", "null"] },
+    "entry_order_id": { "type": ["string", "null"] },
+    "entry_client_order_id": { "type": ["string", "null"] },
+    "sl_order_id": { "type": ["string", "null"] },
+    "tp_order_id": { "type": ["string", "null"] },
+    "tp1_order_id": { "type": ["string", "null"] },
+    "tp2_order_id": { "type": ["string", "null"] },
+    "why": { "type": "string", "maxLength": 80 }
+  }
+}

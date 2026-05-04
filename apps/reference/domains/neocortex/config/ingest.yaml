@@ -1,0 +1,47 @@
+# Neocortex Ingestion Configuration
+
+# Feature selection (must match EVT:FEATURES_CALCULATED schema)
+feature_list:
+  - price
+  - obi
+  - tfi
+  - delta_price
+  - ema_bias
+  - volume_spike
+  - volatility_state
+  - depth_imbalance
+  - spread_bps
+  - macro_sync
+  - macro_resid
+  - volume_zscore
+  - large_trade_imbalance
+  - volatility_bar_range
+  - volatility_bar_body
+  - volatility_true_range
+  - volatility_atr_14
+  - volatility_range_pct
+  - volatility_atr_pct
+  - liquidity_obi_close
+
+# Normalization
+normalization_method: "zscore"  # Options: zscore, minmax, robust
+normalization_window: 500  # Rolling window for statistics
+normalization_scope: "per_symbol"  # Options: global, per_symbol
+price_feature_mode: "log"  # raw, log, drop
+delta_price_mode: "pct"  # raw, pct
+feature_clip_abs:
+  # Pre-normalization safety clips for heavy-tail features.
+  delta_price: 0.2
+  ema_bias: 1.0
+  spread_bps: 500.0
+  macro_resid: 5.0
+  volume_zscore: 10.0
+
+# Buffering
+buffer_size: 10000  # Max observations in memory
+
+# Warmup
+min_samples_before_ready: 100  # Minimum samples before starting ML inference
+
+# Robustness
+nan_strategy: "zero"  # handling NaN/None values: zero, ignore, ffill

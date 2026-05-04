@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/position_policy_sidecar_close_request_state_v1.json",
+  "title": "EVT:POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE payload schema",
+  "description": "Request-to-outcome linkage event for bounded Position Policy Sidecar close requests.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "ts_ms",
+    "event_type",
+    "request_state",
+    "symbol",
+    "request_id",
+    "trace_id",
+    "policy_source",
+    "policy_context",
+    "why"
+  ],
+  "properties": {
+    "ts_ms": { "type": "integer", "minimum": 0 },
+    "event_type": { "type": "string", "const": "POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE" },
+    "request_state": {
+      "type": "string",
+      "enum": [
+        "suppressed",
+        "close_command_emitted",
+        "execution_submitted",
+        "execution_noop",
+        "reconciled"
+      ]
+    },
+    "symbol": { "type": "string", "minLength": 1 },
+    "request_id": { "type": "string", "minLength": 1 },
+    "trace_id": { "type": "string", "minLength": 1 },
+    "policy_source": { "type": "string", "const": "position_policy_sidecar" },
+    "policy_context": { "type": "object" },
+    "suppression_reason": { "type": ["string", "null"] },
+    "incumbent_owner": { "type": ["string", "null"] },
+    "close_cmd_rid": { "type": ["string", "null"] },
+    "execution_client_order_id": { "type": ["string", "null"] },
+    "execution_close_side": { "type": ["string", "null"] },
+    "execution_close_qty": { "type": ["string", "null"] },
+    "execution_result": { "type": ["string", "null"] },
+    "execution_shadow_mode": { "type": "boolean" },
+    "adapter_present": { "type": "boolean" },
+    "partial_close": { "type": "boolean" },
+    "portfolio_state": { "type": ["string", "null"] },
+    "portfolio_position_signature": { "type": ["string", "null"] },
+    "business_close_reconciled": { "type": "boolean" },
+    "reconcile_source": { "type": ["string", "null"] },
+    "reconcile_rid": { "type": ["string", "null"] },
+    "reconcile_why": { "type": ["string", "null"] },
+    "why": { "type": "string", "maxLength": 80 }
+  }
+}

@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deepseek-terminal-agent"
+version = "0.1.0"
+description = "DeepSeek coding/terminal agent with sandboxed tool-calling loop"
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=1.12",
+    "pydantic>=2.5",
+    "python-dotenv>=1.0",
+    "rich>=13.7",
+    "click>=8.1",
+    "pyyaml>=6.0",
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.29",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "ruff>=0.4",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+deepseek-agent = "deepseek_terminal_agent.cli:main"
+deepseek-agent-dashboard = "deepseek_terminal_agent.dashboard.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]

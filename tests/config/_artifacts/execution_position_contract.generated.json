@@ -1,0 +1,1004 @@
+{
+  "models": {
+    "AdvancedStaleCancelConfig": {
+      "extra": "forbid",
+      "fields": {
+        "enabled": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "min_age_before_cancel_sec": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "drift_away": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "may_cancel_regimes": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "never_cancel_regimes": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "BracketHealthCheckConfig": {
+      "extra": "forbid",
+      "fields": {
+        "enabled": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "interval_sec": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "grace_period_ms": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "max_placements_per_cycle": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "BracketPlacementConfig": {
+      "extra": "forbid",
+      "fields": {
+        "tp_widen_first_bps": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "tp_widen_second_bps": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "retry_backoff_ms": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "DriftAwayConfig": {
+      "extra": "forbid",
+      "fields": {
+        "mode": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "atr_mult": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "EventDedupConfig": {
+      "extra": "forbid",
+      "fields": {
+        "max_size": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "ttl_ms": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "warm_state": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "EventDedupWarmStateConfig": {
+      "extra": "forbid",
+      "fields": {
+        "enabled": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "storage_path": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "max_entries": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "ExecutionPositionDomainConfig": {
+      "extra": "forbid",
+      "fields": {
+        "fallback": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "exposure_guard": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "fsm_open": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "order_index": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "inflight_reconcile": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "metrics_collector": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "idempotent_cancel": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "utils": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "event_dedup": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "pending_entry_ttl": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "maker_only_entry": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "order_capabilities": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "bracket_placement": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "order_lifecycle": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "shadow_check": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "guardian": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "intent_boundary_audit": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "bracket_health_check": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "restore_artifact": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "startup_truth_artifact": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "position_policy_sidecar": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "ExecutionPositionRestoreArtifactConfig": {
+      "extra": "forbid",
+      "fields": {
+        "mode": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "storage_path": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "flush_interval_ms": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "dark_read_max_artifact_age_ms": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "ExecutionPositionStartupTruthArtifactConfig": {
+      "extra": "forbid",
+      "fields": {
+        "mode": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "storage_path": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "ExecutionUtilsConfig": {
+      "extra": "forbid",
+      "fields": {
+        "client_order_id_max_length": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "basis_points_base": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "ExposureGuardConfig": {
+      "extra": "forbid",
+      "fields": {
+        "pending_ttl_sec": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "post_fill_ttl_sec": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "stale_ttl_sec": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "max_equity_utilization_pct": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "max_portfolio_fraction": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "max_long_utilization_pct": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "max_short_utilization_pct": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "max_directional_ratio": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "max_concentration_pct": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "FsmOpenConfig": {
+      "extra": "forbid",
+      "fields": {
+        "idempotency_window_sec": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "GuardianConfig": {
+      "extra": "forbid",
+      "fields": {
+        "poll_interval_ms": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "unified": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "emit_tidy_event": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "emit_tidy_monitoring_event": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "cleanup_ttl_ms": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "symbol_cooldown_ms": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "IdempotentCancelConfig": {
+      "extra": "forbid",
+      "fields": {
+        "max_retries": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "InflightReconcileConfig": {
+      "extra": "forbid",
+      "fields": {
+        "inflight_ttl_sec": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "max_ttl_sec": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "reconcile_interval_sec": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "verbose_logging": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "IntentBoundaryAuditConfig": {
+      "extra": "forbid",
+      "fields": {
+        "enabled": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "route_ttl_ms": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "downstream_ttl_ms": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "MakerOnlyEntryConfig": {
+      "extra": "forbid",
+      "fields": {
+        "enabled": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "MetricsCollectorConfig": {
+      "extra": "forbid",
+      "fields": {
+        "window_size_minutes": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "recent_rejections_minutes": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "OrderCapabilitiesConfig": {
+      "extra": "forbid",
+      "fields": {
+        "supported_order_types": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "supported_tif": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "OrderIndexConfig": {
+      "extra": "forbid",
+      "fields": {
+        "ttl_sec": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "OrderLifecycleConfig": {
+      "extra": "forbid",
+      "fields": {
+        "fill_settlement_delay_ms": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "position_close_cleanup_delay_ms": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "PendingEntryTTLConfig": {
+      "extra": "forbid",
+      "fields": {
+        "enabled": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "ttl_by_tf_sec": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "reject_unknown_tf": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "cancel_on_regime_change": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "regime_change_cancel_mode": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "cancel_on_supersede": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "cancel_on_panic": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "supersede_cancel_timeout_sec": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "supersede_reprice_guard": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "advanced_stale_cancel": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "PositionPolicySidecarAllowedActionsConfig": {
+      "extra": "forbid",
+      "fields": {
+        "soft_close_symbol_current_net_only": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "partial_reduce": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "bracket_mutation": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "exact_targeting": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "PositionPolicySidecarConfig": {
+      "extra": "forbid",
+      "fields": {
+        "mode": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "freshness": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "startup_grace": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "profitability_guard": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "scoring": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "thresholds": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "logging": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "allowed_actions": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "peak_giveback_close": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "shadow_percent_notional_arm": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "PositionPolicySidecarPeakGivebackConfig": {
+      "extra": "forbid",
+      "fields": {
+        "enabled": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "edge_arm_usd": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "giveback_trigger_pct": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "PositionPolicySidecarShadowPercentNotionalArmConfig": {
+      "extra": "forbid",
+      "fields": {
+        "enabled": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "candidate_pcts": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "PositionPolicySidecarFreshnessConfig": {
+      "extra": "forbid",
+      "fields": {
+        "portfolio_max_age_ms": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "features_max_age_ms": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "regime_max_age_ms": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "order_state_max_age_ms": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "PositionPolicySidecarLoggingConfig": {
+      "extra": "forbid",
+      "fields": {
+        "emit_internal_bus_events": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "write_trade_lifecycle_jsonl": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "trade_lifecycle_log_path": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "include_score_payloads": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "PositionPolicySidecarProfitabilityGuardConfig": {
+      "extra": "forbid",
+      "fields": {
+        "enabled": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "min_unrealized_pnl_pct": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "min_unrealized_pnl_usdt": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "PositionPolicySidecarScoringCapsConfig": {
+      "extra": "forbid",
+      "fields": {
+        "microstructure_adverse_pressure": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "regime_exhaustion_hint": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "conviction_decay": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "unrealized_loss_pressure": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "PositionPolicySidecarScoringConfig": {
+      "extra": "forbid",
+      "fields": {
+        "weights": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "caps": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "PositionPolicySidecarScoringWeightsConfig": {
+      "extra": "forbid",
+      "fields": {
+        "microstructure_adverse_pressure": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "regime_exhaustion_hint": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "conviction_decay": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "unrealized_loss_pressure": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "PositionPolicySidecarStartupGraceConfig": {
+      "extra": "forbid",
+      "fields": {
+        "startup_grace_ms": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "post_fill_grace_ms": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "min_portfolio_updates": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "min_feature_updates": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "min_regime_updates": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "PositionPolicySidecarThresholdsConfig": {
+      "extra": "forbid",
+      "fields": {
+        "recommend_soft_close_at": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "loss_bps_full_pressure": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "adverse_price_distance_bps_full_pressure": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "book_imbalance_full_pressure": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "regime_confidence_floor": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "signal_score_floor": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "adverse_regimes_long": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "adverse_regimes_short": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "ShadowCheckConfig": {
+      "extra": "forbid",
+      "fields": {
+        "enabled": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "check_every_n_requests": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "tolerance_pct": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "absolute_threshold_usd": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "use_absolute_for_large_portfolios": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "large_portfolio_threshold_usd": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "SupersedeRepriceGuardConfig": {
+      "extra": "forbid",
+      "fields": {
+        "enabled": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "enforce": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "min_price_improvement_bps": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "min_price_improvement_atr_mult": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    }
+  },
+  "enums": {
+    "ExecutionPositionRestoreArtifactMode": {
+      "members": [
+        {
+          "name": "OFF",
+          "value": "off"
+        },
+        {
+          "name": "WRITER_ONLY",
+          "value": "writer_only"
+        },
+        {
+          "name": "DARK_READ",
+          "value": "dark_read"
+        },
+        {
+          "name": "AUTHORITATIVE",
+          "value": "authoritative"
+        }
+      ]
+    },
+    "ExecutionPositionStartupTruthArtifactMode": {
+      "members": [
+        {
+          "name": "OFF",
+          "value": "off"
+        },
+        {
+          "name": "WRITER_ONLY",
+          "value": "writer_only"
+        }
+      ]
+    },
+    "PositionPolicySidecarMode": {
+      "members": [
+        {
+          "name": "DISABLE",
+          "value": "disable"
+        },
+        {
+          "name": "SHADOW",
+          "value": "shadow"
+        },
+        {
+          "name": "ENABLE",
+          "value": "enable"
+        }
+      ]
+    }
+  }
+}

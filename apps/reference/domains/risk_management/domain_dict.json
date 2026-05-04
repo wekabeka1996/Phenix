@@ -1,18 +1,27 @@
 {
   "domain_name": "risk_management",
-  "description": "Відповідає за оцінку ринкових ризиків на основі розрахованих фіч та встановлення лімітів для торгових рішень.",
-  "schema_version": "1.0",
-  "schema_path": "schemas/risk_assessment_v1.json",
+  "description": "Risk scorer and daily drawdown gate. Receives features, computes composite risk score (weighted formula over delta_price_pct, OBI, TFI, absorption), maintains daily drawdown gate with persistent state, and emits EVT:RISK_ASSESSMENT_COMPLETED with is_trading_allowed.",
+  "version": "2.0.0",
+  "status": "production",
   "imports": [
-    {
-      "event_name": "EVT:FEATURES_CALCULATED",
-      "description": "Споживає розраховані фічі для оцінки ризиків."
-    }
+    {"event_name": "EVT:FEATURES_CALCULATED", "source_domain": "feature_engineering"},
+    {"event_name": "EVT:PORTFOLIO_STATE_UPDATED", "source_domain": "position_tracking"}
   ],
   "exports": [
-    {
-      "event_name": "EVT:RISK_ASSESSMENT_COMPLETED",
-      "description": "Подія, що виникає після розрахунку поточних ризик-параметрів та лімітів."
-    }
-  ]
+    {"event_name": "EVT:RISK_ASSESSMENT_COMPLETED", "target_domains": ["decision_making"]},
+    {"event_name": "EVT:CONFIG_DEBUG_OVERRIDE_ACTIVE", "target_domains": ["monitoring"], "note": "experimental, debug-only"}
+  ],
+  "components": [
+    "RiskManagement",
+    "DailyRiskState"
+  ],
+  "documentation": "README.md",
+  "ssot_notes": {
+    "risk_score": "RiskManagement._calculate_risk_parameters (risk_management.py) is the canonical risk scorer",
+    "daily_gate": "DailyRiskState (daily_gate.py) is the canonical daily drawdown gate with persistent state",
+    "why_codes": "uses WhyCode from vfoundation/core/why_codes.py (RISK_DRAWDOWN_LIMIT, RISK_NOT_ALLOWED, RISK_SCORE_HIGH)",
+    "nrr": "does NOT use NormalizedRejectReasons",
+    "contracts": "registered in verb_registry_v1.yaml",
+    "exposure_ownership": "EVT:EXPOSURE_SUMMARY_UPDATED was owned by RM until 2026-03-14, now owned by execution_position"
+  }
 }

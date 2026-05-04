@@ -1,0 +1,366 @@
+# ==============================================================================
+# Alpha Search Configuration — SSOT
+# ==============================================================================
+# ALPHA-A4: Multi-provider alpha search configuration.
+# Loaded by AlphaSearchBacktestPlugin (separate loader, no core changes).
+#
+# Architecture:
+# - Two-phase bridge: EVT:FEATURES_CALCULATED + EVT:TA_FEATURES_CALCULATED → cache → CMD:PROCESS_STRATEGY
+# - Multi-provider: aurora + ta_ensemble can run simultaneously
+# - Shadow mode: signals logged but not traded (for analysis)
+# ==============================================================================
+
+alpha_search:
+  enabled: true
+  shadow_mode: true  # If true, signals are logged but not traded
+
+  # ============================================================================
+  # Event Bridge Configuration (A3.1)
+  # ============================================================================
+  triggers:
+    feature_event: "EVT:FEATURES_CALCULATED"     # Primary FE source → cache
+    ta_feature_event: "EVT:TA_FEATURES_CALCULATED"  # Supplemental TA source for ta_ensemble → cache
+    decision_event: "CMD:PROCESS_STRATEGY"       # Triggers scoring → read cache
+    emit_event: "EVT:ALPHA_SCORE_CALCULATED"     # Output event
+
+  # Cache for features between events
+  cache:
+    max_per_symbol: 10          # Keep last 10 bars per symbol
+    require_same_bar_close_ts: false  # Fuzzy match to avoid cache misses
+
+  # ============================================================================
+  # Providers (A3.2) — aurora and/or ta_ensemble
+  # ============================================================================
+  providers:
+    aurora:
+      enabled: true
+      symbols:
+        - BTCUSDT
+        - ETHUSDT
+        - SOLUSDT
+        - BNBUSDT
+        - XRPUSDT
+      threshold: 0.155          # було 0.12 → ближче до нашої 0.162
+      fail_closed: true
+
+      adapter:
+        scoring_version: "quadratic"  # Phase 9: Quadratic only. v2 deleted.
+        essential_features:
+          - obi
+          - delta_price
+          - macro_resid
+
+        # -------------------------------------------------------
+        # All scoring params are defined here — alpha_search SSOT.
+        # No hardcoded values in code. Override in scenario_matrix.
+        # -------------------------------------------------------
+        base_threshold: 0.12
+        delta_price_cap_pct: 0.02
+
+        signal_weights:
+          obi: 0.42
+          tfi: 0.15
+          delta_price: 0.15
+          ema_bias: 0.15
+          depth_imbalance: -0.15
+          macro_resid: 0.10
+          macro_sync: 0.0
+          volume_spike: 0.10
+          volatility_state: 0.10
+
+        feature_neutrals:
+          obi: 0.0
+          tfi: 0.0
+          delta_price: 0.0
+          ema_bias: 0.5
+          volume_spike: 0.0
+          volatility_state: 0.0
+          depth_imbalance: 0.5
+          macro_sync: 0.5
+          macro_resid: 0.0
+
+        regime_thresholds:
+          HIGH_VOLATILITY: 1.0
+          LOW_VOLATILITY: 0.9
+          MEAN_REVERSION: 0.75
+          TREND_UP: 1.0
+          TREND_DOWN: 1.0
+          UNCERTAIN: 1.15
+          DEFAULT: 1.0
+
+        direction_strength:
+          directional_features:
+            - obi
+            - tfi
+            - delta_price
+            - ema_bias
+            - depth_imbalance
+            - macro_resid
+            - macro_sync
+          strength_features:
+            - volume_spike
+            - volatility_state
+          strength_alpha: 0.5
+          strength_cap: 1.0
+
+    ta_ensemble:
+      enabled: true            # All 3 TA models active
+      symbols: null            # All symbols
+      min_tf_sec: 180          # Allow 3m bars (BNBUSDT tf_sec=180)
+      threshold: 0.18           # було 0.15
+      fail_closed: true
+      # Reads explicit EVT:TA_FEATURES_CALCULATED supplements via triggers.ta_feature_event.
+
+      ensemble:
+        rebalance_frequency_days: 7
+        performance_window_days: 30
+        risk_adjustment: true
+        models:
+          mean_reversion_v1:
+            enabled: true
+          momentum_v1:
+            enabled: true
+          volatility_v1:
+            enabled: true
+
+    judge_sw:
+      enabled: true
+      symbols: null
+      threshold: 0.162
+      fail_closed: true
+      judge_expert:
+        expert_type: "signal_weights"
+
+    judge_fn:
+      enabled: true
+      symbols: null
+      threshold: 0.162
+      fail_closed: true
+      judge_expert:
+        expert_type: "feature_neutrals"
+
+  # ============================================================================
+  # Virtual Trader (shadow PnL tracking)
+  # ============================================================================
+  virtual_trader:
+    enabled: true
+    per_provider: true         # Separate PnL per provider
+    max_positions_per_symbol: 1
+    notional_size: 5000        # increased from 1000 (v6: higher notional per trade)
+    flip_on_reversal: false    # If true: close current pos + immediately open opposite on reversal signal
+    exit:
+      max_bars: 12
+      max_hold_sec: 1800
+      max_drawdown_exit: 1.2
+      cooldown_bars_after_close: 3    # v6b: block re-entry for 3 bars after close (address 91% reversal-exit rate)
+
+  objective_feedback:
+    enabled: true
+    window_trades: 50
+    min_trades_before_reweight: 10
+    rebalance_every_closed_trades: 5
+    quality_metric_weights:
+      realized_quality_score: 0.40
+      realized_pnl: 0.35
+      duration_efficiency: 0.25
+    min_provider_weight: 0.15
+    max_provider_weight: 0.70
+
+  # ============================================================================
+  # LLM Judge Cortex (Phase 2: shadow mode with revived legacy experts)
+  # Phase 2 admits: "off", "shadow". Default "off" — shadow requires operator opt-in.
+  # ============================================================================
+  judge:
+    enabled: true
+    mode: "shadow"
+
+    experts:
+      signal_weights:
+        enabled: true
+        expert_id: "judge.signal_weights_v1"
+        expert_version: "1.0.0"
+        symbols: null                     # null = all aurora symbols
+        signal_threshold: 0.162
+        normalize_mode: "off"             # Safe rollout default. Historical was "signed_v2".
+        essential_features: [obi, delta_price, macro_resid]
+        min_active_features: 4
+        # Externalized from aurora.yaml legacy (Phase 9 deprecated values)
+        # These are REVIVAL DEFAULTS, not active production tuning.
+        signal_weights:
+          obi: 0.42
+          tfi: 0.15
+          delta_price: 0.15
+          ema_bias: 0.15
+          volume_spike: 0.10
+          volatility_state: 0.10
+          depth_imbalance: -0.15
+          macro_resid: 0.10
+          macro_sync: 0.0
+          absorption: 0.0
+        feature_neutrals:
+          obi: 0.0
+          tfi: 0.0
+          delta_price: 0.0
+          ema_bias: 0.5
+          volume_spike: 0.0
+          volatility_state: 0.0
+          depth_imbalance: 0.5
+          macro_sync: 0.5
+          macro_resid: 0.0
+          absorption: 0.0
+
+      feature_neutrals:
+        enabled: true
+        expert_id: "judge.feature_neutrals_v1"
+        expert_version: "1.0.0"
+        symbols: null
+        signal_threshold: 0.162
+        normalize_mode: "off"             # Safe rollout default. Historical was "signed_v2".
+        essential_features: [obi, delta_price, macro_resid]
+        directional_features: [obi, tfi, delta_price, ema_bias, depth_imbalance, macro_resid, macro_sync, absorption]
+        min_active_directional_features: 4
+        strength_features: [volume_spike, volatility_state]
+        strength_alpha: 0.5
+        strength_cap: 1.0
+        signal_weights:
+          obi: 0.42
+          tfi: 0.15
+          delta_price: 0.15
+          ema_bias: 0.15
+          volume_spike: 0.10
+          volatility_state: 0.10
+          depth_imbalance: -0.15
+          macro_resid: 0.10
+          macro_sync: 0.0
+          absorption: 0.0
+        feature_neutrals:
+          obi: 0.0
+          tfi: 0.0
+          delta_price: 0.0
+          ema_bias: 0.5
+          volume_spike: 0.0
+          volatility_state: 0.0
+          depth_imbalance: 0.5
+          macro_sync: 0.5
+          macro_resid: 0.0
+          absorption: 0.0
+
+    shadow_log:
+      enabled: true
+      log_dir: "logs/judge_experts"
+      max_file_size_mb: 50
+      rotation: "daily"
+
+    simulator:
+      enabled: true
+      max_bars_after_signal: 12
+      intrabar_ambiguity_policy: mark_ambiguous
+      fees_bps: 2.0
+      slippage_bps: 1.0
+
+    # Phase 3: Chamber aggregation config
+    chamber:
+      min_quorum: 1
+      max_staleness_ms: 30000
+      entry_enabled: true
+      lifecycle_enabled: false
+
+    # Phase 4: Verdict assembly config
+    verdict:
+      entry_enabled: true
+      lifecycle_enabled: false
+      strategy_id: "aurora"
+      cortex_version: "phase4_shadow_v1"
+      split_confidence_discount: 0.5
+      shadow_plan:
+        enabled: true
+        order_type: HYPOTHETICAL_LIMIT
+        emit_all_tiers: true
+        actionable_tiers: ["medium", "high"]
+        price_ref_source: verdict_context
+        confidence_ladder:
+          - name: low
+            min_confidence: 0.20
+            limit_offset_bps: 0
+            tp_offset_pct: 0.010
+            sl_offset_pct: 0.006
+          - name: medium
+            min_confidence: 0.35
+            limit_offset_bps: 3
+            tp_offset_pct: 0.015
+            sl_offset_pct: 0.008
+          - name: high
+            min_confidence: 0.50
+            limit_offset_bps: 5
+            tp_offset_pct: 0.020
+            sl_offset_pct: 0.010
+
+  # ============================================================================
+  # Phase 5 Package 5G: Simulator Shutdown Auto-Export
+  # When enabled, backtest_plugin.shutdown() invokes the offline simulator and
+  # writes calibration + summary artifacts to the paths configured in
+  # config/judge_simulator.yaml.  Disabled by default (fail-closed).
+  # ============================================================================
+  simulator_shutdown_export:
+    enabled: false
+    config_path: "config/judge_simulator.yaml"
+
+  # ============================================================================
+  # LEGACY: All deprecated fields moved under 'legacy' key for strict validation
+  # These fields are ignored by new code but kept for migration/reference
+  # ============================================================================
+  legacy:
+    augmenter:
+      macd:
+        fast: 12
+        slow: 26
+        signal: 9
+
+      stochastic:
+        k_period: 14
+        d_period: 3
+
+      rsi:
+        period: 14
+
+      momentum:
+        windows_bars: [5, 60, 1440]
+
+      volume_momentum:
+        window: 5
+
+    ensemble:
+      rebalance_frequency_days: 7
+      performance_window_days: 30
+      min_weight: 0.1
+      max_weight: 0.6
+      risk_adjustment: true
+      variance_cap: 0.5
+
+    signals:
+      long_threshold: 0.1
+      short_threshold: -0.1
+      pnl_normalization: 100.0
+
+    models:
+      momentum:
+        short_weight: 0.3
+        medium_weight: 0.4
+        long_weight: 0.3
+        volume_confirm_multiplier: 1.2
+        volume_contradict_multiplier: 0.8
+        base_confidence: 0.8
+        rsi_overbought: 70
+        rsi_oversold: 30
+        rsi_confidence_penalty: 0.7
+        macd_confirm_boost: 1.1
+        macd_contradict_penalty: 0.9
+
+      mean_reversion:
+        bb_threshold: 2.0
+        stoch_overbought: 80
+        stoch_oversold: 20
+
+      volatility:
+        atr_period: 14
+        volatility_threshold: 1.5

@@ -1,0 +1,87 @@
+deepseek:
+  base_url: "https://api.deepseek.com"
+  model: "deepseek-v4-pro"
+  request_timeout_sec: 300
+  reasoning_enabled: true
+  reasoning_effort: "high"
+  temperature: 0.2
+  top_p: 1.0
+  max_tokens: 8192
+
+models:
+  registry_cache_path: ".agent_memory/model_registry.dsmodels.json"
+  static_fallback_models:
+    - "deepseek-v4-pro"
+    - "deepseek-v4-flash"
+  refresh_on_startup: false
+
+sessions:
+  root_dir: ".agent_memory/sessions"
+  autosave: true
+  max_recent_sessions: 50
+
+memory:
+  enabled: true
+  path: ".agent_memory/memory_atoms.dsmem.jsonl"
+  retrieval_top_k: 8
+  max_atom_chars: 1000
+
+context:
+  approximate_token_ratio: 4
+  max_context_chars: 800000
+  recent_turns_budget_chars: 80000
+  memory_budget_chars: 20000
+  artifact_budget_chars: 60000
+  tool_output_budget_chars: 60000
+  stable_prefix: true
+
+compression:
+  enabled: true
+  auto_enabled: false
+  model_id: "deepseek-v4-flash"
+  thinking_type: "disabled"
+  keep_recent_turns: 12
+  max_source_turns: 80
+  target_chars: 12000
+  notify_user: true
+
+subagents:
+  enabled: true
+  default_model_id: "deepseek-v4-flash"
+  max_concurrent: 2
+  max_depth: 1
+  default_timeout_sec: 300
+  default_tool_policy: "read_only"
+
+terminal:
+  workspace_root: "/workspace/project"
+  default_timeout_sec: 120
+  max_output_chars: 20000
+  shell: "bash"
+  require_approval_for_dangerous: true
+  allow_network: true
+
+agent:
+  max_iterations: 20
+  log_dir: ".agent_runs"
+  system_prompt_path: "src/deepseek_terminal_agent/prompts/system.md"
+
+dashboard:
+  host: "127.0.0.1"
+  port: 8787
+  max_prompt_chars: 12000
+  max_output_chars: 30000
+  recent_runs_limit: 20
+  chat_enabled: true
+  context_inspector_enabled: true
+  memory_panel_enabled: true
+  subagents_panel_enabled: true
+
+project_capsule:
+  path: "config/project_capsule.yaml"
+
+playbooks:
+  path: "config/playbooks.yaml"
+
+tool_registry:
+  path: "config/tool_registry.yaml"

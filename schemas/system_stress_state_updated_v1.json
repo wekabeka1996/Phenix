@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/system_stress_state_updated_v1.json",
+  "title": "EVT:SYSTEM_STRESS_STATE_UPDATED payload schema",
+  "description": "Emitted by SystemStressOverlay when the composite stress state changes for a symbol. Only emitted on state transitions (not every bar). Phase 0.5 integration point.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "symbol",
+    "ts_ms",
+    "state",
+    "prev_state",
+    "stress_level",
+    "bars_in_state",
+    "circuit_broken"
+  ],
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Trading symbol (e.g., BTCUSDT)"
+    },
+    "ts_ms": {
+      "type": "integer",
+      "description": "Bar close timestamp in milliseconds"
+    },
+    "state": {
+      "type": "string",
+      "enum": ["NORMAL", "STRESS", "EXTREME"],
+      "description": "New stress state after the transition"
+    },
+    "prev_state": {
+      "type": "string",
+      "enum": ["NORMAL", "STRESS", "EXTREME"],
+      "description": "State before the transition"
+    },
+    "stress_level": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Composite stress level [0.0, 1.0] that triggered the transition"
+    },
+    "bars_in_state": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of bars spent in the new state (reset on each transition)"
+    },
+    "circuit_broken": {
+      "type": "boolean",
+      "description": "True if circuit breaker is active (max_switches_per_window exceeded)"
+    },
+    "bars_seen": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total bars processed for this symbol (includes burn-in)"
+    },
+    "z_atr": {
+      "type": ["number", "null"],
+      "description": "ATR z-score at transition"
+    },
+    "z_vol": {
+      "type": ["number", "null"],
+      "description": "Realized volatility z-score at transition"
+    },
+    "z_gap": {
+      "type": ["number", "null"],
+      "description": "Price gap z-score at transition"
+    },
+    "z_range": {
+      "type": ["number", "null"],
+      "description": "Bar range z-score at transition"
+    },
+    "z_mad_atr": {
+      "type": ["number", "null"],
+      "description": "Robust MAD ATR z-score at transition"
+    },
+    "z_mad_vol": {
+      "type": ["number", "null"],
+      "description": "Robust MAD realized volatility z-score at transition"
+    },
+    "z_mad_gap": {
+      "type": ["number", "null"],
+      "description": "Robust MAD price gap z-score at transition"
+    },
+    "z_mad_range": {
+      "type": ["number", "null"],
+      "description": "Robust MAD bar range z-score at transition"
+    },
+    "why": {
+      "type": "string",
+      "maxLength": 80,
+      "description": "Human-readable reason for state transition"
+    }
+  }
+}

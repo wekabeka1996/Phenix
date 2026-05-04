@@ -1,0 +1,602 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "decision_trace_emitted_v1.json",
+  "title": "Decision Trace Emitted (Monitoring Only)",
+  "description": "Schema for EVT:DECISION_TRACE_EMITTED payload. Emitted by decision_making for forensic traceability (DM-DIR-FORENSIC-01).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "rid": {
+      "type": "string",
+      "description": "Causal request id shared with signal, gateway, and downstream artifacts"
+    },
+    "lifecycle_id": {
+      "type": "string",
+      "description": "Lifecycle/idempotent key for allowed intents when available"
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Trading symbol (e.g., SOLUSDT)"
+    },
+    "ts": {
+      "type": "integer",
+      "description": "Decision timestamp in ms epoch"
+    },
+    "intent_side": {
+      "type": "string",
+      "enum": [
+        "LONG",
+        "SHORT"
+      ],
+      "description": "Intent direction as position side"
+    },
+    "signal_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Signal score if available"
+    },
+    "regime": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Detected regime if available"
+    },
+    "regime_confidence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Regime confidence if available"
+    },
+    "resolved_regime_confidence_strategy_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resolved_regime_confidence_symbol": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resolved_regime_confidence_regime_key": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "min_regime_confidence": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "resolved_min_regime_confidence": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "resolved_min_regime_confidence_source": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resolved_min_regime_confidence_strategy_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resolved_min_regime_confidence_regime_key": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resolved_max_regime_confidence": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "resolved_max_regime_confidence_source": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resolved_max_regime_confidence_strategy_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resolved_max_regime_confidence_regime_key": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resolved_regime_confidence_band_active": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "regime_confidence_breach_kind": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "trend_dir": {
+      "type": "string",
+      "enum": [
+        "UP",
+        "DOWN",
+        "UNKNOWN"
+      ],
+      "description": "Directional trend inferred by DM"
+    },
+    "trend_run_length": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Consecutive bar count for the active trend direction if available"
+    },
+    "delta_price": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Latest delta_price if available"
+    },
+    "pm_norm_10s": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Normalized price motion (10s) if available"
+    },
+    "pm_norm_60s": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Normalized price motion (60s) if available"
+    },
+    "pm_norm_300s": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Normalized price motion (300s) if available"
+    },
+    "pm_norm_900s": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Normalized price motion (900s/15m) if available"
+    },
+    "vol_pct_10s": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Robust vol proxy (10s, fractional) if available"
+    },
+    "vol_pct_60s": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Robust vol proxy (60s, fractional) if available"
+    },
+    "vol_pct_300s": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Robust vol proxy (300s, fractional) if available"
+    },
+    "vol_pct_900s": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Robust vol proxy (900s/15m, fractional) if available"
+    },
+    "gate_outcome": {
+      "type": "string",
+      "enum": [
+        "ALLOW",
+        "DENY"
+      ],
+      "description": "Directional sanity gate outcome"
+    },
+    "deny_reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Normalized deny reason (NRR-xxx) when DENY"
+    },
+    "why": {
+      "type": "string",
+      "maxLength": 80,
+      "description": "Short human explanation (<=80 chars)"
+    },
+    "regime_provenance": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "source_kind": {
+              "type": "string",
+              "enum": [
+                "detector_event",
+                "detector_cache",
+                "unknown"
+              ]
+            },
+            "detector_event": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "event_name": {
+                      "type": "string"
+                    },
+                    "ts_ms": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "rid": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "last_update_ts_ms": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "structural_regime_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "basis_tf_sec": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 1
+                    },
+                    "bar_close_ts_ms": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "changed": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "regime": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "confidence": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "stable_confidence": {
+                      "type": [
+                        "number",
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "source_model": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "pre_cutoff_source_model": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "confidence_min": {
+                      "type": [
+                        "number",
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "confidence_max": {
+                      "type": [
+                        "number",
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "pre_cutoff_regime": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "pre_cutoff_confidence": {
+                      "type": [
+                        "number",
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "pre_cutoff_clamped_to_min": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "pre_cutoff_clamped_to_max": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "pre_cutoff_boundary_reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "uncertain_cutoff": {
+                      "type": [
+                        "number",
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "demoted_to_uncertain": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "raw_regime": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "raw_confidence": {
+                      "type": [
+                        "number",
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "raw_boundary_reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "hysteresis_bars": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 1
+                    },
+                    "hysteresis_confirm_count": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "carried_previous_stable": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "emitted_confidence_kind": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "reason_summary": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "event_name",
+                    "rid",
+                    "ts_ms",
+                    "last_update_ts_ms",
+                    "structural_regime_ref",
+                    "changed",
+                    "regime",
+                    "confidence",
+                    "raw_regime",
+                    "raw_confidence"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "cache_snapshot": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "cache_write_ts_ms": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "regime": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "confidence": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "cache_write_ts_ms",
+                    "regime",
+                    "confidence"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "source_kind",
+            "detector_event",
+            "cache_snapshot"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tpsl_owner_ctx": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "intended_owner": {
+              "type": "string",
+              "enum": [
+                "regime_tpsl",
+                "entry_plan"
+              ]
+            },
+            "final_owner": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "regime_tpsl",
+                    "entry_plan"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "owner_loss_reason": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "REGIME_TPSL_DISABLED_OR_MISSING",
+                    "REGIME_TPSL_CONFIG_ERROR",
+                    "REGIME_TPSL_ATR_UNAVAILABLE",
+                    "REGIME_TPSL_INVALID_INPUT",
+                    "REGIME_TPSL_UNSUPPORTED_MODE",
+                    "TPSL_GUARDRAIL_SL_WRONG_SIDE",
+                    "TPSL_GUARDRAIL_TP_WRONG_SIDE",
+                    "TPSL_GUARDRAIL_SL_MIN_DIST_BPS",
+                    "TPSL_GUARDRAIL_TP_MIN_DIST_BPS"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "intended_owner",
+            "final_owner",
+            "owner_loss_reason"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "symbol",
+    "ts",
+    "intent_side",
+    "signal_score",
+    "regime",
+    "regime_confidence",
+    "trend_dir",
+    "trend_run_length",
+    "delta_price",
+    "pm_norm_10s",
+    "pm_norm_60s",
+    "pm_norm_300s",
+    "vol_pct_10s",
+    "vol_pct_60s",
+    "vol_pct_300s",
+    "gate_outcome",
+    "deny_reason",
+    "why"
+  ]
+}

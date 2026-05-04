@@ -1,0 +1,3 @@
+trading_mode: "testnet"
+logging:
+  level: "INFO"

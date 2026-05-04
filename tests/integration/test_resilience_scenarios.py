@@ -15,10 +15,23 @@ sys.path.insert(0, str(project_root / "vfoundation" / "vfoundation"))
 import pytest
 from unittest.mock import Mock, patch
 
+
 # Simple Message class for testing (same as in other integration tests)
 class Message:
     """Simple message class for testing."""
-    def __init__(self, op, verb, src=None, dst=None, pld=None, why=None, rid=None, span_id=None, parent_span_id=None):
+
+    def __init__(
+        self,
+        op,
+        verb,
+        src=None,
+        dst=None,
+        pld=None,
+        why=None,
+        rid=None,
+        span_id=None,
+        parent_span_id=None,
+    ):
         self.op = op
         self.verb = verb
         self.src = src
@@ -85,7 +98,7 @@ class TestResilienceScenarios:
         # Verify no duplicate executions
         # Verify proper state consistency
 
-        with patch.object(mock_aurora_system.adapter, 'adjust_position') as mock_adjust:
+        with patch.object(mock_aurora_system.adapter, "adjust_position") as mock_adjust:
             mock_adjust.return_value = {
                 "instrument": "BTCUSDT",
                 "order_id": "idempotent-123",
@@ -95,7 +108,7 @@ class TestResilienceScenarios:
                 "breaches": [],
                 "why": ["EXEC_GUARD_PASS"],
                 "dto_version": "1.0.0",
-                "schema_ref": "https://aurora.scalp/shared/dto/exec_feedback.schema.json"
+                "schema_ref": "https://aurora.scalp/shared/dto/exec_feedback.schema.json",
             }
 
             # First command
@@ -109,8 +122,8 @@ class TestResilienceScenarios:
                     "instrument": "BTCUSDT",
                     "adjustment_type": "replace_brackets",
                     "new_sl_price": 49000.0,
-                    "new_tp_price": 51000.0
-                }
+                    "new_tp_price": 51000.0,
+                },
             )
 
             result1 = mock_aurora_system.adapter.adjust_position(dec_cmd)

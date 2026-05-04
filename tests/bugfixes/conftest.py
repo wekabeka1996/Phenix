@@ -1,6 +1,7 @@
 """
 Pytest configuration for bugfix tests.
 """
+
 import sys
 from pathlib import Path
 

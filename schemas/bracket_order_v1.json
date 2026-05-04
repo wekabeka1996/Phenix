@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aurora.local/schemas/bracket_order_v1.json",
+  "title": "Bracket Order (TP/SL)",
+  "description": "Take-Profit and Stop-Loss orders per Binance Futures API. Refs: https://developers.binance.com/docs/usdm-derivatives/trade/new-order",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "pattern": "^[A-Z0-9]+$",
+      "minLength": 3,
+      "maxLength": 20,
+      "description": "Trading pair (e.g., ETHUSDT)"
+    },
+    "side": {
+      "type": "string",
+      "enum": ["BUY", "SELL"],
+      "description": "Order side"
+    },
+    "order_type": {
+      "type": "string",
+      "enum": ["STOP_MARKET", "TAKE_PROFIT_MARKET", "STOP", "TAKE_PROFIT"],
+      "description": "Conditional order type"
+    },
+    "stop_price": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Price that triggers the order"
+    },
+    "qty": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Order quantity (only for STOP/TAKE_PROFIT LIMIT orders; NOT for closePosition=true)"
+    },
+    "working_type": {
+      "type": "string",
+      "enum": ["MARK_PRICE", "CONTRACT_PRICE"],
+      "default": "MARK_PRICE",
+      "description": "Price source for trigger validation. Recommend MARK_PRICE for volatile assets."
+    },
+    "price_protect": {
+      "type": "boolean",
+      "default": false,
+      "description": "Enable triggerProtect validation (checks against exchangeInfo.triggerProtect)"
+    },
+    "close_position": {
+      "type": "boolean",
+      "default": false,
+      "description": "Close entire position (only for STOP_MARKET/TAKE_PROFIT_MARKET; don't pass qty)"
+    },
+    "reduce_only": {
+      "type": "boolean",
+      "default": false,
+      "description": "Reduce position only (cannot increase)"
+    },
+    "new_client_order_id": {
+      "type": "string",
+      "maxLength": 36,
+      "description": "Unique client order ID (ULID/UUID format recommended; NEVER reuse)"
+    },
+    "orig_client_order_id": {
+      "type": "string",
+      "maxLength": 36,
+      "description": "Original client order ID (for idempotency checks)"
+    },
+    "position_side": {
+      "type": "string",
+      "enum": ["LONG", "SHORT"],
+      "description": "Position side"
+    },
+    "timestamp": {
+      "type": "integer",
+      "description": "Unix timestamp in milliseconds"
+    }
+  },
+  "required": ["symbol", "order_type", "stop_price", "working_type", "new_client_order_id"],
+  "additionalProperties": false
+}

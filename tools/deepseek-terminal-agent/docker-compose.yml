@@ -1,0 +1,37 @@
+services:
+  deepseek-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["deepseek-agent", "chat"]
+    env_file:
+      - ./.env
+    volumes:
+      # Mount the Phenix repo root so the agent can inspect logs/ and the rest
+      # of the workspace while keeping the agent package in its subdirectory.
+      - ../../:/workspace/project
+    working_dir: /workspace/project/tools/deepseek-terminal-agent
+    tty: true
+    stdin_open: true
+    # Do NOT mount docker.sock — the agent has no access to the host Docker daemon
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["deepseek-agent-dashboard"]
+    env_file:
+      - ./.env
+    environment:
+      # Bind to all interfaces inside the container so Docker port-forwarding works.
+      # Host-side exposure is restricted by the ports mapping below (127.0.0.1 only).
+      DASHBOARD_HOST: "0.0.0.0"
+    volumes:
+      # Mount the Phenix repo root so dashboard runs can see repo files and logs.
+      - ../../:/workspace/project
+    working_dir: /workspace/project/tools/deepseek-terminal-agent
+    ports:
+      - "127.0.0.1:8787:8787"
+    tty: true
+    stdin_open: true
+    # Dashboard bound to localhost only — do NOT change to 0.0.0.0 without adding auth

@@ -25,7 +25,7 @@
                     "maximum": 1.0,
                     "exclusiveMinimum": true,
                     "exclusiveMaximum": true,
-                    "description": "CVaR confidence level α ∈ (0,1)"
+                    "description": "CVaR confidence level        (0,1)"
                 },
                 "box_bounds": {
                     "type": "object",
@@ -41,7 +41,7 @@
                                 "type": "number",
                                 "minimum": 0.0
                             },
-                            "description": "Lower bounds ℓ for portfolio weights w ∈ [ℓ, u]"
+                            "description": "Lower bounds     for portfolio weights w     [   , u]"
                         },
                         "upper_bounds": {
                             "type": "array",
@@ -50,7 +50,7 @@
                                 "minimum": 0.0,
                                 "maximum": 1.0
                             },
-                            "description": "Upper bounds u for portfolio weights w ∈ [ℓ, u]"
+                            "description": "Upper bounds u for portfolio weights w     [   , u]"
                         }
                     }
                 },
@@ -64,11 +64,11 @@
                     "properties": {
                         "weights_sum_to_one": {
                             "type": "boolean",
-                            "description": "Enforce 1ᵀw = 1 constraint"
+                            "description": "Enforce 1   w = 1 constraint"
                         },
                         "no_short": {
                             "type": "boolean",
-                            "description": "Enforce w ≥ 0 (no short selling)"
+                            "description": "Enforce w     0 (no short selling)"
                         }
                     }
                 }
@@ -131,7 +131,7 @@
                     "type": "number",
                     "minimum": 0.0,
                     "maximum": 2.0,
-                    "description": "Maximum Kelly scale factor s ∈ [0, s_max]"
+                    "description": "Maximum Kelly scale factor s     [0, s_max]"
                 }
             }
         },

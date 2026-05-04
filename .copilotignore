@@ -1,1 +1,5 @@
 __pycache__
+docs_arhive/*
+reports/arhive/*
+node_modules/*
+node_modules

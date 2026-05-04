@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantumtraderx.com/schemas/events/order_clipped_v1.json",
+  "title": "Order Clipped Event",
+  "description": "Event emitted when an order quantity is clipped due to soft exposure limits",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Trading symbol/pair (e.g., 'BTCUSDT')"
+    },
+    "side": {
+      "type": "string",
+      "enum": ["BUY", "SELL"],
+      "description": "Order side"
+    },
+    "original_notional": {
+      "type": "number",
+      "description": "Original order notional value before clipping"
+    },
+    "clipped_notional": {
+      "type": "number",
+      "description": "Clipped order notional value after applying soft limits"
+    },
+    "reason": {
+      "type": "string",
+      "description": "Reason for clipping (margin_limit, side_limit, directional_limit)"
+    },
+    "reduction_amount": {
+      "type": "number",
+      "description": "Amount by which the order was reduced"
+    }
+  },
+  "required": ["symbol", "side", "original_notional", "clipped_notional", "reason", "reduction_amount"],
+  "additionalProperties": false
+}

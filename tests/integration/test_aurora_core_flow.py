@@ -4,6 +4,7 @@
 Перевіряє повний ланцюжок обробки даних від отримання ринкового тіку
 до генерації торгового наміру через всі п'ять доменів FSM.
 """
+
 from unittest import mock
 from decimal import Decimal
 from datetime import datetime, timezone
@@ -28,14 +29,16 @@ class FSMCore:
         if event_name in self.listeners:
             for callback in self.listeners[event_name]:
                 try:
-                    callback(Message(
-                        op="EVT",
-                        verb=event_name.split(":")[1],  # Extract verb from EVT:VERB
-                        src="test",
-                        dst="any",
-                        pld=payload,
-                        why=why
-                    ))
+                    callback(
+                        Message(
+                            op="EVT",
+                            verb=event_name.split(":")[1],  # Extract verb from EVT:VERB
+                            src="test",
+                            dst="any",
+                            pld=payload,
+                            why=why,
+                        )
+                    )
                 except Exception as e:
                     print(f"Error in event listener: {e}")
 
@@ -57,7 +60,8 @@ def test_full_flow_from_market_tick_to_trade_intent():
     # Ініціалізуємо всі компоненти з одним екземпляром FSM
     import sys
     import os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
     # Для тестування створюємо спрощені версії компонентів без власних FSMCore
     class TestMarketDataConnector:
@@ -94,10 +98,14 @@ def test_full_flow_from_market_tick_to_trade_intent():
                     "obi": obi,
                     "tfi": tfi,
                     "absorption": absorption,
-                    "timestamp": payload.get("ts", 0)
+                    "timestamp": payload.get("ts", 0),
                 }
 
-                self.fsm.emit("EVT:FEATURES_CALCULATED", features_payload, "Features calculated from market tick")
+                self.fsm.emit(
+                    "EVT:FEATURES_CALCULATED",
+                    features_payload,
+                    "Features calculated from market tick",
+                )
 
     class TestRiskManagement:
         def __init__(self, fsm):
@@ -120,10 +128,14 @@ def test_full_flow_from_market_tick_to_trade_intent():
                     "kelly_fraction": 0.1,
                     "max_position_size": 1.0,
                     "volatility": 0.02,
-                    "timestamp": payload.get("timestamp", 0)
+                    "timestamp": payload.get("timestamp", 0),
                 }
 
-                self.fsm.emit("EVT:RISK_ASSESSMENT_COMPLETED", risk_payload, "Risk assessment completed")
+                self.fsm.emit(
+                    "EVT:RISK_ASSESSMENT_COMPLETED",
+                    risk_payload,
+                    "Risk assessment completed",
+                )
 
     class TestPositionTracking:
         def __init__(self, fsm):
@@ -143,10 +155,14 @@ def test_full_flow_from_market_tick_to_trade_intent():
                 "position": self.portfolio_state["BTCUSDT"]["position"],
                 "avg_price": self.portfolio_state["BTCUSDT"]["avg_price"],
                 "equity": 10000.0,
-                "timestamp": event.pld.get("timestamp", 0)
+                "timestamp": event.pld.get("timestamp", 0),
             }
 
-            self.fsm.emit("EVT:PORTFOLIO_STATE_UPDATED", portfolio_payload, "Portfolio state updated")
+            self.fsm.emit(
+                "EVT:PORTFOLIO_STATE_UPDATED",
+                portfolio_payload,
+                "Portfolio state updated",
+            )
 
         def on_trade_executed(self, event):
             """Update portfolio state after trade execution."""
@@ -164,7 +180,11 @@ def test_full_flow_from_market_tick_to_trade_intent():
 
             if side == "BUY":
                 new_pos = current_pos + quantity
-                new_avg = ((current_pos * current_avg) + (quantity * price)) / new_pos if new_pos != 0 else 0
+                new_avg = (
+                    ((current_pos * current_avg) + (quantity * price)) / new_pos
+                    if new_pos != 0
+                    else 0
+                )
             else:  # SELL
                 new_pos = current_pos - quantity
                 new_avg = current_avg  # Keep avg price for sells
@@ -199,7 +219,9 @@ def test_full_flow_from_market_tick_to_trade_intent():
 
         def _try_make_decision(self):
             """Make trading decision when all data is available."""
-            if not (self.latest_features and self.latest_risk and self.latest_portfolio):
+            if not (
+                self.latest_features and self.latest_risk and self.latest_portfolio
+            ):
                 return
 
             # Simple decision logic for test
@@ -236,10 +258,12 @@ def test_full_flow_from_market_tick_to_trade_intent():
                 "risk_budget": kelly_fraction,
                 "size": kelly_fraction * 0.1,
                 "valid_for_ms": 5000,
-                "why": f"Signal score {signal_score:.3f}, {side} decision"
+                "why": f"Signal score {signal_score:.3f}, {side} decision",
             }
 
-            self.fsm.emit("EVT:TRADE_INTENT_PROPOSED", trade_intent, "Trade intent generated")
+            self.fsm.emit(
+                "EVT:TRADE_INTENT_PROPOSED", trade_intent, "Trade intent generated"
+            )
 
             # Reset state
             self.latest_features = None
@@ -271,7 +295,7 @@ def test_full_flow_from_market_tick_to_trade_intent():
         "timestamp": datetime.now(timezone.utc),
         "commission": Decimal("0.0001"),
         "trade_id": "init-trade-123",
-        "order_id": "init-order-456"
+        "order_id": "init-order-456",
     }
 
     # 2.2 Фейковий payload для EVT:MARKET_TICK_RECEIVED (запуск основного потоку)
@@ -284,12 +308,14 @@ def test_full_flow_from_market_tick_to_trade_intent():
         "bid_size": 10.0,
         "ask_size": 8.0,
         "buy_volume": 5.0,
-        "sell_volume": 3.0
+        "sell_volume": 3.0,
     }
 
     # 2.3 Emit події в правильній послідовності
     # Спочатку ініціалізуємо стан портфеля
-    fsm.emit("EVT:TRADE_EXECUTED", fake_trade_executed_payload, "portfolio initialization")
+    fsm.emit(
+        "EVT:TRADE_EXECUTED", fake_trade_executed_payload, "portfolio initialization"
+    )
 
     # Потім запускаємо основний потік даних
     fsm.emit("EVT:MARKET_TICK_RECEIVED", fake_market_tick_payload, "market data update")
@@ -297,7 +323,9 @@ def test_full_flow_from_market_tick_to_trade_intent():
     # Крок 3: Перевірка результату
 
     # Перевіряємо, що mock_listener був викликаний рівно один раз
-    assert mock_listener.call_count == 1, f"Expected 1 call to TRADE_INTENT_PROPOSED, got {mock_listener.call_count}"
+    assert mock_listener.call_count == 1, (
+        f"Expected 1 call to TRADE_INTENT_PROPOSED, got {mock_listener.call_count}"
+    )
 
     # Отримуємо аргументи виклику
     call_args = mock_listener.call_args
@@ -309,7 +337,9 @@ def test_full_flow_from_market_tick_to_trade_intent():
     # event має бути Message з правильними полями
     assert isinstance(event_msg, Message), "Event should be Message instance"
     assert event_msg.op == "EVT", f"Expected EVT op, got {event_msg.op}"
-    assert event_msg.verb == "TRADE_INTENT_PROPOSED", f"Expected TRADE_INTENT_PROPOSED verb, got {event_msg.verb}"
+    assert event_msg.verb == "TRADE_INTENT_PROPOSED", (
+        f"Expected TRADE_INTENT_PROPOSED verb, got {event_msg.verb}"
+    )
 
     # event_payload має бути в pld
     event_payload = event_msg.pld
@@ -317,8 +347,16 @@ def test_full_flow_from_market_tick_to_trade_intent():
 
     # Перевіряємо обов'язкові поля згідно зі схемою trade_intent_v1.json
     required_fields = [
-        "instrument", "side", "quantity", "price", "payoff_ratio_r",
-        "tca_budget", "risk_budget", "size", "valid_for_ms", "why"
+        "instrument",
+        "side",
+        "quantity",
+        "price",
+        "payoff_ratio_r",
+        "tca_budget",
+        "risk_budget",
+        "size",
+        "valid_for_ms",
+        "why",
     ]
 
     for field in required_fields:
@@ -326,23 +364,45 @@ def test_full_flow_from_market_tick_to_trade_intent():
 
     # Перевіряємо типи даних
     assert isinstance(event_payload["instrument"], str), "instrument should be string"
-    assert event_payload["side"] in ["BUY", "SELL"], f"side should be BUY or SELL, got {event_payload['side']}"
-    assert isinstance(event_payload["quantity"], (int, float, Decimal)), "quantity should be numeric"
-    assert isinstance(event_payload["price"], (int, float, Decimal)), "price should be numeric"
-    assert isinstance(event_payload["payoff_ratio_r"], (int, float, Decimal)), "payoff_ratio_r should be numeric"
-    assert isinstance(event_payload["tca_budget"], (int, float, Decimal)), "tca_budget should be numeric"
-    assert isinstance(event_payload["risk_budget"], (int, float, Decimal)), "risk_budget should be numeric"
-    assert isinstance(event_payload["size"], (int, float, Decimal)), "size should be numeric"
+    assert event_payload["side"] in ["BUY", "SELL"], (
+        f"side should be BUY or SELL, got {event_payload['side']}"
+    )
+    assert isinstance(event_payload["quantity"], (int, float, Decimal)), (
+        "quantity should be numeric"
+    )
+    assert isinstance(event_payload["price"], (int, float, Decimal)), (
+        "price should be numeric"
+    )
+    assert isinstance(event_payload["payoff_ratio_r"], (int, float, Decimal)), (
+        "payoff_ratio_r should be numeric"
+    )
+    assert isinstance(event_payload["tca_budget"], (int, float, Decimal)), (
+        "tca_budget should be numeric"
+    )
+    assert isinstance(event_payload["risk_budget"], (int, float, Decimal)), (
+        "risk_budget should be numeric"
+    )
+    assert isinstance(event_payload["size"], (int, float, Decimal)), (
+        "size should be numeric"
+    )
     assert isinstance(event_payload["valid_for_ms"], int), "valid_for_ms should be int"
     assert isinstance(event_payload["why"], str), "why should be string"
-    assert len(event_payload["why"]) <= 80, f"why should be <= 80 chars, got {len(event_payload['why'])}"
+    assert len(event_payload["why"]) <= 80, (
+        f"why should be <= 80 chars, got {len(event_payload['why'])}"
+    )
 
     # Перевіряємо логіку: якщо система працює правильно, має бути або BUY, або SELL (не NEUTRAL)
-    assert event_payload["side"] in ["BUY", "SELL"], "System should generate BUY or SELL intent, not neutral"
+    assert event_payload["side"] in ["BUY", "SELL"], (
+        "System should generate BUY or SELL intent, not neutral"
+    )
 
     # Перевіряємо що розмір позиції > 0
-    assert event_payload["size"] > 0, f"Trade size should be > 0, got {event_payload['size']}"
+    assert event_payload["size"] > 0, (
+        f"Trade size should be > 0, got {event_payload['size']}"
+    )
 
     print("✅ Full Aurora Core flow test passed!")
-    print(f"   Generated trade intent: {event_payload['side']} {event_payload['size']} {event_payload['instrument']} @ {event_payload['price']}")
+    print(
+        f"   Generated trade intent: {event_payload['side']} {event_payload['size']} {event_payload['instrument']} @ {event_payload['price']}"
+    )
     print(f"   Why: {event_payload['why']}")

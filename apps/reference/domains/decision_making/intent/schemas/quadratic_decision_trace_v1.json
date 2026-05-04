@@ -1,0 +1,225 @@
+{
+  "$id": "https://phenix.local/schemas/quadratic_decision_trace_v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Quadratic Decision Trace Event",
+  "description": "Schema for EVT:QUADRATIC_DECISION_TRACE emitted by the Aurora quadratic decision path after the quadratic scorer has been reached.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "rid": {
+      "type": "string"
+    },
+    "strategy_id": {
+      "type": "string"
+    },
+    "symbol": {
+      "type": "string"
+    },
+    "tf_sec": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "score": {
+      "type": "number"
+    },
+    "raw_score": {
+      "type": "number"
+    },
+    "decision_score": {
+      "type": "number"
+    },
+    "sizing_score": {
+      "type": "number"
+    },
+    "side": {
+      "type": "string"
+    },
+    "deferred": {
+      "type": "boolean"
+    },
+    "defer_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "regime": {
+      "type": "string"
+    },
+    "regime_confidence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "shield_multiplier": {
+      "type": "number"
+    },
+    "admission_shield_multiplier": {
+      "type": "number"
+    },
+    "thr_buy": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "thr_sell": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "admission_mode": {
+      "type": "string"
+    },
+    "sizing_mode": {
+      "type": "string"
+    },
+    "quadratic_path_reached": {
+      "type": "boolean",
+      "const": true
+    },
+    "compact_trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "regime": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "raw_sum": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "raw_score": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "admission_mode": {
+          "type": "string"
+        },
+        "sizing_mode": {
+          "type": "string"
+        },
+        "raw_exposure": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "shield_multiplier": {
+          "type": "number"
+        },
+        "admission_shield_multiplier": {
+          "type": "number"
+        },
+        "decision_score": {
+          "type": "number"
+        },
+        "sizing_score": {
+          "type": "number"
+        },
+        "final_score": {
+          "type": "number"
+        },
+        "thr_buy": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "thr_sell": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "threshold_factor": {
+          "type": "number"
+        },
+        "admission_result": {
+          "type": "string"
+        },
+        "side": {
+          "type": "string"
+        },
+        "deferred": {
+          "type": "boolean"
+        },
+        "defer_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "side_why": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "regime",
+        "raw_sum",
+        "raw_score",
+        "admission_mode",
+        "sizing_mode",
+        "raw_exposure",
+        "shield_multiplier",
+        "admission_shield_multiplier",
+        "decision_score",
+        "sizing_score",
+        "final_score",
+        "thr_buy",
+        "thr_sell",
+        "threshold_factor",
+        "admission_result",
+        "side",
+        "deferred",
+        "defer_reason",
+        "side_why"
+      ]
+    },
+    "ts_ms": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "schema_version",
+    "strategy_id",
+    "symbol",
+    "tf_sec",
+    "score",
+    "raw_score",
+    "decision_score",
+    "sizing_score",
+    "side",
+    "deferred",
+    "defer_reason",
+    "regime",
+    "shield_multiplier",
+    "admission_shield_multiplier",
+    "thr_buy",
+    "thr_sell",
+    "admission_mode",
+    "sizing_mode",
+    "quadratic_path_reached",
+    "compact_trace",
+    "ts_ms"
+  ]
+}

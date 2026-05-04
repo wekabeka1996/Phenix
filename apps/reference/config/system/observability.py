@@ -1,0 +1,164 @@
+from __future__ import annotations
+
+from typing import Dict, List, Literal, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from apps.reference.telemetry.shadow_journal import DEFAULT_CRITICAL_EVENTS
+
+
+class LogRotationConfig(BaseModel):
+    """Log file rotation settings."""
+    model_config = ConfigDict(extra='forbid')
+
+    max_bytes: int = Field(..., ge=1024,
+                           description='Max bytes before rotation (default 10MB)')
+    backup_count: int = Field(..., ge=1, le=100,
+                              description='Number of backup files to keep')
+
+
+class ConsoleLogConfig(BaseModel):
+    """Console (stdout) logging configuration."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(..., description='Enable console logging')
+    level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
+        ..., description='Console log level')
+    format: Literal["text", "json"] = Field(
+        ..., description='Console log format')
+    colorize: bool = Field(
+        ..., description='Enable ANSI color output (future)')
+
+
+class CoreLogSinkConfig(BaseModel):
+    """Core file sink configuration (aurora_core.log)."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(..., description='Enable core file logging')
+    path: str = Field(..., description='Log file path')
+    level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
+        ..., description='File log level')
+    format: Literal["text", "json"] = Field(
+        ..., description='File log format')
+    max_bytes: Optional[int] = Field(
+        ..., description='Override rotation.max_bytes')
+    backup_count: Optional[int] = Field(
+        ..., description='Override rotation.backup_count')
+
+
+class DomainLogConfig(BaseModel):
+    """Per-domain logging configuration."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(
+        ..., description='Enable domain-specific log file')
+    level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
+        ..., description='Domain log level')
+    max_bytes: int = Field(..., ge=1024,
+                           description='Max bytes before rotation (default 5MB)')
+    backup_count: int = Field(..., ge=1, le=100,
+                              description='Number of backup files')
+
+
+class EventChainLogConfig(BaseModel):
+    """Structured event chain log configuration (JSON format)."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(
+        ..., description='Enable event chain logging')
+    path: str = Field(..., description='Event chain log file path')
+    level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
+        ..., description='Event chain log level')
+    format: Literal["text", "json"] = Field(
+        ..., description='Event chain format (should be json)')
+    max_bytes: int = Field(
+        ..., description='Max bytes before rotation')
+    backup_count: int = Field(..., description='Number of backup files')
+
+
+class ObservabilityLoggingConfig(BaseModel):
+    """Complete logging configuration (SSOT for all log handlers)."""
+    model_config = ConfigDict(extra='forbid')
+
+    default_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
+        ..., description='Global default log level')
+    default_format: Literal["text", "json"] = Field(
+        ..., description='Global default log format')
+    rotation: LogRotationConfig = Field(
+        ..., description='Default rotation settings')
+    console: ConsoleLogConfig = Field(
+        ..., description='Console sink config')
+    core: CoreLogSinkConfig = Field(
+        ..., description='Core file sink config')
+    domains: Dict[str, DomainLogConfig] = Field(
+        ..., description='Per-domain log configs')
+    event_chain: EventChainLogConfig = Field(
+        ..., description='Event chain config')
+
+
+class AlertsConfig(BaseModel):
+    """Typed alerting configuration (SSOT)."""
+    model_config = ConfigDict(extra='forbid')
+
+    slack_webhook_url: Optional[str] = Field(
+        ..., description='Slack incoming webhook URL')
+    deduplication_window_sec: int = Field(
+        ..., ge=0, description='Deduplication window for same alert key')
+    max_alerts_per_hour: int = Field(
+        ..., ge=1, description='Rate limit for raised alerts per hour')
+    risk_gate_threshold_pct: int = Field(
+        ..., ge=0, le=100, description='Risk gate alert threshold in percent')
+    wal_size_threshold_mb: int = Field(
+        ..., ge=1, description='WAL size threshold for warning alert')
+    cb_active_threshold_sec: int = Field(
+        ..., ge=0, description='Circuit breaker active duration threshold')
+    recent_alerts_max_keys: int = Field(
+        ..., ge=100, description='Hard cap for dedup cache keys')
+    entropy_volume_threshold: int = Field(
+        ..., ge=10,
+        description=(
+            'EntropyMonitor: max FSM events per 60s window before CRITICAL alert. '
+            'Baseline: N_symbols × 60 ticks/min × ~5 events/tick. '
+            'Default 3000 covers 7 symbols at normal tick rate with 2x headroom.'
+        ),
+    )
+    entropy_error_rate_threshold: float = Field(
+        ..., ge=0.0, le=1.0,
+        description='EntropyMonitor: max ERR-op fraction (0.0–1.0) before CRITICAL alert.',
+    )
+
+
+class ShadowCriticalEventJournalConfig(BaseModel):
+    """Shadow-only critical event journal configuration."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(
+        ..., description="Enable append-only shadow journal for critical decision/execution events.",
+    )
+    path: str = Field(
+        ..., description="Append-only JSONL sink for the shadow critical event journal.",
+    )
+    schema_version: str = Field(
+        ..., description="Schema version written into each journal record.",
+    )
+    instrumentation_version: str = Field(
+        ..., description="Instrumentation package version written into each journal record.",
+    )
+    critical_events: List[str] = Field(
+        ..., description="Critical events/transitions captured by the shadow journal.",
+    )
+
+
+class ObservabilityConfig(BaseModel):
+    """Root observability configuration (logging, metrics, tracing)."""
+    model_config = ConfigDict(extra='forbid')
+
+    config_version: str = Field(
+        ..., description='Observability config version')
+    logging: ObservabilityLoggingConfig = Field(
+        ..., description='Logging configuration')
+    alerts: AlertsConfig = Field(
+        ..., description='Alert manager configuration')
+    shadow_journal: ShadowCriticalEventJournalConfig = Field(
+        ..., description='Shadow-only critical event journal configuration')
+    # Future: metrics, tracing

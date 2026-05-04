@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "EVT:STARTUP_SEED_STATUS",
+  "type": "object",
+  "required": ["strategy_id", "symbol", "state"],
+  "properties": {
+    "strategy_id": {"type": "string"},
+    "symbol": {"type": "string"},
+    "state": {"type": "string", "enum": ["WARMED", "PARTIAL", "SKIPPED", "FAILED"]},
+    "why": {"type": "array", "items": {"type": "string"}},
+    "details": {"type": "object"}
+  },
+  "additionalProperties": false
+}

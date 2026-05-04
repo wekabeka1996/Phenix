@@ -2,7 +2,13 @@ from apps.reference.domains.execution_position.contracts import validate_order_c
 
 
 def test_validate_order_command_good_and_bad():
-    good = {"symbol": "ETHUSDT", "side": "BUY", "qty": "1", "order_type": "LIMIT", "price": "20"}
+    good = {
+        "symbol": "ETHUSDT",
+        "side": "BUY",
+        "qty": "1",
+        "order_type": "LIMIT",
+        "price": "20",
+    }
     assert validate_order_command(good) is True
 
     bad = {"symbol": "ETHUSDT", "side": "BUY", "qty": "0.0001", "order_type": "MARKET"}

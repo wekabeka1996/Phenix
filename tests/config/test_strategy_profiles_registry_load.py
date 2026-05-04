@@ -1,0 +1,174 @@
+"""
+Tests for registry-driven strategy profile loading.
+
+CFG-STRATEGIES-SSOT-03-REGISTRY-DRIVEN-LOADING-AND-ONE-CONFIG-TRUTH
+"""
+
+import pytest
+import yaml
+import shutil
+from pathlib import Path
+from apps.reference.config_loader import ConfigLoader
+
+
+def _copy_canonical_config_dir(dst_config_dir: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    src = repo_root / "config" / "aurora"
+    shutil.copytree(src, dst_config_dir)
+
+
+def _write_strategies_yaml(config_dir: Path, *, assignments: dict[str, list[str]]) -> None:
+    priorities: dict[str, int] = {}
+    priority_counter = 1
+    strategy_ids: list[str] = []
+    for _, strat_list in assignments.items():
+        for sid in strat_list:
+            if sid not in priorities:
+                priorities[sid] = priority_counter
+                priority_counter += 1
+            if sid not in strategy_ids:
+                strategy_ids.append(sid)
+
+    strategies_yaml = {
+        "version": "1.0.0",
+        "assignments": assignments,
+        "arbitration": {
+            "mode": "priority",
+            "window_ms": 1000,
+            "priority": priorities,
+            "logging": {"rejected_why_prefix": "ARBITRATION_REJECT", "log_level": "INFO"},
+        },
+    }
+    (config_dir / "strategies.yaml").write_text(yaml.dump(strategies_yaml), encoding="utf-8")
+
+
+def _enable_mean_reversion_asset(config_dir: Path, symbol: str) -> None:
+    mr_profile_path = config_dir / "strategies" / "mean_reversion.yaml"
+    payload = yaml.safe_load(mr_profile_path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    mr_root = payload.setdefault("mean_reversion", {})
+    assert isinstance(mr_root, dict)
+    assets = mr_root.setdefault("assets", {})
+    assert isinstance(assets, dict)
+    asset_cfg = assets.setdefault(symbol, {})
+    assert isinstance(asset_cfg, dict)
+    asset_cfg["enabled"] = True
+    mr_profile_path.write_text(yaml.safe_dump(
+        payload, sort_keys=False), encoding="utf-8")
+
+
+def create_test_config(config_dir: Path, with_mr_assignment=True, with_mr_profile=True, with_aurora=True):
+    """Create config based on canonical SSOT, then toggle assignments/profile presence."""
+    config_dir.parent.mkdir(parents=True, exist_ok=True)
+    _copy_canonical_config_dir(config_dir)
+
+    assignments: dict[str, list[str]] = {}
+    strategy_list: list[str] = []
+    if with_aurora:
+        strategy_list.append("aurora")
+    if with_mr_assignment:
+        strategy_list.append("mean_reversion")
+    if strategy_list:
+        assignments["BTCUSDT"] = strategy_list
+
+    _write_strategies_yaml(config_dir, assignments=assignments)
+
+    strategies_dir = config_dir / "strategies"
+    strategies_dir.mkdir(parents=True, exist_ok=True)
+
+    if with_mr_assignment and with_mr_profile:
+        _enable_mean_reversion_asset(config_dir, "BTCUSDT")
+
+    if not with_mr_profile:
+        mr_path = strategies_dir / "mean_reversion.yaml"
+        if mr_path.exists():
+            mr_path.unlink()
+
+    if not with_aurora:
+        aurora_path = strategies_dir / "aurora.yaml"
+        if aurora_path.exists():
+            aurora_path.unlink()
+
+
+class TestRegistryDrivenLoading:
+    """Test that ConfigLoader loads strategy profiles ONLY from strategies_registry.assignments"""
+
+    def test_registry_driven_load_mean_reversion(self, tmp_path):
+        """
+        Test that MR profile is loaded via registry assignments (not hardcoded).
+
+        CFG-STRATEGIES-SSOT-03: ConfigLoader reads strategies.yaml assignments,
+        then loads corresponding profiles from strategies/{id}.yaml
+        """
+        config_dir = tmp_path / "config" / "aurora"
+        create_test_config(config_dir, with_mr_assignment=True,
+                           with_mr_profile=True, with_aurora=True)
+
+        # Load config
+        loader = ConfigLoader(config_dir=config_dir)
+        config = loader.load_config()
+
+        # VERIFY: mean_reversion config loaded from profile (not hardcoded)
+        assert config.strategies.mean_reversion is not None
+        assert config.strategies.mean_reversion.enabled is True
+        assert config.strategies.mean_reversion.timeframe_sec == 300
+
+    def test_assigned_strategy_missing_profile_fails(self, tmp_path):
+        """
+        Test FAIL-CLOSED: strategy assigned in registry but profile missing → ValueError.
+
+        CFG-STRATEGIES-SSOT-03: Strict mode - missing profile for assigned strategy must crash.
+        """
+        config_dir = tmp_path / "config" / "aurora"
+        # Create config WITHOUT MR profile (but WITH assignment)
+        create_test_config(config_dir, with_mr_assignment=True,
+                           with_mr_profile=False, with_aurora=True)
+
+        # Load config - MUST FAIL
+        loader = ConfigLoader(config_dir=config_dir)
+        with pytest.raises(ValueError) as exc_info:
+            config = loader.load_config()
+
+        # VERIFY: error message mentions missing profile
+        error_msg = str(exc_info.value)
+        assert "mean_reversion" in error_msg
+        assert "profile missing" in error_msg.lower() or "missing" in error_msg.lower()
+
+    def test_unassigned_strategy_profile_remains_available_in_config_tree(self, tmp_path):
+        """
+        Test that strategy profile present but NOT in assignments stays parsed,
+        while runtime activation still depends on assignments.
+
+        Current ConfigLoader merges assigned strategies plus on-disk profiles.
+        """
+        config_dir = tmp_path / "config" / "aurora"
+        # Create config WITH aurora assignment and profile, but MR profile without assignment
+        create_test_config(config_dir, with_mr_assignment=False,
+                           with_mr_profile=True, with_aurora=True)
+
+        # Load config
+        loader = ConfigLoader(config_dir=config_dir)
+        config = loader.load_config()
+
+        # VERIFY: profile is still parsed, but registry leaves it unassigned.
+        assert config.strategies.mean_reversion is not None
+        assert config.strategies_registry.assignments["BTCUSDT"] == ["aurora"]
+
+    def test_multiple_strategies_assigned_all_loaded(self, tmp_path):
+        """
+        Test that multiple strategies assigned → all profiles loaded.
+
+        CFG-STRATEGIES-SSOT-03: BTC hybrid (aurora + MR) → both profiles loaded.
+        """
+        config_dir = tmp_path / "config" / "aurora"
+        create_test_config(config_dir, with_mr_assignment=True,
+                           with_mr_profile=True, with_aurora=True)
+
+        # Load config
+        loader = ConfigLoader(config_dir=config_dir)
+        config = loader.load_config()
+
+        # VERIFY: BOTH profiles loaded
+        assert config.strategies.aurora is not None
+        assert config.strategies.mean_reversion is not None
+        assert config.strategies.mean_reversion.enabled is True

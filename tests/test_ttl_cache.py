@@ -1,6 +1,7 @@
 """
 Tests for MonotonicTTLCache
 """
+
 import time
 import threading
 import pytest
@@ -116,7 +117,9 @@ class TestMonotonicTTLCache:
         assert metrics["cache_evictions_total"] == 1
 
     def test_janitor_basic(self):
-        cache = MonotonicTTLCache(max_entries=10, default_ttl_ms=100, janitor_interval_ms=50)
+        cache = MonotonicTTLCache(
+            max_entries=10, default_ttl_ms=100, janitor_interval_ms=50
+        )
         cache.set("key1", "value1")
         cache.start_janitor()
         time.sleep(0.2)  # Let janitor run
@@ -125,7 +128,9 @@ class TestMonotonicTTLCache:
         assert metrics["janitor_runs_total"] > 0
 
     def test_janitor_cleanup(self):
-        cache = MonotonicTTLCache(max_entries=10, default_ttl_ms=50, janitor_interval_ms=100)
+        cache = MonotonicTTLCache(
+            max_entries=10, default_ttl_ms=50, janitor_interval_ms=100
+        )
         cache.set("key1", "value1")
         cache.start_janitor()
         time.sleep(0.2)  # Wait for expiration and cleanup
@@ -136,18 +141,18 @@ class TestMonotonicTTLCache:
 
     def test_concurrent_access(self):
         cache = MonotonicTTLCache(max_entries=100, default_ttl_ms=1000)
-        
+
         def worker():
             for i in range(100):
                 cache.set(f"key{i}", f"value{i}")
                 cache.get(f"key{i}")
-        
+
         threads = [threading.Thread(target=worker) for _ in range(5)]
         for t in threads:
             t.start()
         for t in threads:
             t.join()
-        
+
         # Should not crash, basic sanity check
         assert cache.size() <= 100
 

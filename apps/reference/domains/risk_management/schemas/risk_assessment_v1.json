@@ -32,15 +32,41 @@
           "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
           "description": "Maximum allowed drawdown percentage (string-encoded Decimal for precision)"
         },
+        "risk_score": {
+          "type": "number",
+          "description": "Composite risk score in [0,1] for observability and downstream gating"
+        },
         "is_trading_allowed": {
           "type": "boolean",
           "description": "Whether trading is allowed based on current risk assessment"
+        },
+        "risk_terms": {
+          "type": "object",
+          "description": "PKG-ABSORPTION-RISK-FULL: XAI explainability dict for absorption risk term routing",
+          "properties": {
+            "toxicity_term": {
+              "type": "number"
+            },
+            "absorption_feature_term": {
+              "type": "number"
+            },
+            "abs_source": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
         }
       },
-      "required": ["kelly_fraction", "cvar_limit_usd", "max_drawdown_percent", "is_trading_allowed"],
+      "required": [
+        "is_trading_allowed"
+      ],
       "additionalProperties": false
     }
   },
-  "required": ["symbol", "ts", "risk_parameters"],
+  "required": [
+    "symbol",
+    "ts",
+    "risk_parameters"
+  ],
   "additionalProperties": false
 }

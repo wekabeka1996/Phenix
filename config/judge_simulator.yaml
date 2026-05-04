@@ -1,0 +1,8 @@
+judge_simulator:
+  enabled: false
+  judge_logs_path: "./logs/judge_experts"
+  outcome_data_path: "./data/simulator/outcomes.json"
+  calibration_dataset_path: "./artifacts/phase5_calibration.jsonl"
+  summary_report_path: "./artifacts/phase5_summary_report.json"
+  fee_per_cycle_bps: 25
+  slippage_pct: 0.1

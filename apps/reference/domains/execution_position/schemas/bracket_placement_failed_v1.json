@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "bracket_placement_failed_v1.json",
+  "title": "EVT:BRACKET_PLACEMENT_FAILED payload schema",
+  "description": "Structured event for post-entry protective SL/TP placement failures.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "ts_ms",
+    "symbol",
+    "source_path",
+    "failure_class",
+    "reason",
+    "why_code",
+    "remediation_action"
+  ],
+  "properties": {
+    "ts_ms": { "type": "integer", "minimum": 0 },
+    "symbol": { "type": "string", "minLength": 1 },
+    "source_path": { "type": "string", "minLength": 1 },
+    "failure_class": { "type": "string", "minLength": 1 },
+    "reason": { "type": "string", "minLength": 1 },
+    "why_code": { "type": "string", "minLength": 1 },
+    "remediation_action": { "type": "string", "minLength": 1 },
+    "rid": { "type": ["string", "null"] },
+    "lifecycle_id": { "type": ["string", "null"] },
+    "strategy_id": { "type": ["string", "null"] },
+    "side": { "type": ["string", "null"] },
+    "qty": { "type": ["string", "number", "null"] },
+    "entry_order_id": { "type": ["string", "null"] },
+    "entry_client_order_id": { "type": ["string", "null"] },
+    "sl_order_id": { "type": ["string", "null"] },
+    "tp_order_id": { "type": ["string", "null"] },
+    "details": {
+      "type": ["string", "object", "null"],
+      "properties": {
+        "correlation": {
+          "type": ["object", "null"],
+          "properties": {
+            "rid": { "type": ["string", "null"] },
+            "corr_id": { "type": ["string", "null"] },
+            "entry_order_id": { "type": ["string", "null"] },
+            "entry_client_order_id": { "type": ["string", "null"] }
+          },
+          "additionalProperties": true
+        },
+        "child_outcomes": {
+          "type": ["object", "null"],
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

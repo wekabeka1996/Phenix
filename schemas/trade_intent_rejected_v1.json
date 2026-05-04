@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/trade_intent_rejected_v1.json",
+  "title": "EVT:TRADE_INTENT_REJECTED payload schema",
+  "description": "SSOT reject event for missed opportunities (why we did NOT open).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ts_ms", "symbol", "reason_code", "stage", "why"],
+  "properties": {
+    "ts_ms": {
+      "type": "integer",
+      "description": "Event timestamp in milliseconds"
+    },
+    "symbol": {
+      "type": "string"
+    },
+    "tf_sec": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Timeframe context; 0 is allowed only for legacy/tick contexts"
+    },
+    "bar_close_ts": {
+      "type": "integer",
+      "description": "Bar close timestamp in ms (when bar context exists)"
+    },
+    "reason_code": {
+      "type": "string",
+      "description": "Normalized SSOT reason code (NRR/contract codes only)"
+    },
+    "strategy_id": {
+      "type": "string",
+      "description": "Strategy identifier (if known)"
+    },
+    "side": {
+      "type": "string",
+      "enum": ["buy", "sell"],
+      "description": "Intended side (if known)"
+    },
+    "rid": {
+      "type": "string",
+      "description": "Correlation / request id (if known)"
+    },
+    "stage": {
+      "type": "string",
+      "enum": ["RISK", "STRATEGY", "DECISION", "EXECUTION"],
+      "description": "Pipeline stage that rejected the opportunity"
+    },
+    "why": {
+      "type": "string",
+      "maxLength": 240,
+      "description": "Short human-readable explanation (not a full stacktrace)"
+    },
+    "context": {
+      "type": "string",
+      "description": "Short context tag for where the reject happened"
+    },
+    "why_chain": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "details": {
+      "type": "object",
+      "description": "Optional structured details (lightweight)",
+      "additionalProperties": true
+    },
+    "entry_plan": {
+      "type": "object",
+      "description": "Optional lightweight trace of entry plan",
+      "additionalProperties": true
+    }
+  }
+}

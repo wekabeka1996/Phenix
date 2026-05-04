@@ -1,0 +1,24 @@
+# Global Framework Dictionary v2.2 - MINIMAL
+# Contains ONLY framework-level parameters for vfoundation core.
+# App-specific overrides/extensions are in apps/reference/dictionaries/global_v2_2.yaml
+
+version: 2.2
+ops: [ASK, DEC, CMD, EVT, UPD, ERR]
+stdlib_verbs: [EVAL, OPEN, CLOSE, SCALE, ADJUST, AUTH, READ, WRITE, PING, HEALTH, WHY, ALERT, RECONCILE]
+routing_modes:
+  hot:   [ASK:EVAL, DEC:EVAL, ASK:OPEN, ASK:CLOSE]
+  warm:  [EVT:*, UPD:*]
+  cold:  [ALERT:*, RECONCILE:*]
+ttl_profiles:
+  critical: 50
+  fast: 200
+  normal: 2000
+  ml_slow: 10000
+  background: 30000
+policies:
+  safety_timeout_behavior: DENY
+limits:
+  max_verbs_per_domain: 12
+  max_states_per_domain: 20
+security:
+  sign_required_ops: [CMD, DEC]

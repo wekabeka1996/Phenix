@@ -1,0 +1,112 @@
+config_version: 1.0.0
+logging:
+  default_level: INFO
+  default_format: text
+  rotation:
+    max_bytes: 10485760
+    backup_count: 50
+  console:
+    enabled: true
+    level: INFO
+    format: text
+    colorize: false
+  core:
+    enabled: true
+    path: logs/aurora_core.log
+    level: DEBUG
+    format: text
+    max_bytes: 10485760
+    backup_count: 50
+  domains:
+    feature_engineering:
+      enabled: true
+      level: DEBUG
+      max_bytes: 5242880
+      backup_count: 30
+    risk_management:
+      enabled: true
+      level: DEBUG
+      max_bytes: 5242880
+      backup_count: 30
+    decision_making:
+      enabled: true
+      level: DEBUG
+      max_bytes: 5242880
+      backup_count: 30
+    execution_position:
+      enabled: true
+      level: DEBUG
+      max_bytes: 5242880
+      backup_count: 30
+    regime_detector:
+      enabled: true
+      level: DEBUG
+      max_bytes: 5242880
+      backup_count: 30
+    mean_reversion:
+      enabled: true
+      level: DEBUG
+      max_bytes: 5242880
+      backup_count: 30
+  event_chain:
+    enabled: true
+    path: logs/event_chain.log
+    level: INFO
+    format: json
+    max_bytes: 10485760
+    backup_count: 50
+alerts:
+  slack_webhook_url: null
+  deduplication_window_sec: 300
+  max_alerts_per_hour: 10
+  risk_gate_threshold_pct: 80
+  wal_size_threshold_mb: 500
+  cb_active_threshold_sec: 60
+  recent_alerts_max_keys: 5000
+  entropy_volume_threshold: 3000
+  entropy_error_rate_threshold: 0.5
+shadow_journal:
+  enabled: true
+  path: logs/shadow_critical_event_journal_v1.jsonl
+  schema_version: 1.0.0
+  instrumentation_version: 1.0.0
+  critical_events:
+  - EVT:QUADRATIC_DECISION_TRACE
+  - EVT:STRATEGY_SIGNAL_PRODUCED
+  - EVT:GATE_CHAIN_TRACE
+  - EVT:DECISION_TRACE_EMITTED
+  - EVT:TRADE_INTENT_PROPOSED
+  - EVT:TRADE_INTENT_REJECTED
+  - EVT:INTENT_DEFERRED
+  - EVT:DECISION_BLOCKED
+  - EVT:REGIME_DETECTED
+  - EVT:STRATEGY_DECISION_BLOCKED
+  - CMD:OPEN
+  - DEC:OPEN
+  - EVT:ORDER_ACK
+  - EVT:ORDER_REJECTED
+  - EVT:ORDER_STATE_CHANGED
+  - EVT:ORDER_PLACED
+  - EVT:TRADE_EXECUTED
+  - DEC:BATCH
+  - CMD:CLOSE
+  - DEC:CLOSE
+  - EVT:PORTFOLIO_STATE_UPDATED
+  - EVT:EXPOSURE_SUMMARY_UPDATED
+  - RESTORE:POSITION_TRACKING_SNAPSHOT_LOAD
+  - RESTORE:EXECUTION_POSITION_HYDRATE
+  - ORDER_INDEX:RESERVE_ENTRY
+  - ORDER_INDEX:UPSERT_OPEN
+  - ORDER_INDEX:ATTACH_EXCHANGE_ID
+  - ORDER_INDEX:MARK_TERMINAL
+  - ORDER_INDEX:CANCEL_RESERVATION
+  - HARDENING:TRADE_EXECUTED_SUPPRESSED
+  - HARDENING:TRADE_EXECUTED_IDENTITY_DEGRADED
+  - HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_HIT
+  - HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_MISS
+  - HARDENING:CMD_CLOSE_SUPPRESSED
+  - HARDENING:NON_CMD_DEC_CLOSE_SUPPRESSED
+  - RESTORE:EXECUTION_TRUTH_HARDENING_RESET
+  - CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_LOADED
+  - CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_EMPTY
+  - CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_LOAD_FAILED

@@ -60,12 +60,13 @@ logging:
 
 
 class TestConfigLoader:
-
     def test_init_default_config_dir(self):
         """Test ConfigLoader initialization with default config directory."""
         import sys
+
         sys.path.insert(0, str(Path(__file__).parent))
         from config_loader import ConfigLoader
+
         loader = ConfigLoader()
         expected_dir = Path(__file__).parent.parent.parent / "config" / "aurora"
         assert loader.config_dir == expected_dir
@@ -95,6 +96,7 @@ class TestConfigLoader:
         """Test YAML loading when PyYAML is not available."""
         # Patch HAS_YAML in the config_loader module
         import config_loader
+
         original_has_yaml = config_loader.HAS_YAML
         config_loader.HAS_YAML = False
         try:
@@ -117,7 +119,10 @@ class TestConfigLoader:
         loader = ConfigLoader()
 
         with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(ValueError, match="Required environment variable 'REQUIRED_VAR' is not set"):
+            with pytest.raises(
+                ValueError,
+                match="Required environment variable 'REQUIRED_VAR' is not set",
+            ):
                 loader._get_env_var("REQUIRED_VAR", required=True)
 
     def test_get_env_var_required_present(self):
@@ -128,13 +133,16 @@ class TestConfigLoader:
             value = loader._get_env_var("REQUIRED_VAR", required=True)
             assert value == "test_value"
 
-    @patch.dict(os.environ, {
-        "USE_TESTNET": "true",
-        "BINANCE_TESTNET_API_KEY": "test_key",
-        "BINANCE_TESTNET_API_SECRET": "test_secret",
-        "LOG_LEVEL": "DEBUG",
-        "TRADING_ENV": "test"
-    })
+    @patch.dict(
+        os.environ,
+        {
+            "USE_TESTNET": "true",
+            "BINANCE_TESTNET_API_KEY": "test_key",
+            "BINANCE_TESTNET_API_SECRET": "test_secret",
+            "LOG_LEVEL": "DEBUG",
+            "TRADING_ENV": "test",
+        },
+    )
     def test_load_config_testnet_success(self, temp_config_dir):
         """Test successful config loading for testnet environment."""
         loader = ConfigLoader(config_dir=temp_config_dir)
@@ -149,11 +157,14 @@ class TestConfigLoader:
         assert "config_version" in config.trading
         assert "config_version" in config.system
 
-    @patch.dict(os.environ, {
-        "USE_TESTNET": "false",
-        "BINANCE_MAINNET_API_KEY": "mainnet_key",
-        "BINANCE_MAINNET_API_SECRET": "mainnet_secret"
-    })
+    @patch.dict(
+        os.environ,
+        {
+            "USE_TESTNET": "false",
+            "BINANCE_MAINNET_API_KEY": "mainnet_key",
+            "BINANCE_MAINNET_API_SECRET": "mainnet_secret",
+        },
+    )
     def test_load_config_mainnet_success(self, temp_config_dir):
         """Test successful config loading for mainnet environment."""
         loader = ConfigLoader(config_dir=temp_config_dir)
@@ -163,16 +174,22 @@ class TestConfigLoader:
         assert config.binance_api_key == "mainnet_key"
         assert config.binance_api_secret == "mainnet_secret"
 
-    @patch.dict(os.environ, {
-        "USE_TESTNET": "false"
-        # No mainnet keys, should fallback to testnet
-    })
+    @patch.dict(
+        os.environ,
+        {
+            "USE_TESTNET": "false"
+            # No mainnet keys, should fallback to testnet
+        },
+    )
     def test_load_config_mainnet_fallback_to_testnet(self, temp_config_dir):
         """Test mainnet config falls back to testnet keys when mainnet keys missing."""
-        with patch.dict(os.environ, {
-            "BINANCE_TESTNET_API_KEY": "fallback_key",
-            "BINANCE_TESTNET_API_SECRET": "fallback_secret"
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                "BINANCE_TESTNET_API_KEY": "fallback_key",
+                "BINANCE_TESTNET_API_SECRET": "fallback_secret",
+            },
+        ):
             loader = ConfigLoader(config_dir=temp_config_dir)
             config = loader.load_config()
 
@@ -180,7 +197,9 @@ class TestConfigLoader:
             assert config.binance_api_key == "fallback_key"
             assert config.binance_api_secret == "fallback_secret"
 
-    @pytest.mark.skip(reason="Cannot test missing keys when real API keys are present in environment")
+    @pytest.mark.skip(
+        reason="Cannot test missing keys when real API keys are present in environment"
+    )
     def test_load_config_missing_required_keys(self, temp_config_dir, monkeypatch):
         """Test config loading fails when required API keys are missing."""
         pass
@@ -217,7 +236,7 @@ class TestAuroraConfig:
             binance_api_secret="test_secret",
             use_testnet=True,
             log_level="INFO",
-            trading_env="dev"
+            trading_env="dev",
         )
 
         assert config.trading == trading
@@ -240,7 +259,7 @@ class TestAuroraConfig:
             binance_api_secret="test_secret",
             use_testnet=False,
             log_level="DEBUG",
-            trading_env="prod"
+            trading_env="prod",
         )
 
         config_dict = config.to_dict()
@@ -261,14 +280,18 @@ class TestGlobalConfigFunctions:
         """Test get_config returns AuroraConfig object."""
         # Reset global config
         import config_loader
+
         config_loader._config_instance = None
 
         # Set required env vars
-        with patch.dict(os.environ, {
-            "USE_TESTNET": "true",
-            "BINANCE_TESTNET_API_KEY": "test_key",
-            "BINANCE_TESTNET_API_SECRET": "test_secret"
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                "USE_TESTNET": "true",
+                "BINANCE_TESTNET_API_KEY": "test_key",
+                "BINANCE_TESTNET_API_SECRET": "test_secret",
+            },
+        ):
             config = get_config()
             assert isinstance(config, AuroraConfig)
             assert config.binance_api_key == "test_key"
@@ -276,13 +299,17 @@ class TestGlobalConfigFunctions:
     def test_reload_config_returns_new_config(self, temp_config_dir):
         """Test reload_config forces new config creation."""
         import config_loader
+
         config_loader._config_instance = None
 
-        with patch.dict(os.environ, {
-            "USE_TESTNET": "true",
-            "BINANCE_TESTNET_API_KEY": "test_key",
-            "BINANCE_TESTNET_API_SECRET": "test_secret"
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                "USE_TESTNET": "true",
+                "BINANCE_TESTNET_API_KEY": "test_key",
+                "BINANCE_TESTNET_API_SECRET": "test_secret",
+            },
+        ):
             config1 = reload_config()
             config2 = reload_config()
 

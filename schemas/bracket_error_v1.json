@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aurora.local/schemas/bracket_error_v1.json",
+  "title": "Bracket Order API Error",
+  "description": "TP/SL order rejection with diagnostic info. Refs: https://developers.binance.com/docs/usdm-derivatives/errors",
+  "type": "object",
+  "properties": {
+    "error_code": {
+      "type": "string",
+      "enum": ["-2021", "-4116", "-4137", "-4164"],
+      "description": "Binance error code for bracket order"
+    },
+    "error_message": {
+      "type": "string",
+      "description": "Binance error message"
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Trading pair"
+    },
+    "order_type": {
+      "type": "string",
+      "enum": ["STOP_MARKET", "TAKE_PROFIT_MARKET", "STOP", "TAKE_PROFIT"],
+      "description": "Order type that failed"
+    },
+    "new_client_order_id": {
+      "type": "string",
+      "description": "Client order ID that was rejected"
+    },
+    "attempted_stop_price": {
+      "type": "number",
+      "description": "Stop price that was submitted"
+    },
+    "current_mark_price": {
+      "type": "number",
+      "description": "Mark price at time of rejection (for -2021 analysis)"
+    },
+    "position_side": {
+      "type": "string",
+      "enum": ["LONG", "SHORT"],
+      "description": "Position side (helps diagnose -2021 validation)"
+    },
+    "retry_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of retry attempts so far"
+    },
+    "next_action": {
+      "type": "string",
+      "enum": ["retry_with_offset", "retry_with_new_id", "fallback_to_limit", "abandon"],
+      "description": "Recommended recovery action"
+    },
+    "timestamp": {
+      "type": "integer",
+      "description": "Unix timestamp in milliseconds when error occurred"
+    }
+  },
+  "required": ["error_code", "symbol", "retry_count"],
+  "additionalProperties": false
+}

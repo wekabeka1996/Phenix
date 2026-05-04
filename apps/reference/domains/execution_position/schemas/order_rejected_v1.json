@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/order_rejected_v1.json",
+  "title": "EVT:ORDER_REJECTED payload schema",
+  "description": "Canonical additive contract for terminal non-fill order rejection events.",
+  "type": "object",
+  "required": [
+    "symbol",
+    "event_ts_ms",
+    "origin_class",
+    "identity_quality",
+    "canonical_identity_key",
+    "terminal_non_fill",
+    "terminal_state_kind",
+    "compatibility_aliases_retained"
+  ],
+  "properties": {
+    "symbol": { "type": "string", "minLength": 1 },
+    "rid": { "type": "string", "minLength": 1 },
+    "side": { "type": "string", "minLength": 1 },
+    "orderId": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "integer" }
+      ]
+    },
+    "order_id": { "type": "string", "minLength": 1 },
+    "clientOrderId": { "type": "string", "minLength": 1 },
+    "client_order_id": { "type": "string", "minLength": 1 },
+    "event_ts_ms": { "type": "integer", "minimum": 0 },
+    "ts_ms": { "type": "integer", "minimum": 0 },
+    "origin_class": {
+      "type": "string",
+      "enum": [
+        "execution_adapter",
+        "execution_internal",
+        "exchange_websocket",
+        "decision_alias",
+        "unknown"
+      ]
+    },
+    "identity_quality": {
+      "type": "string",
+      "enum": [
+        "order_identity_exact",
+        "order_identity_degraded",
+        "order_identity_weak"
+      ]
+    },
+    "canonical_identity_key": { "type": "string", "minLength": 1 },
+    "terminal_non_fill": { "const": true },
+    "terminal_state_kind": { "const": "REJECTED" },
+    "compatibility_aliases_retained": { "type": "boolean" },
+    "reject_reason_normalized": { "type": "string", "minLength": 1 },
+    "reject_reason_source": {
+      "type": "string",
+      "enum": [
+        "reject_reason_normalized",
+        "reject_reason",
+        "reason",
+        "reason_code",
+        "reason_code_reason_text"
+      ]
+    },
+    "reject_reason": { "type": "string" },
+    "reason": { "type": "string" },
+    "reason_code": { "type": "string" },
+    "reason_text": { "type": "string" },
+    "details": { "type": "string" },
+    "error_code": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "integer" }
+      ]
+    },
+    "exception_class": { "type": "string" },
+    "status": { "type": "string" },
+    "fallback": { "type": "string" },
+    "time_in_force": { "type": "string" }
+  },
+  "anyOf": [
+    { "required": ["orderId"] },
+    { "required": ["order_id"] },
+    { "required": ["clientOrderId"] },
+    { "required": ["client_order_id"] },
+    { "required": ["rid"] }
+  ],
+  "additionalProperties": true
+}

@@ -1,0 +1,120 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/order_fill_v1.json",
+  "title": "EVT:ORDER_FILL payload schema",
+  "description": "Additive fill payload contract for execution_position. Accepts backtest/live compatibility variants.",
+  "type": "object",
+  "required": [
+    "symbol"
+  ],
+  "properties": {
+    "orderId": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "integer" }
+      ]
+    },
+    "order_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "exchangeOrderId": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "integer" }
+      ]
+    },
+    "clientOrderId": {
+      "type": "string"
+    },
+    "client_order_id": {
+      "type": "string"
+    },
+    "rid": {
+      "type": "string"
+    },
+    "idempotent_key": {
+      "type": "string"
+    },
+    "symbol": {
+      "type": "string",
+      "minLength": 1
+    },
+    "side": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "order_type": {
+      "type": "string"
+    },
+    "time_in_force": {
+      "type": "string"
+    },
+    "quantity": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" }
+      ]
+    },
+    "qty": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" }
+      ]
+    },
+    "filled_qty": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" }
+      ]
+    },
+    "price": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" }
+      ]
+    },
+    "fee": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" }
+      ]
+    },
+    "commission": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" }
+      ]
+    },
+    "fee_asset": {
+      "type": "string"
+    },
+    "commissionAsset": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string"
+    },
+    "tradeId": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "integer" }
+      ]
+    },
+    "timestamp": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "ts": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "ts_ms": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": true
+}

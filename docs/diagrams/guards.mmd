@@ -1,0 +1,8 @@
+---
+title: Guards order
+---
+flowchart TD
+  Ops[Killswitch/QuietHours] --> Exposure[Exposure Guard]
+  Exposure --> Daily[Daily Loss/Drawdown]
+  Daily --> PostFill[Post-fill hold]
+  PostFill --> FailClosed[Fail-Closed reasons]

@@ -1,0 +1,59 @@
+{
+  "$id": "https://phenix.local/schemas/decision_blocked_v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Decision Blocked Event",
+  "description": "Schema for EVT:DECISION_BLOCKED events emitted when decision making halts before intent formation.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer"
+    },
+    "symbol": {
+      "type": "string"
+    },
+    "stage": {
+      "type": "string"
+    },
+    "ts_ms": {
+      "type": "integer"
+    },
+    "reason_code": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "why": {
+      "type": "string"
+    },
+    "rid": {
+      "type": ["string", "null"]
+    },
+    "span_id": {
+      "type": ["string", "null"]
+    },
+    "why_chain": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "details": {
+      "type": ["object", "null"],
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "symbol",
+    "stage",
+    "ts_ms",
+    "reason_code",
+    "reason",
+    "path",
+    "why"
+  ]
+}

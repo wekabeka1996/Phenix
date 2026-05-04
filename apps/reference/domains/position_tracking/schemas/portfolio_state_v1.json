@@ -1,5 +1,5 @@
 {
-  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "portfolio_state_v1.json",
   "title": "Portfolio State Updated Event",
   "description": "Schema for EVT:PORTFOLIO_STATE_UPDATED event payload describing complete portfolio state",
@@ -14,6 +14,20 @@
       "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
       "description": "Current equity/capital value in USD (string-encoded Decimal for precision)"
     },
+    "equity_free_usdt": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "description": "Available equity in USDT (string-encoded Decimal for precision)"
+    },
+    "equity_cross_usdt": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "description": "Cross margin equity in USDT (string-encoded Decimal for precision)"
+    },
+    "equity_ts": {
+      "type": "integer",
+      "description": "Timestamp when equity was calculated in milliseconds"
+    },
     "realized_pnl": {
       "type": "string",
       "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
@@ -22,7 +36,47 @@
     "unrealized_pnl": {
       "type": "string",
       "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
-      "description": "Current unrealized profit and loss in USD (string-encoded Decimal for precision)"
+      "description": "Current unrealized profit and loss in USD (string-encoded Decimal for precision). Calculated as sum((mark_price - entry_price) * quantity) for all positions."
+    },
+    "available_balance": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "description": "Available balance for new positions in USD (string-encoded Decimal for precision)"
+    },
+    "open_positions_usd": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "description": "Total notional value of open positions in USD (string-encoded Decimal for precision). EXP-FIX: Used by exposure gate."
+    },
+    "open_positions_margin_usd": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "description": "Total margin used by open positions in USD (string-encoded Decimal for precision). EXP-LEVERAGE-001: Margin-based exposure."
+    },
+    "positions_by_side": {
+      "type": "object",
+      "description": "EXP-DIRECTION: Per-side margin for directional ratio checks",
+      "properties": {
+        "long_margin": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+          "description": "Total margin used by long positions in USD (string-encoded Decimal)"
+        },
+        "short_margin": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+          "description": "Total margin used by short positions in USD (string-encoded Decimal)"
+        }
+      },
+      "required": [
+        "long_margin",
+        "short_margin"
+      ],
+      "additionalProperties": false
+    },
+    "positions_last_ts_ms": {
+      "type": "integer",
+      "description": "Timestamp of last position update in milliseconds. EXP-FIX: Used by AuroraBridge freshness gate to prevent race conditions."
     },
     "positions": {
       "type": "array",
@@ -44,6 +98,21 @@
             "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
             "description": "Average entry price for the position (string-encoded Decimal for precision)"
           },
+          "markPrice": {
+            "type": ["string", "null"],
+            "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+            "description": "Current mark price for the position when a fresh symbol mark is available"
+          },
+          "unrealizedPnl": {
+            "type": ["string", "null"],
+            "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+            "description": "Symbol-scoped unrealized profit and loss in USD when markPrice is available"
+          },
+          "unrealizedPnlPct": {
+            "type": ["string", "null"],
+            "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+            "description": "Symbol-scoped unrealized profit and loss percentage when markPrice is available"
+          },
           "venues": {
             "type": "array",
             "description": "List of venues where this position has exposure",
@@ -52,11 +121,19 @@
             }
           }
         },
-        "required": ["symbol", "net_position", "avg_entry_price", "venues"],
+        "required": [
+          "symbol",
+          "net_position",
+          "avg_entry_price",
+          "venues"
+        ],
         "additionalProperties": false
       }
     }
   },
-  "required": ["ts", "equity", "realized_pnl", "unrealized_pnl", "positions"],
-  "additionalProperties": false
+  "required": [
+    "positions",
+    "positions_last_ts_ms"
+  ],
+  "additionalProperties": true
 }

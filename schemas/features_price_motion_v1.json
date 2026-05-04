@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "features_price_motion_v1.json",
+  "title": "Features Price Motion Block (V1)",
+  "description": "Schema for additive-only price_motion block embedded into EVT:FEATURES_CALCULATED payload. All *_pct and ret_* are fractional returns (e.g., 0.001 = 0.1%).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "ret_10s": { "type": ["number", "null"], "description": "Return over 10s window: (p_now/p_then)-1" },
+    "ret_60s": { "type": ["number", "null"], "description": "Return over 60s window: (p_now/p_then)-1" },
+    "ret_300s": { "type": ["number", "null"], "description": "Return over 300s window: (p_now/p_then)-1" },
+    "vol_pct_10s": { "type": ["number", "null"], "minimum": 0, "description": "Robust realized vol proxy over 10s (fractional)" },
+    "vol_pct_60s": { "type": ["number", "null"], "minimum": 0, "description": "Robust realized vol proxy over 60s (fractional)" },
+    "vol_pct_300s": { "type": ["number", "null"], "minimum": 0, "description": "Robust realized vol proxy over 300s (fractional)" },
+    "pm_norm_10s": { "type": ["number", "null"], "minimum": -1, "maximum": 1, "description": "Normalized price motion over 10s: clip(ret/(k*vol), -1, 1)" },
+    "pm_norm_60s": { "type": ["number", "null"], "minimum": -1, "maximum": 1, "description": "Normalized price motion over 60s: clip(ret/(k*vol), -1, 1)" },
+    "pm_norm_300s": { "type": ["number", "null"], "minimum": -1, "maximum": 1, "description": "Normalized price motion over 300s: clip(ret/(k*vol), -1, 1)" }
+  },
+  "required": [
+    "ret_10s",
+    "ret_60s",
+    "ret_300s",
+    "vol_pct_10s",
+    "vol_pct_60s",
+    "vol_pct_300s",
+    "pm_norm_10s",
+    "pm_norm_60s",
+    "pm_norm_300s"
+  ]
+}

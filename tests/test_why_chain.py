@@ -1,4 +1,5 @@
 """Tests for why chain functionality"""
+
 from vfoundation.obs.why import append_why
 
 

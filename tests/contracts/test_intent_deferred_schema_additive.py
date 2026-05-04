@@ -1,0 +1,179 @@
+import json
+from pathlib import Path
+
+import pytest
+
+try:
+    from jsonschema import ValidationError, validate
+
+    HAS_JSONSCHEMA = True
+except ImportError:  # pragma: no cover
+    HAS_JSONSCHEMA = False
+    ValidationError = Exception
+
+
+SCHEMA_PATH = Path(__file__).resolve().parents[2] / "schemas" / "intent_deferred_v1.json"
+
+
+@pytest.fixture(scope="session")
+def intent_deferred_schema():
+    with open(SCHEMA_PATH, "r") as f:
+        return json.load(f)
+
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_legacy_payload_is_valid(intent_deferred_schema):
+    validate(
+        instance={
+            "symbol": "BTCUSDT",
+            "reason": "NRR-DATA-NOT-READY",
+            "missing": "risk",
+            "rid": "rid-123",
+        },
+        schema=intent_deferred_schema,
+    )
+
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_v1_payload_is_valid(intent_deferred_schema):
+    validate(
+        instance={
+            "retry_key": "flip:BTCUSDT:1702500000000",
+            "symbol": "BTCUSDT",
+            "reason": "FLIP_CLOSE_PENDING",
+            "reason_code": "FLIP_CLOSE_PENDING",
+            "next_allowed_ts": 1702500005000,
+            "attempt": 1,
+            "max_attempts": 5,
+            "original_event": {
+                "event_name": "EVT:MR_SIGNAL_PRODUCED",
+                "payload_min": {"symbol": "BTCUSDT", "side": "BUY"},
+            },
+        },
+        schema=intent_deferred_schema,
+    )
+
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_v1_payload_accepts_nested_price_ctx_object(intent_deferred_schema):
+    validate(
+        instance={
+            "retry_key": "flip:BTCUSDT:1702500000000",
+            "symbol": "BTCUSDT",
+            "reason": "FLIP_CLOSE_PENDING",
+            "reason_code": "FLIP_CLOSE_PENDING",
+            "next_allowed_ts": 1702500005000,
+            "attempt": 1,
+            "max_attempts": 5,
+            "original_event": {
+                "event_name": "EVT:STRATEGY_SIGNAL_PRODUCED",
+                "payload_min": {
+                    "symbol": "BTCUSDT",
+                    "side": "BUY",
+                    "price_ctx": {
+                        "entry_price": "25668.84",
+                        "stop_price": "25540.50",
+                        "target_price": "25925.53",
+                    },
+                },
+            },
+        },
+        schema=intent_deferred_schema,
+    )
+
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_retry_key_payload_requires_v1_fields(intent_deferred_schema):
+    with pytest.raises(ValidationError):
+        validate(
+            instance={
+                "retry_key": "flip:BTCUSDT:1702500000000",
+                "symbol": "BTCUSDT",
+                "reason": "FLIP_CLOSE_PENDING",
+            },
+            schema=intent_deferred_schema,
+        )
+
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_legacy_payload_accepts_digit_prefixed_symbol(intent_deferred_schema):
+    validate(
+        instance={
+            "symbol": "1000PEPEUSDT",
+            "reason": "NRR-RISK-STALE",
+            "rid": "rid-digit-legacy",
+        },
+        schema=intent_deferred_schema,
+    )
+
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_v1_payload_accepts_digit_prefixed_symbol(intent_deferred_schema):
+    validate(
+        instance={
+            "retry_key": "llm:1000PEPEUSDT:1702500200000",
+            "symbol": "1000PEPEUSDT",
+            "reason": "NRR-RISK-STALE",
+            "reason_code": "NRR-RISK-STALE",
+            "next_allowed_ts": 1702500205000,
+            "attempt": 1,
+            "max_attempts": 3,
+            "original_event": {
+                "event_name": "EVT:STRATEGY_SIGNAL_PRODUCED",
+                "payload_min": {"symbol": "1000PEPEUSDT", "side": "SELL"},
+            },
+        },
+        schema=intent_deferred_schema,
+    )
+
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_v1_payload_accepts_digit_prefixed_nested_symbol(intent_deferred_schema):
+    validate(
+        instance={
+            "retry_key": "llm:1000PEPEUSDT:1702500200000",
+            "symbol": "1000PEPEUSDT",
+            "reason": "NRR-RISK-STALE",
+            "reason_code": "NRR-RISK-STALE",
+            "next_allowed_ts": 1702500205000,
+            "attempt": 1,
+            "max_attempts": 3,
+            "original_event": {
+                "event_name": "EVT:STRATEGY_SIGNAL_PRODUCED",
+                "payload_min": {
+                    "symbol": "1000PEPEUSDT",
+                    "side": "SELL",
+                    "price_ctx": {"entry_price": "0.0035100"},
+                },
+            },
+        },
+        schema=intent_deferred_schema,
+    )
+
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_v1_payload_accepts_cmd_process_strategy_without_side(intent_deferred_schema):
+    validate(
+        instance={
+            "retry_key": "aurora-kernel:BTCUSDT:1702500200000",
+            "symbol": "BTCUSDT",
+            "reason": "REGIME_BLOCKED",
+            "reason_code": "REGIME_BLOCKED",
+            "next_allowed_ts": 1702500205000,
+            "attempt": 1,
+            "max_attempts": 3,
+            "original_event": {
+                "event_name": "CMD:PROCESS_STRATEGY",
+                "payload_min": {
+                    "symbol": "BTCUSDT",
+                    "tf_sec": 300,
+                    "bar_close_ts": 1702500200000,
+                    "features": {"price": "65000"},
+                    "warmup": {"full_ready": True},
+                    "regime": {"regime": "TREND_UP"},
+                },
+            },
+        },
+        schema=intent_deferred_schema,
+    )
+
