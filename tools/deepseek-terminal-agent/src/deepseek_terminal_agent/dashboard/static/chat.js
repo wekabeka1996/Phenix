@@ -1070,55 +1070,82 @@ function applyBoardPanelState(panelKey, panelState) {
           }
       });
   }
-  var menuDrawerBtn = document.getElementById('simple-menu-drawer');
-  var advancedDrawer = document.getElementById('simple-chat-advanced-drawer');
-  var menuLeftDrawerBtn = document.getElementById('simple-menu-left-drawer');
   var leftDrawer = document.getElementById('simple-chat-left-drawer');
-  
-  function closeAllSimpleDrawers() {
-      if (advancedDrawer) advancedDrawer.classList.remove('is-open');
-      if (leftDrawer) leftDrawer.classList.remove('is-open');
+  var rightDrawer = document.getElementById('simple-chat-advanced-drawer');
+  var menuLeftDrawerBtn = document.getElementById('simple-menu-left-drawer');
+  var menuRightDrawerBtn = document.getElementById('simple-menu-drawer');
+  var leftCollapseBtn = document.getElementById('simple-chat-left-drawer-collapse');
+  var rightCollapseBtn = document.getElementById('simple-chat-right-drawer-collapse');
+
+  var simpleChatDrawerState = { left: false, right: false };
+  try {
+      var saved = localStorage.getItem('deepseekAgentOS.simpleChat.drawers.v1');
+      if (saved) simpleChatDrawerState = JSON.parse(saved);
+  } catch(e) {}
+
+  function updateSimpleChatDrawersUI() {
+      if (leftDrawer) {
+          if (simpleChatDrawerState.left) {
+              leftDrawer.classList.add('is-open');
+              if (leftCollapseBtn) leftCollapseBtn.textContent = '❮';
+          } else {
+              leftDrawer.classList.remove('is-open');
+              if (leftCollapseBtn) leftCollapseBtn.textContent = '❯';
+          }
+      }
+      if (rightDrawer) {
+          if (simpleChatDrawerState.right) {
+              rightDrawer.classList.add('is-open');
+              if (rightCollapseBtn) rightCollapseBtn.textContent = '❯';
+          } else {
+              rightDrawer.classList.remove('is-open');
+              if (rightCollapseBtn) rightCollapseBtn.textContent = '❮';
+          }
+      }
+      localStorage.setItem('deepseekAgentOS.simpleChat.drawers.v1', JSON.stringify(simpleChatDrawerState));
   }
 
-  if (menuDrawerBtn && advancedDrawer) {
-      menuDrawerBtn.addEventListener('click', function() {
-          var wasOpen = advancedDrawer.classList.contains('is-open');
-          closeAllSimpleDrawers();
-          if (!wasOpen) advancedDrawer.classList.add('is-open');
-      });
-      var drawerCloseBtn = document.getElementById('simple-chat-drawer-close');
-      if (drawerCloseBtn) {
-          drawerCloseBtn.addEventListener('click', function() {
-              advancedDrawer.classList.remove('is-open');
-          });
-      }
-      var rightCollapseBtn = document.getElementById('simple-chat-right-drawer-collapse');
-      if (rightCollapseBtn) {
-          rightCollapseBtn.addEventListener('click', function() {
-              advancedDrawer.classList.remove('is-open');
-          });
-      }
-  }
-
-  if (menuLeftDrawerBtn && leftDrawer) {
+  if (menuLeftDrawerBtn) {
       menuLeftDrawerBtn.addEventListener('click', function() {
-          var wasOpen = leftDrawer.classList.contains('is-open');
-          closeAllSimpleDrawers();
-          if (!wasOpen) leftDrawer.classList.add('is-open');
+          simpleChatDrawerState.left = !simpleChatDrawerState.left;
+          updateSimpleChatDrawersUI();
       });
-      var leftDrawerCloseBtn = document.getElementById('simple-chat-left-drawer-close');
-      if (leftDrawerCloseBtn) {
-          leftDrawerCloseBtn.addEventListener('click', function() {
-              leftDrawer.classList.remove('is-open');
-          });
-      }
-      var leftCollapseBtn = document.getElementById('simple-chat-left-drawer-collapse');
-      if (leftCollapseBtn) {
-          leftCollapseBtn.addEventListener('click', function() {
-              leftDrawer.classList.remove('is-open');
-          });
-      }
   }
+  if (leftCollapseBtn) {
+      leftCollapseBtn.addEventListener('click', function() {
+          simpleChatDrawerState.left = !simpleChatDrawerState.left;
+          updateSimpleChatDrawersUI();
+      });
+  }
+  var leftCloseBtn = document.getElementById('simple-chat-left-drawer-close');
+  if (leftCloseBtn) {
+      leftCloseBtn.addEventListener('click', function() {
+          simpleChatDrawerState.left = false;
+          updateSimpleChatDrawersUI();
+      });
+  }
+
+  if (menuRightDrawerBtn) {
+      menuRightDrawerBtn.addEventListener('click', function() {
+          simpleChatDrawerState.right = !simpleChatDrawerState.right;
+          updateSimpleChatDrawersUI();
+      });
+  }
+  if (rightCollapseBtn) {
+      rightCollapseBtn.addEventListener('click', function() {
+          simpleChatDrawerState.right = !simpleChatDrawerState.right;
+          updateSimpleChatDrawersUI();
+      });
+  }
+  var rightCloseBtn = document.getElementById('simple-chat-drawer-close');
+  if (rightCloseBtn) {
+      rightCloseBtn.addEventListener('click', function() {
+          simpleChatDrawerState.right = false;
+          updateSimpleChatDrawersUI();
+      });
+  }
+  
+  updateSimpleChatDrawersUI();
   var simpleInput = document.getElementById('simple-chat-input');
   var simpleSendBtn = document.getElementById('simple-chat-send-btn');
   
@@ -1300,6 +1327,9 @@ function applyBoardPanelState(panelKey, panelState) {
         }
       });
       applyLayoutState(state.layoutState || loadLayoutState(), { skipSave: !!options.skipSave });
+      if (isCockpitEmptyShellMode()) {
+        clearCockpitCentralWorkspace();
+      }
     }
   }
 
@@ -1363,7 +1393,37 @@ function applyBoardPanelState(panelKey, panelState) {
     }
   }
 
+  function isCockpitEmptyShellMode() {
+    return state.layoutMode === 'cockpit';
+  }
+
+  function clearCockpitCentralWorkspace() {
+    if (!isCockpitEmptyShellMode()) return;
+    const bodies = [
+      'scenario-rail-body',
+      'chat-thread-panel',
+      'reasoning-body',
+      'output-panel-body',
+      'composer-body'
+    ];
+    bodies.forEach(function(id) {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = '';
+    });
+    // Clear badges in headers too
+    const badges = [
+      'scenario-section-status',
+      'chat-stream-status',
+      'reasoning-coverage-badge'
+    ];
+    badges.forEach(function(id) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = '';
+    });
+  }
+
   function setOutputSurface(tone, summary, detail) {
+    if (isCockpitEmptyShellMode()) return; // Cleanup requirement
     if (outputStatusBadge) {
       outputStatusBadge.textContent = String(tone || "idle").toUpperCase();
       applyBadgeTone(outputStatusBadge, tone || "idle");
@@ -1478,6 +1538,7 @@ function applyBoardPanelState(panelKey, panelState) {
   }
 
   function renderRouter(session, artifacts, subagents) {
+    if (isCockpitEmptyShellMode()) return; // Cleanup requirement
     const metadata = session && session.metadata ? session.metadata : {};
     const route = metadata.last_task_route || {};
     const attachedIds = Array.isArray(metadata.attached_artifact_ids) ? metadata.attached_artifact_ids : [];
@@ -1691,6 +1752,7 @@ function applyBoardPanelState(panelKey, panelState) {
   }
 
   function updateScenarioButtons() {
+    if (isCockpitEmptyShellMode()) return; // Cleanup requirement
     const buttons = getScenarioButtons();
     if (scenarioSectionStatus) {
       scenarioSectionStatus.textContent = String(buttons.length) + ' templates';
@@ -1709,6 +1771,7 @@ function applyBoardPanelState(panelKey, panelState) {
   }
 
   function renderScenarioPreview(playbookId) {
+    if (isCockpitEmptyShellMode()) return; // Cleanup requirement
     if (!playbookId) {
       if (scenarioPreviewEmpty) {
         scenarioPreviewEmpty.classList.remove('hidden');
@@ -2043,6 +2106,7 @@ function applyBoardPanelState(panelKey, panelState) {
   }
 
   function renderWorkTrace(detail) {
+    if (isCockpitEmptyShellMode()) return; // Cleanup requirement
     const nodes = buildTraceNodes(detail);
     if (reasoningCoverageBadge) {
       const eventCount = detail && Array.isArray(detail.events) ? detail.events.length : 0;
@@ -2058,6 +2122,7 @@ function applyBoardPanelState(panelKey, panelState) {
   }
 
   function renderResultArtifacts(artifacts, subagents) {
+    if (isCockpitEmptyShellMode()) return; // Cleanup requirement
     const items = [];
     (Array.isArray(artifacts) ? artifacts : []).forEach(function (artifact) {
       items.push([
@@ -2135,14 +2200,28 @@ function applyBoardPanelState(panelKey, panelState) {
           if (item.status === 'success' || item.status === 'completed') out.status = 'success';
           else if (item.status === 'failed' || item.status === 'error') out.status = 'failed';
       } else if (item.kind === 'event') {
-          var type = (item.title || item.source || '').toLowerCase();
-          if (type.indexOf('tool') > -1 || type.indexOf('terminal') > -1 || (item.body || '').indexOf('tool') > -1) {
+          var type = (item.title || item.source || item.event_type || '').toLowerCase();
+          var bodyStr = item.body || item.message || '';
+          
+          if (type.indexOf('tool') > -1 || type.indexOf('terminal') > -1 || type.indexOf('command') > -1) {
               out.label = "Інструмент";
-              var bodyStr = item.body || '';
               var firstLine = bodyStr.split('\n')[0].trim();
               out.summary = firstLine.substring(0, 60) || "Виконується команда...";
-              if (item.status === 'success' || item.status === 'completed') out.status = 'success';
-              else if (item.status === 'failed' || item.status === 'error') out.status = 'failed';
+          } else if (type.indexOf('search') > -1) {
+              out.label = "Пошук";
+              out.summary = bodyStr;
+          } else if (type.indexOf('read') > -1) {
+              out.label = "Читання";
+              out.summary = bodyStr;
+          } else if (type.indexOf('patch') > -1 || type.indexOf('write') > -1) {
+              out.label = "Зміна";
+              out.summary = bodyStr;
+          } else if (type.indexOf('test') > -1) {
+              out.label = "Тест";
+              out.summary = bodyStr;
+          } else if (type.indexOf('subagent') > -1) {
+              out.label = "Субагент";
+              out.summary = bodyStr;
           } else if (type.indexOf('artifact') > -1) {
               out.label = "Артефакт";
               out.summary = item.title || "Оновлено артефакт";
@@ -2151,8 +2230,12 @@ function applyBoardPanelState(panelKey, panelState) {
               if (item.status === 'running') out.summary = "Очікування відповіді моделі...";
               else if (item.status === 'success') { out.summary = "Дію завершено"; out.status = 'success'; }
               else if (item.status === 'failed') { out.summary = "Не вдалося виконати дію"; out.status = 'failed'; }
-              else out.summary = item.title || item.status || "Обробка...";
+              else out.summary = item.title || item.message || item.status || "Обробка...";
           }
+
+          if (item.status === 'success' || item.status === 'completed') out.status = 'success';
+          else if (item.status === 'failed' || item.status === 'error') out.status = 'failed';
+          else if (item.status === 'running') out.status = 'running';
       }
       
       if (item.traceSummary) {
@@ -2163,16 +2246,20 @@ function applyBoardPanelState(panelKey, panelState) {
 
   function renderSimpleChatThread(detail) {
     var simpleThread = document.getElementById('simple-chat-thread');
+    var activityBody = document.getElementById('simple-chat-activity-body');
     if (!simpleThread) return;
     
     var items = buildTimelineItems(detail || {});
     if (!items.length) {
       simpleThread.innerHTML = '<div class="chat-empty">No messages yet. Write a prompt below to start.</div>';
+      if (activityBody) activityBody.innerHTML = '<div class="mini-empty">Поки що немає подій...</div>';
       return;
     }
     
     var html = [];
+    var activityHtml = [];
     var currentGroup = [];
+    var lastUsefulEvent = null;
     
     var isRunning = state.currentSession && state.currentSession.session && state.currentSession.session.status && state.currentSession.session.status.match(/running|active/i);
 
@@ -2182,10 +2269,17 @@ function applyBoardPanelState(panelKey, panelState) {
        html.push('<div class="simple-chat-details"><details' + isOpen + '><summary>▸ Деталі роботи агента (' + currentGroup.length + ' подій)</summary><div class="simple-chat-details__body">');
        currentGroup.forEach(function(ev) {
           var norm = normalizeSimpleTraceEvent(ev);
-          html.push('<div class="simple-chat-trace-row simple-chat-trace--' + norm.status + '">');
-          html.push('<span class="simple-chat-trace-label">' + escapeHtml(norm.label) + '</span>');
-          html.push('<span class="simple-chat-trace-summary">' + escapeHtml(norm.summary) + '</span>');
-          html.push('</div>');
+          var row = '<div class="simple-chat-trace-row simple-chat-trace--' + norm.status + '">' +
+                    '<span class="simple-chat-trace-label">' + escapeHtml(norm.label) + '</span>' +
+                    '<span class="simple-chat-trace-summary">' + escapeHtml(norm.summary) + '</span>' +
+                    '</div>';
+          html.push(row);
+          activityHtml.push(row);
+          
+          // Track useful event for summary
+          if (norm.label !== "Агент" || norm.status === "running") {
+              lastUsefulEvent = norm;
+          }
        });
        html.push('</div></details></div>');
        currentGroup = [];
@@ -2208,7 +2302,15 @@ function applyBoardPanelState(panelKey, panelState) {
     if (isRunning) {
         html.push('<div class="simple-chat-message simple-chat-message--assistant simple-chat-assistant-placeholder">');
         html.push('<div class="simple-chat-spinner"></div>');
-        html.push('<div class="simple-chat-message__content">Агент працює…</div>');
+        html.push('<div class="simple-chat-message__content">');
+        html.push('Агент працює…');
+        if (lastUsefulEvent) {
+            html.push('<div class="simple-chat-useful-summary">');
+            html.push('<span class="badge badge-info">' + escapeHtml(lastUsefulEvent.label) + '</span>');
+            html.push('<span>' + escapeHtml(lastUsefulEvent.summary) + '</span>');
+            html.push('</div>');
+        }
+        html.push('</div>');
         html.push('</div>');
     }
     
@@ -2220,12 +2322,15 @@ function applyBoardPanelState(panelKey, panelState) {
     });
     
     simpleThread.innerHTML = html.join('');
+    if (activityBody) {
+        activityBody.innerHTML = activityHtml.length ? activityHtml.join('') : '<div class="mini-empty">Поки що немає подій...</div>';
+        activityBody.scrollTop = activityBody.scrollHeight;
+    }
     
-    // Smart auto-scroll: if user is not near bottom, show "New events" button.
-    // For V1, always scroll to bottom.
+    // Smart auto-scroll
     simpleThread.scrollTop = simpleThread.scrollHeight;
     
-    // Auto-dispatch queue if not running anymore
+    // Auto-dispatch queue
     if (!isRunning && state.simpleChatQueue.length > 0 && !state.isDispatchingQueue) {
         state.isDispatchingQueue = true;
         setTimeout(function() {
@@ -2238,7 +2343,6 @@ function applyBoardPanelState(panelKey, panelState) {
         }, 500);
     }
     
-    // Call update composer to sync state if it changed externally
     if (typeof updateSimpleChatComposer === 'function') updateSimpleChatComposer();
 }
 
@@ -2247,6 +2351,7 @@ function renderThread(detail) {
       return;
     }
     renderSimpleChatThread(detail);
+    if (isCockpitEmptyShellMode()) return; // Cleanup requirement
     const items = buildTimelineItems(detail || {});
     if (chatStreamStatus) {
       chatStreamStatus.textContent = String(items.length) + ' items';
@@ -2362,6 +2467,7 @@ function renderThread(detail) {
   }
 
   function renderSubagents(subagents, artifacts, session) {
+    if (isCockpitEmptyShellMode()) return; // Cleanup requirement
     const runs = Array.isArray(subagents) ? subagents : [];
     const metadata = session && session.metadata ? session.metadata : {};
     const attachedIds = Array.isArray(metadata.attached_artifact_ids) ? metadata.attached_artifact_ids : [];
@@ -2429,6 +2535,7 @@ function renderThread(detail) {
   }
 
   function renderCurrentRun(session, subagents) {
+    if (isCockpitEmptyShellMode()) return; // Cleanup requirement
     const runs = Array.isArray(subagents) ? subagents : [];
     const activeRun = runs.find(function (run) {
       return ["running", "queued", "active"].indexOf(String(run.status || "").toLowerCase()) >= 0;
@@ -4230,4 +4337,24 @@ function renderThread(detail) {
     }
   }
 
+  // Simple Chat Activity Toggle
+  var activityToggle = document.getElementById('simple-chat-activity-toggle');
+  var activityPanel = document.getElementById('simple-chat-activity-panel');
+  var closeActivityBtn = document.getElementById('close-activity-btn');
+  if (activityToggle && activityPanel) {
+    activityToggle.addEventListener('click', function() {
+        var hidden = activityPanel.classList.toggle('hidden');
+        activityToggle.classList.toggle('is-active', !hidden);
+        if (!hidden) {
+            var activityBody = document.getElementById('simple-chat-activity-body');
+            if (activityBody) activityBody.scrollTop = activityBody.scrollHeight;
+        }
+    });
+  }
+  if (closeActivityBtn && activityPanel && activityToggle) {
+    closeActivityBtn.addEventListener('click', function() {
+        activityPanel.classList.add('hidden');
+        activityToggle.classList.remove('is-active');
+    });
+  }
 })();

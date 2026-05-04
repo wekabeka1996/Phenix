@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import jsonschema
 import yaml
 
 
@@ -44,6 +45,28 @@ RECOMMENDED_SCHEMA_PATH = (
     PROJECT_ROOT / "apps" / "reference" / "domains" / "execution_position"
     / "schemas" / "position_policy_sidecar_recommended_v1.json"
 )
+COMMON_PEAK_GIVEBACK_SCHEMA_PATH = (
+    PROJECT_ROOT
+    / "apps"
+    / "reference"
+    / "domains"
+    / "execution_position"
+    / "contract_layer"
+    / "schemas"
+    / "common"
+    / "peak_giveback_snapshot_v1.json"
+)
+
+
+def _validate_with_local_refs(schema: dict, payload: dict) -> None:
+    common_schema = json.loads(
+        COMMON_PEAK_GIVEBACK_SCHEMA_PATH.read_text(encoding="utf-8")
+    )
+    resolver = jsonschema.RefResolver.from_schema(
+        schema,
+        store={common_schema["$id"]: common_schema},
+    )
+    jsonschema.validate(instance=payload, schema=schema, resolver=resolver)
 
 
 def test_position_policy_sidecar_verbs_are_registered_with_schema_paths() -> None:
@@ -102,6 +125,11 @@ def _sidecar_config_snapshot() -> dict:
             "edge_arm_usd": 25.0,
             "giveback_trigger_pct": 50.0,
         },
+        "shadow_percent_notional_arm": {
+            "enabled": True,
+            "candidate_pcts": [0.02, 0.05, 0.07],
+            "candidate_unit": "percent",
+        },
         "freshness": {
             "portfolio_max_age_ms": 15_000,
             "features_max_age_ms": 15_000,
@@ -129,6 +157,27 @@ def _peak_giveback_snapshot(*, null_economics: bool = False) -> dict:
         "giveback_trigger_pct": 50.0,
         "threshold_crossed": True,
         "peak_giveback_state": "peak_giveback_threshold_met",
+        "peak_giveback_shadow_arms": {
+            "percent_notional": {
+                "enabled": True,
+                "candidate_unit": "percent",
+                "giveback_trigger_pct": 50.0,
+                "candidates": [
+                    {
+                        "candidate_pct": 0.02,
+                        "arm_threshold_usd": 0.8,
+                        "is_armed": True,
+                        "first_arm_ts_ms": 1700000000001,
+                        "peak_edge_usd": 30.0,
+                        "giveback_pct": 66.6666666667,
+                        "threshold_met_under_current_giveback_trigger_pct": True,
+                        "would_trigger": True,
+                        "state": "shadow_percent_notional_threshold_met",
+                        "null_reasons": {},
+                    }
+                ],
+            }
+        },
         "reason_codes": ["peak_giveback_armed", "peak_giveback_threshold_met"],
         "null_reasons": {},
     }
@@ -142,6 +191,32 @@ def _peak_giveback_snapshot(*, null_economics: bool = False) -> dict:
                 "giveback_pct": None,
                 "threshold_crossed": None,
                 "peak_giveback_state": "peak_giveback_unavailable_economics_missing",
+                "peak_giveback_shadow_arms": {
+                    "percent_notional": {
+                        "enabled": True,
+                        "candidate_unit": "percent",
+                        "giveback_trigger_pct": 50.0,
+                        "candidates": [
+                            {
+                                "candidate_pct": 0.02,
+                                "arm_threshold_usd": None,
+                                "is_armed": False,
+                                "first_arm_ts_ms": None,
+                                "peak_edge_usd": 0.0,
+                                "giveback_pct": None,
+                                "threshold_met_under_current_giveback_trigger_pct": None,
+                                "would_trigger": None,
+                                "state": "shadow_percent_notional_unavailable_economics_missing",
+                                "null_reasons": {
+                                    "arm_threshold_usd": "missing_position_notional_usdt",
+                                    "giveback_pct": "missing_unrealized_pnl_usdt",
+                                    "threshold_met_under_current_giveback_trigger_pct": "missing_giveback_pct",
+                                },
+                            }
+                        ],
+                        "null_reason": "missing_unrealized_pnl_usdt",
+                    }
+                },
                 "reason_codes": ["peak_giveback_unavailable_economics_missing"],
                 "null_reasons": {
                     "mark_price": "missing_mark_price",
@@ -234,15 +309,11 @@ def _close_request_payload(*, policy_source: str = "position_policy_sidecar") ->
 
 
 def test_mode_active_payload_conforms_to_schema_with_sidecar_config_snapshot() -> None:
-    import jsonschema
-
     schema = json.loads(MODE_ACTIVE_SCHEMA_PATH.read_text(encoding="utf-8"))
-    jsonschema.validate(_mode_active_payload(), schema)
+    _validate_with_local_refs(schema, _mode_active_payload())
 
 
 def test_sidecar_policy_payloads_conform_to_schema_with_peak_giveback_snapshot() -> None:
-    import jsonschema
-
     for schema_path, event_type in (
         (EVALUATED_SCHEMA_PATH, "POSITION_POLICY_SIDECAR_EVALUATED"),
         (SCORES_SCHEMA_PATH, "POSITION_POLICY_SIDECAR_SCORES"),
@@ -250,38 +321,33 @@ def test_sidecar_policy_payloads_conform_to_schema_with_peak_giveback_snapshot()
         (RECOMMENDED_SCHEMA_PATH, "POSITION_POLICY_SIDECAR_RECOMMENDED"),
     ):
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
-        jsonschema.validate(_policy_payload(event_type=event_type), schema)
+        _validate_with_local_refs(
+            schema, _policy_payload(event_type=event_type))
 
 
 def test_close_request_payload_conforms_to_schema_base_source() -> None:
     """Original scoring path: policy_source = 'position_policy_sidecar'."""
-    import jsonschema
-
     schema = json.loads(CLOSE_REQUEST_SCHEMA_PATH.read_text(encoding="utf-8"))
     payload = _close_request_payload(policy_source="position_policy_sidecar")
-    jsonschema.validate(payload, schema)  # must not raise
+    _validate_with_local_refs(schema, payload)
 
 
 def test_close_request_payload_conforms_to_schema_peak_giveback_source() -> None:
     """R7A peak-giveback path: policy_source = 'position_policy_sidecar:peak_giveback'."""
-    import jsonschema
-
     schema = json.loads(CLOSE_REQUEST_SCHEMA_PATH.read_text(encoding="utf-8"))
     payload = _close_request_payload(
         policy_source="position_policy_sidecar:peak_giveback")
-    jsonschema.validate(payload, schema)  # must not raise
+    _validate_with_local_refs(schema, payload)
 
 
 def test_close_request_schema_rejects_peak_giveback_snapshot_without_null_reasons() -> None:
-    import jsonschema
-
     schema = json.loads(CLOSE_REQUEST_SCHEMA_PATH.read_text(encoding="utf-8"))
     payload = _close_request_payload(
         policy_source="position_policy_sidecar:peak_giveback")
     del payload["peak_giveback_snapshot"]["null_reasons"]
 
     try:
-        jsonschema.validate(payload, schema)
+        _validate_with_local_refs(schema, payload)
         raise AssertionError(
             "Schema should reject peak_giveback_snapshot without null_reasons")
     except jsonschema.ValidationError:
@@ -290,14 +356,12 @@ def test_close_request_schema_rejects_peak_giveback_snapshot_without_null_reason
 
 def test_close_request_schema_rejects_invalid_policy_source() -> None:
     """Schema must reject policy_source values outside the sidecar namespace."""
-    import jsonschema
-
     schema = json.loads(CLOSE_REQUEST_SCHEMA_PATH.read_text(encoding="utf-8"))
 
     for bad_source in ("random_policy", "", "position_policy_sidecar:", "roi_policy"):
         payload = _close_request_payload(policy_source=bad_source)
         try:
-            jsonschema.validate(payload, schema)
+            _validate_with_local_refs(schema, payload)
             raise AssertionError(
                 f"Schema should reject policy_source={bad_source!r}")
         except jsonschema.ValidationError:

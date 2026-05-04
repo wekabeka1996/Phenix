@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from apps.reference.core.time import get_clock
 from apps.reference.telemetry.order_logger import order_logger
+from apps.reference.telemetry.shadow_journal import get_shadow_journal
 from ...guardian.cancel_submission_adapter import (
     CANCEL_SUBMISSION_CONTRACT,
     CANCEL_SUBMISSION_PATH,
@@ -27,6 +28,13 @@ from .close_submission_adapter import (
     CloseSubmissionAdapterError,
     CloseSubmissionPayload,
     build_close_submission_trace_ref,
+)
+from apps.reference.domains.execution_position.telemetry.close_shadow_comparison import (
+    build_close_boundary_comparison,
+    build_close_submission_comparison,
+    build_close_submission_reject_comparison,
+    build_close_truth_gate_comparison,
+    emit_close_shadow_comparison,
 )
 from .tracked_close_teardown_cancel_bridge import (
     TRACKED_CLOSE_TEARDOWN_CANCEL_CONTRACT,
@@ -473,6 +481,55 @@ class CloseExecutor:
             except Exception:
                 pass
 
+    def _build_close_submit_boundary_payload(
+        self,
+        *,
+        event_type: str,
+        trace_kind: str,
+        why: str,
+        rid: str,
+        decision: "Message",
+        submission: CloseSubmissionPayload,
+        outcome: Optional[str] = None,
+        adapter_response: Any = None,
+        error: Exception | None = None,
+    ) -> dict[str, Any]:
+        metadata: dict[str, Any] = {
+            "contract": CLOSE_SUBMISSION_CONTRACT,
+            "path": CLOSE_SUBMISSION_PATH,
+            "partial_close": submission.partial_close,
+            "trace_kind": trace_kind,
+        }
+        if outcome is not None:
+            metadata["outcome"] = outcome
+        if error is not None:
+            metadata["exception_class"] = type(error).__name__
+            metadata["exception_message"] = str(error)
+            exchange_code = getattr(error, "binance_code", None)
+            if exchange_code is None:
+                exchange_code = getattr(error, "code", None)
+            if exchange_code is not None:
+                metadata["exchange_code"] = exchange_code
+
+        payload: dict[str, Any] = {
+            "rid": rid,
+            "event_type": event_type,
+            "symbol": submission.symbol,
+            "side": submission.side,
+            "quantity": float(submission.quantity),
+            "client_order_id": submission.client_order_id,
+            "source_fsm": "CloseExecutor",
+            "order_kind": "CLOSE",
+            "order_type": "MARKET",
+            "why": why,
+            "timestamp": get_clock().now_ms(),
+            "data_ref": list(getattr(decision, "data_ref", None) or []),
+            "metadata": metadata,
+        }
+        if adapter_response is not None:
+            payload["adapter_response"] = adapter_response
+        return payload
+
     def _log_close_submission_reject(
         self,
         *,
@@ -495,6 +552,33 @@ class CloseExecutor:
             reason,
             details,
         )
+        journal = get_shadow_journal(self)
+        if journal is not None:
+            try:
+                comparison = build_close_submission_reject_comparison(
+                    decision=decision,
+                    partial_close=partial_close,
+                    reason=reason,
+                    detail=str(details),
+                )
+                emit_close_shadow_comparison(
+                    journal=journal,
+                    comparison=comparison,
+                    event_name="EVT:CLOSE_SHADOW_SUBMISSION_REJECT",
+                    source_component="apps.reference.domains.execution_position.close_executor",
+                    source_path="execution:close_shadow_submission_reject",
+                    event_origin_type="execution",
+                    truth_owner="CloseExecutor",
+                    rid=getattr(decision, "rid", None),
+                    payload=decision.pld or {},
+                    notes=["stage=submission", "comparison_outcome=reject"],
+                )
+            except Exception:
+                LOG.warning(
+                    "CLOSE_SHADOW_SUBMISSION_REJECT_COMPARE_FAILURE: rid=%s",
+                    getattr(decision, "rid", None),
+                    exc_info=True,
+                )
 
     async def _submit_close_order(
         self,
@@ -513,40 +597,17 @@ class CloseExecutor:
             adapter_response: Any = None,
             error: Exception | None = None,
         ) -> None:
-            metadata: dict[str, Any] = {
-                "contract": CLOSE_SUBMISSION_CONTRACT,
-                "path": CLOSE_SUBMISSION_PATH,
-                "partial_close": submission.partial_close,
-                "trace_kind": trace_kind,
-            }
-            if outcome is not None:
-                metadata["outcome"] = outcome
-            if error is not None:
-                metadata["exception_class"] = type(error).__name__
-                metadata["exception_message"] = str(error)
-                exchange_code = getattr(error, "binance_code", None)
-                if exchange_code is None:
-                    exchange_code = getattr(error, "code", None)
-                if exchange_code is not None:
-                    metadata["exchange_code"] = exchange_code
-
-            payload = {
-                "rid": rid,
-                "event_type": event_type,
-                "symbol": submission.symbol,
-                "side": submission.side,
-                "quantity": float(submission.quantity),
-                "client_order_id": submission.client_order_id,
-                "source_fsm": "CloseExecutor",
-                "order_kind": "CLOSE",
-                "order_type": "MARKET",
-                "why": why,
-                "timestamp": get_clock().now_ms(),
-                "data_ref": list(getattr(decision, "data_ref", None) or []),
-                "metadata": metadata,
-            }
-            if adapter_response is not None:
-                payload["adapter_response"] = adapter_response
+            payload = self._build_close_submit_boundary_payload(
+                event_type=event_type,
+                trace_kind=trace_kind,
+                why=why,
+                rid=rid,
+                decision=decision,
+                submission=submission,
+                outcome=outcome,
+                adapter_response=adapter_response,
+                error=error,
+            )
 
             try:
                 order_logger.write(payload)
@@ -563,6 +624,41 @@ class CloseExecutor:
             trace_kind="CLOSE_SUBMIT_ATTEMPT",
             why="close_submit_attempt",
         )
+        journal = get_shadow_journal(self)
+        if journal is not None:
+            try:
+                boundary_payload = self._build_close_submit_boundary_payload(
+                    event_type="ORDER_INTENT",
+                    trace_kind="CLOSE_SUBMIT_ATTEMPT",
+                    why="close_submit_attempt",
+                    rid=rid,
+                    decision=decision,
+                    submission=submission,
+                )
+                comparison = build_close_boundary_comparison(
+                    decision=decision,
+                    submission=submission,
+                    boundary_payload=boundary_payload,
+                    trace_kind="CLOSE_SUBMIT_ATTEMPT",
+                )
+                emit_close_shadow_comparison(
+                    journal=journal,
+                    comparison=comparison,
+                    event_name="EVT:CLOSE_SHADOW_SUBMIT_BOUNDARY",
+                    source_component="apps.reference.domains.execution_position.close_executor",
+                    source_path="execution:close_shadow_submit_boundary",
+                    event_origin_type="execution",
+                    truth_owner="CloseExecutor",
+                    rid=rid,
+                    payload=boundary_payload,
+                    notes=["stage=submit_boundary", "comparison_outcome=match"],
+                )
+            except Exception:
+                LOG.warning(
+                    "CLOSE_SHADOW_SUBMIT_BOUNDARY_COMPARE_FAILURE: rid=%s",
+                    rid,
+                    exc_info=True,
+                )
         try:
             response = await self._fsm.adapter.place_market_reduce_only(
                 submission.symbol,
@@ -618,6 +714,33 @@ class CloseExecutor:
                 reason="invalid_requested_qty",
                 details=f"symbol={symbol} qty={requested_close_qty_raw!r} error={exc}",
             )
+            journal = get_shadow_journal(self)
+            if journal is not None:
+                try:
+                    comparison = build_close_submission_reject_comparison(
+                        decision=decision,
+                        partial_close=True,
+                        reason="invalid_requested_qty",
+                        detail=f"symbol={symbol} qty={requested_close_qty_raw!r} error={exc}",
+                    )
+                    emit_close_shadow_comparison(
+                        journal=journal,
+                        comparison=comparison,
+                        event_name="EVT:CLOSE_SHADOW_SUBMISSION_REJECT",
+                        source_component="apps.reference.domains.execution_position.close_executor",
+                        source_path="execution:close_shadow_submission_reject",
+                        event_origin_type="execution",
+                        truth_owner="CloseExecutor",
+                        rid=getattr(decision, "rid", None),
+                        payload=decision.pld or {},
+                        notes=["stage=submission", "comparison_outcome=reject"],
+                    )
+                except Exception:
+                    LOG.warning(
+                        "CLOSE_SHADOW_SUBMISSION_REJECT_COMPARE_FAILURE: rid=%s",
+                        getattr(decision, "rid", None),
+                        exc_info=True,
+                    )
             return None, True
 
         if not requested_close_qty.is_finite() or requested_close_qty <= 0:
@@ -627,6 +750,33 @@ class CloseExecutor:
                 reason="invalid_requested_qty",
                 details=f"symbol={symbol} qty={requested_close_qty_raw!r}",
             )
+            journal = get_shadow_journal(self)
+            if journal is not None:
+                try:
+                    comparison = build_close_submission_reject_comparison(
+                        decision=decision,
+                        partial_close=True,
+                        reason="invalid_requested_qty",
+                        detail=f"symbol={symbol} qty={requested_close_qty_raw!r}",
+                    )
+                    emit_close_shadow_comparison(
+                        journal=journal,
+                        comparison=comparison,
+                        event_name="EVT:CLOSE_SHADOW_SUBMISSION_REJECT",
+                        source_component="apps.reference.domains.execution_position.close_executor",
+                        source_path="execution:close_shadow_submission_reject",
+                        event_origin_type="execution",
+                        truth_owner="CloseExecutor",
+                        rid=getattr(decision, "rid", None),
+                        payload=decision.pld or {},
+                        notes=["stage=submission", "comparison_outcome=reject"],
+                    )
+                except Exception:
+                    LOG.warning(
+                        "CLOSE_SHADOW_SUBMISSION_REJECT_COMPARE_FAILURE: rid=%s",
+                        getattr(decision, "rid", None),
+                        exc_info=True,
+                    )
             return None, True
 
         return requested_close_qty, False
@@ -1080,6 +1230,33 @@ class CloseExecutor:
             partial_close=submission.partial_close,
         )
         self._append_trace_ref(decision, success_ref)
+        journal = get_shadow_journal(self)
+        if journal is not None:
+            try:
+                comparison = build_close_submission_comparison(
+                    decision=decision,
+                    submission=submission,
+                    position_amt=position_amt,
+                    requested_qty=requested_qty,
+                )
+                emit_close_shadow_comparison(
+                    journal=journal,
+                    comparison=comparison,
+                    event_name="EVT:CLOSE_SHADOW_SUBMISSION",
+                    source_component="apps.reference.domains.execution_position.close_executor",
+                    source_path="execution:close_shadow_submission",
+                    event_origin_type="execution",
+                    truth_owner="CloseExecutor",
+                    rid=rid,
+                    payload=submission.model_dump(),
+                    notes=["stage=submission", "comparison_outcome=match"],
+                )
+            except Exception:
+                LOG.warning(
+                    "CLOSE_SHADOW_SUBMISSION_COMPARE_FAILURE: rid=%s",
+                    rid,
+                    exc_info=True,
+                )
         LOG.info(
             "CLOSE_SUBMISSION_SUCCESS: contract=%s path=%s rid=%s symbol=%s side=%s qty=%s partial=%s",
             CLOSE_SUBMISSION_CONTRACT,
@@ -1203,6 +1380,40 @@ class CloseExecutor:
                         "close_cmd_rid": getattr(decision, "rid", None),
                     },
                 )
+                journal = get_shadow_journal(self)
+                if journal is not None:
+                    try:
+                        comparison = build_close_truth_gate_comparison(
+                            symbol=symbol,
+                            truth=truth,
+                            close_cmd_rid=getattr(decision, "rid", None),
+                            requested_qty=requested_close_qty,
+                            detail="partial_close:position_truth_unresolved",
+                        )
+                        emit_close_shadow_comparison(
+                            journal=journal,
+                            comparison=comparison,
+                            event_name="EVT:CLOSE_SHADOW_TRUTH_GATE",
+                            source_component="apps.reference.domains.execution_position.close_executor",
+                            source_path="execution:close_shadow_truth_gate",
+                            event_origin_type="execution",
+                            truth_owner="CloseExecutor",
+                            rid=getattr(decision, "rid", None),
+                            payload={
+                                "symbol": symbol,
+                                "close_cmd_rid": getattr(decision, "rid", None),
+                            },
+                            notes=[
+                                "stage=truth_gate",
+                                "comparison_outcome=reject",
+                            ],
+                        )
+                    except Exception:
+                        LOG.warning(
+                            "CLOSE_SHADOW_TRUTH_GATE_COMPARE_FAILURE: rid=%s",
+                            getattr(decision, "rid", None),
+                            exc_info=True,
+                        )
                 return
 
             amt = truth.position_amt or Decimal("0")
@@ -1224,6 +1435,40 @@ class CloseExecutor:
                     trigger="close_executor:no_position_partial",
                     allow_empty=True,
                 )
+                journal = get_shadow_journal(self)
+                if journal is not None:
+                    try:
+                        comparison = build_close_truth_gate_comparison(
+                            symbol=symbol,
+                            truth=truth,
+                            close_cmd_rid=getattr(decision, "rid", None),
+                            requested_qty=requested_close_qty,
+                            detail="partial_close:no_live_net_position",
+                        )
+                        emit_close_shadow_comparison(
+                            journal=journal,
+                            comparison=comparison,
+                            event_name="EVT:CLOSE_SHADOW_TRUTH_GATE",
+                            source_component="apps.reference.domains.execution_position.close_executor",
+                            source_path="execution:close_shadow_truth_gate",
+                            event_origin_type="execution",
+                            truth_owner="CloseExecutor",
+                            rid=getattr(decision, "rid", None),
+                            payload={
+                                "symbol": symbol,
+                                "close_cmd_rid": getattr(decision, "rid", None),
+                            },
+                            notes=[
+                                "stage=truth_gate",
+                                "comparison_outcome=reject",
+                            ],
+                        )
+                    except Exception:
+                        LOG.warning(
+                            "CLOSE_SHADOW_TRUTH_GATE_COMPARE_FAILURE: rid=%s",
+                            getattr(decision, "rid", None),
+                            exc_info=True,
+                        )
                 return
 
             position_qty = abs(amt)
@@ -1325,6 +1570,40 @@ class CloseExecutor:
             if manage:
                 manage._closing_position = False
                 manage._closing_position_ts = 0.0
+            journal = get_shadow_journal(self)
+            if journal is not None:
+                try:
+                    comparison = build_close_truth_gate_comparison(
+                        symbol=symbol,
+                        truth=truth,
+                        close_cmd_rid=getattr(decision, "rid", None),
+                        requested_qty=None,
+                        detail="full_close:position_truth_unresolved",
+                    )
+                    emit_close_shadow_comparison(
+                        journal=journal,
+                        comparison=comparison,
+                        event_name="EVT:CLOSE_SHADOW_TRUTH_GATE",
+                        source_component="apps.reference.domains.execution_position.close_executor",
+                        source_path="execution:close_shadow_truth_gate",
+                        event_origin_type="execution",
+                        truth_owner="CloseExecutor",
+                        rid=getattr(decision, "rid", None),
+                        payload={
+                            "symbol": symbol,
+                            "close_cmd_rid": getattr(decision, "rid", None),
+                        },
+                        notes=[
+                            "stage=truth_gate",
+                            "comparison_outcome=reject",
+                        ],
+                    )
+                except Exception:
+                    LOG.warning(
+                        "CLOSE_SHADOW_TRUTH_GATE_COMPARE_FAILURE: rid=%s",
+                        getattr(decision, "rid", None),
+                        exc_info=True,
+                    )
             return
 
         amt = truth.position_amt or Decimal("0")
@@ -1344,6 +1623,40 @@ class CloseExecutor:
                 trigger="close_executor:no_position_full",
                 allow_empty=True,
             )
+            journal = get_shadow_journal(self)
+            if journal is not None:
+                try:
+                    comparison = build_close_truth_gate_comparison(
+                        symbol=symbol,
+                        truth=truth,
+                        close_cmd_rid=getattr(decision, "rid", None),
+                        requested_qty=None,
+                        detail="full_close:no_live_net_position",
+                    )
+                    emit_close_shadow_comparison(
+                        journal=journal,
+                        comparison=comparison,
+                        event_name="EVT:CLOSE_SHADOW_TRUTH_GATE",
+                        source_component="apps.reference.domains.execution_position.close_executor",
+                        source_path="execution:close_shadow_truth_gate",
+                        event_origin_type="execution",
+                        truth_owner="CloseExecutor",
+                        rid=getattr(decision, "rid", None),
+                        payload={
+                            "symbol": symbol,
+                            "close_cmd_rid": getattr(decision, "rid", None),
+                        },
+                        notes=[
+                            "stage=truth_gate",
+                            "comparison_outcome=reject",
+                        ],
+                    )
+                except Exception:
+                    LOG.warning(
+                        "CLOSE_SHADOW_TRUTH_GATE_COMPARE_FAILURE: rid=%s",
+                        getattr(decision, "rid", None),
+                        exc_info=True,
+                    )
             if manage:
                 manage._closing_position = False
                 manage._closing_position_ts = 0.0

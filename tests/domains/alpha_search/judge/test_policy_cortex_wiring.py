@@ -209,18 +209,20 @@ class TestPluginPolicyCortexWiring:
         bus.emitted = []
 
         def fake_emit(event_name: str, payload: dict, why: str = ""):
-            bus.emitted.append({"event": event_name, "payload": payload, "why": why})
+            bus.emitted.append(
+                {"event": event_name, "payload": payload, "why": why})
 
         bus.emit.side_effect = fake_emit
         bus.listen = MagicMock()
 
         # Patch config to avoid file I/O
         with patch.object(AlphaSearchBacktestPlugin, "_init_providers", return_value=None), \
-             patch.object(AlphaSearchBacktestPlugin, "_register_listeners", return_value=None):
+                patch.object(AlphaSearchBacktestPlugin, "_register_listeners", return_value=None):
             from apps.reference.domains.alpha_search.config_models import (
                 AlphaSearchConfig,
             )
-            plugin = AlphaSearchBacktestPlugin.__new__(AlphaSearchBacktestPlugin)
+            plugin = AlphaSearchBacktestPlugin.__new__(
+                AlphaSearchBacktestPlugin)
             plugin.event_bus = bus
             plugin.config = MagicMock()
             plugin.providers = {}
@@ -278,9 +280,10 @@ class TestPluginPolicyCortexWiring:
         ]
         assert cortex_events[0]["payload"]["cycle_key"] == "ENTRY:BTCUSDT:300:1712000000300"
 
-    def test_emitted_event_has_verdict_id(self):
+    def test_emitted_event_does_not_include_extra_runtime_fields(self):
         plugin, bus = self._make_plugin()
-        verdict = self._make_verdict_mock(verdict_id="vrd_BTCUSDT_1712000000300")
+        verdict = self._make_verdict_mock(
+            verdict_id="vrd_BTCUSDT_1712000000300")
         judge_cfg = self._make_judge_cfg()
 
         plugin._emit_policy_cortex_annotation(
@@ -294,7 +297,10 @@ class TestPluginPolicyCortexWiring:
             e for e in bus.emitted
             if e["event"] == "EVT:JUDGE_POLICY_CORTEX_EVALUATED_V1"
         ]
-        assert cortex_events[0]["payload"]["verdict_id"] == "vrd_BTCUSDT_1712000000300"
+        payload = cortex_events[0]["payload"]
+        assert "verdict_id" not in payload
+        assert "ts_ms" not in payload
+        assert "emitted_at_ms" not in payload
 
     def test_open_long_maps_side_to_buy(self):
         plugin, bus = self._make_plugin()
@@ -454,7 +460,7 @@ class TestPluginPolicyCortexWiring:
 
         # Remove extra fields not in schema before validating
         schema_payload = {k: v for k, v in payload.items()
-                         if k not in ("ts_ms", "emitted_at_ms", "verdict_id")}
+                          if k not in ("ts_ms", "emitted_at_ms", "verdict_id")}
 
         schema = _load_annotation_schema()
         validator = Draft7Validator(schema)
@@ -495,14 +501,16 @@ class TestPolicyCortexJSONLSink:
         annotation = _make_annotation(
             cycle_key="ENTRY:BTCUSDT:300:1712000000300",
         )
-        write_jsonl_policy_cortex_log(annotation, str(tmp_path), ts_ms=1712000000300)
+        write_jsonl_policy_cortex_log(
+            annotation, str(tmp_path), ts_ms=1712000000300)
 
         files = list(tmp_path.glob("policy_cortex_BTCUSDT_*.jsonl"))
         assert len(files) == 1
 
     def test_written_record_is_valid_json(self, tmp_path):
         annotation = _make_annotation()
-        write_jsonl_policy_cortex_log(annotation, str(tmp_path), ts_ms=1712000000300)
+        write_jsonl_policy_cortex_log(
+            annotation, str(tmp_path), ts_ms=1712000000300)
 
         files = list(tmp_path.glob("policy_cortex_BTCUSDT_*.jsonl"))
         line = files[0].read_text(encoding="utf-8").strip()
@@ -511,7 +519,8 @@ class TestPolicyCortexJSONLSink:
 
     def test_written_record_roundtrips_to_annotation(self, tmp_path):
         annotation = _make_annotation()
-        write_jsonl_policy_cortex_log(annotation, str(tmp_path), ts_ms=1712000000300)
+        write_jsonl_policy_cortex_log(
+            annotation, str(tmp_path), ts_ms=1712000000300)
 
         files = list(tmp_path.glob("policy_cortex_BTCUSDT_*.jsonl"))
         line = files[0].read_text(encoding="utf-8").strip()
@@ -520,7 +529,8 @@ class TestPolicyCortexJSONLSink:
 
     def test_written_record_passes_schema(self, tmp_path):
         annotation = _make_annotation()
-        write_jsonl_policy_cortex_log(annotation, str(tmp_path), ts_ms=1712000000300)
+        write_jsonl_policy_cortex_log(
+            annotation, str(tmp_path), ts_ms=1712000000300)
 
         files = list(tmp_path.glob("policy_cortex_BTCUSDT_*.jsonl"))
         line = files[0].read_text(encoding="utf-8").strip()
@@ -533,21 +543,25 @@ class TestPolicyCortexJSONLSink:
         """Two annotations must appear as two lines in the same file."""
         for _ in range(2):
             annotation = _make_annotation()
-            write_jsonl_policy_cortex_log(annotation, str(tmp_path), ts_ms=1712000000300)
+            write_jsonl_policy_cortex_log(
+                annotation, str(tmp_path), ts_ms=1712000000300)
 
         files = list(tmp_path.glob("policy_cortex_BTCUSDT_*.jsonl"))
-        lines = [l.strip() for l in files[0].read_text("utf-8").splitlines() if l.strip()]
+        lines = [l.strip() for l in files[0].read_text(
+            "utf-8").splitlines() if l.strip()]
         assert len(lines) == 2
 
     def test_creates_parent_directory(self, tmp_path):
         nested = tmp_path / "deep" / "nested"
         annotation = _make_annotation()
-        write_jsonl_policy_cortex_log(annotation, str(nested), ts_ms=1712000000300)
+        write_jsonl_policy_cortex_log(
+            annotation, str(nested), ts_ms=1712000000300)
         assert nested.exists()
 
     def test_written_record_has_shadow_invariants(self, tmp_path):
         annotation = _make_annotation()
-        write_jsonl_policy_cortex_log(annotation, str(tmp_path), ts_ms=1712000000300)
+        write_jsonl_policy_cortex_log(
+            annotation, str(tmp_path), ts_ms=1712000000300)
 
         files = list(tmp_path.glob("policy_cortex_BTCUSDT_*.jsonl"))
         parsed = json.loads(files[0].read_text("utf-8").strip())
@@ -583,7 +597,7 @@ class TestPolicyCortexTelemetryContract:
             i for i, l in enumerate(lines)
             if "JUDGE_POLICY_CORTEX_EVALUATED_V1" in l
         )
-        block = "\n".join(lines[idx : idx + 10])
+        block = "\n".join(lines[idx: idx + 10])
         assert "owner: alpha_search" in block
 
     def test_verb_registry_entry_has_experimental_status(self):
@@ -596,7 +610,7 @@ class TestPolicyCortexTelemetryContract:
             i for i, l in enumerate(lines)
             if "JUDGE_POLICY_CORTEX_EVALUATED_V1" in l
         )
-        block = "\n".join(lines[idx : idx + 10])
+        block = "\n".join(lines[idx: idx + 10])
         assert "status: experimental" in block
 
     def test_schema_file_exists(self):

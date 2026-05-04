@@ -632,6 +632,8 @@ def _check_directional_gate(
     reduce_only: bool,
     apply_safety_gates: bool,
     ds_enabled: bool,
+    nrr026_enabled: bool,
+    nrr027_enabled: bool,
     strategy_id: str,
     trend_dir: str,
     trend_run_length: int,
@@ -646,6 +648,11 @@ def _check_directional_gate(
     trend confidence. Counter-trend proposals can still pass as "soft" allows
     until ``hard_veto_consecutive_bars`` is reached.
 
+    ``nrr026_enabled`` controls the NRR-026 (INSUFFICIENT_TREND_CONFIRMATION)
+    trend/confidence paths. ``nrr027_enabled`` controls the NRR-027
+    (DIRECTIONAL_SANITY_BLOCKED) countertrend hard-veto path. Both are
+    independent; the master ``ds_enabled`` still gates the entire function.
+
     Returns:
         (gate_outcome, deny_reason, why_short)
     """
@@ -658,22 +665,25 @@ def _check_directional_gate(
 
     effective_conf = max(float(regime_confidence or 0.0),
                          float(trend_confidence or 0.0))
-    if trend_dir not in ("UP", "DOWN"):
-        return "DENY", NormalizedRejectReasons.INSUFFICIENT_TREND_CONFIRMATION, "insufficient trend confirmation"
-    if effective_conf < float(min_conf):
-        return "DENY", NormalizedRejectReasons.INSUFFICIENT_TREND_CONFIRMATION, "insufficient confidence"
+    if nrr026_enabled:
+        if trend_dir not in ("UP", "DOWN"):
+            return "DENY", NormalizedRejectReasons.INSUFFICIENT_TREND_CONFIRMATION, "insufficient trend confirmation"
+        if effective_conf < float(min_conf):
+            return "DENY", NormalizedRejectReasons.INSUFFICIENT_TREND_CONFIRMATION, "insufficient confidence"
     if trend_dir == "DOWN" and intent_side == "LONG":
         if trend_run_length < int(hard_veto_consecutive_bars):
             return "ALLOW", None, (
                 f"countertrend long soft: run={trend_run_length} < veto_bars={hard_veto_consecutive_bars}"
             )
-        return "DENY", NormalizedRejectReasons.DIRECTIONAL_SANITY_BLOCKED, "downtrend blocks long"
+        if nrr027_enabled:
+            return "DENY", NormalizedRejectReasons.DIRECTIONAL_SANITY_BLOCKED, "downtrend blocks long"
     if trend_dir == "UP" and intent_side == "SHORT":
         if trend_run_length < int(hard_veto_consecutive_bars):
             return "ALLOW", None, (
                 f"countertrend short soft: run={trend_run_length} < veto_bars={hard_veto_consecutive_bars}"
             )
-        return "DENY", NormalizedRejectReasons.DIRECTIONAL_SANITY_BLOCKED, "uptrend blocks short"
+        if nrr027_enabled:
+            return "DENY", NormalizedRejectReasons.DIRECTIONAL_SANITY_BLOCKED, "uptrend blocks short"
     return "ALLOW", None, "ok"
 
 
@@ -923,6 +933,8 @@ def apply_safety_gates(
     # ── Read directional sanity config ─────────────────────────
     ds_cfg = config.domains.decision_making.directional_sanity
     ds_enabled = bool(ds_cfg.enabled)
+    nrr026_enabled = bool(getattr(ds_cfg, 'nrr026_enabled', True))
+    nrr027_enabled = bool(getattr(ds_cfg, 'nrr027_enabled', True))
     min_abs_delta = float(ds_cfg.min_abs_delta_price)
     min_conf = float(ds_cfg.min_confidence)
     min_regime_conf = _coerce_runtime_threshold(
@@ -954,7 +966,8 @@ def apply_safety_gates(
     result.resolved_min_regime_confidence_source = threshold_resolution.source
     result.resolved_min_regime_confidence_strategy_id = threshold_resolution.strategy_id
     result.resolved_min_regime_confidence_regime_key = threshold_resolution.regime_key
-    raw_max_by_regime = getattr(ds_cfg, 'max_regime_confidence_by_regime', None)
+    raw_max_by_regime = getattr(
+        ds_cfg, 'max_regime_confidence_by_regime', None)
     max_threshold_resolution = resolve_max_regime_confidence(
         result.regime,
         raw_max_by_regime,
@@ -996,6 +1009,23 @@ def apply_safety_gates(
         hard_veto_consecutive = int(raw_hard_veto)
     except (TypeError, ValueError):
         hard_veto_consecutive = consecutive
+
+    # Per-regime override for hard_veto_consecutive (NRR-027 LOW_VOL calibration).
+    # When hard_veto_consecutive_bars_by_regime is set and the current regime
+    # has a matching key, that value replaces the scalar. All other regimes
+    # continue to use the scalar. Fail-safe: bad values are skipped (Pydantic
+    # already validated at startup).
+    raw_hard_veto_by_regime = getattr(
+        ds_cfg, 'hard_veto_consecutive_bars_by_regime', None)
+    if isinstance(raw_hard_veto_by_regime, dict) and result.regime:
+        _regime_key = normalize_structural_regime_label(result.regime)
+        if _regime_key and _regime_key in raw_hard_veto_by_regime:
+            try:
+                _override = int(raw_hard_veto_by_regime[_regime_key])
+                if 1 <= _override <= 10:
+                    hard_veto_consecutive = _override
+            except (TypeError, ValueError):
+                pass  # Validator already enforced; purely defensive guard.
 
     # ── Gate 1: Regime confidence gate (FIX-CONF-GATE-01) ──────
     if reduce_only:
@@ -1041,32 +1071,47 @@ def apply_safety_gates(
         result.regime_confidence_gate_verdict = "BYPASS"
         result.threshold_reason = "min_regime_confidence_disabled"
     elif result.regime_confidence is None:
-        result.threshold_applied = True
-        result.threshold_verdict = "BLOCK"
-        result.regime_confidence_gate_verdict = "DENY"
-        result.regime_confidence_breach_kind = "missing"
-        result.threshold_reason = (
-            f"regime_confidence missing for active band "
-            f"min={resolved_min_regime_conf} min_source={threshold_resolution.source} "
-            f"max={result.resolved_max_regime_confidence} max_source={max_threshold_resolution.source}"
-        )
-        result.outcome = "DENY"
-        result.deny_reason = NormalizedRejectReasons.INSUFFICIENT_TREND_CONFIRMATION
-        result.why_short = f"FIX-CONF-GATE-01: {result.threshold_reason}"
-        return result
+        if nrr026_enabled:
+            result.threshold_applied = True
+            result.threshold_verdict = "BLOCK"
+            result.regime_confidence_gate_verdict = "DENY"
+            result.regime_confidence_breach_kind = "missing"
+            result.threshold_reason = (
+                f"regime_confidence missing for active band "
+                f"min={resolved_min_regime_conf} min_source={threshold_resolution.source} "
+                f"max={result.resolved_max_regime_confidence} max_source={max_threshold_resolution.source}"
+            )
+            result.outcome = "DENY"
+            result.deny_reason = NormalizedRejectReasons.INSUFFICIENT_TREND_CONFIRMATION
+            result.why_short = f"FIX-CONF-GATE-01: {result.threshold_reason}"
+            return result
+        else:
+            result.threshold_applied = False
+            result.threshold_verdict = "BYPASS"
+            result.regime_confidence_gate_verdict = "BYPASS"
+            result.threshold_reason = "nrr026_disabled:regime_confidence_missing"
     elif result.regime_confidence < resolved_min_regime_conf:
-        result.threshold_applied = True
-        result.threshold_verdict = "BLOCK"
-        result.regime_confidence_gate_verdict = "DENY"
-        result.regime_confidence_breach_kind = "below_min"
-        result.threshold_reason = (
-            f"regime_confidence={result.regime_confidence} < min={resolved_min_regime_conf} "
-            f"source={threshold_resolution.source} key={threshold_resolution.regime_key}"
-        )
-        result.outcome = "DENY"
-        result.deny_reason = NormalizedRejectReasons.INSUFFICIENT_TREND_CONFIRMATION
-        result.why_short = f"FIX-CONF-GATE-01: {result.threshold_reason}"
-        return result
+        if nrr026_enabled:
+            result.threshold_applied = True
+            result.threshold_verdict = "BLOCK"
+            result.regime_confidence_gate_verdict = "DENY"
+            result.regime_confidence_breach_kind = "below_min"
+            result.threshold_reason = (
+                f"regime_confidence={result.regime_confidence} < min={resolved_min_regime_conf} "
+                f"source={threshold_resolution.source} key={threshold_resolution.regime_key}"
+            )
+            result.outcome = "DENY"
+            result.deny_reason = NormalizedRejectReasons.INSUFFICIENT_TREND_CONFIRMATION
+            result.why_short = f"FIX-CONF-GATE-01: {result.threshold_reason}"
+            return result
+        else:
+            result.threshold_applied = False
+            result.threshold_verdict = "BYPASS"
+            result.regime_confidence_gate_verdict = "BYPASS"
+            result.threshold_reason = (
+                f"nrr026_disabled:regime_confidence={result.regime_confidence}"
+                f"<min={resolved_min_regime_conf}"
+            )
     elif (
         result.resolved_max_regime_confidence is not None
         and result.regime_confidence > result.resolved_max_regime_confidence
@@ -1105,6 +1150,8 @@ def apply_safety_gates(
         reduce_only=reduce_only,
         apply_safety_gates=apply_flag,
         ds_enabled=ds_enabled,
+        nrr026_enabled=nrr026_enabled,
+        nrr027_enabled=nrr027_enabled,
         strategy_id=strategy_id,
         trend_dir=result.trend_dir,
         trend_run_length=result.trend_run_length,

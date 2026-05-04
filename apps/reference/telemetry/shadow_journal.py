@@ -377,6 +377,83 @@ class ShadowCriticalEventJournal:
         )
         self._write_record(record)
 
+    @staticmethod
+    def _comparison_payload(value: Any) -> Dict[str, Any]:
+        if value is None:
+            return {}
+        for attr in ("to_payload", "model_dump", "dict", "to_dict"):
+            candidate = getattr(value, attr, None)
+            if callable(candidate):
+                try:
+                    dumped = candidate()
+                except Exception:
+                    continue
+                if isinstance(dumped, dict):
+                    return dict(dumped)
+        if isinstance(value, dict):
+            return dict(value)
+        return {"value": _to_jsonable(value)}
+
+    def record_comparison(
+        self,
+        *,
+        event_name: str,
+        source_component: str,
+        source_path: str,
+        event_origin_type: str,
+        truth_owner: str,
+        comparison: Any,
+        rid: Optional[str] = None,
+        before: Optional[Dict[str, Any]] = None,
+        after: Optional[Dict[str, Any]] = None,
+        payload: Optional[Dict[str, Any]] = None,
+        notes: Optional[list[str]] = None,
+        restore_marker: bool = False,
+        instrumentation_failure: Optional[str] = None,
+    ) -> None:
+        comparison_payload = self._comparison_payload(comparison)
+        op, verb = parse_event_name(event_name)
+        record = ShadowJournalRecord(
+            schema_version=self.schema_version,
+            instrumentation_version=self.instrumentation_version,
+            record_type="comparison",
+            ts_ms=now_ms(),
+            sequence=self._next_sequence(),
+            event_name=event_name,
+            op=op,
+            verb=verb,
+            source_component=source_component,
+            source_path=source_path,
+            event_origin_type=event_origin_type,
+            rid=_coerce_text(rid),
+            causation_rid=None,
+            symbol=_coerce_text((payload or {}).get("symbol")) if isinstance(payload, dict) else None,
+            order_id=_coerce_text((payload or {}).get("order_id")) if isinstance(payload, dict) else None,
+            client_order_id=_coerce_text((payload or {}).get("client_order_id")) if isinstance(payload, dict) else None,
+            position_id=_coerce_text((payload or {}).get("position_id")) if isinstance(payload, dict) else None,
+            lifecycle_id=_coerce_text((payload or {}).get("lifecycle_id")) if isinstance(payload, dict) else None,
+            strategy_id=_coerce_text((payload or {}).get("strategy_id")) if isinstance(payload, dict) else None,
+            side=_coerce_text((payload or {}).get("side")) if isinstance(payload, dict) else None,
+            qty=_coerce_text((payload or {}).get("qty")) if isinstance(payload, dict) else None,
+            price=_coerce_text((payload or {}).get("price")) if isinstance(payload, dict) else None,
+            truth_owner=truth_owner,
+            local_state_before=_to_jsonable(before) if before is not None else None,
+            local_state_after=_to_jsonable(after) if after is not None else None,
+            restore_marker=restore_marker,
+            suspected_duplicate=False,
+            duplicate_kind=None,
+            duplicate_heuristic=False,
+            repeated_close=False,
+            partial_identity=False,
+            instrumentation_failure=instrumentation_failure,
+            payload_fragment={
+                "comparison": comparison_payload,
+                "payload": _to_jsonable(payload or {}),
+            },
+            notes=list(notes or []),
+        )
+        self._write_record(record)
+
     def _next_sequence(self) -> int:
         with self._lock:
             self._seq += 1

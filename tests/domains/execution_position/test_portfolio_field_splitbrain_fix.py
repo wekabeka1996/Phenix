@@ -133,6 +133,10 @@ def _sidecar_config(
                 "edge_arm_usd": 25.0,
                 "giveback_trigger_pct": 50.0,
             },
+            "shadow_percent_notional_arm": {
+                "enabled": True,
+                "candidate_pcts": [0.02, 0.05, 0.07],
+            },
         }
     )
 

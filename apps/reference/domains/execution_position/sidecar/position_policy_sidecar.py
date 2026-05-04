@@ -87,6 +87,13 @@ class _Envelope:
 
 
 @dataclass
+class _ShadowPercentNotionalArmCandidateState:
+    peak_edge_usd: float = 0.0
+    is_armed: bool = False
+    first_arm_ts_ms: Optional[int] = None
+
+
+@dataclass
 class _SymbolState:
     portfolio: _Envelope = field(default_factory=_Envelope)
     features: _Envelope = field(default_factory=_Envelope)
@@ -102,6 +109,8 @@ class _SymbolState:
     # R7A: Peak giveback state
     peak_edge_usd: float = 0.0
     is_armed: bool = False
+    shadow_percent_notional_arm_states: Dict[str,
+                                             _ShadowPercentNotionalArmCandidateState] = field(default_factory=dict)
 
 
 def _clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
@@ -355,6 +364,8 @@ class PositionPolicySidecar:
             # R7A: Reset peak giveback state on new entry
             state.peak_edge_usd = 0.0
             state.is_armed = False
+            # R7O: Shadow candidate state must not leak across lifecycles.
+            state.shadow_percent_notional_arm_states = {}
         self._evaluate_symbol(symbol, trigger_event=trigger_event)
 
     def on_order_state_changed(self, event: "Message") -> None:
@@ -1136,6 +1147,14 @@ class PositionPolicySidecar:
                 "edge_arm_usd": float(self.config.peak_giveback_close.edge_arm_usd),
                 "giveback_trigger_pct": float(self.config.peak_giveback_close.giveback_trigger_pct),
             },
+            "shadow_percent_notional_arm": {
+                "enabled": self.config.shadow_percent_notional_arm.enabled,
+                "candidate_pcts": [
+                    float(candidate)
+                    for candidate in self.config.shadow_percent_notional_arm.candidate_pcts
+                ],
+                "candidate_unit": "percent",
+            },
             "freshness": {
                 "portfolio_max_age_ms": self.config.freshness.portfolio_max_age_ms,
                 "features_max_age_ms": self.config.freshness.features_max_age_ms,
@@ -1144,6 +1163,150 @@ class PositionPolicySidecar:
             },
             "source_config_path": source_config_path,
         }
+
+    def _shadow_percent_notional_candidate_state(
+        self,
+        *,
+        state: _SymbolState,
+        candidate_pct: float,
+    ) -> _ShadowPercentNotionalArmCandidateState:
+        state_key = f"{float(candidate_pct):.8f}"
+        if state_key not in state.shadow_percent_notional_arm_states:
+            state.shadow_percent_notional_arm_states[state_key] = _ShadowPercentNotionalArmCandidateState(
+            )
+        return state.shadow_percent_notional_arm_states[state_key]
+
+    def _shadow_percent_notional_snapshot(
+        self,
+        *,
+        state: _SymbolState,
+        position_snapshot: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        cfg = self.config.shadow_percent_notional_arm
+        percent_notional: Dict[str, Any] = {
+            "enabled": bool(cfg.enabled),
+            "candidate_unit": "percent",
+            "giveback_trigger_pct": float(self.config.peak_giveback_close.giveback_trigger_pct),
+            "candidates": [],
+        }
+
+        candidate_pcts = [float(candidate)
+                          for candidate in cfg.candidate_pcts]
+        current_edge_usd = _coerce_float(
+            position_snapshot.get("unrealized_pnl_usdt"))
+
+        entry_price = _coerce_float(position_snapshot.get("entry_price"))
+        if entry_price is None:
+            entry_price = _coerce_float(
+                position_snapshot.get("portfolio_entry_price"))
+
+        position_qty = _coerce_float(position_snapshot.get("position_qty"))
+        if position_qty is None:
+            portfolio_position_amt = _coerce_float(
+                position_snapshot.get("portfolio_position_amt"))
+            if portfolio_position_amt is not None:
+                position_qty = abs(portfolio_position_amt)
+
+        notional_usdt: Optional[float] = None
+        if current_edge_usd is not None and entry_price is not None and position_qty is not None:
+            computed_notional = abs(position_qty) * entry_price
+            if computed_notional > 0.0:
+                notional_usdt = computed_notional
+
+        if not cfg.enabled:
+            percent_notional["null_reason"] = "shadow_percent_notional_arm_disabled"
+        elif current_edge_usd is None:
+            percent_notional["null_reason"] = "missing_unrealized_pnl_usdt"
+        elif notional_usdt is None:
+            percent_notional["null_reason"] = "missing_position_notional_usdt"
+
+        now_ms = get_clock().now_ms()
+        for candidate_pct in candidate_pcts:
+            candidate_state = self._shadow_percent_notional_candidate_state(
+                state=state,
+                candidate_pct=candidate_pct,
+            )
+
+            candidate_null_reasons: Dict[str, str] = {}
+            arm_threshold_usd: Optional[float] = None
+            if notional_usdt is None:
+                candidate_null_reasons["arm_threshold_usd"] = "missing_position_notional_usdt"
+            else:
+                arm_threshold_usd = (notional_usdt * candidate_pct) / 100.0
+
+            if (
+                cfg.enabled
+                and current_edge_usd is not None
+                and current_edge_usd > candidate_state.peak_edge_usd
+            ):
+                candidate_state.peak_edge_usd = float(current_edge_usd)
+
+            if (
+                cfg.enabled
+                and arm_threshold_usd is not None
+                and not candidate_state.is_armed
+                and candidate_state.peak_edge_usd >= arm_threshold_usd
+            ):
+                candidate_state.is_armed = True
+                if candidate_state.first_arm_ts_ms is None:
+                    candidate_state.first_arm_ts_ms = int(now_ms)
+
+            giveback_pct: Optional[float] = None
+            if current_edge_usd is None:
+                candidate_null_reasons["giveback_pct"] = "missing_unrealized_pnl_usdt"
+            elif candidate_state.peak_edge_usd > 0.0:
+                giveback_pct = (
+                    (candidate_state.peak_edge_usd - current_edge_usd)
+                    / candidate_state.peak_edge_usd
+                ) * 100.0
+            else:
+                candidate_null_reasons["giveback_pct"] = "peak_edge_not_positive"
+
+            threshold_met: Optional[bool] = None
+            if not cfg.enabled:
+                candidate_null_reasons["threshold_met_under_current_giveback_trigger_pct"] = "shadow_percent_notional_arm_disabled"
+            elif current_edge_usd is None:
+                candidate_null_reasons["threshold_met_under_current_giveback_trigger_pct"] = "missing_unrealized_pnl_usdt"
+            elif notional_usdt is None:
+                candidate_null_reasons["threshold_met_under_current_giveback_trigger_pct"] = "missing_position_notional_usdt"
+            elif not candidate_state.is_armed:
+                threshold_met = False
+            elif giveback_pct is None:
+                candidate_null_reasons["threshold_met_under_current_giveback_trigger_pct"] = "missing_giveback_pct"
+            else:
+                threshold_met = (
+                    giveback_pct >= self.config.peak_giveback_close.giveback_trigger_pct
+                )
+
+            if not cfg.enabled:
+                candidate_state_label = "shadow_percent_notional_disabled"
+            elif current_edge_usd is None:
+                candidate_state_label = "shadow_percent_notional_unavailable_economics_missing"
+            elif notional_usdt is None:
+                candidate_state_label = "shadow_percent_notional_unavailable_notional_missing"
+            elif not candidate_state.is_armed:
+                candidate_state_label = "shadow_percent_notional_not_armed_below_edge"
+            elif threshold_met:
+                candidate_state_label = "shadow_percent_notional_threshold_met"
+            else:
+                candidate_state_label = "shadow_percent_notional_below_trigger"
+
+            percent_notional["candidates"].append(
+                {
+                    "candidate_pct": float(candidate_pct),
+                    "arm_threshold_usd": arm_threshold_usd,
+                    "is_armed": bool(candidate_state.is_armed),
+                    "first_arm_ts_ms": candidate_state.first_arm_ts_ms,
+                    "peak_edge_usd": float(candidate_state.peak_edge_usd),
+                    "giveback_pct": giveback_pct,
+                    "threshold_met_under_current_giveback_trigger_pct": threshold_met,
+                    "would_trigger": threshold_met,
+                    "state": candidate_state_label,
+                    "null_reasons": candidate_null_reasons,
+                }
+            )
+
+        return {"percent_notional": percent_notional}
 
     def _config_source_path(self) -> Optional[str]:
         for attr in (
@@ -1288,6 +1451,10 @@ class PositionPolicySidecar:
             "giveback_trigger_pct": float(cfg.giveback_trigger_pct),
             "threshold_crossed": threshold_crossed,
             "peak_giveback_state": peak_giveback_state,
+            "peak_giveback_shadow_arms": self._shadow_percent_notional_snapshot(
+                state=state,
+                position_snapshot=position_snapshot,
+            ),
             "reason_codes": peak_reason_codes,
             "null_reasons": null_reasons,
         }

@@ -612,16 +612,17 @@ class AlphaSearchBacktestPlugin:
         self._cache_hits += 1
         # Create a local copy to avoid contaminating the canonical feature cache
         features = dict(cache_entry.features) if cache_entry.features else {}
-        
+
         # J6-S11 Envelope Regime Propagation Repair: Option A
         # Extract regime context from trigger payload and safely pass through
         regime_snapshot = payload.get("regime")
         if isinstance(regime_snapshot, dict):
             features["regime"] = regime_snapshot.get("regime")
             features["regime_confidence"] = regime_snapshot.get("confidence")
-            features["regime_ts_ms"] = regime_snapshot.get("ts_ms") or regime_snapshot.get("ts")
+            features["regime_ts_ms"] = regime_snapshot.get(
+                "ts_ms") or regime_snapshot.get("ts")
             features["regime_source"] = regime_snapshot.get("source_model")
-            
+
             if features["regime_confidence"] is None:
                 features["regime_missing_reason"] = "REGIME_CONFIDENCE_MISSING"
         else:
@@ -1246,7 +1247,7 @@ class AlphaSearchBacktestPlugin:
             regime_ts_ms = None
             regime_source = None
             regime_missing_reason = None
-            
+
             if features:
                 regime = features.get("regime")
                 raw_rc = features.get("regime_confidence")
@@ -1255,14 +1256,14 @@ class AlphaSearchBacktestPlugin:
                         regime_confidence = float(raw_rc)
                     except (TypeError, ValueError):
                         regime_confidence = None
-                
+
                 raw_ts = features.get("regime_ts_ms")
                 if raw_ts is not None:
                     try:
                         regime_ts_ms = int(raw_ts)
                     except (TypeError, ValueError):
                         regime_ts_ms = None
-                
+
                 regime_source = features.get("regime_source")
                 regime_missing_reason = features.get("regime_missing_reason")
 
@@ -1423,9 +1424,6 @@ class AlphaSearchBacktestPlugin:
 
             # Emit EVT:JUDGE_POLICY_CORTEX_EVALUATED_V1 (shadow-only)
             payload = annotation.model_dump()
-            payload["ts_ms"] = ts_ms          # add timestamp for joinability
-            payload["emitted_at_ms"] = ts_ms
-            payload["verdict_id"] = verdict.verdict_id
             self.event_bus.emit(
                 event_name="EVT:JUDGE_POLICY_CORTEX_EVALUATED_V1",
                 payload=payload,

@@ -557,10 +557,25 @@
         "default_factory": null,
         "required": true
       },
+      "hard_veto_consecutive_bars_by_regime": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
       "consecutive_bars": {
         "default": "'<required>'",
         "default_factory": null,
         "required": true
+      },
+      "nrr026_enabled": {
+        "default": "True",
+        "default_factory": null,
+        "required": false
+      },
+      "nrr027_enabled": {
+        "default": "True",
+        "default_factory": null,
+        "required": false
       }
     }
   },

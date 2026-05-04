@@ -63,10 +63,13 @@ decision_making:
       TREND_UP: 0.20
       TREND_DOWN: 0.20
     max_regime_confidence_by_regime:
-      TREND_UP: 0.32
-      TREND_DOWN: 0.32
+      TREND_UP: 0.40
+      TREND_DOWN: 0.40
     hard_veto_consecutive_bars: 2
+    hard_veto_consecutive_bars_by_regime: {}
     consecutive_bars: 1
+    nrr026_enabled: false
+    nrr027_enabled: true
   low_vol_cost_floor_gate:
     enabled: true
     enforce_in_modes:
@@ -564,6 +567,12 @@ execution_position:
       enabled: true
       edge_arm_usd: 25.0
       giveback_trigger_pct: 50.0
+    shadow_percent_notional_arm:
+      enabled: true
+      candidate_pcts:
+      - 0.02
+      - 0.05
+      - 0.07
 shadow_telemetry:
   enabled: true
   required_for_mode: false

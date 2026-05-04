@@ -268,6 +268,12 @@ def test_current_aurora_config_loads_execution_position_contract() -> None:
     assert ep.position_policy_sidecar.allowed_actions.partial_reduce is False
     assert ep.position_policy_sidecar.allowed_actions.bracket_mutation is False
     assert ep.position_policy_sidecar.allowed_actions.exact_targeting is False
+    assert ep.position_policy_sidecar.shadow_percent_notional_arm.enabled is True
+    assert ep.position_policy_sidecar.shadow_percent_notional_arm.candidate_pcts == [
+        0.02,
+        0.05,
+        0.07,
+    ]
 
 
 def test_guardian_legacy_emit_tidy_event_only_maps_to_monitoring_flag(

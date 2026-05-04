@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Stage A+B: Create frozen snapshot and record identity metadata."""
+import time
 import json
 import os
 import shutil
@@ -14,11 +15,13 @@ BASE_DIR = Path(r'c:\Users\user\Music\Phenix\logs')
 # Record live file metadata BEFORE copy
 before_size = LIVE_FILE.stat().st_size
 before_mtime = datetime.fromtimestamp(LIVE_FILE.stat().st_mtime)
-before_lines = sum(1 for _ in LIVE_FILE.open('r', encoding='utf-8', errors='replace'))
+before_lines = sum(1 for _ in LIVE_FILE.open(
+    'r', encoding='utf-8', errors='replace'))
 
 print("=== STAGE A: FREEZE ===")
 print(f"Live file path: {LIVE_FILE.absolute()}")
-print(f"Before copy - size: {before_size} bytes, mtime: {before_mtime}, lines: {before_lines}")
+print(
+    f"Before copy - size: {before_size} bytes, mtime: {before_mtime}, lines: {before_lines}")
 
 # Create frozen copy with timestamp
 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -31,17 +34,22 @@ print("Copy completed")
 # Record frozen file metadata
 frozen_size = frozen_path.stat().st_size
 frozen_mtime = datetime.fromtimestamp(frozen_path.stat().st_mtime)
-frozen_lines = sum(1 for _ in frozen_path.open('r', encoding='utf-8', errors='replace'))
+frozen_lines = sum(1 for _ in frozen_path.open(
+    'r', encoding='utf-8', errors='replace'))
 
-print(f"\nFrozen file - size: {frozen_size} bytes, mtime: {frozen_mtime}, lines: {frozen_lines}")
+print(
+    f"\nFrozen file - size: {frozen_size} bytes, mtime: {frozen_mtime}, lines: {frozen_lines}")
 
 # Verify copy integrity
 if frozen_size == before_size and frozen_lines == before_lines:
     print("✓ Copy integrity verified: size and line count match")
 else:
-    print(f"✗ Copy integrity FAILED: size mismatch ({before_size} vs {frozen_size}) or lines ({before_lines} vs {frozen_lines})")
+    print(
+        f"✗ Copy integrity FAILED: size mismatch ({before_size} vs {frozen_size}) or lines ({before_lines} vs {frozen_lines})")
 
 # Compute SHA256 for frozen copy
+
+
 def sha256_file(fpath):
     sha = hashlib.sha256()
     with open(fpath, 'rb') as f:
@@ -49,23 +57,26 @@ def sha256_file(fpath):
             sha.update(chunk)
     return sha.hexdigest()
 
+
 frozen_sha256 = sha256_file(frozen_path)
 print(f"Frozen file SHA256: {frozen_sha256}")
 
 # Check if live file changed after copy
-import time
 time.sleep(1)
 after_size = LIVE_FILE.stat().st_size
 after_mtime = datetime.fromtimestamp(LIVE_FILE.stat().st_mtime)
-after_lines = sum(1 for _ in LIVE_FILE.open('r', encoding='utf-8', errors='replace'))
+after_lines = sum(1 for _ in LIVE_FILE.open(
+    'r', encoding='utf-8', errors='replace'))
 
-print(f"\nLive file after copy - size: {after_size} bytes, mtime: {after_mtime}, lines: {after_lines}")
+print(
+    f"\nLive file after copy - size: {after_size} bytes, mtime: {after_mtime}, lines: {after_lines}")
 if after_size == before_size and after_mtime == before_mtime:
     grew = "no"
     print("✓ Live file unchanged")
 else:
     grew = "yes"
-    print(f"✗ Live file CHANGED: size +{after_size - before_size}, lines +{after_lines - before_lines}")
+    print(
+        f"✗ Live file CHANGED: size +{after_size - before_size}, lines +{after_lines - before_lines}")
 
 # Output identity tables
 print("\n=== STAGE B: IDENTITY TABLES ===")

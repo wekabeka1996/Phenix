@@ -240,6 +240,97 @@ class MDAMRHandler:
             stage, symbol, reason, self._TF_SEC_REJECT_COOLDOWN_SEC,
         )
 
+    def _emit_bar_decision_trace(
+        self,
+        *,
+        symbol: str,
+        bar_close_ts: int,
+        result: Dict[str, Any],
+        gate_stage: str,
+        rid: str | None = None,
+    ) -> None:
+        """Emit one structured runtime trace per processed 900s bar.
+
+        Observability-only marker. It must not mutate strategy/runtime decisions.
+        """
+        trace = result.get("trace") if isinstance(result, dict) else None
+        trace = trace if isinstance(trace, dict) else {}
+        result_status = str(result.get("status") or "NOOP")
+
+        regime = self._normalize_regime_label(self._regime.get(symbol))
+        regime_confidence = self._regime_confidence.get(symbol)
+
+        allowed_regime: bool | None = None
+        context_ctx = self._build_context_validity_position_ctx(symbol)
+        context_allowed = context_ctx.get("context_regime_allowed")
+        if isinstance(context_allowed, bool):
+            allowed_regime = context_allowed
+
+        no_signal_reason = result.get("reason_code") if isinstance(
+            result.get("reason_code"), str) else None
+        if no_signal_reason is None and result_status == "NOOP":
+            no_signal_reason = "NO_SIGNAL"
+
+        signal = result.get("signal") if isinstance(result, dict) else None
+        side: str | None = None
+        score: float | None = None
+        confidence: float | None = None
+        threshold: float | None = None
+        threshold_margin: float | None = None
+
+        if isinstance(signal, MDAMRSignal):
+            side = str(signal.side).upper()
+            try:
+                score = float(signal.signal_score)
+            except Exception:
+                score = None
+            try:
+                confidence = float(signal.conf_ratio)
+            except Exception:
+                confidence = None
+        else:
+            try:
+                confidence = float(trace["conf_ratio"])
+            except Exception:
+                confidence = None
+
+        if side == "BUY":
+            try:
+                threshold = float(trace["thr_buy"])
+            except Exception:
+                threshold = None
+        elif side == "SELL":
+            try:
+                threshold = float(trace["thr_sell"])
+            except Exception:
+                threshold = None
+
+        if score is not None and threshold is not None:
+            threshold_margin = score - threshold
+
+        self._log_runtime_marker(
+            "MD_AMR_BAR_DECISION_TRACE",
+            symbol=symbol,
+            bar_close_ts=int(bar_close_ts),
+            regime=str(regime) if regime else None,
+            regime_confidence=(
+                float(regime_confidence)
+                if regime_confidence is not None
+                else None
+            ),
+            allowed_regime=allowed_regime,
+            result_status=result_status,
+            side=side,
+            score=score,
+            threshold=threshold,
+            threshold_margin=threshold_margin,
+            confidence=confidence,
+            no_signal_reason=no_signal_reason,
+            missing_fields=list(result.get("missing_fields") or []),
+            gate_stage=gate_stage,
+            rid=(str(rid) if rid else None),
+        )
+
     def apply_runtime_analytics_restore_snapshot(
         self,
         snapshot: StrategyAnalyticsRestoreSnapshot,
@@ -1983,6 +2074,14 @@ class MDAMRHandler:
                          "basis_required_bars": _basis_required},
             )
             return
+
+        self._emit_bar_decision_trace(
+            symbol=symbol,
+            bar_close_ts=int(bar_close_ts),
+            result=result,
+            gate_stage="post_startup_gates",
+            rid=str(pld.get("rid") or "") or None,
+        )
 
         if result.get("status") == "DEFER":
             rid = self._rid(symbol=symbol, side="BUY",

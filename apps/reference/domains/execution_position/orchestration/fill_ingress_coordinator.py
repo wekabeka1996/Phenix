@@ -204,6 +204,22 @@ class FillIngressCoordinator:
             )
             return None
 
+        # DUAL-INVOCATION-GUARD: for LIMIT-DEFERRED entries, _pending_brackets is set in
+        # open_executor._store_pending_brackets when the LIMIT order was submitted.
+        # event_handlers.on_order_fill (called above) already submitted
+        # bracket_manager.place_deferred_brackets as an async task (Path B).
+        # Without the guard below, manage_flow.handle would call _place_brackets (Path A),
+        # causing dual SL/TP submission -> Binance -4130 -> force-close of valid position.
+        # Guard: flag manage_flow so _place_brackets is skipped for this fill only.
+        if manage_flow is not None:
+            _fill_entry_id = str(payload.get("orderId") or "")
+            if _fill_entry_id and self._fsm._pending_brackets.get(_fill_entry_id):
+                manage_flow._deferred_bracket_entry_id = _fill_entry_id
+                LOG.info(
+                    "[LIMIT-DEFERRED] Flagging manage_flow to skip _place_brackets "
+                    "for entry_order_id=%s: bracket_manager.place_deferred_brackets owns this entry",
+                    _fill_entry_id,
+                )
         result = manage_flow.handle(
             canonical_msg) if manage_flow is not None else None
         manage_state_after = self._fsm._manage_state_value(manage_flow)

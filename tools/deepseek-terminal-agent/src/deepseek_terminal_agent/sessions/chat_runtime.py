@@ -14,6 +14,7 @@ from .models import ChatTurn, ModelProfile, SessionEvent, TokenUsage
 from .store import SessionStore
 from .subagents import SubAgentManager
 from .task_router import SuggestedSubagent, TaskRouteDecision, TaskRouter
+from ..logging_utils import redact, redact_obj
 
 
 class SessionChatRuntime:
@@ -39,13 +40,40 @@ class SessionChatRuntime:
         self.subagent_manager = subagent_manager
         self.task_router = task_router or TaskRouter()
 
+    def _classify_activity_event(self, cmd: str) -> tuple[str, str]:
+        """Classify a shell command into (event_type, safe_summary)."""
+        cmd_norm = str(cmd or "").lower()
+        # Clean up command for safe summary (remove huge arguments/pipes)
+        parts = cmd_norm.split()
+        base_cmd = parts[0] if parts else "unknown"
+        safe_cmd = " ".join(parts[:5]) + ("..." if len(parts) > 5 else "")
+
+        if any(x in cmd_norm for x in ["grep", "ripgrep", "rg", "find ", "ls -R"]):
+            return "file_search_started", f"Searching for patterns: {safe_cmd}"
+        if any(x in cmd_norm for x in ["cat ", "read ", "view ", "head ", "tail "]):
+            return "file_read", f"Reading file: {safe_cmd}"
+        if any(x in cmd_norm for x in ["pytest", "unittest", "pytest ", "python -m pytest"]):
+            return "test_started", f"Running tests: {safe_cmd}"
+        if any(x in cmd_norm for x in ["git apply", "patch ", "sed -i", "write_to_file"]):
+            return "patch_started", f"Applying changes: {safe_cmd}"
+        if "mkdir" in cmd_norm or "touch" in cmd_norm:
+            return "step_started", f"Preparing environment: {safe_cmd}"
+
+        return "command_started", f"Executing: {safe_cmd}"
+
     def send_message(self, *, session_id: str, user_message: str) -> dict[str, Any]:
         clean_message = str(user_message or "").strip()
         if not clean_message:
             raise ValueError("user_message must be non-empty")
 
         session = self.session_store.get_session(session_id)
+        session.status = "running"
+        self.session_store.save_session(session)
+
+        self._append_event(session_id, "run_started", "Agent run started", metadata={"user_message": clean_message})
+
         profile = session.active_profile
+        self._append_event(session_id, "step_started", "Analyzing task and routing", metadata={"task_type": "routing"})
         route_decision = self.task_router.route(user_message=clean_message)
         routing_result = self._prepare_routed_context(
             session_id=session_id,
@@ -53,6 +81,9 @@ class SessionChatRuntime:
             profile=profile,
             route_decision=route_decision,
         )
+        self._append_event(session_id, "step_completed", "Context prepared", metadata={"route": route_decision.route})
+
+        self._append_event(session_id, "step_started", "Building context pack")
         context = self.context_builder.build(
             session_id=session_id,
             current_user_message=clean_message,
@@ -144,8 +175,7 @@ class SessionChatRuntime:
                 session = self.session_store.get_session(session_id)
                 session.status = "completed"
                 self.session_store.save_session(session)
-                self._append_event(session_id, "assistant_message",
-                                   "Model produced a final answer")
+                self._append_event(session_id, "run_completed", "Model produced a final answer")
                 compression_result = self._maybe_auto_compress(
                     session_id=session_id)
                 return {
@@ -161,7 +191,29 @@ class SessionChatRuntime:
                 }
 
             for tool_call in message.tool_calls:
+                # Granular tool events
+                cmd = ""
+                try:
+                    args = json.loads(tool_call.function.arguments)
+                    cmd = args.get("cmd", "")
+                except:
+                    pass
+
+                ev_type, ev_summary = self._classify_activity_event(cmd)
+                self._append_event(session_id, ev_type, ev_summary,
+                                   metadata={"status": "running", "cmd": cmd})
+
                 tool_result = self._dispatch_tool(tool_call, executor, profile)
+
+                # Completion event
+                self._append_event(session_id, "command_completed" if ev_type == "command_started" else ev_type.replace("_started", "_completed"),
+                                   f"Completed: {ev_summary}",
+                                   metadata={
+                                       "status": "success" if tool_result.get("ok") else "failure",
+                                       "exit_code": tool_result.get("exit_code"),
+                                       "duration_ms": tool_result.get("duration_ms")
+                                   })
+
                 tool_turn = ChatTurn(
                     turn_id=uuid.uuid4().hex,
                     session_id=session_id,
@@ -179,8 +231,6 @@ class SessionChatRuntime:
                         "content": json.dumps(tool_result, ensure_ascii=False),
                     }
                 )
-                self._append_event(session_id, "tool_result", f"Executed {tool_call.function.name}", metadata={
-                                   "cmd": tool_result.get("cmd")})
 
         session = self.session_store.get_session(session_id)
         session.status = "failed"
@@ -239,11 +289,13 @@ class SessionChatRuntime:
             child_run_id = child["child_run_id"]
             self._append_event(
                 session_id,
-                "subagent_spawned",
-                f"Spawned {suggestion.role}",
+                "subagent_started",
+                f"Starting subagent: {suggestion.role}",
                 metadata={
+                    "status": "running",
                     "child_run_id": child_run_id,
                     "role": suggestion.role,
+                    "task": suggestion.task,
                     "tool_policy": suggestion.tool_policy,
                 },
             )
@@ -382,14 +434,15 @@ class SessionChatRuntime:
         *,
         metadata: Optional[dict[str, Any]] = None,
     ) -> None:
+        safe_metadata = redact_obj(metadata or {})
         self.session_store.append_event(
             session_id,
             SessionEvent(
                 event_id=uuid.uuid4().hex,
                 session_id=session_id,
                 event_type=event_type,
-                message=message,
-                metadata=metadata or {},
+                message=redact(message),
+                metadata=safe_metadata,
             ),
         )
 

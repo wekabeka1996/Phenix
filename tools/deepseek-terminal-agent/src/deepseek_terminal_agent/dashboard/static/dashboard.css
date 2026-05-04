@@ -3727,3 +3727,104 @@ body.layout-mode--simple .simple-chat-shell {
 .simple-chat-trace--failed .simple-chat-trace-label {
   color: var(--error);
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   SIMPLE CHAT ACTIVITY PANEL
+   ══════════════════════════════════════════════════════════════════════ */
+.simple-chat-activity-panel {
+  position: absolute;
+  bottom: 140px; /* Above composer */
+  left: 20px;
+  right: 20px;
+  background: var(--bg-panel);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 -8px 24px rgba(0,0,0,0.3);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  max-height: 400px;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.simple-chat-activity-panel.hidden {
+  display: none;
+}
+
+.activity-panel-header {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--accent);
+}
+
+.activity-panel-body {
+  padding: 12px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.simple-chat-trace-row {
+  display: flex;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid transparent;
+  font-size: 0.85rem;
+}
+
+.simple-chat-trace--success { border-left: 3px solid var(--success); }
+.simple-chat-trace--failed { border-left: 3px solid var(--danger); }
+.simple-chat-trace--running { border-left: 3px solid var(--accent); }
+
+.simple-chat-trace-label {
+  color: var(--text-dim);
+  font-weight: 700;
+  min-width: 80px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.simple-chat-trace-summary {
+  color: var(--text-soft);
+  flex: 1;
+}
+
+.simple-chat-composer__activity-btn {
+  padding: 6px !important;
+  margin-right: 4px;
+  opacity: 0.7;
+}
+
+.simple-chat-composer__activity-btn:hover {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.simple-chat-composer__activity-btn.is-active {
+  color: var(--accent);
+  background: rgba(110, 200, 255, 0.1);
+}
+
+.simple-chat-useful-summary {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.simple-chat-useful-summary .badge {
+  font-size: 0.65rem;
+  padding: 2px 6px;
+}

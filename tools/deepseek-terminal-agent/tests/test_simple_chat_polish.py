@@ -17,15 +17,23 @@ def test_simple_chat_menu_polish():
     assert 'id="simple-menu-left-drawer"' in html
     assert 'Очистити чат' not in html 
 
-def test_js_drawer_mutual_exclusion():
+def test_js_drawer_independent_toggles():
     path = 'src/deepseek_terminal_agent/dashboard/static/chat.js'
     if not os.path.exists(path): pytest.skip("File not found")
     with open(path, 'r', encoding='utf-8') as f:
         js = f.read()
-    assert 'closeAllSimpleDrawers()' in js
-    assert "getElementById('simple-menu-left-drawer')" in js
-    assert "getElementById('simple-chat-left-drawer-collapse')" in js
-    assert "getElementById('simple-chat-right-drawer-collapse')" in js
+    # verify mutual exclusion was removed
+    assert 'closeAllSimpleDrawers()' not in js
+    # verify persistence keys
+    assert 'localStorage.getItem(\'deepseekAgentOS.simpleChat.drawers.v1\')' in js
+    assert 'simpleChatDrawerState' in js
+    assert 'updateSimpleChatDrawersUI()' in js
+    # verify toggles
+    assert 'simpleChatDrawerState.left = !simpleChatDrawerState.left' in js
+    assert 'simpleChatDrawerState.right = !simpleChatDrawerState.right' in js
+    # verify glyphs
+    assert "leftCollapseBtn.textContent = '❮'" in js
+    assert "leftCollapseBtn.textContent = '❯'" in js
 
 def test_css_drawer_styles():
     path = 'src/deepseek_terminal_agent/dashboard/static/dashboard.css'

@@ -196,6 +196,12 @@ class ManageFlowFSM:
             str, Dict[str, Any]], None]] = None
         self._shadow_journal: Optional[Any] = None
 
+        # DUAL-INVOCATION-GUARD: set by FillIngressCoordinator when this fill has a pending
+        # deferred bracket entry (LIMIT order via bracket_manager.place_deferred_brackets).
+        # ManageFlowFSM clears and consumes this flag in the FLAT FILL handler to skip
+        # _place_brackets for that fill only. None when not in deferred-bracket mode.
+        self._deferred_bracket_entry_id: Optional[str] = None
+
     def set_shadow_journal(self, journal: Any) -> None:
         self._shadow_journal = journal
 
@@ -973,6 +979,27 @@ class ManageFlowFSM:
                 LOG.info(f"ENTRY fill - creating position from {msg.verb}")
                 self._on_fill(msg)
                 self.state = ManageState.BRACKETS_PENDING
+                # DUAL-INVOCATION-GUARD: skip _place_brackets when bracket_manager
+                # owns this entry via place_deferred_brackets (LIMIT-DEFERRED path).
+                # FillIngressCoordinator sets _deferred_bracket_entry_id before calling
+                # manage_flow.handle(). We consume and clear the flag here so it cannot
+                # leak to subsequent fills.
+                _fill_entry_id = str(pld.get("orderId") or "")
+                _is_deferred_owner = (
+                    bool(_fill_entry_id)
+                    and self._deferred_bracket_entry_id is not None
+                    and self._deferred_bracket_entry_id == _fill_entry_id
+                )
+                self._deferred_bracket_entry_id = None  # always consume, never leak
+                if _is_deferred_owner:
+                    LOG.info(
+                        "[LIMIT-DEFERRED] Skipping fsm_manage._place_brackets: "
+                        "bracket_manager.place_deferred_brackets owns brackets "
+                        "for entry_order_id=%s. State=BRACKETS_PENDING. "
+                        "Force-close safety preserved if Path B fails.",
+                        _fill_entry_id,
+                    )
+                    return None
                 LOG.info(f"Position opened, placing brackets on {msg.verb}")
                 result = self._place_brackets(msg)
                 return result

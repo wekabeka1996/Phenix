@@ -241,6 +241,34 @@ def test_md_amr_emits_observable_defer_reason_before_signal_ready(caplog) -> Non
     assert "dir_score" in caplog.text
 
 
+def test_md_amr_noop_after_readiness_emits_bar_decision_trace(caplog) -> None:
+    handler, _fsm = _make_handler()
+    handler._regime["BNBUSDT"] = "MEAN_REVERSION"
+    handler._regime_confidence["BNBUSDT"] = 0.62
+    handler._strategies["BNBUSDT"] = SimpleNamespace(
+        on_bar=lambda **_kwargs: {
+            "status": "NOOP",
+            "trace": {
+                "thr_buy": 0.55,
+                "thr_sell": 0.56,
+                "conf_ratio": 0.41,
+            },
+        }
+    )
+
+    with patch(
+        "apps.reference.contracts.strategy_compatibility_matrix.get_active_strategy_profile",
+        return_value=SimpleNamespace(basis_required_bars=1),
+    ):
+        with caplog.at_level(logging.INFO):
+            handler._on_process_strategy(SimpleNamespace(pld=_event_payload()))
+
+    assert "MD_AMR_BAR_DECISION_TRACE" in caplog.text
+    assert '"result_status": "NOOP"' in caplog.text
+    assert '"symbol": "BNBUSDT"' in caplog.text
+    assert '"gate_stage": "post_startup_gates"' in caplog.text
+
+
 def test_md_amr_first_entry_becomes_possible_after_required_history() -> None:
     strategy = MDAMRStrategyV11(
         channel_window_bars=12,
@@ -347,6 +375,23 @@ def test_md_amr_runtime_logs_init_enable_and_signal_readiness(caplog) -> None:
     assert "MD_AMR_BARS_PROGRESS" in caplog.text
     assert "MD_AMR_SIGNAL_READY" in caplog.text
     assert "MD_AMR_SIGNAL_EMITTED" in caplog.text
+
+
+def test_md_amr_non_900_tf_sec_does_not_emit_bar_decision_trace(caplog) -> None:
+    handler, _fsm = _make_handler()
+    handler._strategies["BNBUSDT"] = SimpleNamespace(
+        on_bar=lambda **_kwargs: {
+            "status": "NOOP",
+            "trace": {"thr_buy": 0.55, "thr_sell": 0.55},
+        }
+    )
+    payload = _event_payload()
+    payload["tf_sec"] = 300
+
+    with caplog.at_level(logging.INFO):
+        handler._on_process_strategy(SimpleNamespace(pld=payload))
+
+    assert "MD_AMR_BAR_DECISION_TRACE" not in caplog.text
 
 
 def test_md_amr_objective_multiplier_keeps_payload_and_trace_aligned() -> None:

@@ -637,6 +637,11 @@
           "default": "'<required>'",
           "default_factory": null,
           "required": true
+        },
+        "shadow_percent_notional_arm": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
         }
       }
     },
@@ -654,6 +659,21 @@
           "required": true
         },
         "giveback_trigger_pct": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "PositionPolicySidecarShadowPercentNotionalArmConfig": {
+      "extra": "forbid",
+      "fields": {
+        "enabled": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "candidate_pcts": {
           "default": "'<required>'",
           "default_factory": null,
           "required": true

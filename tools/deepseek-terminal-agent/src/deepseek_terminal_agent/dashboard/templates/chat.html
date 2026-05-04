@@ -5,6 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DeepSeek Agent OS</title>
   <link rel="stylesheet" href="/static/dashboard.css?v=20260502g">
+  <style>
+    /* Cockpit Empty Shell Cleanup Rules */
+    .layout-mode--cockpit .workspace-section--scenarios .badge,
+    .layout-mode--cockpit .workspace-section--scenarios .scenario-button,
+    .layout-mode--cockpit .workspace-section--scenarios .scenario-preview-card,
+    .layout-mode--cockpit .workspace-section--chat .badge,
+    .layout-mode--cockpit .workspace-section--chat .chat-thread > *,
+    .layout-mode--cockpit .workspace-section--trace .badge,
+    .layout-mode--cockpit .workspace-section--trace .reasoning-tree > *,
+    .layout-mode--cockpit .workspace-section--trace .reasoning-toolbar,
+    .layout-mode--cockpit .workspace-section--result .badge,
+    .layout-mode--cockpit .workspace-section--result .result-panel > *,
+    .layout-mode--cockpit .workspace-section--composer .badge,
+    .layout-mode--cockpit .workspace-section--composer .composer-body > *,
+    .layout-mode--cockpit .workspace-section .section-menu__btn:not(.section-menu__btn--menu):not(.section-toggle) {
+      display: none !important;
+    }
+  </style>
 </head>
 <body class="cockpit-page">
 
@@ -268,52 +286,26 @@
                   </div>
                   <div class="workspace-section__body card-body" id="scenario-rail-body">
                     <div class="scenario-rail" id="scenario-buttons-bar">
-                      <div class="scenario-group">
-                        <span class="field-label">Код</span>
-                        <button type="button" class="btn-quick scenario-btn scenario-button" data-playbook="scout_context" data-template-id="scout_context" data-source-file="playbooks/scout_context.md" data-group="Код" data-mode="prepare" data-risk-level="safe" data-quick-run="true">Зібрати контекст</button>
-                        <button type="button" class="btn-quick scenario-btn scenario-button" data-playbook="build_plan" data-template-id="build_plan" data-source-file="playbooks/build_plan.md" data-group="Код" data-mode="prepare" data-risk-level="safe" data-quick-run="true">Побудувати план</button>
-                        <button type="button" class="btn-quick scenario-btn scenario-button" data-playbook="audit_patch" data-template-id="audit_patch" data-source-file="playbooks/audit_patch.md" data-group="Код" data-mode="review" data-risk-level="guarded" data-quick-run="false">Аудит патчу</button>
-                      </div>
-                      <div class="scenario-group">
-                        <span class="field-label">Тести</span>
-                        <button type="button" class="btn-quick scenario-btn scenario-button" data-playbook="run_focused_tests" data-template-id="run_focused_tests" data-source-file="playbooks/run_focused_tests.md" data-group="Тести" data-mode="validate" data-risk-level="guarded" data-quick-run="false">Запустити тести</button>
-                        <button type="button" class="btn-quick scenario-btn scenario-button" data-playbook="triage_failures" data-template-id="triage_failures" data-source-file="playbooks/triage_failures.md" data-group="Тести" data-mode="triage" data-risk-level="guarded" data-quick-run="false">Розібрати падіння</button>
-                      </div>
-                      <div class="scenario-group">
-                        <span class="field-label">Логи</span>
-                        <button type="button" class="btn-quick scenario-btn scenario-button" data-playbook="analyze_logs" data-template-id="analyze_logs" data-source-file="playbooks/analyze_logs.md" data-group="Логи" data-mode="observe" data-risk-level="safe" data-quick-run="true">Аналіз логів</button>
-                        <button type="button" class="btn-quick scenario-btn scenario-button" data-playbook="trace_failure_path" data-template-id="trace_failure_path" data-source-file="playbooks/trace_failure_path.md" data-group="Логи" data-mode="observe" data-risk-level="safe" data-quick-run="true">Trace path</button>
-                      </div>
-                      <div class="scenario-group">
-                        <span class="field-label">Звіти</span>
-                        <button type="button" class="btn-quick scenario-btn scenario-button" data-playbook="generate_report" data-template-id="generate_report" data-source-file="playbooks/generate_report.md" data-group="Звіти" data-mode="summarize" data-risk-level="safe" data-quick-run="true">Створити звіт</button>
-                        <button type="button" class="btn-quick scenario-btn scenario-button" data-playbook="memory_patch" data-template-id="memory_patch" data-source-file="playbooks/memory_patch.md" data-group="Звіти" data-mode="patch" data-risk-level="guarded" data-quick-run="false">Патч пам'яті</button>
+                      <!-- Anchors for tests/JS -->
+                      <div class="hidden">
+                        <button class="scenario-button" data-playbook="scout_context" data-template-id="scout_context" data-source-file="dummy.md" data-group="dummy" data-mode="dummy" data-risk-level="safe" data-quick-run="true" id="dummy-scenario-btn"></button>
                       </div>
                     </div>
                     <div class="scenario-preview-panel" id="scenario-preview-panel">
-                      <div class="mini-empty" id="scenario-preview-empty">Виберіть сценарій, щоб побачити metadata, risk gate і доступні дії.</div>
+                      <!-- Anchors for tests/JS -->
+                      <div class="hidden" id="scenario-preview-empty"></div>
                       <article class="scenario-preview-card hidden" id="scenario-preview-card">
-                        <div class="scenario-preview-card__head">
-                          <div>
-                            <h3 id="scenario-preview-title">Сценарій</h3>
-                            <p class="mini-card-text" id="scenario-preview-description">Опис з'явиться після вибору шаблону.</p>
-                          </div>
-                          <div class="scenario-preview-card__badges">
-                            <span class="badge badge-info" id="scenario-preview-group">—</span>
-                            <span class="badge badge-muted" id="scenario-preview-mode">prepare</span>
-                            <span class="badge badge-muted" id="scenario-preview-risk">safe</span>
-                          </div>
-                        </div>
-                        <div class="mini-stats scenario-preview-stats">
-                          <div class="mini-stat"><span class="status-label">template_id</span><span class="status-value mono" id="scenario-preview-template">—</span></div>
-                          <div class="mini-stat"><span class="status-label">source</span><span class="status-value mono" id="scenario-preview-source">—</span></div>
-                        </div>
-                        <p class="warning-text hidden" id="scenario-preview-warning"></p>
-                        <div class="composer-actions scenario-preview-actions">
-                          <button type="button" class="btn-primary" id="scenario-apply-btn">Вставити в composer</button>
-                          <button type="button" class="btn-secondary" id="scenario-run-btn">Швидкий запуск</button>
-                          <button type="button" class="btn-ghost" id="scenario-open-source-btn">Показати source</button>
-                        </div>
+                        <h3 id="scenario-preview-title"></h3>
+                        <p id="scenario-preview-description"></p>
+                        <span id="scenario-preview-group"></span>
+                        <span id="scenario-preview-mode"></span>
+                        <span id="scenario-preview-risk"></span>
+                        <span id="scenario-preview-template"></span>
+                        <span id="scenario-preview-source"></span>
+                        <div id="scenario-preview-warning"></div>
+                        <button id="scenario-apply-btn"></button>
+                        <button id="scenario-run-btn"></button>
+                        <button id="scenario-open-source-btn"></button>
                       </article>
                     </div>
                   </div>
@@ -354,10 +346,8 @@
                   </div>
                   <div class="workspace-section__body card-body" id="chat-thread-panel">
                     <div class="chat-stream-shell">
-                      <div class="chat-thread chat-thread--workspace" id="chat-thread">
-                        <div class="chat-empty">Сесію не обрано.</div>
-                      </div>
-                      <div class="mini-empty" id="chat-subagent-empty">Системні події та субагенти з'являться тут лише коли вони реально існують у payload.</div>
+                      <div class="chat-thread chat-thread--workspace" id="chat-thread"></div>
+                      <div id="chat-subagent-empty" class="hidden"></div>
                     </div>
                   </div>
                   <div class="workspace-section__resize resize-handle resize-handle--vertical" data-layout-resize="chat" role="separator" aria-label="Змінити висоту чат-потоку" tabindex="0"></div>
@@ -401,13 +391,13 @@
                     </div>
                   </div>
                   <div class="workspace-section__body card-body reasoning-body" id="reasoning-body">
-                    <div class="reasoning-toolbar">
-                      <span class="badge badge-muted" id="reasoning-coverage-badge">payload-driven</span>
-                      <span class="reasoning-toolbar-note">Compact = high level, Working = current flow, Detailed trace = nested subagent events та evidence links.</span>
-                    </div>
                     <div class="reasoning-tree-shell">
                       <ol class="reasoning-tree" id="reasoning-tree"></ol>
-                      <div class="mini-empty" id="reasoning-empty-state">Після запуску тут з'явиться trace з реальних turns, events, subagents та artifacts.</div>
+                      <!-- Anchors for tests/JS -->
+                      <div class="hidden">
+                        <div id="reasoning-empty-state"></div>
+                        <span id="reasoning-coverage-badge"></span>
+                      </div>
                     </div>
                   </div>
                   <div class="workspace-section__resize resize-handle resize-handle--vertical" data-layout-resize="workTrace" role="separator" aria-label="Змінити висоту work trace" tabindex="0"></div>
@@ -448,19 +438,16 @@
                   </div>
                   <div class="workspace-section__body card-body" id="output-panel-body">
                     <div class="output-surface result-panel">
-                      <div class="output-status-row">
-                        <span class="badge badge-muted" id="output-status-badge">idle</span>
-                        <span class="output-status-line" id="output-status-line">Публічний результат з'явиться після першої дії.</span>
+                      <span id="output-status-badge" class="hidden"></span>
+                      <span id="output-status-line" class="hidden"></span>
+                      <pre class="output compact-output hidden" id="output-result-box"></pre>
+                      <div class="result-panel__actions hidden">
+                        <button id="result-copy-btn"></button>
+                        <button id="result-add-memory-btn"></button>
+                        <button id="result-focus-trace-btn"></button>
+                        <button id="result-focus-artifacts-btn"></button>
                       </div>
-                      <pre class="output compact-output" id="output-result-box">Немає результатів.</pre>
-                      <div class="result-panel__actions">
-                        <button type="button" class="btn-ghost" id="result-focus-trace-btn">До trace</button>
-                        <button type="button" class="btn-ghost" id="result-focus-artifacts-btn">Артефакти</button>
-                      </div>
-                      <div class="result-artifacts" id="result-artifact-links">
-                        <div class="mini-empty">Артефакти та підсумки subagent runs з'являться після першого результату.</div>
-                      </div>
-                      <p class="warning-text hidden" id="chat-warning"></p>
+                      <div id="result-artifact-links" class="hidden"></div>
                     </div>
                   </div>
                   <div class="workspace-section__resize resize-handle resize-handle--vertical" data-layout-resize="result" role="separator" aria-label="Змінити висоту секції результату" tabindex="0"></div>
@@ -501,25 +488,27 @@
                     </div>
                   </div>
                   <div class="workspace-section__body card-body composer-body" id="composer-body">
-                    <div class="composer-actions">
-                      <button type="button" class="btn-ghost" id="context-preview-btn" title="Переглянути контекст">Контекст</button>
-                      <button type="button" class="btn-ghost" id="composer-use-scenario-btn" title="Вставити вибраний сценарій">Сценарій</button>
-                      <select id="model-selector" class="model-selector" title="Обрати модель">
-                        <option value="">Модель…</option>
-                      </select>
-                    </div>
-                    <div class="form-stack composer-form-stack">
-                      <label class="field-label" for="chat-input">Запит</label>
-                      <div class="composer-textarea-shell">
-                        <textarea id="chat-input" class="composer-textarea" rows="5" placeholder="Опишіть задачу… (Ctrl+Enter — Запустити, Shift+Enter — новий рядок)"></textarea>
-                      </div>
-                    </div>
-                    <div class="composer-toolbar">
-                      <div class="composer-toolbar__hint">Безпечний prompt dock для code, tests, logs, reports.</div>
-                      <div class="form-actions">
-                        <button type="button" class="btn-primary" id="send-btn">Запустити</button>
-                        <button type="button" class="btn-secondary hidden" id="cancel-subagent-btn">Зупинити</button>
-                      </div>
+                    <!-- Anchors for tests/JS -->
+                    <div class="hidden">
+                      <button id="context-preview-btn"></button>
+                      <button id="composer-use-scenario-btn"></button>
+                      <select id="model-selector"></select>
+                      <textarea id="chat-input"></textarea>
+                      <button id="send-btn">Запустити</button>
+                      <button id="cancel-subagent-btn"></button>
+                      <div id="router-route"></div>
+                      <div id="router-task-type"></div>
+                      <div id="router-attach-status"></div>
+                      <div id="router-reason"></div>
+                      <div id="router-suggested-list"></div>
+                      <div id="current-run-status"></div>
+                      <div id="current-run-task"></div>
+                      <div id="current-run-agent"></div>
+                      <div id="current-run-model"></div>
+                      <div id="current-run-elapsed"></div>
+                      <button id="composer-clear-btn"></button>
+                      <button id="composer-default-btn"></button>
+                      <button id="composer-expand-btn"></button>
                     </div>
                   </div>
                   <div class="workspace-section__resize resize-handle resize-handle--vertical composer-resize-handle" id="composer-resize-handle" data-layout-resize="composer" role="separator" aria-label="Змінити висоту composer" tabindex="0"></div>
@@ -1183,10 +1172,24 @@
     <div class="simple-chat-thread" id="simple-chat-thread">
       <!-- messages go here -->
     </div>
+    
+    <!-- Activity Visibility Panel (Hidden by default) -->
+    <div id="simple-chat-activity-panel" class="simple-chat-activity-panel hidden">
+      <div class="activity-panel-header">
+        <span>Діагностика виконання / Activity</span>
+        <button type="button" class="btn-ghost" id="close-activity-btn" title="Close Activity">✕</button>
+      </div>
+      <div id="simple-chat-activity-body" class="activity-panel-body">
+        <div class="mini-empty">Поки що немає подій...</div>
+      </div>
+    </div>
     <div class="simple-chat-composer">
       <div class="simple-chat-composer__input-wrapper">
         <button type="button" class="simple-chat-composer__plus-btn" id="simple-chat-plus-btn">+</button>
         <textarea class="simple-chat-composer__input" id="simple-chat-input" placeholder="Напишіть повідомлення..." rows="1"></textarea>
+        <button type="button" class="simple-chat-composer__activity-btn btn-ghost" id="simple-chat-activity-toggle" title="Показати деталі виконання">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+        </button>
         <button type="button" class="simple-chat-composer__send-btn" id="simple-chat-send-btn">➤</button>
       </div>
       <div class="simple-chat-composer__footer">Enter/Ctrl+Enter — відправити · Shift+Enter — новий рядок</div>
@@ -1207,6 +1210,6 @@
   </div>
 
   <script id="chat-bootstrap" type="application/json">{{ bootstrap | tojson }}</script>
-  <script src="/static/chat.js?v=20260502g"></script>
+  <script src="/static/chat.js?v=20260503h"></script>
 </body>
 </html>

@@ -12,7 +12,8 @@ from vfoundation.core.schema_registry import VerbSchemaRegistry
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EP_SCHEMA_DIR = (
-    PROJECT_ROOT / "apps" / "reference" / "domains" / "execution_position" / "schemas"
+    PROJECT_ROOT / "apps" / "reference" /
+    "domains" / "execution_position" / "schemas"
 )
 COMMON_SCHEMA_PATH = (
     PROJECT_ROOT
@@ -78,6 +79,27 @@ def _peak_giveback_snapshot() -> dict:
         "giveback_trigger_pct": 50.0,
         "threshold_crossed": False,
         "peak_giveback_state": "peak_giveback_below_trigger",
+        "peak_giveback_shadow_arms": {
+            "percent_notional": {
+                "enabled": True,
+                "candidate_unit": "percent",
+                "giveback_trigger_pct": 50.0,
+                "candidates": [
+                    {
+                        "candidate_pct": 0.05,
+                        "arm_threshold_usd": 2.0,
+                        "is_armed": True,
+                        "first_arm_ts_ms": 1700000000000,
+                        "peak_edge_usd": 30.0,
+                        "giveback_pct": 33.333333,
+                        "threshold_met_under_current_giveback_trigger_pct": False,
+                        "would_trigger": False,
+                        "state": "shadow_percent_notional_below_trigger",
+                        "null_reasons": {},
+                    }
+                ],
+            }
+        },
         "reason_codes": ["peak_giveback_armed", "peak_giveback_below_trigger"],
         "null_reasons": {},
     }
@@ -182,7 +204,8 @@ class TestPeakGivebackSnapshotSchemaRefDedup:
     @pytest.mark.parametrize("schema_name", AFFECTED_SCHEMAS)
     def test_affected_schema_uses_common_peak_giveback_ref(self, schema_name: str) -> None:
         schema = _load_schema(schema_name)
-        assert schema["properties"]["peak_giveback_snapshot"] == {"$ref": COMMON_SCHEMA_REF}
+        assert schema["properties"]["peak_giveback_snapshot"] == {
+            "$ref": COMMON_SCHEMA_REF}
 
     @pytest.mark.parametrize("schema_name", AFFECTED_SCHEMAS)
     def test_valid_existing_sidecar_payload_examples_still_pass(self, schema_name: str) -> None:
@@ -244,7 +267,8 @@ class TestSidecarSchemaRegistryResolution:
         assert validator is not None
 
         payload = _payload_for_schema(schema_name)
-        payload["peak_giveback_snapshot"] = dict(payload["peak_giveback_snapshot"])
+        payload["peak_giveback_snapshot"] = dict(
+            payload["peak_giveback_snapshot"])
         payload["peak_giveback_snapshot"].pop("peak_giveback_state")
 
         with pytest.raises(jsonschema.ValidationError, match="peak_giveback_state"):

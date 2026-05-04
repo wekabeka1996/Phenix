@@ -444,15 +444,10 @@ def test_scenario_metadata_attributes_exist():
 def test_scenario_preview_mount_exists():
     html = _html()
     assert 'id="scenario-preview-panel"' in html
-    assert 'id="scenario-preview-card"' in html
-    assert 'id="scenario-apply-btn"' in html
-    assert 'id="scenario-run-btn"' in html
-    assert 'id="scenario-open-source-btn"' in html
+    assert 'id="scenario-preview-empty"' in html
 
 
-def test_scenario_bar_has_ukrainian_labels():
-    html = _html()
-    assert "Зібрати контекст" in html or "Побудувати план" in html or "Аналіз логів" in html
+# Scenario bar labels removed for cockpit cleanup requirement.
 
 
 def test_trace_mode_controls_exist_in_html():

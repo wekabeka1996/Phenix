@@ -21,6 +21,7 @@
     "giveback_trigger_pct",
     "threshold_crossed",
     "peak_giveback_state",
+    "peak_giveback_shadow_arms",
     "reason_codes",
     "null_reasons"
   ],
@@ -97,6 +98,111 @@
     "peak_giveback_state": {
       "type": "string",
       "minLength": 1
+    },
+    "peak_giveback_shadow_arms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "percent_notional"
+      ],
+      "properties": {
+        "percent_notional": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "candidate_unit",
+            "giveback_trigger_pct",
+            "candidates"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "candidate_unit": {
+              "type": "string",
+              "const": "percent"
+            },
+            "giveback_trigger_pct": {
+              "type": "number"
+            },
+            "null_reason": {
+              "type": "string"
+            },
+            "candidates": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "candidate_pct",
+                  "arm_threshold_usd",
+                  "is_armed",
+                  "first_arm_ts_ms",
+                  "peak_edge_usd",
+                  "giveback_pct",
+                  "threshold_met_under_current_giveback_trigger_pct",
+                  "would_trigger",
+                  "state",
+                  "null_reasons"
+                ],
+                "properties": {
+                  "candidate_pct": {
+                    "type": "number"
+                  },
+                  "arm_threshold_usd": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "is_armed": {
+                    "type": "boolean"
+                  },
+                  "first_arm_ts_ms": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0
+                  },
+                  "peak_edge_usd": {
+                    "type": "number"
+                  },
+                  "giveback_pct": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "threshold_met_under_current_giveback_trigger_pct": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "would_trigger": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "state": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "null_reasons": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "reason_codes": {
       "type": "array",

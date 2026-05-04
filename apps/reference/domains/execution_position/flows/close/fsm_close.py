@@ -23,6 +23,11 @@ from .close_producer_bridge import (
     adapt_cmd_close_to_dec_close,
     build_close_producer_bridge_trace_ref,
 )
+from apps.reference.domains.execution_position.telemetry.close_shadow_comparison import (
+    build_close_bridge_comparison,
+    build_close_bridge_reject_comparison,
+    emit_close_shadow_comparison,
+)
 from apps.reference.telemetry.shadow_journal import (
     get_shadow_journal,
     snapshot_close_flow_state,
@@ -125,6 +130,36 @@ class CloseFlowFSM:
                 "intake_validation",
                 exc,
             )
+            journal = get_shadow_journal(self)
+            if journal is not None:
+                try:
+                    comparison = build_close_bridge_reject_comparison(
+                        msg=msg,
+                        reason="intake_validation",
+                        state_before=snapshot_close_flow_state(self),
+                        state_after=snapshot_close_flow_state(self),
+                        detail=str(exc),
+                    )
+                    emit_close_shadow_comparison(
+                        journal=journal,
+                        comparison=comparison,
+                        event_name="EVT:CLOSE_SHADOW_BRIDGE_REJECT",
+                        source_component="apps.reference.domains.execution_position.fsm_close",
+                        source_path="execution:close_shadow_bridge_reject",
+                        event_origin_type="execution",
+                        truth_owner="CloseFlowFSM",
+                        rid=getattr(msg, "rid", None),
+                        before=snapshot_close_flow_state(self),
+                        after=snapshot_close_flow_state(self),
+                        payload=msg.pld or {},
+                        notes=["stage=bridge", "comparison_outcome=reject"],
+                    )
+                except Exception:
+                    LOG.warning(
+                        "CLOSE_SHADOW_BRIDGE_REJECT_COMPARE_FAILURE: rid=%s",
+                        getattr(msg, "rid", None),
+                        exc_info=True,
+                    )
             return None
 
         self.state = CloseState.CLOSE_COND
@@ -208,6 +243,35 @@ class CloseFlowFSM:
                         after=after,
                         notes=[f"input={msg.op}:{msg.verb}"],
                     )
+                    try:
+                        comparison = build_close_bridge_comparison(
+                            msg=msg,
+                            result=result,
+                            state_before=before,
+                            state_after=after,
+                            detail=f"input={msg.op}:{msg.verb}",
+                        )
+                        emit_close_shadow_comparison(
+                            journal=journal,
+                            comparison=comparison,
+                            event_name="EVT:CLOSE_SHADOW_BRIDGE",
+                            source_component="apps.reference.domains.execution_position.fsm_close",
+                            source_path="execution:close_shadow_bridge",
+                            event_origin_type="execution",
+                            truth_owner="CloseFlowFSM",
+                            rid=getattr(result, "rid", None) or getattr(
+                                msg, "rid", None),
+                            before=before,
+                            after=after,
+                            payload=result.pld or {},
+                            notes=["stage=bridge", "comparison_outcome=match"],
+                        )
+                    except Exception:
+                        LOG.warning(
+                            "CLOSE_SHADOW_BRIDGE_COMPARE_FAILURE: rid=%s",
+                            getattr(result, "rid", None) or getattr(msg, "rid", None),
+                            exc_info=True,
+                        )
                 # INPUT record: triggering event context only (no transition window)
                 notes = ["record_role=input"]
                 if result is not None:

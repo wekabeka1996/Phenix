@@ -235,6 +235,7 @@ from apps.reference.config.domains.execution_position import (
     PositionPolicySidecarLoggingConfig,
     PositionPolicySidecarMode,
     PositionPolicySidecarPeakGivebackConfig,
+    PositionPolicySidecarShadowPercentNotionalArmConfig,
     PositionPolicySidecarProfitabilityGuardConfig,
     PositionPolicySidecarScoringCapsConfig,
     PositionPolicySidecarScoringConfig,
@@ -1322,7 +1323,8 @@ class AuroraConfig(BaseModel):
         decision_making = getattr(self.domains, "decision_making", None)
         gate_cfg = getattr(decision_making, "low_vol_cost_floor_gate", None)
         gate_thresholds = (
-            getattr(gate_cfg, "thresholds", None) if gate_cfg is not None else None
+            getattr(gate_cfg, "thresholds",
+                    None) if gate_cfg is not None else None
         )
         if gate_thresholds is None or getattr(gate_thresholds, "min_rr", None) is None:
             raise ValueError(
@@ -1411,8 +1413,10 @@ class AuroraConfig(BaseModel):
                 )
                 tp_low = _coerce_float(tp_cfg.tp_low_ratio)
                 tp_mult = _coerce_float(tp_mult_map.get(tp_mult_source))
-                min_tp_rr = _coerce_float(getattr(regime_tpsl, "min_tp_rr", None))
-                max_tp_rr = _coerce_float(getattr(regime_tpsl, "max_tp_rr", None))
+                min_tp_rr = _coerce_float(
+                    getattr(regime_tpsl, "min_tp_rr", None))
+                max_tp_rr = _coerce_float(
+                    getattr(regime_tpsl, "max_tp_rr", None))
                 if (
                     tp_low is None
                     or tp_mult is None
@@ -1443,8 +1447,10 @@ class AuroraConfig(BaseModel):
                     "LOW_VOLATILITY" if "LOW_VOLATILITY" in rr_map else "DEFAULT"
                 )
                 rr = _coerce_float(rr_map.get(rr_source))
-                min_tp_rr = _coerce_float(getattr(regime_tpsl, "min_tp_rr", None))
-                max_tp_rr = _coerce_float(getattr(regime_tpsl, "max_tp_rr", None))
+                min_tp_rr = _coerce_float(
+                    getattr(regime_tpsl, "min_tp_rr", None))
+                max_tp_rr = _coerce_float(
+                    getattr(regime_tpsl, "max_tp_rr", None))
                 if rr is None or min_tp_rr is None or max_tp_rr is None:
                     missing.append(
                         f"{symbol} invalid strategies.aurora.assets.{symbol}.exit.regime_tpsl.atr geometry")

@@ -691,6 +691,28 @@ class PositionPolicySidecarPeakGivebackConfig(BaseModel):
     giveback_trigger_pct: float = Field(..., ge=0.0, le=100.0)
 
 
+class PositionPolicySidecarShadowPercentNotionalArmConfig(BaseModel):
+    """Shadow-only percent-of-notional arming candidates (percent units, not ratio)."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(...)
+    candidate_pcts: List[float] = Field(..., min_length=1)
+
+    @field_validator("candidate_pcts")
+    @classmethod
+    def _validate_candidate_pcts(cls, value: List[float]) -> List[float]:
+        validated: List[float] = []
+        for candidate in value:
+            candidate_pct = float(candidate)
+            if candidate_pct <= 0.0:
+                raise ValueError(
+                    "shadow_percent_notional_arm.candidate_pcts must contain only positive percent values"
+                )
+            validated.append(candidate_pct)
+        return validated
+
+
 class PositionPolicySidecarConfig(BaseModel):
     """Strict configuration contract for the position policy sidecar."""
 
@@ -706,6 +728,9 @@ class PositionPolicySidecarConfig(BaseModel):
     logging: PositionPolicySidecarLoggingConfig = Field(...)
     allowed_actions: PositionPolicySidecarAllowedActionsConfig = Field(...)
     peak_giveback_close: PositionPolicySidecarPeakGivebackConfig = Field(...)
+    shadow_percent_notional_arm: PositionPolicySidecarShadowPercentNotionalArmConfig = Field(
+        ...
+    )
 
     @model_validator(mode="after")
     def _validate_bounded_action_scope(self) -> "PositionPolicySidecarConfig":

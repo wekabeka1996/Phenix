@@ -880,14 +880,40 @@ class DirectionalSanityConfig(BaseModel):
     )
     hard_veto_consecutive_bars: int = Field(
         ..., ge=1,
-        le=3,
+        le=10,
         description='Trailing same-sign filtered delta bars required before directional_sanity emits hard countertrend veto (NRR-027). '
                     'Keeps single-bar trend context for tracing while avoiding hard veto on one-bar countertrend blips.'
+    )
+    hard_veto_consecutive_bars_by_regime: Optional[Dict[str, int]] = Field(
+        default=None,
+        description=(
+            'Optional per-regime override for hard_veto_consecutive_bars. '
+            'When a key matches the current structural regime label, its value overrides the '
+            'scalar hard_veto_consecutive_bars. Unknown fields are rejected by Pydantic. '
+            'Values must be in [1, 10]. Canonical regime keys: DEFAULT, TREND_UP, TREND_DOWN, '
+            'HIGH_VOLATILITY, LOW_VOLATILITY, MEAN_REVERSION, UNCERTAIN.'
+        ),
     )
     consecutive_bars: int = Field(
         ..., ge=1,
         le=3,
         description='Number of consecutive deltas required to confirm trend (1-3). Use 1 for bar-based backtest, 2+ for live tick-based.'
+    )
+    nrr026_enabled: bool = Field(
+        default=True,
+        description=(
+            'Enable NRR-026 (INSUFFICIENT_TREND_CONFIRMATION) gate. '
+            'When False, regime-confidence-below-min and trend/confidence checks are bypassed '
+            'independently of nrr027_enabled. Requires directional_sanity.enabled=true to have effect.'
+        ),
+    )
+    nrr027_enabled: bool = Field(
+        default=True,
+        description=(
+            'Enable NRR-027 (DIRECTIONAL_SANITY_BLOCKED) countertrend hard-veto gate. '
+            'When False, countertrend veto is bypassed independently of nrr026_enabled. '
+            'Requires directional_sanity.enabled=true to have effect.'
+        ),
     )
 
     @field_validator('min_regime_confidence_by_regime', mode='before')
@@ -905,6 +931,44 @@ class DirectionalSanityConfig(BaseModel):
             value,
             field_name='max_regime_confidence_by_regime',
         )
+
+    @field_validator('hard_veto_consecutive_bars_by_regime', mode='before')
+    @classmethod
+    def validate_hard_veto_consecutive_bars_by_regime_shape(cls, value):
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise ValueError(
+                'hard_veto_consecutive_bars_by_regime must be a mapping'
+            )
+        allowed = ', '.join(sorted(_REGIME_CONFIDENCE_GATE_KEYS))
+        for raw_key, raw_val in value.items():
+            if not isinstance(raw_key, str):
+                raise ValueError(
+                    'hard_veto_consecutive_bars_by_regime keys must be strings'
+                )
+            key = raw_key.strip()
+            if key != raw_key or key != key.upper():
+                raise ValueError(
+                    f'hard_veto_consecutive_bars_by_regime key {raw_key!r} '
+                    f'must be canonical uppercase; allowed: {allowed}'
+                )
+            if key not in _REGIME_CONFIDENCE_GATE_KEYS:
+                raise ValueError(
+                    f'hard_veto_consecutive_bars_by_regime: unknown key '
+                    f'{raw_key!r}; allowed: {allowed}'
+                )
+            if isinstance(raw_val, bool) or not isinstance(raw_val, int):
+                raise ValueError(
+                    f'hard_veto_consecutive_bars_by_regime[{raw_key!r}] '
+                    f'must be an integer'
+                )
+            if not (1 <= raw_val <= 10):
+                raise ValueError(
+                    f'hard_veto_consecutive_bars_by_regime[{raw_key!r}]='
+                    f'{raw_val} must be in [1, 10]'
+                )
+        return value
 
     @model_validator(mode='after')
     def validate_min_regime_confidence_by_regime_contract(self) -> 'DirectionalSanityConfig':

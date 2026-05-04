@@ -26,12 +26,12 @@ trust_enabled: false
 
 evidence_capture:
   # disabled preserves current behavior; journal_only is opt-in
-  mode: disabled
-  # Explicit capture toggles remain false in the default config
-  collect_observation: false
-  collect_authority_request: false
-  collect_authority_response: false
-  emit_shadow_decision_logged: false
+  mode: journal_only
+  # Explicit capture toggles for Phase 8A journal-only runtime capture
+  collect_observation: true
+  collect_authority_request: true
+  collect_authority_response: true
+  emit_shadow_decision_logged: true
 
 authority:
   # Operating mode: shadow | advisory | gated
