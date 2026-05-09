@@ -1,3 +1,0 @@
-# Phase 4 static typing overlay for Neocortex hot-path closure.
-mypy==1.20.2
-types-PyYAML==6.0.12.20260408

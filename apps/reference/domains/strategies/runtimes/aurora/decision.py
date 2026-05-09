@@ -1578,6 +1578,11 @@ class AuroraDecisionMixin:
                 "regime_same_bar": features.get("regime_same_bar"),
                 "regime_provenance_reason": features.get("regime_provenance_reason"),
             },
+            "features": {
+                k: features.get(k)
+                for k in ("ret_60s", "ret_300s", "spread_bps", "liquidity_kappa", "absorption")
+                if k in features
+            },
         }
         if bar_identity is not None:
             payload["bar_identity"] = bar_identity.to_payload()

@@ -22,6 +22,10 @@ if TYPE_CHECKING:
     from apps.reference.config_models import AuroraConfig
     from apps.reference.core.time.clock import Clock
 
+OPPOSITE_ENTRY_REQUIRES_EXPLICIT_FLIP_CONTRACT = (
+    "OPPOSITE_ENTRY_REQUIRES_EXPLICIT_FLIP_CONTRACT"
+)
+
 
 class FlipOrchestrator:
     """
@@ -253,11 +257,11 @@ class FlipOrchestrator:
             return "ANTI_PYRAMIDING_BLOCK"
 
         if not flip_enabled:
-            self.logger.debug(
-                f"[{symbol}] FLIP_ORCHESTRATION: DISABLED for this symbol; allowing opposite-side OPEN "
-                f"(state={pos_state}, intent={intent_side})"
+            self.logger.warning(
+                f"[{symbol}] FLIP_ORCHESTRATION: BLOCK - opposite-side OPEN requires explicit flip contract "
+                f"(state={pos_state}, intent={intent_side}, flip_enabled={flip_enabled})"
             )
-            return None
+            return OPPOSITE_ENTRY_REQUIRES_EXPLICIT_FLIP_CONTRACT
 
         # Hysteresis only runs when the signal payload carries concrete score and
         # threshold evidence. Missing fields do not get synthetic defaults here.

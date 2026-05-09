@@ -57,6 +57,7 @@ def _set_runtime_state(
     manage_active: bool = True,
     close_state=CloseState.OPENED,
     with_close: bool = True,
+    close_submission_contour: dict | None = None,
 ) -> None:
     fsm.manage_flows.clear()
     fsm.close_flows.clear()
@@ -70,20 +71,53 @@ def _set_runtime_state(
     if with_close:
         close_flow = MagicMock()
         close_flow.state = close_state
+        close_flow.close_submission_restore_truth = close_submission_contour
         fsm.close_flows[symbol] = close_flow
     else:
         fsm.close_flows.pop(symbol, None)
 
 
+def _sample_close_submission_contour() -> dict:
+    return {
+        "close_cmd_rid": "RID-CLOSE-BTCUSDT",
+        "truth_classification": "POSITION_PRESENT_AND_SUBMITTABLE",
+        "truth_reason": "matched_live_position",
+        "position_amount_at_close_request": "0.25",
+        "bridge_payload": {
+            "symbol": "BTCUSDT",
+            "reason": "MANUAL_CLOSE",
+            "qty": "0.04",
+            "idempotent_key": "IDEM-BTCUSDT",
+            "trigger": "CMD:CLOSE",
+            "command_trigger": "manual_close",
+            "close_guard_prevalidated": False,
+        },
+        "submission_payload": {
+            "symbol": "BTCUSDT",
+            "side": "SELL",
+            "quantity": "0.04",
+            "client_order_id": "CLOSE-BTCUSDT-CLIENT-1",
+            "partial_close": True,
+        },
+        "submit_boundary_result": {
+            "outcome": "submitted",
+            "status": "NEW",
+            "order_id": "close-123",
+        },
+    }
+
+
 def _write_envelope(path: Path, envelope: ExecutionPositionRestoreEnvelope) -> None:
     path.write_text(
-        json.dumps(envelope.model_dump(mode="json", exclude_none=True), sort_keys=True),
+        json.dumps(envelope.model_dump(
+            mode="json", exclude_none=True), sort_keys=True),
         encoding="utf-8",
     )
 
 
 def _matching_envelope(fsm, *, generated_at_ms: int = 1_775_000_000_000) -> ExecutionPositionRestoreEnvelope:
-    record = fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()[0]
+    record = fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()[
+        0]
     return ExecutionPositionRestoreEnvelope(
         schema_version="1.0.0",
         artifact_type="execution_position_restore_envelope_v1",
@@ -100,7 +134,8 @@ def test_dark_read_reports_exact_match_for_valid_matching_artifact(
 ) -> None:
     fsm, _, _ = fsm_harness
     path = _configure_dark_read(fsm, tmp_path)
-    _set_runtime_state(fsm, manage_state=ManageState.TRACKING, close_state=CloseState.OPENED)
+    _set_runtime_state(fsm, manage_state=ManageState.TRACKING,
+                       close_state=CloseState.OPENED)
     fsm._set_symbol_brackets_snapshot(
         "BTCUSDT",
         sl_order_id="8631000001",
@@ -110,7 +145,8 @@ def test_dark_read_reports_exact_match_for_valid_matching_artifact(
     envelope = _matching_envelope(fsm, generated_at_ms=1_775_000_000_000)
     _write_envelope(path, envelope)
 
-    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_001_000)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(
+        now_ms=1_775_000_001_000)
 
     assert result.attempted is True
     assert result.parse_success is True
@@ -123,13 +159,38 @@ def test_dark_read_reports_exact_match_for_valid_matching_artifact(
     assert result.mismatch_counts.unknown_vs_guessed_mismatch == 0
 
 
+def test_dark_read_includes_close_submission_contour_in_exact_match(
+    fsm_harness,
+    tmp_path: Path,
+) -> None:
+    fsm, _, _ = fsm_harness
+    path = _configure_dark_read(fsm, tmp_path)
+    _set_runtime_state(
+        fsm,
+        manage_state=ManageState.TRACKING,
+        close_state=CloseState.OPENED,
+        close_submission_contour=_sample_close_submission_contour(),
+    )
+    envelope = _matching_envelope(fsm, generated_at_ms=1_775_000_000_000)
+    _write_envelope(path, envelope)
+
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(
+        now_ms=1_775_000_001_000
+    )
+
+    assert result.artifact_state == "valid"
+    assert result.comparison_outcome == "exact_match"
+    assert result.mismatch_counts.exact_field_mismatch == 0
+
+
 def test_dark_read_reports_explicit_mismatch_classes(
     fsm_harness,
     tmp_path: Path,
 ) -> None:
     fsm, _, _ = fsm_harness
     path = _configure_dark_read(fsm, tmp_path)
-    _set_runtime_state(fsm, manage_state=ManageState.TRACKING, close_state=CloseState.OPENED)
+    _set_runtime_state(fsm, manage_state=ManageState.TRACKING,
+                       close_state=CloseState.OPENED)
     fsm._pending_brackets["8631999001"] = {"symbol": "BTCUSDT"}
 
     envelope = ExecutionPositionRestoreEnvelope(
@@ -152,14 +213,16 @@ def test_dark_read_reports_explicit_mismatch_classes(
     )
     _write_envelope(path, envelope)
 
-    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_001_000)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(
+        now_ms=1_775_000_001_000)
 
     assert result.comparison_outcome == "mismatch"
     assert result.mixed_certainty is True
     assert result.mismatch_counts.unknown_vs_guessed_mismatch >= 1
     assert result.mismatch_counts.exact_field_mismatch >= 1
     assert result.mismatch_counts.heuristic_only_field >= 1
-    assert any(sample.field == "deferred_bracket_ref.entry_order_id" for sample in result.mismatch_samples)
+    assert any(sample.field ==
+               "deferred_bracket_ref.entry_order_id" for sample in result.mismatch_samples)
 
 
 def test_dark_read_reports_missing_artifact(fsm_harness, tmp_path: Path) -> None:
@@ -167,7 +230,8 @@ def test_dark_read_reports_missing_artifact(fsm_harness, tmp_path: Path) -> None
     _configure_dark_read(fsm, tmp_path)
     _set_runtime_state(fsm)
 
-    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_001_000)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(
+        now_ms=1_775_000_001_000)
 
     assert result.attempted is True
     assert result.artifact_state == "missing"
@@ -181,7 +245,8 @@ def test_dark_read_reports_corrupt_artifact(fsm_harness, tmp_path: Path) -> None
     _set_runtime_state(fsm)
     path.write_text("{not-json", encoding="utf-8")
 
-    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_001_000)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(
+        now_ms=1_775_000_001_000)
 
     assert result.artifact_state == "corrupt"
     assert result.parse_success is False
@@ -212,7 +277,8 @@ def test_dark_read_reports_stale_artifact(fsm_harness, tmp_path: Path) -> None:
     envelope = _matching_envelope(fsm, generated_at_ms=1_775_000_000_000)
     _write_envelope(path, envelope)
 
-    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_010_500)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(
+        now_ms=1_775_000_010_500)
 
     assert result.parse_success is True
     assert result.artifact_state == "stale"
@@ -244,7 +310,8 @@ def test_dark_read_flags_mixed_certainty_artifact(fsm_harness, tmp_path: Path) -
     )
     _write_envelope(path, envelope)
 
-    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_001_000)
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(
+        now_ms=1_775_000_001_000)
 
     assert result.parse_success is True
     assert result.mixed_certainty is True
@@ -257,13 +324,17 @@ def test_dark_read_compare_does_not_mutate_runtime_state(
 ) -> None:
     fsm, _, _ = fsm_harness
     path = _configure_dark_read(fsm, tmp_path)
-    _set_runtime_state(fsm, manage_state=ManageState.TRACKING, close_state=CloseState.CLOSE_COND)
+    _set_runtime_state(fsm, manage_state=ManageState.TRACKING,
+                       close_state=CloseState.CLOSE_COND)
     envelope = _matching_envelope(fsm, generated_at_ms=1_775_000_000_000)
     _write_envelope(path, envelope)
-    before = [record.model_dump(mode="json", exclude_none=True) for record in fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()]
+    before = [record.model_dump(mode="json", exclude_none=True)
+              for record in fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()]
 
-    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(now_ms=1_775_000_001_000)
-    after = [record.model_dump(mode="json", exclude_none=True) for record in fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()]
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_dark_read_comparison(
+        now_ms=1_775_000_001_000)
+    after = [record.model_dump(mode="json", exclude_none=True)
+             for record in fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()]
 
     assert result.comparison_outcome == "exact_match"
     assert before == after
@@ -277,12 +348,15 @@ async def test_startup_reconcile_records_dark_read_status_without_changing_autho
     fsm, _, _ = fsm_harness
     restore_path = _configure_dark_read(fsm, tmp_path, age_ms=None)
     startup_truth_path = _configure_startup_truth_writer(fsm, tmp_path)
-    _set_runtime_state(fsm, manage_state=ManageState.TRACKING, close_state=CloseState.OPENED)
-    _write_envelope(restore_path, _matching_envelope(fsm, generated_at_ms=4_102_444_800_000))
+    _set_runtime_state(fsm, manage_state=ManageState.TRACKING,
+                       close_state=CloseState.OPENED)
+    _write_envelope(restore_path, _matching_envelope(
+        fsm, generated_at_ms=4_102_444_800_000))
 
     fsm.order_guardian.cleanup_orphans = AsyncMock(return_value=None)
     fsm.adapter = None
-    before = [record.model_dump(mode="json", exclude_none=True) for record in fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()]
+    before = [record.model_dump(mode="json", exclude_none=True)
+              for record in fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()]
 
     await fsm._startup_order_guardian_reconcile()
 
@@ -307,7 +381,8 @@ async def test_startup_reconcile_records_dark_read_status_without_changing_autho
         "dark_read_compare",
         "persist_restore_artifact_snapshot",
     ]
-    after = [record.model_dump(mode="json", exclude_none=True) for record in fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()]
+    after = [record.model_dump(mode="json", exclude_none=True)
+             for record in fsm._startup_truth_orchestrator._build_execution_restore_artifact_records()]
     assert before == after
 
 
@@ -319,7 +394,8 @@ async def test_startup_reconcile_mismatch_artifact_does_not_change_runtime_autho
     fsm, _, _ = fsm_harness
     restore_path = _configure_dark_read(fsm, tmp_path, age_ms=None)
     startup_truth_path = _configure_startup_truth_writer(fsm, tmp_path)
-    _set_runtime_state(fsm, manage_state=ManageState.TRACKING, close_state=CloseState.OPENED)
+    _set_runtime_state(fsm, manage_state=ManageState.TRACKING,
+                       close_state=CloseState.OPENED)
     fsm._pending_brackets["8631999001"] = {"symbol": "BTCUSDT"}
     _write_envelope(
         restore_path,

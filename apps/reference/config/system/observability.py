@@ -126,6 +126,15 @@ class AlertsConfig(BaseModel):
         ..., ge=0.0, le=1.0,
         description='EntropyMonitor: max ERR-op fraction (0.0–1.0) before CRITICAL alert.',
     )
+    check_interval_sec: int = Field(
+        ..., gt=0,
+        description=(
+            'Alert monitoring poll cadence in seconds. '
+            'Controls how often the main loop calls _perform_alert_checks(). '
+            'SSOT: observability.yaml alerts.check_interval_sec. '
+            'Canonical value: 60.'
+        ),
+    )
 
 
 class ShadowCriticalEventJournalConfig(BaseModel):

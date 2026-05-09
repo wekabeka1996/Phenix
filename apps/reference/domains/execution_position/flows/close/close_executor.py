@@ -57,6 +57,9 @@ from apps.reference.domains.execution_position.utils import (
     coerce_exchange_bool,
     generate_client_order_id,
 )
+from ...state.restore_artifact import (
+    ExecutionPositionRestoreCloseSubmissionContour,
+)
 
 if TYPE_CHECKING:
     from vfoundation.core.fsm_emit_compat import Message
@@ -530,6 +533,139 @@ class CloseExecutor:
             payload["adapter_response"] = adapter_response
         return payload
 
+    def _clear_close_submission_restore_truth(
+        self,
+        *,
+        symbol: str,
+        trigger: str,
+    ) -> None:
+        if not hasattr(self._fsm, "close_flows"):
+            return
+        symbol_key = str(symbol or "").strip().upper()
+        close_flow = self._fsm.close_flows.get(symbol_key)
+        if close_flow is None:
+            return
+        if getattr(close_flow, "close_submission_restore_truth", None) is None:
+            return
+        close_flow.close_submission_restore_truth = None
+        if hasattr(self._fsm, "_persist_restore_artifact_snapshot"):
+            self._fsm._persist_restore_artifact_snapshot(
+                trigger=trigger,
+                allow_empty=True,
+            )
+
+    @staticmethod
+    def _close_submission_restore_bridge_payload(
+        *,
+        decision: "Message",
+        symbol: str,
+    ) -> dict[str, Any]:
+        payload = decision.pld or {}
+        qty = payload.get("qty")
+        qty_text = str(qty).strip() if qty is not None else ""
+        return {
+            "symbol": str(symbol or "").strip().upper(),
+            "reason": str(payload.get("reason") or "").strip(),
+            "qty": qty_text or None,
+            "idempotent_key": str(payload.get("idempotent_key") or getattr(decision, "rid", None) or "").strip(),
+            "trigger": str(payload.get("trigger") or "").strip(),
+            "command_trigger": str(payload.get("command_trigger") or "").strip() or None,
+            "close_guard_prevalidated": bool(payload.get("close_guard_prevalidated", False)),
+        }
+
+    def _persist_close_submission_restore_truth(
+        self,
+        *,
+        decision: "Message",
+        symbol: str,
+        truth: _ClosePositionTruthResolution,
+        trigger: str,
+        submission: Optional[CloseSubmissionPayload] = None,
+        submit_boundary_result: Optional[dict[str, Any]] = None,
+    ) -> None:
+        if not hasattr(self._fsm, "_get_or_create_close_flow"):
+            return
+        symbol_key = str(symbol or "").strip().upper()
+        close_flow = self._fsm._get_or_create_close_flow(symbol_key)
+        existing = getattr(close_flow, "close_submission_restore_truth", None)
+        contour_payload: dict[str, Any] = {
+            "close_cmd_rid": str(getattr(decision, "rid", None) or "manual-close"),
+            "truth_classification": truth.classification.value,
+            "truth_reason": str(truth.reason or "unknown"),
+            "bridge_payload": self._close_submission_restore_bridge_payload(
+                decision=decision,
+                symbol=symbol_key,
+            ),
+        }
+        if truth.position_amt is not None:
+            contour_payload["position_amount_at_close_request"] = str(
+                truth.position_amt
+            )
+        if truth.classification is (
+            _ClosePositionTruthClassification.POSITION_PRESENT_AND_SUBMITTABLE
+        ):
+            if submission is not None:
+                contour_payload["submission_payload"] = submission.model_dump(
+                    mode="json"
+                )
+            elif isinstance(existing, dict) and existing.get("submission_payload") is not None:
+                contour_payload["submission_payload"] = existing.get(
+                    "submission_payload"
+                )
+            if submit_boundary_result is not None:
+                contour_payload["submit_boundary_result"] = submit_boundary_result
+            elif isinstance(existing, dict) and existing.get("submit_boundary_result") is not None:
+                contour_payload["submit_boundary_result"] = existing.get(
+                    "submit_boundary_result"
+                )
+        validated = ExecutionPositionRestoreCloseSubmissionContour.model_validate(
+            contour_payload
+        )
+        close_flow.close_submission_restore_truth = validated.model_dump(
+            mode="json",
+            exclude_none=True,
+        )
+        if hasattr(self._fsm, "_persist_restore_artifact_snapshot"):
+            self._fsm._persist_restore_artifact_snapshot(
+                trigger=trigger,
+                allow_empty=True,
+            )
+
+    def _persist_close_submission_submit_boundary_result(
+        self,
+        *,
+        symbol: str,
+        boundary_result: dict[str, Any],
+        trigger: str,
+    ) -> None:
+        if not hasattr(self._fsm, "close_flows"):
+            return
+        symbol_key = str(symbol or "").strip().upper()
+        close_flow = self._fsm.close_flows.get(symbol_key)
+        if close_flow is None:
+            return
+        existing = getattr(close_flow, "close_submission_restore_truth", None)
+        if not isinstance(existing, dict):
+            LOG.warning(
+                "close submission restore truth missing before boundary result persistence: symbol=%s",
+                symbol_key,
+            )
+            return
+        contour_payload = dict(existing)
+        contour_payload["submit_boundary_result"] = boundary_result
+        validated = ExecutionPositionRestoreCloseSubmissionContour.model_validate(
+            contour_payload
+        )
+        close_flow.close_submission_restore_truth = validated.model_dump(
+            mode="json",
+            exclude_none=True,
+        )
+        if hasattr(self._fsm, "_persist_restore_artifact_snapshot"):
+            self._fsm._persist_restore_artifact_snapshot(
+                trigger=trigger,
+                allow_empty=True,
+            )
+
     def _log_close_submission_reject(
         self,
         *,
@@ -619,6 +755,33 @@ class CloseExecutor:
                     exc_info=True,
                 )
 
+        order_index = self._runtime_order_index()
+        close_order_ref = None
+        if order_index is not None:
+            try:
+                idem_key = str(
+                    getattr(decision, "idempotent_key", None)
+                    or (decision.pld or {}).get("idempotent_key")
+                    or submission.client_order_id
+                    or rid
+                )
+                close_order_ref = order_index.upsert_from_open(
+                    rid=str(rid),
+                    idempotent_key=idem_key,
+                    clientOrderId=submission.client_order_id,
+                    symbol=submission.symbol,
+                    side=submission.side,
+                    order_type="MARKET",
+                    order_kind="CLOSE",
+                )
+            except Exception:
+                LOG.error(
+                    "Failed to pre-register close order in OrderIndex for %s %s",
+                    submission.symbol,
+                    submission.client_order_id,
+                    exc_info=True,
+                )
+
         _write_boundary_row(
             "ORDER_INTENT",
             trace_kind="CLOSE_SUBMIT_ATTEMPT",
@@ -651,7 +814,8 @@ class CloseExecutor:
                     truth_owner="CloseExecutor",
                     rid=rid,
                     payload=boundary_payload,
-                    notes=["stage=submit_boundary", "comparison_outcome=match"],
+                    notes=["stage=submit_boundary",
+                           "comparison_outcome=match"],
                 )
             except Exception:
                 LOG.warning(
@@ -667,6 +831,15 @@ class CloseExecutor:
                 new_client_order_id=submission.client_order_id,
             )
         except Exception as exc:
+            self._persist_close_submission_submit_boundary_result(
+                symbol=submission.symbol,
+                boundary_result={
+                    "outcome": "rejected",
+                    "status": type(exc).__name__,
+                    "reject_reason": str(exc),
+                },
+                trigger="close_executor:submit_boundary_rejected",
+            )
             _write_boundary_row(
                 "ORDER_REJECTED",
                 trace_kind="CLOSE_SUBMIT_OUTCOME",
@@ -674,7 +847,45 @@ class CloseExecutor:
                 outcome="rejected",
                 error=exc,
             )
+            if close_order_ref is not None:
+                try:
+                    order_index.mark_terminal(close_order_ref)
+                except Exception:
+                    LOG.warning(
+                        "Failed to mark rejected close order terminal in OrderIndex for %s %s",
+                        submission.symbol,
+                        submission.client_order_id,
+                        exc_info=True,
+                    )
             raise
+
+        if order_index is not None:
+            try:
+                exchange_order_id = str(
+                    self._response_value(response, "orderId", "order_id") or ""
+                ).strip()
+                if exchange_order_id:
+                    order_index.attach_exchange_id(
+                        clientOrderId=submission.client_order_id,
+                        exchangeOrderId=exchange_order_id,
+                    )
+            except Exception:
+                LOG.warning(
+                    "Failed to attach exchange order id to close OrderIndex ref for %s %s",
+                    submission.symbol,
+                    submission.client_order_id,
+                    exc_info=True,
+                )
+
+        self._persist_close_submission_submit_boundary_result(
+            symbol=submission.symbol,
+            boundary_result={
+                "outcome": "submitted",
+                "status": str(self._response_value(response, "status") or "").strip() or None,
+                "order_id": str(self._response_value(response, "orderId", "order_id") or "").strip() or None,
+            },
+            trigger="close_executor:submit_boundary_submitted",
+        )
 
         _write_boundary_row(
             "ORDER_PLACED",
@@ -733,7 +944,8 @@ class CloseExecutor:
                         truth_owner="CloseExecutor",
                         rid=getattr(decision, "rid", None),
                         payload=decision.pld or {},
-                        notes=["stage=submission", "comparison_outcome=reject"],
+                        notes=["stage=submission",
+                               "comparison_outcome=reject"],
                     )
                 except Exception:
                     LOG.warning(
@@ -769,7 +981,8 @@ class CloseExecutor:
                         truth_owner="CloseExecutor",
                         rid=getattr(decision, "rid", None),
                         payload=decision.pld or {},
-                        notes=["stage=submission", "comparison_outcome=reject"],
+                        notes=["stage=submission",
+                               "comparison_outcome=reject"],
                     )
                 except Exception:
                     LOG.warning(
@@ -1348,6 +1561,10 @@ class CloseExecutor:
         if not symbol:
             LOG.error("DEC:CLOSE missing symbol; cannot execute")
             return
+        self._clear_close_submission_restore_truth(
+            symbol=str(symbol),
+            trigger="close_executor:clear_contour",
+        )
 
         requested_close_qty, requested_close_qty_rejected = (
             self._parse_requested_close_qty(
@@ -1360,6 +1577,12 @@ class CloseExecutor:
 
         if requested_close_qty is not None:
             truth = await self._resolve_close_position_truth(symbol=symbol)
+            self._persist_close_submission_restore_truth(
+                decision=decision,
+                symbol=symbol,
+                truth=truth,
+                trigger="close_executor:truth_gate_partial",
+            )
             if truth.classification is (
                 _ClosePositionTruthClassification
                 .POSITION_TRUTH_UNRESOLVED
@@ -1481,6 +1704,13 @@ class CloseExecutor:
                 )
                 if submission is None:
                     return
+                self._persist_close_submission_restore_truth(
+                    decision=decision,
+                    symbol=symbol,
+                    truth=truth,
+                    submission=submission,
+                    trigger="close_executor:submission_partial",
+                )
                 await self._submit_close_order(
                     decision=decision,
                     submission=submission,
@@ -1548,6 +1778,12 @@ class CloseExecutor:
         # Re-read the exchange position after bracket cancellation so the close
         # order uses current on-exchange size rather than cached intent state.
         truth = await self._resolve_close_position_truth(symbol=symbol)
+        self._persist_close_submission_restore_truth(
+            decision=decision,
+            symbol=symbol,
+            truth=truth,
+            trigger="close_executor:truth_gate_full",
+        )
         if truth.classification is (
             _ClosePositionTruthClassification.POSITION_TRUTH_UNRESOLVED
         ):
@@ -1681,6 +1917,13 @@ class CloseExecutor:
                     symbol,
                 )
             return
+        self._persist_close_submission_restore_truth(
+            decision=decision,
+            symbol=symbol,
+            truth=truth,
+            submission=submission,
+            trigger="close_executor:submission_full",
+        )
         close_side = submission.side
         close_qty = submission.quantity
         close_id = submission.client_order_id

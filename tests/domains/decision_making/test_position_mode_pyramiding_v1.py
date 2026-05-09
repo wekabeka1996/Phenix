@@ -37,6 +37,7 @@ def _dm_cfg():
         bar_gating=bar_gating,
         behavior_fsm=behavior_fsm,
         flip=flip,
+        neocortex_enforcement_mode="shadow",
         risk_skew=SimpleNamespace(
             max_skew_sec=5,
             max_defer_count=3,

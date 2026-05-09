@@ -348,6 +348,70 @@ def test_direct_open_flow_allows_same_rid_reservation(fsm_harness):
     assert out.verb == "OPEN"
 
 
+def test_invariant_opposite_entry_against_live_portfolio_blocks_clean_open(fsm_harness):
+    """Opposite-side CMD:OPEN must not ride over live portfolio exposure as a normal open.
+
+    Why this matters: the BTC netting loss case proved a SELL entry can flatten a live LONG in
+    one-way/BOTH mode if execution accepts it as an ordinary open.
+    What future repair should change: reject the open fail-closed unless an explicit flip/reduce
+    contract closed the existing exposure first.
+    """
+    fsm, bus, _ = fsm_harness
+    symbol = "BTCUSDT"
+
+    fsm.handle(_portfolio_state(symbol, position_amt="0.055"))
+
+    out = fsm.handle(
+        _cmd_open(
+            symbol=symbol,
+            rid="rid-btc-netting-open",
+            side="SELL",
+            qty="0.055",
+            price="81052.3",
+        )
+    )
+
+    assert out is not None
+    assert out.op == "ERR"
+    assert out.verb == "OPEN"
+    assert out.why == "OPEN_GUARD_FAIL"
+    assert out.pld["reason"] == "opposite_entry_requires_explicit_flip_contract"
+    assert out.pld["portfolio_truth_state"] == "LONG"
+    assert out.pld["has_active_lifecycle"] is False
+    guard_evt = _find_guard_event(bus, "EVT:EXECUTION_GUARD_BLOCKED")
+    assert guard_evt is not None
+    _, args, kwargs = guard_evt
+    payload = args[0]
+    assert payload["block_reason"] == "opposite_entry_requires_explicit_flip_contract"
+    assert payload["why"] == "execution:opposite_entry_requires_explicit_flip_contract"
+    assert kwargs["why"] == "execution:opposite_entry_requires_explicit_flip_contract"
+
+
+def test_direct_open_flow_uses_portfolio_truth_and_blocks_opposite_entry(fsm_harness):
+    """Direct OpenFlow callers must inherit the same opposite-entry contract as the wrapper FSM."""
+    fsm, _bus, _ = fsm_harness
+    symbol = "BTCUSDT"
+
+    fsm.handle(_portfolio_state(symbol, position_amt="0.055"))
+
+    out = fsm.open_flow(symbol).handle(
+        _cmd_open(
+            symbol=symbol,
+            rid="rid-btc-netting-direct",
+            side="SELL",
+            qty="0.055",
+            price="81052.3",
+        )
+    )
+
+    assert out is not None
+    assert out.op == "ERR"
+    assert out.verb == "OPEN"
+    assert out.why == "OPEN_GUARD_FAIL"
+    assert out.pld["reason"] == "opposite_entry_requires_explicit_flip_contract"
+    assert out.pld["portfolio_truth_state"] == "LONG"
+
+
 @pytest.mark.asyncio
 async def test_invariant_orphan_cleanup_remains_tidy_only_and_not_business_close(fsm_harness):
     """Hypothesis: periodic orphan cleanup is a maintenance path and must remain distinct from authoritative close reconciliation.

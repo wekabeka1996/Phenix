@@ -22,6 +22,7 @@ def _make_mock_fsm():
     mock_fsm._last_trade_id_by_symbol = {}
     mock_fsm._last_entry_side_by_symbol = {}
     mock_fsm._accumulated_fees_by_symbol = {}
+    mock_fsm._close_accounting_truth_by_symbol = {}
     mock_fsm._pending_intent_data = {}
     mock_fsm._pending_entry_meta = {}
     mock_fsm._pending_brackets = {}
@@ -52,6 +53,21 @@ def test_terminal_close_emits_evt_position_closed_with_required_fields() -> None
     fsm._last_trade_id_by_symbol = {"BTCUSDT": "10001"}
     fsm._last_entry_side_by_symbol = {"BTCUSDT": "BUY"}
     fsm._accumulated_fees_by_symbol = {"BTCUSDT": 0.09}
+    fsm._close_accounting_truth_by_symbol = {
+        "BTCUSDT": {
+            "trade_id": "10001",
+            "close_price": 50100.0,
+            "realized_pnl": -1.0,
+            "fees": 0.09,
+            "lifecycle_id": "idem-key-001",
+            "entry_side": "BUY",
+            "close_reason": "POSITION_CLOSED_DETECTED",
+            "pnl_status": "resolved",
+            "pnl_source": "close_fill",
+            "economic_close_detected": True,
+            "economic_close_kind": "explicit_close_fill",
+        }
+    }
     fsm._open_regime_by_symbol = {
         "BTCUSDT": {
             "regime_epoch_ref": "stable_epoch:BTCUSDT:1700000000000",
@@ -95,6 +111,21 @@ def test_terminal_close_emits_explicit_null_entry_epoch_when_unavailable() -> No
     fsm._last_trade_id_by_symbol = {"BTCUSDT": "10001"}
     fsm._last_entry_side_by_symbol = {"BTCUSDT": "BUY"}
     fsm._accumulated_fees_by_symbol = {"BTCUSDT": 0.09}
+    fsm._close_accounting_truth_by_symbol = {
+        "BTCUSDT": {
+            "trade_id": "10001",
+            "close_price": 50100.0,
+            "realized_pnl": -1.0,
+            "fees": 0.09,
+            "lifecycle_id": "idem-key-001",
+            "entry_side": "BUY",
+            "close_reason": "POSITION_CLOSED_DETECTED",
+            "pnl_status": "resolved",
+            "pnl_source": "close_fill",
+            "economic_close_detected": True,
+            "economic_close_kind": "explicit_close_fill",
+        }
+    }
     fsm._open_regime_by_symbol = {"BTCUSDT": {"regime": "TREND_UP"}}
 
     event = SimpleNamespace(pld={"positions": [{"symbol": "BTCUSDT", "positionAmt": 0.0}]})

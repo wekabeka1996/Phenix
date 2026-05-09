@@ -1,0 +1,1365 @@
+{
+  "generated_at_utc": "2026-05-07T11:04:34.5938758Z",
+  "repo_commit": "46eda09769a5744a993f5d8b37bcc6429af66d70",
+  "package": "CALIBRATORS_FOUNDATION_PACKAGE_02_DATASET_SURFACE_AUDIT",
+  "scope": "Canonical calibrators layer only. Audit-only. No runtime, config, YAML, Pydantic, event, or registry changes.",
+  "summary": {
+    "calibrator_count": 10,
+    "data_surface_count": 16,
+    "proposed_schema_count": 7,
+    "readiness_counts": {
+      "READY_WITH_EXISTING_DATA": 2,
+      "NEEDS_JOINED_DATASET": 3,
+      "NEEDS_LABELLED_OUTCOMES": 1,
+      "NEEDS_REPLAY_HARNESS": 3,
+      "BLOCKED_BY_MISSING_RUNTIME_TRACE": 1
+    },
+    "dominant_blockers": [
+      "Dataset contracts live in code paths and filenames rather than a documented canonical dataset layer.",
+      "Several calibrators depend on mixed-source joins across recorder, logs, WAL, reports, and ledger surfaces.",
+      "Replay-driven calibrators do not yet pin frozen dataset manifests tightly enough to remove hydration and split drift.",
+      "NRR062 remains candle-only and cannot reconstruct live microstructure inputs needed for trustworthy policy promotion."
+    ]
+  },
+  "quality_levels": [
+    {
+      "level": "RAW_RUNTIME",
+      "definition": "Direct runtime recorder, log, WAL, or journal capture preserved at source granularity.",
+      "allowed_use": "Audit source, immutable archive, and deterministic join source when causal keys exist.",
+      "not_sufficient_for": "Promotion-ready calibration datasets without explicit join lineage and split metadata."
+    },
+    {
+      "level": "JOINED_RUNTIME",
+      "definition": "Deterministic row-level join across raw runtime surfaces with stable keys and source lineage.",
+      "allowed_use": "Outcome analysis, fee-aware calibration, and reproducible attempt or trade datasets.",
+      "requires": [
+        "source file lineage",
+        "stable join keys",
+        "causal timestamp fields",
+        "drop reasons or invalidation reasons"
+      ]
+    },
+    {
+      "level": "DERIVED_LABELLED",
+      "definition": "Joined dataset with future labels, closure labels, or realized outcomes added.",
+      "allowed_use": "Threshold search, model fitting, walk-forward validation, and candidate ranking.",
+      "requires": [
+        "label horizon or closure rule",
+        "split manifest",
+        "leakage controls",
+        "label provenance"
+      ]
+    },
+    {
+      "level": "REPLAY_GENERATED",
+      "definition": "Offline replay or simulation outputs produced from frozen raw or joined inputs.",
+      "allowed_use": "Counterfactual search and acceptance research when replay version, config, and inputs are pinned.",
+      "requires": [
+        "frozen input manifest",
+        "replay code version",
+        "config snapshot",
+        "explicit non-causal feature declaration"
+      ]
+    },
+    {
+      "level": "OUTSIDE_LADDER",
+      "definition": "External raw caches or ad hoc calibration artifacts that are useful evidence but are not yet canonical training truth.",
+      "allowed_use": "Bootstrap inputs and diagnostics only.",
+      "not_sufficient_for": "Trustworthy promotion decisions on their own."
+    }
+  ],
+  "data_surfaces": [
+    {
+      "surface_id": "recorder_bars",
+      "path_pattern": "data/recorder/YYYY-MM-DD/SYMBOL_TF.csv",
+      "present_in_repo": true,
+      "kind": "B.derived_features",
+      "quality_level": "RAW_RUNTIME",
+      "sample_evidence": "data/recorder/2026-02-08/BTCUSDT_300.csv",
+      "primary_fields": [
+        "timestamp",
+        "datetime",
+        "symbol",
+        "tf_sec",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "trade_count",
+        "feat_*",
+        "ready",
+        "regime",
+        "regime_conf"
+      ],
+      "consumed_by": [
+        "aurora_thresholds",
+        "aurora_regime_params",
+        "aurora_signal_weights",
+        "md_amr_weights",
+        "mean_reversion_params",
+        "objective_stack",
+        "system_stress_weights",
+        "md_amr_phase2b"
+      ],
+      "notes": "Recorder rows mix OHLCV, derived features, readiness state, and inline regime labels. Canonical datasets should split bar truth from derived state rather than reuse the mixed runtime row as-is."
+    },
+    {
+      "surface_id": "aurora_core_logs",
+      "path_pattern": "logs/aurora_core.log*",
+      "present_in_repo": true,
+      "kind": "M.unknown_or_mixed",
+      "quality_level": "RAW_RUNTIME",
+      "sample_evidence": "logs/aurora_core.log",
+      "primary_fields": [
+        "timestamp_text",
+        "logger_name",
+        "level",
+        "message"
+      ],
+      "consumed_by": [
+        "aurora_thresholds"
+      ],
+      "notes": "This is a text log, not a canonical row schema. It is useful for forensics, but future dataset builders should prefer typed runtime rows or a normalized extract layer."
+    },
+    {
+      "surface_id": "feature_logs",
+      "path_pattern": "logs/features/SYMBOL.log",
+      "present_in_repo": true,
+      "kind": "B.derived_features",
+      "quality_level": "RAW_RUNTIME",
+      "sample_evidence": "logs/features/BTCUSDT.log",
+      "primary_fields": [
+        "obi",
+        "tfi",
+        "delta_price",
+        "absorption",
+        "price",
+        "liquidity_kappa",
+        "ema_bias",
+        "volume_spike",
+        "volatility_state",
+        "depth_imbalance",
+        "macro_sync",
+        "macro_resid",
+        "volume_zscore",
+        "large_trade_imbalance",
+        "spread_bps"
+      ],
+      "consumed_by": [
+        "aurora_thresholds"
+      ],
+      "notes": "Structured JSON lines with decimal-string payloads. They are closer to a canonical feature surface than aurora_core text logs but still lack explicit split and lineage metadata."
+    },
+    {
+      "surface_id": "ta_feature_logs",
+      "path_pattern": "logs/ta_features/SYMBOL.jsonl",
+      "present_in_repo": true,
+      "kind": "B.derived_features",
+      "quality_level": "RAW_RUNTIME",
+      "sample_evidence": "logs/ta_features/BTCUSDT.jsonl",
+      "primary_fields": [
+        "ts",
+        "symbol",
+        "tf_sec",
+        "bar_close_ts",
+        "close",
+        "bb_position",
+        "bb_width",
+        "rsi_14",
+        "price_sma_20_deviation",
+        "volume_sma_ratio",
+        "macd_signal",
+        "atr_14",
+        "is_warm",
+        "source"
+      ],
+      "consumed_by": [
+        "aurora_thresholds"
+      ],
+      "notes": "TA feature rows already look dataset-friendly. The remaining gap is manifesting lineage, split policy, and whether these rows were used live or reconstructed later."
+    },
+    {
+      "surface_id": "raw_binance_um_klines",
+      "path_pattern": "data/raw/binance_um_klines/SYMBOL/1m/YYYY-MM.json",
+      "present_in_repo": true,
+      "kind": "A.raw_market_data",
+      "quality_level": "OUTSIDE_LADDER",
+      "sample_evidence": "data/raw/binance_um_klines/BNBUSDT/1m/2026-05.json",
+      "primary_fields": [
+        "interval",
+        "klines[*][open_time_ms,open,high,low,close,volume,close_time_ms,quote_volume,trade_count,taker_buy_base,taker_buy_quote,ignore]"
+      ],
+      "consumed_by": [
+        "nrr062_historical"
+      ],
+      "notes": "This is real exchange market data but not runtime Phenix truth. It becomes calibration truth only after normalization and replay rules are frozen."
+    },
+    {
+      "surface_id": "nrr062_processed_bars",
+      "path_pattern": "data/processed/nrr062_historical_calibration/SYMBOL_TF.csv",
+      "present_in_repo": true,
+      "kind": "K.replay_simulation_output",
+      "quality_level": "REPLAY_GENERATED",
+      "sample_evidence": "data/processed/nrr062_historical_calibration/candidate_rows.csv",
+      "primary_fields": [
+        "normalized bar CSVs at 180/300/900",
+        "candidate_rows.csv"
+      ],
+      "consumed_by": [
+        "nrr062_historical"
+      ],
+      "notes": "Produced by the NRR062 calibrator itself. Useful for audit replay and frontier analysis, but not authoritative raw input."
+    },
+    {
+      "surface_id": "ops_wal",
+      "path_pattern": "ops/wal/YYYY-MM-DD.jsonl",
+      "present_in_repo": true,
+      "kind": "M.unknown_or_mixed",
+      "quality_level": "RAW_RUNTIME",
+      "sample_evidence": "ops/wal/2026-04-30.jsonl",
+      "primary_fields": [
+        "op",
+        "verb",
+        "pld",
+        "rid",
+        "timestamp",
+        "event_ts_ms",
+        "_prev",
+        "_hash"
+      ],
+      "consumed_by": [
+        "objective_stack"
+      ],
+      "notes": "Top-level wal/ is absent in this repo, but ops/wal exists and matches the objective stack default. This surface is mixed-domain and needs deterministic filtering before it can be trusted as a calibration dataset source."
+    },
+    {
+      "surface_id": "authority_request_journal",
+      "path_pattern": "data/authority_request_journal_v1.jsonl",
+      "present_in_repo": true,
+      "kind": "E.trade_intent_trace",
+      "quality_level": "RAW_RUNTIME",
+      "sample_evidence": "data/authority_request_journal_v1.jsonl",
+      "primary_fields": [
+        "decision_id",
+        "rid",
+        "symbol",
+        "request_kind",
+        "authority_mode",
+        "decision_basis_ts_ms",
+        "candidate_intent_summary",
+        "observation",
+        "dataset_visibility"
+      ],
+      "consumed_by": [
+        "objective_stack",
+        "low_vol_cost_floor"
+      ],
+      "notes": "Not consumed directly by the current calibrators, but it is the cleanest present-day intent trace for future canonical decision datasets."
+    },
+    {
+      "surface_id": "authority_response_journal",
+      "path_pattern": "data/authority_response_journal_v1.jsonl",
+      "present_in_repo": true,
+      "kind": "E.trade_intent_trace",
+      "quality_level": "RAW_RUNTIME",
+      "sample_evidence": "data/authority_response_journal_v1.jsonl",
+      "primary_fields": [
+        "decision_id",
+        "action",
+        "apply_result",
+        "authority_applied",
+        "reason_code",
+        "returned_at_ms"
+      ],
+      "consumed_by": [
+        "objective_stack",
+        "low_vol_cost_floor"
+      ],
+      "notes": "This pairs naturally with the request journal and should become part of a canonical joined decision dataset rather than staying as a side-channel truth source."
+    },
+    {
+      "surface_id": "order_ledger_db",
+      "path_pattern": "data/order_ledger.db",
+      "present_in_repo": true,
+      "kind": "F.order_execution_trace",
+      "quality_level": "RAW_RUNTIME",
+      "sample_evidence": "data/order_ledger.db",
+      "primary_fields": [
+        "SQLite orders table via SELECT *"
+      ],
+      "consumed_by": [
+        "objective_stack"
+      ],
+      "notes": "The objective dataset builder reads the orders table generically. Canonical datasets should freeze the selected columns instead of inheriting the entire mutable table surface."
+    },
+    {
+      "surface_id": "order_log_v1",
+      "path_pattern": "logs/order_log_v1.jsonl",
+      "present_in_repo": true,
+      "kind": "F.order_execution_trace",
+      "quality_level": "RAW_RUNTIME",
+      "sample_evidence": "logs/order_log_v1.jsonl",
+      "primary_fields": [
+        "event_type",
+        "timestamp",
+        "rid",
+        "symbol",
+        "side",
+        "quantity",
+        "source_fsm",
+        "metadata"
+      ],
+      "consumed_by": [
+        "low_vol_cost_floor"
+      ],
+      "notes": "This is the direct order trace consumed by the low-vol calibrator. It should remain a raw source, not the final calibration table."
+    },
+    {
+      "surface_id": "trade_lifecycle",
+      "path_pattern": "logs/trade_lifecycle.jsonl",
+      "present_in_repo": true,
+      "kind": "G.position_lifecycle_trace",
+      "quality_level": "RAW_RUNTIME",
+      "sample_evidence": "logs/trade_lifecycle.jsonl",
+      "primary_fields": [
+        "record_kind",
+        "ts_ms",
+        "trace_id",
+        "symbol",
+        "event_type",
+        "reason_codes",
+        "position_snapshot",
+        "freshness_snapshot"
+      ],
+      "consumed_by": [
+        "low_vol_cost_floor"
+      ],
+      "notes": "The sampled rows are mixed position-policy sidecar traces, not a closure-only trade feed. Any canonical low-vol dataset must filter and normalize this surface explicitly."
+    },
+    {
+      "surface_id": "regime_confidence_audit",
+      "path_pattern": "logs/regime_confidence_audit_v1.jsonl",
+      "present_in_repo": true,
+      "kind": "C.labelled_regime_data",
+      "quality_level": "RAW_RUNTIME",
+      "sample_evidence": "logs/regime_confidence_audit_v1.jsonl",
+      "primary_fields": [
+        "record_type",
+        "schema_version",
+        "ts_ms",
+        "symbol",
+        "basis_tf_sec",
+        "regime",
+        "raw_regime",
+        "emitted_confidence",
+        "reason_summary",
+        "data_quality_notes"
+      ],
+      "consumed_by": [
+        "low_vol_cost_floor"
+      ],
+      "notes": "This is the best present regime label audit surface for fee-floor calibration. It should be joined into a low-vol dataset rather than re-read ad hoc per run."
+    },
+    {
+      "surface_id": "decision_outcome_ledger",
+      "path_pattern": "logs/shadow_telemetry/decision_ledger_v1.jsonl",
+      "present_in_repo": true,
+      "kind": "H.realized_outcome_trace",
+      "quality_level": "JOINED_RUNTIME",
+      "sample_evidence": "logs/shadow_telemetry/decision_ledger_v1.jsonl",
+      "primary_fields": [
+        "decision_id",
+        "rid",
+        "symbol",
+        "request_ts_ms",
+        "response_ts_ms",
+        "apply_result",
+        "terminal_status",
+        "realized_pnl_net",
+        "fees",
+        "support_quality",
+        "dataset_visibility",
+        "invalid_reason_code",
+        "causal_state_snapshot"
+      ],
+      "consumed_by": [
+        "objective_stack",
+        "low_vol_cost_floor"
+      ],
+      "notes": "Not consumed directly today, but this is the strongest present joined runtime truth surface for future objective and policy-gate datasets. It also exposes invalid-for-dataset cases explicitly."
+    },
+    {
+      "surface_id": "attempt_master_reports",
+      "path_pattern": "reports/{executed_trades_master,rejected_attempts_master,order_attempts_master}.csv",
+      "present_in_repo": true,
+      "kind": "H.realized_outcome_trace",
+      "quality_level": "JOINED_RUNTIME",
+      "sample_evidence": "reports/executed_trades_master.csv",
+      "primary_fields": [
+        "attempt_id",
+        "synthetic_id",
+        "symbol",
+        "side",
+        "regime",
+        "intent_price",
+        "intent_ts",
+        "outcome",
+        "confidence",
+        "reject_reason",
+        "order_instance_id",
+        "exit_ts",
+        "exit_price",
+        "realized_pnl",
+        "commission",
+        "exact_roundtrip"
+      ],
+      "consumed_by": [
+        "low_vol_cost_floor"
+      ],
+      "notes": "All three master CSVs currently share one wide schema and encode source semantics by filename. Canonical datasets should carry an explicit source column instead of requiring file-name branching."
+    },
+    {
+      "surface_id": "strategy_calibration_artifacts",
+      "path_pattern": "artifacts/strategy_calibration/**/*",
+      "present_in_repo": true,
+      "kind": "L.calibration_output",
+      "quality_level": "DERIVED_LABELLED",
+      "sample_evidence": "artifacts/strategy_calibration/phase2b",
+      "primary_fields": [
+        "run_manifest.json",
+        "baseline_metrics.json",
+        "candidate_metrics.json",
+        "validation_metrics.json",
+        "forward_metrics.json",
+        "candidate_bundle.json",
+        "per_regime_analysis.json"
+      ],
+      "consumed_by": [
+        "md_amr_phase2b"
+      ],
+      "notes": "Phase 2B currently re-reads base MD-AMR calibration outputs rather than a canonical frozen dataset. That is acceptable for research, but it is not a stable dataset contract."
+    }
+  ],
+  "proposed_dataset_schemas": [
+    {
+      "schema_id": "calibration_market_bar_dataset_v1",
+      "target_quality": "RAW_RUNTIME",
+      "built_from": [
+        "recorder_bars",
+        "raw_binance_um_klines"
+      ],
+      "primary_consumers": [
+        "aurora_regime_params",
+        "aurora_signal_weights",
+        "md_amr_weights",
+        "mean_reversion_params",
+        "system_stress_weights",
+        "md_amr_phase2b",
+        "nrr062_historical"
+      ],
+      "key_fields": [
+        "source_surface",
+        "source_file",
+        "session_date",
+        "symbol",
+        "tf_sec",
+        "ts_ms",
+        "bar_close_ts_ms",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "trade_count"
+      ],
+      "notes": "Canonical bar truth should not inline feature vectors or regime labels. Those belong in downstream joined datasets."
+    },
+    {
+      "schema_id": "calibration_feature_snapshot_dataset_v1",
+      "target_quality": "JOINED_RUNTIME",
+      "built_from": [
+        "recorder_bars",
+        "feature_logs",
+        "ta_feature_logs"
+      ],
+      "primary_consumers": [
+        "aurora_thresholds",
+        "aurora_signal_weights",
+        "md_amr_weights",
+        "mean_reversion_params",
+        "md_amr_phase2b"
+      ],
+      "key_fields": [
+        "source_surface",
+        "source_file",
+        "symbol",
+        "tf_sec",
+        "ts_ms",
+        "close",
+        "feat_obi",
+        "feat_tfi",
+        "feat_delta_price",
+        "feat_absorption",
+        "feat_depth_imbalance",
+        "feat_spread_bps",
+        "feat_macro_sync",
+        "feat_macro_resid",
+        "ready",
+        "not_ready_reasons",
+        "regime",
+        "regime_conf"
+      ],
+      "notes": "This freezes the feature vector surface used by threshold and replay calibrators so that future runs do not depend on text logs or implicit recorder semantics."
+    },
+    {
+      "schema_id": "calibration_oracle_regime_labels_v1",
+      "target_quality": "DERIVED_LABELLED",
+      "built_from": [
+        "calibration_market_bar_dataset_v1"
+      ],
+      "primary_consumers": [
+        "aurora_regime_params",
+        "aurora_signal_weights",
+        "system_stress_weights"
+      ],
+      "key_fields": [
+        "symbol",
+        "tf_sec",
+        "ts_ms",
+        "horizon_bars",
+        "future_return_bps",
+        "future_volatility_bps",
+        "flip_rate",
+        "oracle_regime",
+        "label_version",
+        "split_bucket"
+      ],
+      "notes": "Any future-derived label must carry its horizon and split bucket explicitly to prevent silent leakage across train, validation, and forward windows."
+    },
+    {
+      "schema_id": "calibration_trade_decision_dataset_v1",
+      "target_quality": "JOINED_RUNTIME",
+      "built_from": [
+        "authority_request_journal",
+        "authority_response_journal",
+        "ops_wal",
+        "order_log_v1",
+        "decision_outcome_ledger"
+      ],
+      "primary_consumers": [
+        "objective_stack",
+        "low_vol_cost_floor"
+      ],
+      "key_fields": [
+        "decision_id",
+        "rid",
+        "symbol",
+        "strategy_id",
+        "side",
+        "proposed_action",
+        "decision_basis_ts_ms",
+        "request_ts_ms",
+        "response_ts_ms",
+        "authority_mode",
+        "action",
+        "apply_result",
+        "reason_code",
+        "dataset_visibility",
+        "observation_causal"
+      ],
+      "notes": "This is the missing canonical intent-level dataset currently inferred piecemeal from WAL and report outputs."
+    },
+    {
+      "schema_id": "calibration_realized_trade_dataset_v1",
+      "target_quality": "DERIVED_LABELLED",
+      "built_from": [
+        "calibration_trade_decision_dataset_v1",
+        "order_ledger_db",
+        "attempt_master_reports",
+        "trade_lifecycle",
+        "decision_outcome_ledger"
+      ],
+      "primary_consumers": [
+        "objective_stack",
+        "low_vol_cost_floor"
+      ],
+      "key_fields": [
+        "attempt_id",
+        "decision_id",
+        "rid",
+        "symbol",
+        "strategy_id",
+        "side",
+        "intent_ts_ms",
+        "entry_ts_ms",
+        "exit_ts_ms",
+        "outcome",
+        "exit_price",
+        "realized_pnl_net",
+        "fees",
+        "commission",
+        "exact_roundtrip",
+        "terminal_status",
+        "source_surface"
+      ],
+      "notes": "This is the minimal trustworthy outcome dataset for objective search and fee-aware policy gates."
+    },
+    {
+      "schema_id": "calibration_low_vol_gate_dataset_v1",
+      "target_quality": "DERIVED_LABELLED",
+      "built_from": [
+        "calibration_realized_trade_dataset_v1",
+        "regime_confidence_audit",
+        "recorder_bars"
+      ],
+      "primary_consumers": [
+        "low_vol_cost_floor",
+        "nrr062_historical"
+      ],
+      "key_fields": [
+        "attempt_id",
+        "symbol",
+        "strategy_id",
+        "regime",
+        "regime_confidence",
+        "direction_confidence",
+        "target_net_fee_multiple",
+        "required_gross_tp_bps_floor",
+        "min_rr",
+        "gross_tp_bps",
+        "realized_pnl_net",
+        "commission",
+        "outcome",
+        "counterfactual_source",
+        "exact_roundtrip"
+      ],
+      "notes": "This dataset is the critical missing bridge between raw logs and trustworthy low-vol fee-floor recommendations."
+    },
+    {
+      "schema_id": "calibration_walkforward_manifest_v1",
+      "target_quality": "DERIVED_LABELLED",
+      "built_from": [
+        "any canonical dataset above"
+      ],
+      "primary_consumers": [
+        "aurora_thresholds",
+        "aurora_regime_params",
+        "md_amr_weights",
+        "mean_reversion_params",
+        "objective_stack",
+        "system_stress_weights",
+        "md_amr_phase2b",
+        "nrr062_historical"
+      ],
+      "key_fields": [
+        "dataset_id",
+        "source_dataset",
+        "train_start",
+        "train_end",
+        "validation_start",
+        "validation_end",
+        "forward_start",
+        "forward_end",
+        "excluded_sessions",
+        "label_horizon_bars",
+        "config_snapshot"
+      ],
+      "notes": "Several calibrators already implement split logic internally. Freezing it as a manifest is the lowest-cost way to prevent accidental leakage drift across packages."
+    }
+  ],
+  "calibrators": [
+    {
+      "id": "aurora_thresholds",
+      "path": "calibrators/strategies/calibrate_aurora_thresholds.py",
+      "category": "strategies",
+      "default_input_paths": {
+        "aurora_yaml": "config/aurora/strategies/aurora.yaml",
+        "input_source": "aurora-logs",
+        "log_glob": "logs/aurora_core.log*",
+        "recorder_dir": "data/recorder",
+        "feature_log_dir": "logs/features",
+        "tf_sec": 300,
+        "validation_days": 5,
+        "forward_days": 5,
+        "min_train_days": 10
+      },
+      "data_surfaces": [
+        "recorder_bars",
+        "aurora_core_logs",
+        "feature_logs",
+        "ta_feature_logs"
+      ],
+      "artifacts": [
+        "candidate_aurora_threshold_overlay.yaml",
+        "candidate_threshold_overlay.yaml",
+        "run_manifest.json",
+        "baseline_metrics.json",
+        "candidate_metrics.json",
+        "validation_metrics.json",
+        "forward_metrics.json",
+        "report.md"
+      ],
+      "candidate_yaml_outputs": [
+        "candidate_aurora_threshold_overlay.yaml",
+        "candidate_threshold_overlay.yaml"
+      ],
+      "requires_exchange_download": false,
+      "can_run_fully_offline": true,
+      "needs_precomputed_datasets": false,
+      "derives_labels_or_outcomes_internally": true,
+      "depends_on_trade_lifecycle_closure": false,
+      "depends_on_fees_or_slippage_assumptions": false,
+      "split_aware": true,
+      "symbol_or_regime_aware": true,
+      "can_leak_future_data": true,
+      "test_status": {
+        "has_tests": true,
+        "test_paths": [
+          "tests/tools/test_aurora_threshold_calibrator.py"
+        ],
+        "uses_synthetic_fixtures": true,
+        "uses_real_repo_data": false
+      },
+      "readiness": "NEEDS_JOINED_DATASET",
+      "readiness_reason": "The calibrator can run today, but its trustworthy input contract is split across text logs, feature logs, and recorder rows. A frozen feature snapshot dataset is needed before recommendations are treated as reproducible evidence.",
+      "smallest_next_useful_dataset": "calibration_feature_snapshot_dataset_v1",
+      "proposed_dataset_schemas": [
+        "calibration_feature_snapshot_dataset_v1",
+        "calibration_walkforward_manifest_v1"
+      ],
+      "blockers": [
+        "aurora_core is a text log rather than a typed decision-event dataset",
+        "feature and recorder surfaces overlap but do not share a canonical manifest",
+        "forward-return scoring can leak across splits if rows are not session-segmented"
+      ]
+    },
+    {
+      "id": "aurora_regime_params",
+      "path": "calibrators/regimes/calibrate_aurora_regime_params.py",
+      "category": "regimes",
+      "default_input_paths": {
+        "symbols": "required",
+        "start": "required",
+        "end": "required",
+        "tf_sec": 300,
+        "train_split": 0.7,
+        "horizon_bars": 12,
+        "n_trials": 300,
+        "seed": 42
+      },
+      "data_surfaces": [
+        "recorder_bars"
+      ],
+      "artifacts": [
+        "report.md",
+        "candidate_regime_overlay.yaml",
+        "best_trial.json"
+      ],
+      "candidate_yaml_outputs": [
+        "candidate_regime_overlay.yaml"
+      ],
+      "requires_exchange_download": false,
+      "can_run_fully_offline": true,
+      "needs_precomputed_datasets": false,
+      "derives_labels_or_outcomes_internally": true,
+      "depends_on_trade_lifecycle_closure": false,
+      "depends_on_fees_or_slippage_assumptions": false,
+      "split_aware": true,
+      "symbol_or_regime_aware": true,
+      "can_leak_future_data": true,
+      "test_status": {
+        "has_tests": false,
+        "test_paths": [],
+        "uses_synthetic_fixtures": false,
+        "uses_real_repo_data": false
+      },
+      "readiness": "READY_WITH_EXISTING_DATA",
+      "readiness_reason": "This is the cleanest current calibrator contract: recorder bars in, deterministic oracle labels out. The missing work is schema hardening and test coverage, not a new runtime truth source.",
+      "smallest_next_useful_dataset": "calibration_oracle_regime_labels_v1",
+      "proposed_dataset_schemas": [
+        "calibration_market_bar_dataset_v1",
+        "calibration_oracle_regime_labels_v1",
+        "calibration_walkforward_manifest_v1"
+      ],
+      "blockers": [
+        "No dedicated tests were found during this audit",
+        "Oracle labels are candle-only and cannot prove microstructure-driven regime truth"
+      ]
+    },
+    {
+      "id": "aurora_signal_weights",
+      "path": "calibrators/strategies/calibrate_aurora_signal_weights.py",
+      "category": "strategies",
+      "default_input_paths": {
+        "aurora_yaml": "config/aurora/strategies/aurora.yaml",
+        "recorder_dir": "data/recorder",
+        "symbols": [
+          "BTCUSDT",
+          "ETHUSDT",
+          "SOLUSDT"
+        ],
+        "tf_sec": 300,
+        "train_frac": 0.7,
+        "horizon_bars": 1,
+        "ridge_alpha": 25.0,
+        "cost_bps": 4.0,
+        "threshold": null
+      },
+      "data_surfaces": [
+        "recorder_bars"
+      ],
+      "artifacts": [],
+      "candidate_yaml_outputs": [],
+      "requires_exchange_download": false,
+      "can_run_fully_offline": true,
+      "needs_precomputed_datasets": false,
+      "derives_labels_or_outcomes_internally": true,
+      "depends_on_trade_lifecycle_closure": false,
+      "depends_on_fees_or_slippage_assumptions": true,
+      "split_aware": true,
+      "symbol_or_regime_aware": true,
+      "can_leak_future_data": true,
+      "test_status": {
+        "has_tests": false,
+        "test_paths": [],
+        "uses_synthetic_fixtures": false,
+        "uses_real_repo_data": false
+      },
+      "readiness": "NEEDS_LABELLED_OUTCOMES",
+      "readiness_reason": "This legacy CLI fits research-only weights from recorder bars and prints advisory YAML to stdout. It has no locked labelled dataset contract and no dedicated test surface, so its outputs should stay advisory until a canonical labelled feature dataset exists.",
+      "smallest_next_useful_dataset": "calibration_feature_snapshot_dataset_v1",
+      "proposed_dataset_schemas": [
+        "calibration_feature_snapshot_dataset_v1",
+        "calibration_oracle_regime_labels_v1",
+        "calibration_walkforward_manifest_v1"
+      ],
+      "blockers": [
+        "Output is stdout-only research advice rather than a frozen artifact set",
+        "Forward-return labels and cost assumptions live in CLI args rather than a dataset manifest",
+        "No dedicated tests were found during this audit"
+      ]
+    },
+    {
+      "id": "md_amr_weights",
+      "path": "calibrators/strategies/calibrate_md_amr_weights.py",
+      "category": "strategies",
+      "default_input_paths": {
+        "md_amr_yaml": "config/aurora/strategies/md_amr.yaml",
+        "strategies_yaml": "config/aurora/strategies.yaml",
+        "recorder_dir": "data/recorder",
+        "tf_sec": 900,
+        "trials": 400,
+        "top_k": 5,
+        "hydrate_from_binance": false,
+        "binance_base_url": "https://fapi.binance.com"
+      },
+      "data_surfaces": [
+        "recorder_bars"
+      ],
+      "artifacts": [
+        "run_manifest.json",
+        "baseline_metrics.json",
+        "candidate_metrics.json",
+        "validation_metrics.json",
+        "forward_metrics.json",
+        "candidate_md_amr_strategy_overlay.yaml",
+        "per_regime_analysis.json",
+        "report.md"
+      ],
+      "candidate_yaml_outputs": [
+        "candidate_md_amr_strategy_overlay.yaml"
+      ],
+      "requires_exchange_download": false,
+      "can_run_fully_offline": true,
+      "needs_precomputed_datasets": false,
+      "derives_labels_or_outcomes_internally": true,
+      "depends_on_trade_lifecycle_closure": false,
+      "depends_on_fees_or_slippage_assumptions": false,
+      "split_aware": true,
+      "symbol_or_regime_aware": true,
+      "can_leak_future_data": true,
+      "test_status": {
+        "has_tests": true,
+        "test_paths": [
+          "tests/tools/test_md_amr_weight_calibrator.py"
+        ],
+        "uses_synthetic_fixtures": true,
+        "uses_real_repo_data": true
+      },
+      "readiness": "NEEDS_REPLAY_HARNESS",
+      "readiness_reason": "The calibrator is already replay-driven, but trust still depends on freezing recorder inputs, replay version, and optional hydration behavior. The current CLI can run offline, yet its dataset contract is still implicit in code.",
+      "smallest_next_useful_dataset": "calibration_feature_snapshot_dataset_v1",
+      "proposed_dataset_schemas": [
+        "calibration_feature_snapshot_dataset_v1",
+        "calibration_walkforward_manifest_v1"
+      ],
+      "blockers": [
+        "Optional Binance hydration changes the effective input frame unless disabled and manifested",
+        "Replay outputs are frozen as artifacts but the input dataset itself is not yet canonical"
+      ]
+    },
+    {
+      "id": "mean_reversion_params",
+      "path": "calibrators/strategies/calibrate_mean_reversion_params.py",
+      "category": "strategies",
+      "default_input_paths": {
+        "mr_yaml": "config/aurora/strategies/mean_reversion.yaml",
+        "strategies_registry": "config/aurora/strategies.yaml",
+        "recorder_dir": "data/recorder",
+        "tf_sec": 300,
+        "trials": 120,
+        "top_k": 5,
+        "seed": 42,
+        "validation_days": 14,
+        "forward_days": 7,
+        "min_train_days": 28,
+        "horizon_bars": 6,
+        "cost_bps_roundtrip": 6.0,
+        "min_trades": 20,
+        "max_dd_limit": 0.35,
+        "hydrate_from_binance": false
+      },
+      "data_surfaces": [
+        "recorder_bars"
+      ],
+      "artifacts": [
+        "run_manifest.json",
+        "baseline_metrics.json",
+        "candidate_metrics.json",
+        "validation_metrics.json",
+        "forward_metrics.json",
+        "candidate_mean_reversion_strategy_overlay.yaml",
+        "candidate_mean_reversion_overlay.yaml",
+        "report.md",
+        "best_trial.json",
+        "candidate_bundle.json",
+        "tpsl_surface.json",
+        "mfe_mae_analysis.json",
+        "per_regime_analysis.json"
+      ],
+      "candidate_yaml_outputs": [
+        "candidate_mean_reversion_strategy_overlay.yaml",
+        "candidate_mean_reversion_overlay.yaml"
+      ],
+      "requires_exchange_download": false,
+      "can_run_fully_offline": true,
+      "needs_precomputed_datasets": false,
+      "derives_labels_or_outcomes_internally": true,
+      "depends_on_trade_lifecycle_closure": false,
+      "depends_on_fees_or_slippage_assumptions": true,
+      "split_aware": true,
+      "symbol_or_regime_aware": true,
+      "can_leak_future_data": true,
+      "test_status": {
+        "has_tests": true,
+        "test_paths": [
+          "tests/tools/test_mean_reversion_param_calibrator.py"
+        ],
+        "uses_synthetic_fixtures": true,
+        "uses_real_repo_data": true
+      },
+      "readiness": "NEEDS_REPLAY_HARNESS",
+      "readiness_reason": "Mean-reversion search is already structured around train, validation, and forward windows, but trustworthy promotion still needs a frozen replay dataset manifest and explicit control of hydration and roundtrip-cost assumptions.",
+      "smallest_next_useful_dataset": "calibration_feature_snapshot_dataset_v1",
+      "proposed_dataset_schemas": [
+        "calibration_feature_snapshot_dataset_v1",
+        "calibration_walkforward_manifest_v1"
+      ],
+      "blockers": [
+        "Optional hydration introduces reproducibility drift unless pinned",
+        "Roundtrip cost assumptions materially affect candidate selection",
+        "Replay outputs are canonical enough for research, but not yet frozen as a reusable dataset layer"
+      ]
+    },
+    {
+      "id": "nrr062_historical",
+      "path": "calibrators/policy_gates/calibrate_nrr062_historical.py",
+      "category": "policy_gates",
+      "default_input_paths": {
+        "symbols": "DEFAULT_SYMBOLS",
+        "start_date": "DEFAULT_START_DATE",
+        "end_date": "DEFAULT_END_DATE",
+        "trading_mode": "testnet",
+        "timeout_bars": "DEFAULT_TIMEOUT_BARS",
+        "request_timeout_sec": 30,
+        "raw_data_dir": "data/raw/binance_um_klines",
+        "processed_dir": "data/processed/nrr062_historical_calibration",
+        "artifacts_dir": "artifacts/nrr062_historical_calibration",
+        "reports_dir": "reports"
+      },
+      "data_surfaces": [
+        "raw_binance_um_klines",
+        "nrr062_processed_bars"
+      ],
+      "artifacts": [
+        "data/processed/nrr062_historical_calibration/SYMBOL_180.csv",
+        "data/processed/nrr062_historical_calibration/SYMBOL_300.csv",
+        "data/processed/nrr062_historical_calibration/SYMBOL_900.csv",
+        "data/processed/nrr062_historical_calibration/candidate_rows.csv",
+        "reports/NRR062_HISTORICAL_CALIBRATION_REPORT.md",
+        "reports/NRR062_CONFIG_PATCH_CANDIDATE.yaml",
+        "artifacts/nrr062_historical_calibration/results.json"
+      ],
+      "candidate_yaml_outputs": [
+        "reports/NRR062_CONFIG_PATCH_CANDIDATE.yaml"
+      ],
+      "requires_exchange_download": true,
+      "can_run_fully_offline": false,
+      "needs_precomputed_datasets": false,
+      "derives_labels_or_outcomes_internally": true,
+      "depends_on_trade_lifecycle_closure": false,
+      "depends_on_fees_or_slippage_assumptions": true,
+      "split_aware": true,
+      "symbol_or_regime_aware": true,
+      "can_leak_future_data": true,
+      "test_status": {
+        "has_tests": true,
+        "test_paths": [
+          "tests/tools/test_calibrate_nrr062_historical.py"
+        ],
+        "uses_synthetic_fixtures": true,
+        "uses_real_repo_data": false
+      },
+      "readiness": "BLOCKED_BY_MISSING_RUNTIME_TRACE",
+      "readiness_reason": "This calibrator is useful for diagnostic frontier analysis, but it is explicitly candle-only and cannot reconstruct live OBI, TFI, depth imbalance, or macro residual inputs. That makes it insufficient as a trustworthy policy-promotion surface.",
+      "smallest_next_useful_dataset": "calibration_low_vol_gate_dataset_v1",
+      "proposed_dataset_schemas": [
+        "calibration_market_bar_dataset_v1",
+        "calibration_low_vol_gate_dataset_v1",
+        "calibration_walkforward_manifest_v1"
+      ],
+      "blockers": [
+        "External Binance raw cache or live download is required by default",
+        "The report itself documents missing live microstructure inputs",
+        "No canonical joined runtime low-vol gate dataset exists yet"
+      ]
+    },
+    {
+      "id": "objective_stack",
+      "path": "calibrators/strategies/calibrate_objective_stack.py",
+      "category": "strategies",
+      "default_input_paths": {
+        "config_root": "config/aurora",
+        "dataset_dir": null,
+        "recorder_dir": "data/recorder",
+        "wal_dir": "ops/wal",
+        "ledger_path": "data/order_ledger.db",
+        "symbols": [
+          "BTCUSDT"
+        ],
+        "start": null,
+        "end": null,
+        "tf_sec": 300,
+        "trials": 100,
+        "top_k": 5,
+        "seed": 42,
+        "min_trade_count": 5
+      },
+      "data_surfaces": [
+        "recorder_bars",
+        "ops_wal",
+        "order_ledger_db"
+      ],
+      "artifacts": [
+        "dataset/attempted_entries.csv",
+        "dataset/realized_trades.csv",
+        "dataset/manifest.json",
+        "candidate_bundle.json",
+        "overlay YAML files",
+        "report.md"
+      ],
+      "candidate_yaml_outputs": [
+        "overlay YAML files"
+      ],
+      "requires_exchange_download": false,
+      "can_run_fully_offline": true,
+      "needs_precomputed_datasets": false,
+      "derives_labels_or_outcomes_internally": false,
+      "depends_on_trade_lifecycle_closure": true,
+      "depends_on_fees_or_slippage_assumptions": false,
+      "split_aware": true,
+      "symbol_or_regime_aware": true,
+      "can_leak_future_data": true,
+      "test_status": {
+        "has_tests": true,
+        "test_paths": [
+          "tests/tools/test_objective_calibration.py"
+        ],
+        "uses_synthetic_fixtures": true,
+        "uses_real_repo_data": true
+      },
+      "readiness": "NEEDS_JOINED_DATASET",
+      "readiness_reason": "The builder already performs the right high-level join across recorder, WAL, and ledger, but the source contracts are still implicit in support code. A canonical joined decision and realized-trade dataset is the smallest missing layer.",
+      "smallest_next_useful_dataset": "calibration_realized_trade_dataset_v1",
+      "proposed_dataset_schemas": [
+        "calibration_trade_decision_dataset_v1",
+        "calibration_realized_trade_dataset_v1",
+        "calibration_walkforward_manifest_v1"
+      ],
+      "blockers": [
+        "ops/wal is a mixed-domain event journal rather than a typed calibration feed",
+        "The ledger reader imports the entire orders table contractually via SELECT *",
+        "attempted_entries and realized_trades schemas exist only in code today"
+      ]
+    },
+    {
+      "id": "system_stress_weights",
+      "path": "calibrators/policy_gates/calibrate_system_stress_weights.py",
+      "category": "policy_gates",
+      "default_input_paths": {
+        "mode": "research",
+        "out_dir": "reports/system_stress_calibration",
+        "recorder_dir": "data/recorder",
+        "symbols": [
+          "BTCUSDT"
+        ],
+        "tf_sec": 900,
+        "dataset_manifest": null,
+        "train_frac": 0.7,
+        "top_k": 5
+      },
+      "data_surfaces": [
+        "recorder_bars"
+      ],
+      "artifacts": [
+        "walkforward_metrics.csv",
+        "yaml_patch_snippet.yaml",
+        "candidate_summary.json",
+        "candidate_metrics.json",
+        "report.md"
+      ],
+      "candidate_yaml_outputs": [
+        "yaml_patch_snippet.yaml"
+      ],
+      "requires_exchange_download": false,
+      "can_run_fully_offline": true,
+      "needs_precomputed_datasets": false,
+      "derives_labels_or_outcomes_internally": true,
+      "depends_on_trade_lifecycle_closure": false,
+      "depends_on_fees_or_slippage_assumptions": false,
+      "split_aware": true,
+      "symbol_or_regime_aware": true,
+      "can_leak_future_data": true,
+      "test_status": {
+        "has_tests": true,
+        "test_paths": [
+          "tests/test_system_stress_calibration.py"
+        ],
+        "uses_synthetic_fixtures": true,
+        "uses_real_repo_data": false
+      },
+      "readiness": "READY_WITH_EXISTING_DATA",
+      "readiness_reason": "Acceptance mode already insists on a dataset-manifest and the calibrator operates deterministically over recorder data. The next step is documenting the dataset-manifest schema, not discovering a new runtime truth surface.",
+      "smallest_next_useful_dataset": "calibration_walkforward_manifest_v1",
+      "proposed_dataset_schemas": [
+        "calibration_market_bar_dataset_v1",
+        "calibration_oracle_regime_labels_v1",
+        "calibration_walkforward_manifest_v1"
+      ],
+      "blockers": [
+        "Recorder rows still mix bar truth and derived state",
+        "The dataset-manifest contract is enforced in code but not documented as a canonical schema"
+      ]
+    },
+    {
+      "id": "md_amr_phase2b",
+      "path": "calibrators/strategies/run_md_amr_phase2b_aggression_grid.py",
+      "category": "strategies",
+      "default_input_paths": {
+        "recorder_dir": "data/recorder",
+        "md_amr_yaml": "config/aurora/strategies/md_amr.yaml",
+        "strategies_yaml": "config/aurora/strategies.yaml",
+        "tf_sec": 900,
+        "analysis_days": 14,
+        "validation_days": 2,
+        "forward_days": 2,
+        "min_train_days": 6,
+        "min_trades": 5,
+        "max_dd_limit": 0.35,
+        "top_k": 4,
+        "artifacts_root": "artifacts/strategy_calibration/phase2b",
+        "reports_root": "reports"
+      },
+      "data_surfaces": [
+        "recorder_bars",
+        "strategy_calibration_artifacts"
+      ],
+      "artifacts": [
+        "phase2b_candidate_summary.json",
+        "candidate_ranking.json",
+        "candidate_ranking.csv",
+        "report.md",
+        "reports/MD_AMR_PHASE2B_DATA_QUALITY_REPORT.md",
+        "reports/MD_AMR_PHASE2B_BASELINE_CONFIRMATION_REPORT.md",
+        "reports/MD_AMR_PHASE2B_AGGRESSION_GRID_REPORT.md",
+        "reports/MD_AMR_PHASE2B_CANDIDATE_OVERLAYS_REPORT.md"
+      ],
+      "candidate_yaml_outputs": [],
+      "requires_exchange_download": false,
+      "can_run_fully_offline": true,
+      "needs_precomputed_datasets": false,
+      "derives_labels_or_outcomes_internally": true,
+      "depends_on_trade_lifecycle_closure": false,
+      "depends_on_fees_or_slippage_assumptions": false,
+      "split_aware": true,
+      "symbol_or_regime_aware": true,
+      "can_leak_future_data": true,
+      "test_status": {
+        "has_tests": true,
+        "test_paths": [
+          "tests/tools/test_md_amr_phase2b_aggression_grid.py"
+        ],
+        "uses_synthetic_fixtures": true,
+        "uses_real_repo_data": false
+      },
+      "readiness": "NEEDS_REPLAY_HARNESS",
+      "readiness_reason": "Phase 2B is an analysis layer on top of the base MD-AMR replay search. It inherits the same need for frozen replay inputs and additionally depends on base calibration artifacts rather than a canonical dataset surface.",
+      "smallest_next_useful_dataset": "calibration_feature_snapshot_dataset_v1",
+      "proposed_dataset_schemas": [
+        "calibration_feature_snapshot_dataset_v1",
+        "calibration_walkforward_manifest_v1"
+      ],
+      "blockers": [
+        "It reuses base calibration outputs instead of consuming a documented dataset contract",
+        "Shared-window logic is deterministic, but the base replay dataset is still implicit"
+      ]
+    },
+    {
+      "id": "low_vol_cost_floor",
+      "path": "calibrators/policy_gates/calibrate_low_vol_cost_floor.py",
+      "category": "policy_gates",
+      "default_input_paths": {
+        "data_dir": "data",
+        "logs_dir": "logs",
+        "reports_dir": "reports",
+        "out_dir": "artifacts/calibration",
+        "regime": "LOW_VOLATILITY",
+        "open_fee_bps": null,
+        "close_fee_bps": null,
+        "target_net_fee_multiple": 2.0,
+        "slippage_buffer_bps": null,
+        "timeout_bars": 12,
+        "strict": false,
+        "skip_bad_rows": false
+      },
+      "data_surfaces": [
+        "order_log_v1",
+        "trade_lifecycle",
+        "regime_confidence_audit",
+        "attempt_master_reports",
+        "recorder_bars"
+      ],
+      "artifacts": [
+        "low_vol_trade_dataset.csv",
+        "low_vol_threshold_candidates.json",
+        "low_vol_candidate_yaml_patch.yaml",
+        "LOW_VOL_DATA_INVENTORY_REPORT.md",
+        "LOW_VOL_COST_FLOOR_CALIBRATION.md"
+      ],
+      "candidate_yaml_outputs": [
+        "low_vol_candidate_yaml_patch.yaml"
+      ],
+      "requires_exchange_download": false,
+      "can_run_fully_offline": true,
+      "needs_precomputed_datasets": false,
+      "derives_labels_or_outcomes_internally": false,
+      "depends_on_trade_lifecycle_closure": true,
+      "depends_on_fees_or_slippage_assumptions": true,
+      "split_aware": false,
+      "symbol_or_regime_aware": true,
+      "can_leak_future_data": true,
+      "test_status": {
+        "has_tests": true,
+        "test_paths": [
+          "tests/test_calibrate_low_vol_cost_floor.py"
+        ],
+        "uses_synthetic_fixtures": true,
+        "uses_real_repo_data": true
+      },
+      "readiness": "NEEDS_JOINED_DATASET",
+      "readiness_reason": "The current calibrator triangulates three raw logs, three master CSVs, and recorder bars. That is enough for audit exploration, but trustworthy fee-floor recommendations require one canonical joined attempt and outcome dataset with causal lineage and explicit fee semantics.",
+      "smallest_next_useful_dataset": "calibration_low_vol_gate_dataset_v1",
+      "proposed_dataset_schemas": [
+        "calibration_realized_trade_dataset_v1",
+        "calibration_low_vol_gate_dataset_v1",
+        "calibration_walkforward_manifest_v1"
+      ],
+      "blockers": [
+        "trade_lifecycle is a large mixed lifecycle and sidecar surface rather than a closure-only feed",
+        "Master CSV semantics depend on filename rather than an explicit source column",
+        "Counterfactual sufficiency is sensitive to fee and slippage assumptions"
+      ]
+    }
+  ],
+  "synthetic_boundaries": {
+    "allowed_use": [
+      "Parser and schema validation",
+      "Join-key edge cases",
+      "Empty or malformed row handling",
+      "YAML immutability checks",
+      "Split and walk-forward boundary checks",
+      "Small deterministic oracle-label examples"
+    ],
+    "forbidden_use": [
+      "Trustworthy fee-aware low-vol calibration",
+      "Objective ranking intended for promotion",
+      "NRR062 policy-patch acceptance",
+      "Claims about live microstructure equivalence",
+      "Claims about production profitability"
+    ],
+    "required_markers": [
+      "synthetic_id or explicit synthetic provenance",
+      "data_origin",
+      "supports_counterfactual_join",
+      "dataset_visibility",
+      "observation_causal or equivalent provenance flag"
+    ],
+    "required_policy_gate_scenarios": [
+      "allow",
+      "reject",
+      "timeout_non_fill",
+      "take_profit",
+      "stop_loss",
+      "manual_or_timeout_close"
+    ],
+    "required_regime_scenarios": [
+      "LOW_VOLATILITY",
+      "HIGH_VOLATILITY",
+      "TREND_UP",
+      "TREND_DOWN",
+      "MEAN_REVERSION",
+      "UNCERTAIN"
+    ],
+    "required_strategy_scenarios": [
+      "aurora",
+      "md_amr",
+      "mean_reversion"
+    ],
+    "required_lifecycle_scenarios": [
+      "decision_only",
+      "ordered_not_filled",
+      "partial_fill",
+      "full_fill",
+      "reduce_only_close"
+    ]
+  },
+  "next_recommended_packages": [
+    {
+      "package": "CALIBRATORS_FOUNDATION_PACKAGE_03_CANONICAL_DATASET_SCHEMAS",
+      "goal": "Create the documented schema specs and builders under calibrators/datasets for the seven proposed dataset contracts."
+    },
+    {
+      "package": "CALIBRATORS_FOUNDATION_PACKAGE_04_OBJECTIVE_LOWVOL_JOIN_BUILDERS",
+      "goal": "Implement canonical joined runtime datasets for objective_stack and low_vol_cost_floor from authority journals, WAL, ledger, master CSVs, and decision ledger surfaces."
+    },
+    {
+      "package": "CALIBRATORS_FOUNDATION_PACKAGE_05_REPLAY_FREEZE_MANIFESTS",
+      "goal": "Freeze replay inputs and walk-forward manifests for md_amr, mean_reversion, aurora_thresholds, and phase2b so that no hidden hydration or split drift remains."
+    },
+    {
+      "package": "CALIBRATORS_FOUNDATION_PACKAGE_06_NRR062_RUNTIME_TRACE_RECOVERY",
+      "goal": "Bridge low-vol runtime decision traces to real gate inputs so NRR062 can move from candle-only diagnostics toward a trustworthy policy-gate calibration surface."
+    }
+  ]
+}

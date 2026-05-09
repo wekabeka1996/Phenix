@@ -38,6 +38,7 @@
         "mode",
         "peak_giveback_close",
         "shadow_percent_notional_arm",
+        "shadow_fee_aware_arm",
         "freshness",
         "source_config_path"
       ],
@@ -64,6 +65,60 @@
               "type": "array",
               "minItems": 1,
               "items": { "type": "number", "exclusiveMinimum": 0 }
+            }
+          }
+        },
+        "shadow_fee_aware_arm": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "fee_source_priority",
+            "candidate_fee_multiples",
+            "configured_fee_model",
+            "optional_pct_notional_floor"
+          ],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "fee_source_priority": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "realized_lifecycle_fee",
+                  "order_log_fee",
+                  "configured_fee_model"
+                ]
+              }
+            },
+            "candidate_fee_multiples": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "number", "exclusiveMinimum": 0 }
+            },
+            "configured_fee_model": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled", "round_trip_fee_bps"],
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "round_trip_fee_bps": { "type": ["number", "null"] }
+              }
+            },
+            "optional_pct_notional_floor": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled", "candidate_pcts", "candidate_unit"],
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "candidate_unit": { "type": "string", "const": "percent" },
+                "candidate_pcts": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": { "type": "number", "exclusiveMinimum": 0 }
+                }
+              }
             }
           }
         },

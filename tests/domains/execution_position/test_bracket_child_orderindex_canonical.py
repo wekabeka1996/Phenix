@@ -585,6 +585,56 @@ class TestEntryCloseRegressionGuard:
         assert payload["rid"] == "r1"
         assert ref.terminal is True
 
+    def test_close_order_still_correlates_when_preregistered(self, tmp_path, monkeypatch):
+        """Pre-registered CLOSE market orders correlate instead of failing as bracket misses."""
+        monkeypatch.chdir(tmp_path)
+        idx = OrderIndex(ttl_sec=600)
+        ref = idx.upsert_from_open(
+            rid="close-rid-1",
+            idempotent_key="close-idem-1",
+            clientOrderId="CLOSE-btc-1",
+            symbol="BTCUSDT",
+            side="BUY",
+            order_type="MARKET",
+            order_kind="CLOSE",
+        )
+        idx.attach_exchange_id(
+            clientOrderId="CLOSE-btc-1",
+            exchangeOrderId="9997771",
+        )
+
+        fsm_core = _DummyFSMCore(order_index=idx)
+        client = BinanceWebSocketClient(
+            api_key="k", base_url="http://example.invalid",
+            use_testnet=True, fsm_core=fsm_core,
+        )
+
+        msg = {
+            "e": "ORDER_TRADE_UPDATE",
+            "T": 123,
+            "o": {
+                "c": "CLOSE-btc-1", "i": "9997771",
+                "X": "FILLED", "s": "BTCUSDT",
+                "z": "0.095", "l": "0.095",
+                "S": "BUY", "o": "MARKET",
+                "q": "0.095", "ap": "79705.2", "p": "0.0",
+                "n": "1.23", "N": "USDT", "rp": "-21.39", "t": "trade-close-1",
+                "R": True,
+            },
+        }
+
+        client._handle_ws_message(msg)
+        assert len(fsm_core.emitted) == 1
+        event_name, payload, _ = fsm_core.emitted[0]
+        assert event_name == "EVT:TRADE_EXECUTED"
+        assert payload["rid"] == "close-rid-1"
+        assert payload["clientOrderId"] == "CLOSE-btc-1"
+        assert payload["orderId"] == "9997771"
+        assert payload["tradeId"] == "trade-close-1"
+        assert payload["realizedPnl"] == "-21.39"
+        assert payload["commission"] == "1.23"
+        assert ref.terminal is True
+
     def test_non_close_bearing_unknown_order_silently_skipped(self, tmp_path, monkeypatch):
         """Non-close-bearing order not in OrderIndex is skipped (not contract breach)."""
         monkeypatch.chdir(tmp_path)

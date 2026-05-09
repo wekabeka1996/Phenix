@@ -4,8 +4,8 @@ from datetime import date
 import json
 from pathlib import Path
 
-from tools.calibration import calibrate_md_amr_weights as calibrator
-from tools.calibration import run_md_amr_phase2b_aggression_grid as phase2b
+from calibrators.strategies import calibrate_md_amr_weights as calibrator
+from calibrators.strategies import run_md_amr_phase2b_aggression_grid as phase2b
 
 
 def test_phase2b_count_malformed_csv_rows_detects_bad_line(tmp_path: Path) -> None:

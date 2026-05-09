@@ -111,7 +111,8 @@ class NeocortexAuthorityBridge:
         if capture_cfg is None:
             return False
         return (
-            str(getattr(capture_cfg, "mode", "disabled")).strip().lower() == "journal_only"
+            str(getattr(capture_cfg, "mode", "disabled")
+                ).strip().lower() == "journal_only"
             and bool(getattr(capture_cfg, "collect_observation", False))
             and bool(getattr(capture_cfg, "collect_authority_request", False))
         )
@@ -133,6 +134,46 @@ class NeocortexAuthorityBridge:
         if capture_cfg is None:
             return False
         return bool(getattr(capture_cfg, "emit_shadow_decision_logged", False))
+
+    @property
+    def shadow_counterfactual_capture_enabled(self) -> bool:
+        if self._config is None:
+            return False
+        capture_cfg = getattr(self._config, "evidence_capture", None)
+        if capture_cfg is None:
+            return False
+        return (
+            str(getattr(capture_cfg, "mode", "disabled")).strip().lower()
+            == "shadow_counterfactual"
+            and bool(getattr(capture_cfg, "collect_observation", False))
+            and bool(getattr(capture_cfg, "collect_authority_request", False))
+        )
+
+    @property
+    def shadow_counterfactual_response_journal_enabled(self) -> bool:
+        if self._config is None:
+            return False
+        capture_cfg = getattr(self._config, "evidence_capture", None)
+        if capture_cfg is None:
+            return False
+        return (
+            str(getattr(capture_cfg, "mode", "disabled")).strip().lower()
+            == "shadow_counterfactual"
+            and bool(getattr(capture_cfg, "collect_authority_response", False))
+        )
+
+    @property
+    def shadow_counterfactual_emit_shadow_decision_logged(self) -> bool:
+        if self._config is None:
+            return False
+        capture_cfg = getattr(self._config, "evidence_capture", None)
+        if capture_cfg is None:
+            return False
+        return (
+            str(getattr(capture_cfg, "mode", "disabled")).strip().lower()
+            == "shadow_counterfactual"
+            and bool(getattr(capture_cfg, "emit_shadow_decision_logged", False))
+        )
 
     @property
     def deadline_ms(self) -> int:
@@ -164,21 +205,98 @@ class NeocortexAuthorityBridge:
             )
 
         try:
-            raw_response: ControlDecisionResponse | Mapping[str, object]
-            if self._authority_fn is not None:
-                raw_response = self._authority_fn(request)
-            else:
-                raw_response = self._predict_baseline_response(request)
-            response = self._coerce_response(raw_response)
-            if response.decision_id != request.decision_id:
-                raise ValueError("decision_id mismatch")
-            if response.idempotent_key != request.idempotent_key:
-                raise ValueError("idempotent_key mismatch")
+            response = self._evaluate_response(request)
             self._emit_shadow_response(
                 request,
                 response,
                 request_ts_ms=returned_at_ms,
             )
+            return response
+        except BaselineArtifactError:
+            return self._fallback_response(
+                request,
+                returned_at_ms=self._now_ms(),
+                reason_code="BASELINE_UNAVAILABLE",
+                reason_text="Baseline controller unavailable",
+            )
+        except BaselinePredictionError:
+            return self._fallback_response(
+                request,
+                returned_at_ms=self._now_ms(),
+                reason_code="MISSING_REQUIRED_STATE",
+                reason_text="Baseline prediction missing required state",
+            )
+        except (RuntimeError, ValueError, TypeError, OSError) as error:
+            return self._fallback_response(
+                request,
+                returned_at_ms=self._now_ms(),
+                reason_code="HANDLER_FAILURE",
+                reason_text=f"authority bridge error: {type(error).__name__}",
+            )
+        finally:
+            self._release_symbol(request.symbol)
+
+    def shadow_counterfactual_capture(
+        self,
+        request: ControlDecisionRequest,
+    ) -> ControlDecisionResponse:
+        returned_at_ms = self._now_ms()
+        if self._config_error is not None or self._config is None:
+            return self._fallback_response(
+                request,
+                returned_at_ms=returned_at_ms,
+                reason_code=self.short_circuit_reason or "CONFIG_INVALID",
+                reason_text="Neocortex authority config unavailable",
+            )
+        if not self._try_acquire_symbol(request.symbol):
+            return self._fallback_response(
+                request,
+                returned_at_ms=returned_at_ms,
+                reason_code="BRIDGE_UNAVAILABLE",
+                reason_text="max_inflight_per_symbol reached",
+            )
+
+        try:
+            response = self._evaluate_response(request)
+            supports_counterfactual_join = False
+            if int(response.returned_at_ms) > int(request.expires_at_ms):
+                response = response.model_copy(
+                    update={
+                        "apply_result": ControlDecisionApplyResult.LATE_IGNORED,
+                    }
+                )
+            elif response.action == ControlDecisionAction.FALLBACK:
+                response = response.model_copy(
+                    update={
+                        "apply_result": ControlDecisionApplyResult.FALLBACK_BASELINE,
+                    }
+                )
+            else:
+                response = response.model_copy(
+                    update={
+                        "apply_result": ControlDecisionApplyResult.SHADOW_RECORDED,
+                    }
+                )
+                supports_counterfactual_join = True
+
+            if self.shadow_counterfactual_emit_shadow_decision_logged:
+                self._emit_shadow_response(
+                    request,
+                    response,
+                    request_ts_ms=returned_at_ms,
+                    capture_mode="shadow_counterfactual",
+                    authority_applied=False,
+                    no_effect=True,
+                    shadow_logged=True,
+                    model_action=response.action.value.upper(),
+                    returned_action=(
+                        ControlDecisionAction.ALLOW.value.upper()
+                        if supports_counterfactual_join
+                        else None
+                    ),
+                    counterfactual_evaluation=supports_counterfactual_join,
+                    supports_counterfactual_join=supports_counterfactual_join,
+                )
             return response
         except BaselineArtifactError:
             return self._fallback_response(
@@ -273,6 +391,22 @@ class NeocortexAuthorityBridge:
             return response
         return ControlDecisionResponse.model_validate(response)
 
+    def _evaluate_response(
+        self,
+        request: ControlDecisionRequest,
+    ) -> ControlDecisionResponse:
+        raw_response: ControlDecisionResponse | Mapping[str, object]
+        if self._authority_fn is not None:
+            raw_response = self._authority_fn(request)
+        else:
+            raw_response = self._predict_baseline_response(request)
+        response = self._coerce_response(raw_response)
+        if response.decision_id != request.decision_id:
+            raise ValueError("decision_id mismatch")
+        if response.idempotent_key != request.idempotent_key:
+            raise ValueError("idempotent_key mismatch")
+        return response
+
     def _fallback_response(
         self,
         request: ControlDecisionRequest,
@@ -323,6 +457,10 @@ class NeocortexAuthorityBridge:
         authority_applied: bool | None = None,
         no_effect: bool | None = None,
         shadow_logged: bool | None = None,
+        model_action: str | None = None,
+        returned_action: str | None = None,
+        counterfactual_evaluation: bool | None = None,
+        supports_counterfactual_join: bool | None = None,
     ) -> None:
         if self._shadow_emit is None:
             return
@@ -336,7 +474,7 @@ class NeocortexAuthorityBridge:
             "decision_basis_ts": int(request.decision_basis_ts_ms),
             "authority_mode": request.authority_mode.value,
             "apply_result": response.apply_result,
-            "action": response.action.value,
+            "action": model_action or response.action.value,
             "causal_state_snapshot": request.observation.model_dump(),
             "fallback_reason": (
                 response.reason_code
@@ -362,6 +500,24 @@ class NeocortexAuthorityBridge:
             payload["shadow_logged"] = bool(shadow_logged)
             payload["data_quality_flags"]["shadow_logged"] = bool(
                 shadow_logged)
+        if model_action is not None:
+            payload["data_quality_flags"]["model_action"] = str(model_action)
+        if returned_action is not None:
+            payload["data_quality_flags"]["returned_action"] = str(
+                returned_action)
+        if counterfactual_evaluation is not None:
+            payload["data_quality_flags"]["counterfactual_evaluation"] = bool(
+                counterfactual_evaluation)
+        if supports_counterfactual_join is not None:
+            payload["data_quality_flags"]["supports_counterfactual_join"] = bool(
+                supports_counterfactual_join)
+        if model_action is not None and returned_action is not None:
+            payload["data_quality_flags"]["shadow_mode_forced_allow"] = bool(
+                str(returned_action).strip().upper()
+                == ControlDecisionAction.ALLOW.value.upper()
+                and str(model_action).strip().upper()
+                == ControlDecisionAction.DENY.value.upper()
+            )
         try:
             self._shadow_emit(
                 "SHADOW:NEOCORTEX_DECISION_LOGGED",

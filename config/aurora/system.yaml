@@ -46,8 +46,7 @@ execution:
     max_equity_utilization_pct: 150.0
     max_portfolio_fraction: 150.0
     max_directional_ratio: 50.0
-    pending_ttl_sec: 90
-    post_fill_hold_ttl_sec: 5
+    # T3B-SSOT: post_fill_hold_ttl_sec removed — canonical path is domains.execution_position.exposure_guard.post_fill_ttl_sec
     leverage_defaults:
       BTCUSDT: 20
       ETHUSDT: 20
@@ -57,11 +56,9 @@ execution:
       __default__: 20
     count_pending_orders: true
     exclude_reduce_only: true
-  watchdog:
-    ack_ttl_ms: 8000
-    fill_ttl_ms: 3600000
-    check_interval_ms: 1000
-    rps_limit: 10
+  # T5A.1-SSOT: execution.watchdog block removed 2026-05-07.
+  # Canonical source: trading.yaml -> trading.execution.watchdog.*
+  # Do not add execution.watchdog back here; it would create a split-brain duplicate.
   fallback: null
   limit_orders: null
   orders: null

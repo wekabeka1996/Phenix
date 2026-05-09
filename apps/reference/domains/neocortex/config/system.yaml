@@ -25,7 +25,8 @@ run_mode: "backtest"
 trust_enabled: false
 
 evidence_capture:
-  # disabled preserves current behavior; journal_only is opt-in
+  # disabled preserves current behavior; journal_only captures diagnostics-only evidence;
+  # shadow_counterfactual captures evaluated no-effect shadow evidence.
   mode: journal_only
   # Explicit capture toggles for Phase 8A journal-only runtime capture
   collect_observation: true

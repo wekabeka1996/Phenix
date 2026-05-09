@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 try:
-    from jsonschema import validate
+    from jsonschema import ValidationError, validate
 
     HAS_JSONSCHEMA = True
 except ImportError:  # pragma: no cover
@@ -165,3 +165,190 @@ def test_decision_trace_schema_accepts_tpsl_owner_ctx_additively() -> None:
         },
         schema=schema,
     )
+
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_decision_trace_schema_accepts_strategy_and_regime_gate_verdict() -> None:
+    schema = _read_json(DECISION_TRACE_SCHEMA_PATH)
+    validate(
+        instance={
+            "symbol": "SOLUSDT",
+            "strategy_id": "aurora",
+            "ts": 1702500000000,
+            "intent_side": "LONG",
+            "signal_score": 0.9,
+            "regime": "LOW_VOLATILITY",
+            "regime_confidence": 0.42,
+            "regime_confidence_gate_verdict": "ALLOW",
+            "trend_dir": "UP",
+            "trend_run_length": None,
+            "delta_price": 0.0,
+            "pm_norm_10s": 0.0,
+            "pm_norm_60s": 0.0,
+            "pm_norm_300s": 0.0,
+            "vol_pct_10s": 0.0,
+            "vol_pct_60s": 0.0,
+            "vol_pct_300s": 0.0,
+            "gate_outcome": "ALLOW",
+            "deny_reason": None,
+            "why": "contract check",
+        },
+        schema=schema,
+    )
+
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_decision_trace_schema_accepts_richer_allowed_extension_points() -> None:
+    schema = _read_json(DECISION_TRACE_SCHEMA_PATH)
+    validate(
+        instance={
+            "rid": "aurora_BTCUSDT_1702500000000",
+            "lifecycle_id": "intent-001",
+            "symbol": "BTCUSDT",
+            "side": "BUY",
+            "strategy_id": "aurora",
+            "ts": 1702500000000,
+            "intent_side": "LONG",
+            "signal_score": 0.9,
+            "regime": "LOW_VOLATILITY",
+            "regime_confidence": 0.42,
+            "regime_confidence_gate_verdict": "ALLOW",
+            "trend_dir": "UP",
+            "trend_confidence": 0.75,
+            "trend_run_length": 2,
+            "delta_price": 0.0,
+            "pm_norm_10s": 0.0,
+            "pm_norm_60s": 0.0,
+            "pm_norm_300s": 0.0,
+            "vol_pct_10s": 0.0,
+            "vol_pct_60s": 0.0,
+            "vol_pct_300s": 0.0,
+            "gate_outcome": "ALLOW",
+            "deny_reason": None,
+            "why": "rich trace",
+            "price_motion_context": {
+                "pm_norm_10s": 0.0,
+                "pm_norm_60s": 0.0,
+                "pm_norm_300s": 0.0,
+                "vol_pct_10s": 0.0,
+                "vol_pct_60s": 0.0,
+                "vol_pct_300s": 0.0,
+                "missing": {
+                    "pm_norm_10s": False,
+                    "pm_norm_60s": False,
+                    "pm_norm_300s": False,
+                    "vol_pct_10s": False,
+                    "vol_pct_60s": False,
+                    "vol_pct_300s": False,
+                },
+                "missing_reason": {
+                    "pm_norm_10s": None,
+                    "pm_norm_60s": None,
+                    "pm_norm_300s": None,
+                    "vol_pct_10s": None,
+                    "vol_pct_60s": None,
+                    "vol_pct_300s": None,
+                },
+            },
+            "missing_inputs": {
+                "regime_confidence": None,
+                "trend_dir": None,
+                "trend_confidence": None,
+                "trend_run_length": None,
+                "pm_norm_10s": None,
+                "pm_norm_60s": None,
+                "pm_norm_300s": None,
+                "vol_pct_10s": None,
+                "vol_pct_60s": None,
+                "vol_pct_300s": None,
+                "low_vol_cost_floor": None,
+            },
+            "safety_gate_snapshot": {
+                "apply_safety_gates": True,
+                "directional_sanity_enabled": True,
+                "nrr026_enabled": False,
+                "nrr026_effective_enforced": False,
+                "nrr027_enabled": False,
+                "nrr027_effective_enforced": False,
+                "price_motion_sanity_enabled": False,
+                "price_motion_backtest_bypass": False,
+                "nrr028_enabled": False,
+                "nrr028_effective_enforced": False,
+                "nrr029_enabled": False,
+                "nrr029_effective_enforced": False,
+                "nrr030_enabled": False,
+                "nrr030_effective_enforced": False,
+                "nrr063_enabled": True,
+                "nrr063_effective_enforced": True,
+                "regime_confidence_gate_verdict": "ALLOW",
+                "threshold_verdict": "PASS",
+                "threshold_reason": "within band",
+            },
+            "low_vol_cost_floor": {
+                "evaluation_stage": "observe_only",
+                "price_motion_context": {
+                    "pm_norm_60s": 0.0,
+                    "pm_norm_300s": 0.0,
+                },
+            },
+        },
+        schema=schema,
+    )
+
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_decision_trace_schema_accepts_legacy_minimal_payload_without_new_blocks() -> None:
+    schema = _read_json(DECISION_TRACE_SCHEMA_PATH)
+    validate(
+        instance={
+            "symbol": "SOLUSDT",
+            "ts": 1702500000000,
+            "intent_side": "LONG",
+            "signal_score": 0.9,
+            "regime": "LOW_VOLATILITY",
+            "regime_confidence": 0.42,
+            "trend_dir": "UP",
+            "trend_run_length": 1,
+            "delta_price": 0.0,
+            "pm_norm_10s": 0.0,
+            "pm_norm_60s": 0.0,
+            "pm_norm_300s": 0.0,
+            "vol_pct_10s": 0.0,
+            "vol_pct_60s": 0.0,
+            "vol_pct_300s": 0.0,
+            "gate_outcome": "ALLOW",
+            "deny_reason": None,
+            "why": "legacy payload",
+        },
+        schema=schema,
+    )
+
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_decision_trace_schema_still_rejects_unknown_field() -> None:
+    schema = _read_json(DECISION_TRACE_SCHEMA_PATH)
+    payload = {
+        "symbol": "SOLUSDT",
+        "strategy_id": "aurora",
+        "ts": 1702500000000,
+        "intent_side": "LONG",
+        "signal_score": 0.9,
+        "regime": "LOW_VOLATILITY",
+        "regime_confidence": 0.42,
+        "regime_confidence_gate_verdict": "ALLOW",
+        "trend_dir": "UP",
+        "trend_run_length": None,
+        "delta_price": 0.0,
+        "pm_norm_10s": 0.0,
+        "pm_norm_60s": 0.0,
+        "pm_norm_300s": 0.0,
+        "vol_pct_10s": 0.0,
+        "vol_pct_60s": 0.0,
+        "vol_pct_300s": 0.0,
+        "gate_outcome": "ALLOW",
+        "deny_reason": None,
+        "why": "strictness check",
+        "unexpected_field": "must_fail",
+    }
+    with pytest.raises(ValidationError):
+        validate(instance=payload, schema=schema)

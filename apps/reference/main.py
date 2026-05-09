@@ -107,6 +107,15 @@ import threading
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# T4D Timer Governance: main runtime loop cadence floor.
+# This is the polling granularity for all periodic callbacks in the main loop
+# (alert checks, handle_tick domain status). It is NOT the alert interval (60s
+# from observability.yaml) and is NOT a trading decision cadence (decisions are
+# event-driven via WebSocket). Do not extract to YAML — this is infrastructure,
+# not operator policy. Do not change the value without a timer governance audit.
+# infrastructure cadence floor; not alert interval; not strategy timeframe
+_MAIN_LOOP_CADENCE_SEC = 1
+
 
 def _run_async_loop(loop: asyncio.AbstractEventLoop) -> None:
     """Run the shared asyncio loop in a dedicated thread."""
@@ -141,9 +150,15 @@ def build_emit_with_monitoring(
             tracking_why = tracking_msg.why or why
         else:
             rid = emit_kwargs.get("rid")
+            if ":" in event_name:
+                tracking_op, tracking_verb = event_name.split(":", 1)
+            else:
+                tracking_op, tracking_verb = "EVT", event_name
+            if tracking_op == "SHADOW" and tracking_verb == "NEOCORTEX_DECISION_LOGGED":
+                tracking_op = "EVT"
             tracking_msg_kwargs = {
-                "op": event_name.split(":")[0] if ":" in event_name else "EVT",
-                "verb": event_name.split(":")[1] if ":" in event_name else event_name,
+                "op": tracking_op,
+                "verb": tracking_verb,
                 "src": "fsm_core",
                 "dst": "any",
                 "pld": payload,
@@ -157,7 +172,8 @@ def build_emit_with_monitoring(
 
         shadow_event_tap_publisher = shadow_event_tap_getter()
         shadow_event_tap_required = (
-            getattr(shadow_event_tap_publisher, "required_for_mode", False) is True
+            getattr(shadow_event_tap_publisher,
+                    "required_for_mode", False) is True
             if shadow_event_tap_publisher is not None
             else False
         )
@@ -1466,7 +1482,8 @@ def main() -> None:
 
     # Alert monitoring state
     last_alert_check = time.time()
-    alert_check_interval = 60  # Check every 60 seconds
+    # SSOT: observability.yaml alerts.check_interval_sec
+    alert_check_interval = config.observability.alerts.check_interval_sec
 
     def _safe_stop(component, method: str = "stop"):
         """Return a no-arg callable that stops a component if the method exists."""
@@ -1500,7 +1517,7 @@ def main() -> None:
                 except Exception as e:
                     LOG.error(f"Error in decision_making.handle_tick: {e}")
 
-            time.sleep(1)
+            time.sleep(_MAIN_LOOP_CADENCE_SEC)
     except KeyboardInterrupt:
         LOG.info("Shutdown signal received.")
         print("\nShutting down Aurora Core...")

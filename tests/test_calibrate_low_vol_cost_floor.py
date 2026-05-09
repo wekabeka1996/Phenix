@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-import scripts.calibration.calibrate_low_vol_cost_floor as calibrator
+import calibrators.policy_gates.calibrate_low_vol_cost_floor as calibrator
 
 
 def test_fee_formula_synthetic_example_matches_required_contract() -> None:

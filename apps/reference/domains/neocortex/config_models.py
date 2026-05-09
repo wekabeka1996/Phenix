@@ -1104,9 +1104,9 @@ class EvidenceCaptureConfig(BaseModel):
 
     model_config = ConfigDict(extra='forbid', frozen=True)
 
-    mode: Literal["disabled", "journal_only"] = Field(
+    mode: Literal["disabled", "journal_only", "shadow_counterfactual"] = Field(
         json_schema_extra={"default_class": "runtime_behavior"},
-        description="Evidence capture mode. 'disabled' preserves current behavior; 'journal_only' writes canonical evidence without applying authority.",
+        description="Evidence capture mode. 'disabled' preserves current behavior; 'journal_only' writes canonical diagnostics evidence without applying authority; 'shadow_counterfactual' writes evaluated no-effect shadow evidence for counterfactual support.",
     )
     collect_observation: bool = Field(
         json_schema_extra={"default_class": "runtime_behavior"},
@@ -1143,12 +1143,21 @@ class EvidenceCaptureConfig(BaseModel):
 
         if not self.collect_observation:
             raise ValueError(
-                "evidence_capture.mode='journal_only' requires collect_observation=True"
+                f"evidence_capture.mode='{self.mode}' requires collect_observation=True"
             )
         if not self.collect_authority_request:
             raise ValueError(
-                "evidence_capture.mode='journal_only' requires collect_authority_request=True"
+                f"evidence_capture.mode='{self.mode}' requires collect_authority_request=True"
             )
+        if self.mode == "shadow_counterfactual":
+            if not self.collect_authority_response:
+                raise ValueError(
+                    "evidence_capture.mode='shadow_counterfactual' requires collect_authority_response=True"
+                )
+            if not self.emit_shadow_decision_logged:
+                raise ValueError(
+                    "evidence_capture.mode='shadow_counterfactual' requires emit_shadow_decision_logged=True"
+                )
         return self
 
 
@@ -1188,7 +1197,7 @@ class NeocortexConfig(BaseModel):
     )
     evidence_capture: EvidenceCaptureConfig = Field(
         json_schema_extra={"default_class": "runtime_behavior"},
-        description="Explicit Neocortex evidence-capture configuration for journal-only capture.",
+        description="Explicit Neocortex evidence-capture configuration for no-effect journal and counterfactual capture.",
     )
 
     @field_validator('neuro', mode='after')
@@ -1232,6 +1241,15 @@ class NeocortexConfig(BaseModel):
             raise ValueError(
                 "system.run_mode='live' requires neuro.shadow_gates.startup_enforcement='strict'"
             )
+        if self.evidence_capture.mode == "shadow_counterfactual":
+            if self.authority.mode != "shadow":
+                raise ValueError(
+                    "evidence_capture.mode='shadow_counterfactual' requires authority.mode='shadow'"
+                )
+            if self.trust_enabled:
+                raise ValueError(
+                    "evidence_capture.mode='shadow_counterfactual' requires trust_enabled=false"
+                )
         return self
 
 

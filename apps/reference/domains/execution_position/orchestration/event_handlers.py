@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal, InvalidOperation
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from apps.reference.core.time import get_clock
 from apps.reference.contracts.runtime_regime_layers import (
@@ -48,6 +48,159 @@ class EPEventHandlers:
 
     def __init__(self, fsm: Any) -> None:
         self._fsm = fsm
+
+    def _close_accounting_cache(self) -> Dict[str, Dict[str, Any]]:
+        cache = getattr(self._fsm, "_close_accounting_truth_by_symbol", None)
+        if isinstance(cache, dict):
+            return cache
+        cache = {}
+        setattr(self._fsm, "_close_accounting_truth_by_symbol", cache)
+        return cache
+
+    @staticmethod
+    def _optional_float(value: Any) -> Optional[float]:
+        try:
+            if value in (None, "", "None"):
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _position_amt_before_fill(self, symbol: str) -> Optional[float]:
+        if not symbol:
+            return None
+        try:
+            prev_amt = getattr(
+                self._fsm, "_prev_position_amts", {}).get(symbol)
+            if prev_amt is not None:
+                return float(prev_amt)
+        except Exception:
+            pass
+        try:
+            latest_amt = self._fsm._latest_portfolio_position_amt(symbol)
+            if latest_amt is not None:
+                return float(latest_amt)
+        except Exception:
+            pass
+        return None
+
+    def _classify_economic_close(
+        self,
+        *,
+        symbol: str,
+        order_kind: str,
+        fill_side: str,
+    ) -> Optional[str]:
+        normalized_order_kind = str(order_kind or "").strip().upper()
+        if normalized_order_kind in {
+            "SL",
+            "TP",
+            "TP1",
+            "TP2",
+            "BHSL",
+            "BHTP",
+            "CLOSE",
+            "MARKET_FILLED",
+        }:
+            return "explicit_close_fill"
+        if normalized_order_kind != "ENTRY":
+            return None
+
+        position_amt = self._position_amt_before_fill(symbol)
+        if position_amt is None or abs(position_amt) < 1e-10:
+            return None
+
+        normalized_side = str(fill_side or "").strip().upper()
+        if position_amt > 0.0 and normalized_side == "SELL":
+            return "entry_netting_close"
+        if position_amt < 0.0 and normalized_side == "BUY":
+            return "entry_netting_close"
+        return None
+
+    def _remember_close_accounting_truth(
+        self,
+        payload: Dict[str, Any],
+        *,
+        order_kind: str,
+    ) -> None:
+        symbol = str(payload.get("symbol") or "").strip().upper()
+        if not symbol:
+            return
+
+        economic_close_kind = self._classify_economic_close(
+            symbol=symbol,
+            order_kind=order_kind,
+            fill_side=str(payload.get("side") or ""),
+        )
+        if economic_close_kind is None:
+            return
+
+        cache = self._close_accounting_cache()
+        existing = dict(cache.get(symbol) or {})
+
+        trade_id = str(payload.get("tradeId") or payload.get(
+            "trade_id") or "").strip() or None
+        close_price = self._optional_float(payload.get("price"))
+        fill_realized_pnl = self._optional_float(payload.get("realizedPnl"))
+        previous_realized_pnl = self._optional_float(
+            existing.get("realized_pnl"))
+        if fill_realized_pnl is not None and previous_realized_pnl is not None:
+            realized_pnl = previous_realized_pnl + fill_realized_pnl
+        else:
+            realized_pnl = fill_realized_pnl
+        accumulated_fees = self._optional_float(
+            getattr(self._fsm, "_accumulated_fees_by_symbol", {}).get(symbol)
+        )
+        lifecycle_id = str(
+            getattr(self._fsm, "_last_lifecycle_ikey_by_symbol",
+                    {}).get(symbol) or ""
+        ).strip() or None
+        entry_side = str(
+            getattr(self._fsm, "_last_entry_side_by_symbol", {}).get(symbol)
+            or payload.get("side")
+            or "N/A"
+        ).strip().upper()
+        close_reason = (
+            "ENTRY_NETTING_CLOSE"
+            if economic_close_kind == "entry_netting_close"
+            else str(payload.get("close_reason") or order_kind or "POSITION_CLOSED_DETECTED").strip().upper()
+        )
+
+        missing_fields = []
+        if trade_id is None:
+            missing_fields.append("trade_id")
+        if close_price is None:
+            missing_fields.append("close_price")
+        if realized_pnl is None:
+            missing_fields.append("realized_pnl")
+
+        pnl_status = "resolved" if not missing_fields else "unresolved"
+        unresolved_reason = None
+        if missing_fields:
+            unresolved_reason = "missing_close_fill_" + \
+                "_".join(missing_fields)
+
+        cache[symbol] = {
+            "symbol": symbol,
+            "trade_id": trade_id,
+            "close_price": close_price,
+            "realized_pnl": realized_pnl,
+            "fees": accumulated_fees,
+            "lifecycle_id": lifecycle_id,
+            "entry_side": entry_side,
+            "close_reason": close_reason,
+            "pnl_status": pnl_status,
+            "pnl_source": "close_fill",
+            "economic_close_detected": True,
+            "economic_close_kind": economic_close_kind,
+            "close_fill_order_id": str(payload.get("orderId") or "").strip() or None,
+            "close_fill_client_order_id": str(
+                payload.get("clientOrderId") or payload.get(
+                    "client_order_id") or ""
+            ).strip() or None,
+            "accounting_unresolved_reason": unresolved_reason,
+        }
+        self._fsm._last_close_reason_by_symbol[symbol] = close_reason
 
     def _resolve_position_close_reason(self, symbol: str) -> str:
         close_reason = "POSITION_CLOSED_DETECTED"
@@ -254,20 +407,7 @@ class EPEventHandlers:
 
                     _pos_close_regime = self._fsm._open_regime_by_symbol.pop(sym, {
                     })
-
-                    # Try to extract PnL from the matched position data
-                    pos_pnl = 0.0
-                    for pos in positions:
-                        if pos.get("symbol") == sym:
-                            pos_pnl = float(pos.get("realizedPnl") or 0.0)
-                            break
-                    # Fall back to cached fill PnL when portfolio payload has no realizedPnl
-                    if pos_pnl == 0.0:
-                        try:
-                            pos_pnl = float(
-                                self._fsm._last_realized_pnl_by_symbol.get(sym, 0.0))
-                        except Exception:
-                            pass
+                    close_truth = self._close_accounting_cache().pop(sym, None)
                     close_reason = self._resolve_position_close_reason(sym)
                     try:
                         self._fsm._open_strategy_by_symbol.pop(sym, None)
@@ -280,7 +420,8 @@ class EPEventHandlers:
 
                     LOG.info(
                         f"[POSITION_CLOSED] {sym}: position closed (was {prev_amt}, now {now_amt})"
-                        f" | open_regime={_pos_close_regime.get('regime')} | realized_pnl={pos_pnl}"
+                        f" | open_regime={_pos_close_regime.get('regime')} | pnl_status={((close_truth or {}).get('pnl_status') or 'unresolved')}"
+                        f" | realized_pnl={(close_truth or {}).get('realized_pnl')}"
                     )
 
                     # FIX-LIFECYCLE-01: Flush lifecycle record
@@ -296,8 +437,9 @@ class EPEventHandlers:
                                 rid_for_sym = f"position_close:{sym}:{int(closed_at * 1000)}"
                             close_price = None
                             try:
-                                close_price = self._fsm._last_lifecycle_fill_price_by_symbol.get(
-                                    sym)
+                                if close_truth is not None:
+                                    close_price = close_truth.get(
+                                        "close_price")
                             except Exception:
                                 close_price = None
                             _trade_lifecycle.on_close(
@@ -319,21 +461,57 @@ class EPEventHandlers:
 
                     if _get_order_logger is not None:
                         try:
-                            # PHASE 3: Get accumulated fees before write (used in two keys)
-                            _pos_fees = self._fsm._accumulated_fees_by_symbol.get(
-                                sym, 0.0)
-                            _trade_id = self._fsm._last_trade_id_by_symbol.get(
-                                sym, "")
-                            _entry_side = self._fsm._last_entry_side_by_symbol.get(
-                                sym, "N/A")
+                            _pnl_status = str(
+                                (close_truth or {}).get(
+                                    "pnl_status") or "unresolved"
+                            )
+                            _accounting_reason = (
+                                (close_truth or {}).get(
+                                    "accounting_unresolved_reason")
+                                or "missing_close_fill_truth"
+                            )
+                            _resolved = _pnl_status == "resolved"
+                            _pos_fees = (
+                                self._optional_float(
+                                    (close_truth or {}).get("fees"))
+                                if _resolved
+                                else None
+                            )
+                            _trade_id = (
+                                (close_truth or {}).get("trade_id")
+                                if _resolved
+                                else None
+                            )
+                            _entry_side = str(
+                                (close_truth or {}).get("entry_side")
+                                or self._fsm._last_entry_side_by_symbol.get(sym, "N/A")
+                            )
                             _close_ts_ms = int(closed_at * 1000)
                             _entry_regime_epoch_ref = _pos_close_regime.get(
                                 "regime_epoch_ref")
+                            _realized_pnl = (
+                                self._optional_float(
+                                    (close_truth or {}).get("realized_pnl"))
+                                if _resolved
+                                else None
+                            )
+                            _realized_pnl_net = (
+                                _realized_pnl - _pos_fees
+                                if _resolved and _realized_pnl is not None and _pos_fees is not None
+                                else None
+                            )
+                            _close_price = self._optional_float(
+                                (close_truth or {}).get("close_price")
+                            )
+                            _lifecycle_id = str(
+                                (close_truth or {}).get("lifecycle_id")
+                                or self._fsm._last_lifecycle_ikey_by_symbol.get(sym, "")
+                            )
                             _get_order_logger().write({
                                 "rid": str(rid_for_sym) if 'rid_for_sym' in locals() and rid_for_sym else f"position_close:{sym}:{int(closed_at * 1000)}",
                                 "event_type": "POSITION_CLOSED",
                                 # PHASE 1
-                                "lifecycle_id": self._fsm._last_lifecycle_ikey_by_symbol.get(sym, ""),
+                                "lifecycle_id": _lifecycle_id,
                                 "symbol": sym,
                                 # PHASE 2: real entry side from cache; falls back to "N/A" if cache empty
                                 "side": _entry_side,
@@ -341,13 +519,27 @@ class EPEventHandlers:
                                 "trade_id": _trade_id,
                                 # PHASE 3: accumulated fees and net PnL for neocortex reward_complete
                                 "fees": _pos_fees,
-                                "realized_pnl_net": pos_pnl - _pos_fees,
+                                "realized_pnl_net": _realized_pnl_net,
                                 "source_fsm": "ExecPosFSM",
                                 "why": close_reason,
                                 "close_reason": close_reason,
+                                "pnl_status": _pnl_status,
+                                "pnl_source": (
+                                    (close_truth or {}).get("pnl_source")
+                                    if _resolved
+                                    else "unresolved"
+                                ),
+                                "economic_close_detected": bool(
+                                    (close_truth or {}).get(
+                                        "economic_close_detected")
+                                ),
+                                "economic_close_kind": (close_truth or {}).get("economic_close_kind"),
+                                "accounting_unresolved_reason": None if _resolved else _accounting_reason,
                                 "metadata": {
-                                    "close_price": float(close_price) if 'close_price' in locals() and close_price is not None else None,
-                                    "realized_pnl": pos_pnl
+                                    "close_price": _close_price,
+                                    "realized_pnl": _realized_pnl,
+                                    "close_fill_order_id": (close_truth or {}).get("close_fill_order_id"),
+                                    "close_fill_client_order_id": (close_truth or {}).get("close_fill_client_order_id"),
                                 }
                             })
                             if hasattr(self._fsm, "bus") and self._fsm.bus is not None:
@@ -359,12 +551,26 @@ class EPEventHandlers:
                                         "trade_id": _trade_id,
                                         "close_reason": close_reason,
                                         "close_ts_ms": _close_ts_ms,
-                                        "realized_pnl_net": pos_pnl - _pos_fees,
+                                        "realized_pnl_net": _realized_pnl_net,
                                         "fees": _pos_fees,
                                         "entry_regime_epoch_ref": _entry_regime_epoch_ref,
                                         "side": _entry_side,
-                                        "lifecycle_id": self._fsm._last_lifecycle_ikey_by_symbol.get(sym, ""),
-                                        "realized_pnl": pos_pnl,
+                                        "lifecycle_id": _lifecycle_id,
+                                        "realized_pnl": _realized_pnl,
+                                        "close_price": _close_price,
+                                        "pnl_status": _pnl_status,
+                                        "pnl_source": (
+                                            (close_truth or {}).get(
+                                                "pnl_source")
+                                            if _resolved
+                                            else "unresolved"
+                                        ),
+                                        "economic_close_detected": bool(
+                                            (close_truth or {}).get(
+                                                "economic_close_detected")
+                                        ),
+                                        "economic_close_kind": (close_truth or {}).get("economic_close_kind"),
+                                        "accounting_unresolved_reason": None if _resolved else _accounting_reason,
                                     },
                                     why="position_closed_detected",
                                     rid=str(rid_for_sym) if 'rid_for_sym' in locals(
@@ -386,6 +592,7 @@ class EPEventHandlers:
                             self._fsm._last_entry_side_by_symbol.pop(sym, None)
                             self._fsm._accumulated_fees_by_symbol.pop(
                                 sym, None)
+                            self._close_accounting_cache().pop(sym, None)
                         except Exception:
                             pass
 
@@ -487,11 +694,11 @@ class EPEventHandlers:
 
         try:
             if hasattr(self._fsm, "watchdog") and self._fsm.watchdog is not None:
-                self._fsm.watchdog.on_order_ack(order_id)
+                self._fsm.watchdog.on_order_ack(str(order_id))
         except Exception as e:
             LOG.warning(f"[ACK] Failed to notify watchdog for {order_id}: {e}")
 
-    def on_trade_executed(self, event: "Message") -> None:
+    def on_trade_executed(self, event: "Message", *, authoritative: bool = False) -> None:
         """Mirror canonical fill truth into lifecycle telemetry on the actual hot path."""
         payload = event.pld or {}
         symbol = payload.get("symbol")
@@ -523,12 +730,15 @@ class EPEventHandlers:
             except Exception:
                 pass
 
-    def on_order_fill(self, event: "Message") -> None:
-        """Handle adapter or canonical internal fill bookkeeping."""
+        if authoritative:
+            self._apply_fill_bookkeeping(event, skip_trade_lifecycle_log=True)
+
+    def _apply_fill_bookkeeping(self, event: "Message", *, skip_trade_lifecycle_log: bool = False) -> None:
+        """Apply shared fill bookkeeping for legacy ORDER_FILL and authoritative TRADE_EXECUTED."""
         from vfoundation.core.fsm_emit_compat import Message, emit_compat
 
         payload = event.pld or {}
-        skip_trade_lifecycle_log = bool(
+        skip_trade_lifecycle_log = skip_trade_lifecycle_log or bool(
             payload.get("_skip_trade_lifecycle_on_fill"))
         order_id = payload.get("orderId")
         symbol = payload.get("symbol")
@@ -675,15 +885,16 @@ class EPEventHandlers:
         _fill_status = str(payload.get("status") or "").upper()
         try:
             if hasattr(self._fsm, "watchdog") and self._fsm.watchdog is not None:
+                _oid = str(order_id)
                 if _fill_status != "PARTIALLY_FILLED":
-                    self._fsm.watchdog.on_order_fill(order_id)
+                    self._fsm.watchdog.on_order_fill(_oid)
                 else:
                     # Extend fill deadline for partially filled orders
-                    if order_id in self._fsm.watchdog.acked_orders:
-                        self._fsm.watchdog.acked_orders[order_id].deadline_ms = (
+                    if _oid in self._fsm.watchdog.acked_orders:
+                        self._fsm.watchdog.acked_orders[_oid].deadline_ms = (
                             get_clock().now_ms() + self._fsm.watchdog.fill_ttl_ms)
                     LOG.info(
-                        "PARTIAL_FILL_WATCHDOG_RETAINED: %s still tracked", order_id)
+                        "PARTIAL_FILL_WATCHDOG_RETAINED: %s still tracked", _oid)
         except Exception as e:
             LOG.warning(
                 f"[FILL] Failed to notify watchdog for {order_id}: {e}")
@@ -754,6 +965,17 @@ class EPEventHandlers:
                 self._fsm._accumulated_fees_by_symbol[symbol] = _cur_fees + _fee
             except Exception:
                 pass
+            try:
+                self._remember_close_accounting_truth(
+                    payload,
+                    order_kind=order_kind,
+                )
+            except Exception:
+                LOG.debug(
+                    "Failed to update close accounting truth for %s",
+                    symbol,
+                    exc_info=True,
+                )
 
         # PHASE A2 FIX: Inject cached intent data into ManageFlowFSM
         if rid in self._fsm._pending_intent_data:
@@ -901,6 +1123,10 @@ class EPEventHandlers:
         except Exception as e:
             LOG.debug(
                 f"Failed to emit exposure summary update after fill: {e}")
+
+    def on_order_fill(self, event: "Message") -> None:
+        """Handle adapter or canonical internal fill bookkeeping."""
+        self._apply_fill_bookkeeping(event)
 
     # ---- GATE: SYMBOL_TIDY entry gating ----
 

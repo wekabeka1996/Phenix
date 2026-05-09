@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-import tools.calibration.calibrate_aurora_thresholds as calibrator
-from tools.calibration.calibrate_aurora_thresholds import (
+import calibrators.strategies.calibrate_aurora_thresholds as calibrator
+from calibrators.strategies.calibrate_aurora_thresholds import (
     CalibrationRunOutputs,
     CalibrationError,
     FeatureLogAudit,

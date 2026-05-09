@@ -178,17 +178,29 @@ class FillIngressCoordinator:
             _, manage_flow, _ = self._fsm._get_or_create_flows(symbol)
             manage_state_before = self._fsm._manage_state_value(manage_flow)
 
-        if fill_source == "trade_executed":
-            self._fsm._evt_handlers.on_trade_executed(canonical_msg)
+        cutover_active = False
+        try:
+            cutover_active = bool(self._fsm.config.domains.execution_position.trade_executed_cutover_active)
+        except Exception:
+            pass
 
         bookkeeping_msg = canonical_msg
         if fill_source == "trade_executed":
-            bookkeeping_data = canonical_msg.model_dump()
-            bookkeeping_payload = dict(payload)
-            bookkeeping_payload["_skip_trade_lifecycle_on_fill"] = True
-            bookkeeping_data["pld"] = bookkeeping_payload
-            bookkeeping_msg = Message(**bookkeeping_data)
-        self._fsm._evt_handlers.on_order_fill(bookkeeping_msg)
+            if cutover_active:
+                LOG.info("Phase 10 routing: TRADE_EXECUTED path=FORMAL_CUTOVER for %s rid=%s", symbol, payload.get("rid"))
+                self._fsm._evt_handlers.on_trade_executed(canonical_msg, authoritative=True)
+                # Skip legacy incumbent path
+            else:
+                LOG.info("Phase 10 routing: TRADE_EXECUTED path=LEGACY_INCUMBENT for %s rid=%s", symbol, payload.get("rid"))
+                self._fsm._evt_handlers.on_trade_executed(canonical_msg, authoritative=False)
+                bookkeeping_data = canonical_msg.model_dump()
+                bookkeeping_payload = dict(payload)
+                bookkeeping_payload["_skip_trade_lifecycle_on_fill"] = True
+                bookkeeping_data["pld"] = bookkeeping_payload
+                bookkeeping_msg = Message(**bookkeeping_data)
+                self._fsm._evt_handlers.on_order_fill(bookkeeping_msg)
+        else:
+            self._fsm._evt_handlers.on_order_fill(bookkeeping_msg)
 
         if missing_fields:
             self.append_execution_fill_ingress_record(

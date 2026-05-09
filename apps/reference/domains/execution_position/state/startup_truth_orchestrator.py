@@ -22,6 +22,7 @@ from .restore_artifact import (
     ExecutionPositionRestoreEnvelope,
     ExecutionPositionRestoreArtifactWriter,
     ExecutionPositionRestoreArtifactDarkReader,
+    ExecutionPositionRestoreCloseSubmissionContour,
     ExecutionPositionRestoreLifecycleRecord,
     ExecutionPositionRestoreAuthoritativeStatus,
     ExecutionPositionRestoreDarkReadStatus,
@@ -162,11 +163,27 @@ class StartupTruthOrchestrator:
             close_flow) or RESTORE_PHASE_UNKNOWN
         bracket_snapshot = self._fsm._resolve_restore_artifact_bracket_snapshot(
             symbol_key)
+        close_submission_contour = getattr(
+            close_flow,
+            "close_submission_restore_truth",
+            None,
+        )
+        if not isinstance(
+            close_submission_contour,
+            (dict, ExecutionPositionRestoreCloseSubmissionContour),
+        ):
+            close_submission_contour = None
+        has_close_submission_contour = close_submission_contour is not None
 
         has_active_manage = self._fsm._has_active_lifecycle_for_symbol(
             symbol_key)
         has_active_close = close_phase not in ("", "FLAT")
-        if not (has_active_manage or has_active_close or bracket_snapshot["restore_relevant"]):
+        if not (
+            has_active_manage
+            or has_active_close
+            or bracket_snapshot["restore_relevant"]
+            or has_close_submission_contour
+        ):
             return None
 
         record_kwargs: Dict[str, Any] = {
@@ -200,6 +217,12 @@ class StartupTruthOrchestrator:
                 sl_client_order_id=bracket_snapshot["sl_client_order_id"],
                 tp_client_order_id=bracket_snapshot["tp_client_order_id"],
             )
+        if close_submission_contour is not None:
+            record_kwargs["close_submission_contour"] = (
+                ExecutionPositionRestoreCloseSubmissionContour.model_validate(
+                    close_submission_contour
+                )
+            )
         return ExecutionPositionRestoreLifecycleRecord(**record_kwargs)
 
     def _restore_semantics_signature(
@@ -213,6 +236,16 @@ class StartupTruthOrchestrator:
             self._fsm.close_flows.get(symbol_key)) or RESTORE_PHASE_UNKNOWN
         bracket_snapshot = self._fsm._resolve_restore_artifact_bracket_snapshot(
             symbol_key)
+        close_submission_contour = getattr(
+            self._fsm.close_flows.get(symbol_key),
+            "close_submission_restore_truth",
+            None,
+        )
+        if not isinstance(
+            close_submission_contour,
+            (dict, ExecutionPositionRestoreCloseSubmissionContour),
+        ):
+            close_submission_contour = None
         has_active_manage = self._fsm._has_active_lifecycle_for_symbol(
             symbol_key)
         has_active_close = close_phase not in ("", "FLAT")
@@ -255,8 +288,15 @@ class StartupTruthOrchestrator:
                 if bracket_snapshot["tp_client_order_id"]
                 else None
             ),
+            json.dumps(close_submission_contour, sort_keys=True)
+            if close_submission_contour is not None
+            else None,
             bool(
-                has_active_manage or has_active_close or bracket_snapshot["restore_relevant"]),
+                has_active_manage
+                or has_active_close
+                or bracket_snapshot["restore_relevant"]
+                or close_submission_contour is not None
+            ),
         )
 
     def _append_restart_truth_record(
@@ -810,8 +850,14 @@ class StartupTruthOrchestrator:
                 "manage_phase_restore_status",
                 "close_phase_restore_status",
                 "bracket_state_restore_status",
+                "close_submission_truth_classification_restore_status",
+                "close_submission_client_order_id_restore_status",
+                "close_submission_boundary_outcome_restore_status",
             ):
-                if getattr(symbol_status, field_name) == "exact":
+                field_status = getattr(symbol_status, field_name)
+                if field_status == "not_applicable":
+                    continue
+                if field_status == "exact":
                     status.restored_exact_field_count += 1
                 else:
                     status.restored_unknown_field_count += 1
@@ -876,6 +922,58 @@ class StartupTruthOrchestrator:
                 symbol_status.runtime_override_fields.append("close_phase")
             if symbol_status.bracket_state_value != str(current_record.bracket_state):
                 symbol_status.runtime_override_fields.append("bracket_state")
+
+            current_contour = current_record.close_submission_contour
+            if (
+                symbol_status.close_submission_truth_classification_restore_status
+                == "exact"
+            ):
+                current_truth_classification = (
+                    current_contour.truth_classification
+                    if current_contour is not None
+                    else RESTORE_PHASE_UNKNOWN
+                )
+                if (
+                    symbol_status.close_submission_truth_classification_value
+                    != current_truth_classification
+                ):
+                    symbol_status.runtime_override_fields.append(
+                        "close_submission_truth_classification"
+                    )
+            if (
+                symbol_status.close_submission_client_order_id_restore_status
+                == "exact"
+            ):
+                current_client_order_id = (
+                    current_contour.submission_payload.client_order_id
+                    if current_contour is not None
+                    and current_contour.submission_payload is not None
+                    else RESTORE_PHASE_UNKNOWN
+                )
+                if (
+                    symbol_status.close_submission_client_order_id_value
+                    != current_client_order_id
+                ):
+                    symbol_status.runtime_override_fields.append(
+                        "close_submission_client_order_id"
+                    )
+            if (
+                symbol_status.close_submission_boundary_outcome_restore_status
+                == "exact"
+            ):
+                current_boundary_outcome = (
+                    current_contour.submit_boundary_result.outcome
+                    if current_contour is not None
+                    and current_contour.submit_boundary_result is not None
+                    else RESTORE_PHASE_UNKNOWN
+                )
+                if (
+                    symbol_status.close_submission_boundary_outcome_value
+                    != current_boundary_outcome
+                ):
+                    symbol_status.runtime_override_fields.append(
+                        "close_submission_boundary_outcome"
+                    )
 
         return status
 

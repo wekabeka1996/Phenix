@@ -29,7 +29,9 @@ Backtest post-processing and diagnostics.
 
 ## calibration
 Parameter calibration and selection tooling.
-See `config/docs/CALIBRATION_STANDARD_V1.md` and `tools/calibration/README.md` for class definitions and current registry status.
+Canonical implementations now live under `calibrators/`.
+Use `config/docs/CALIBRATION_STANDARD_V1.md` and `calibrators/README.md` for current governance and inventory.
+Files left in `tools/calibration/` are compatibility wrappers.
 - `calibrate_aurora_thresholds.py`
 - `calibrate_aurora_regime_params.py`
 - `calibrate_aurora_signal_weights.py`

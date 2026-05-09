@@ -103,7 +103,8 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "percent_notional"
+        "percent_notional",
+        "fee_aware"
       ],
       "properties": {
         "percent_notional": {
@@ -176,6 +177,205 @@
                     ]
                   },
                   "threshold_met_under_current_giveback_trigger_pct": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "would_trigger": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "state": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "null_reasons": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "fee_aware": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "fee_source_priority",
+            "candidate_fee_multiples",
+            "giveback_trigger_pct",
+            "optional_pct_notional_floor",
+            "candidates"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "fee_source_priority": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "realized_lifecycle_fee",
+                  "order_log_fee",
+                  "configured_fee_model"
+                ]
+              }
+            },
+            "candidate_fee_multiples": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            },
+            "giveback_trigger_pct": {
+              "type": "number"
+            },
+            "optional_pct_notional_floor": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "enabled",
+                "candidate_unit",
+                "candidate_pcts"
+              ],
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "candidate_unit": {
+                  "type": "string",
+                  "const": "percent"
+                },
+                "candidate_pcts": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                }
+              }
+            },
+            "null_reason": {
+              "type": "string"
+            },
+            "candidates": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "fee_multiple",
+                  "estimated_fee_usd",
+                  "fee_source",
+                  "fee_source_confidence",
+                  "optional_pct_floor",
+                  "required_edge_usd",
+                  "current_edge_usd",
+                  "is_armed",
+                  "first_arm_ts_ms",
+                  "peak_edge_usd",
+                  "giveback_pct",
+                  "would_trigger_under_current_giveback_trigger_pct",
+                  "would_trigger",
+                  "state",
+                  "null_reasons"
+                ],
+                "properties": {
+                  "fee_multiple": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "estimated_fee_usd": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "fee_source": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "realized_lifecycle_fee",
+                      "order_log_fee",
+                      "configured_fee_model",
+                      null
+                    ]
+                  },
+                  "fee_source_confidence": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "optional_pct_floor": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "additionalProperties": false,
+                    "required": [
+                      "candidate_pct",
+                      "required_edge_usd"
+                    ],
+                    "properties": {
+                      "candidate_pct": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "required_edge_usd": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    }
+                  },
+                  "required_edge_usd": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "current_edge_usd": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "is_armed": {
+                    "type": "boolean"
+                  },
+                  "first_arm_ts_ms": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0
+                  },
+                  "peak_edge_usd": {
+                    "type": "number"
+                  },
+                  "giveback_pct": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "would_trigger_under_current_giveback_trigger_pct": {
                     "type": [
                       "boolean",
                       "null"

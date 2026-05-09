@@ -852,6 +852,7 @@ class IntentBuilder:
             strategy_id=str(strategy_id),
             trace_ts_ms=trace_ts_ms,
             intent_side=intent_side,
+            order_side=str(side),
             lifecycle_id=str(trade_intent["idempotent_key"]),
             sg=sg,
             regime_provenance=regime_provenance,
@@ -868,8 +869,11 @@ class IntentBuilder:
         try:
             self._fsm.emit("EVT:DECISION_TRACE_EMITTED", payload=trace_payload,
                            why="decision_trace", data_ref=why_chain)
-        except Exception:
-            pass
+        except Exception as emit_e:
+            self.logger.error(
+                f"[{symbol}] OBSERVABILITY: EVT:DECISION_TRACE_EMITTED emit failed. "
+                f"RID={rid}. reason={emit_e}"
+            )
 
         # ── Record accepted ────────────────────────────────────
         try:

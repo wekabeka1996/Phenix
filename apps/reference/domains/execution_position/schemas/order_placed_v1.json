@@ -354,6 +354,16 @@
           "type": "null"
         }
       ]
+    },
+    "fill_ttl_override_ms": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "T5C: Per-order fill TTL override in ms. Set from valid_for_ms on LIMIT orders. Null for MARKET orders or when no override is requested."
+    },
+    "fill_ttl_source": {
+      "type": ["string", "null"],
+      "enum": ["per_order_override", "global_watchdog", null],
+      "description": "T5C: Identifies which TTL governs this order. 'per_order_override' when valid_for_ms was set; 'global_watchdog' when the global fill_ttl_ms applies."
     }
   }
 }

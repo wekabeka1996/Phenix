@@ -251,7 +251,7 @@ def test_build_walkforward_windows_is_deterministic(tmp_path: Path) -> None:
 def test_research_cli_writes_contract_artifacts(tmp_path: Path) -> None:
     _build_recorder_fixture(tmp_path / "recorder")
     module = runpy.run_path(
-        str(Path("tools/calibration/calibrate_system_stress_weights.py")))
+        str(Path("calibrators/policy_gates/calibrate_system_stress_weights.py")))
     main = module["main"]
     out_dir = tmp_path / "artifacts"
     frozen_manifest = tmp_path / "frozen_manifest.json"
@@ -307,7 +307,7 @@ def test_acceptance_cli_fails_closed_without_gates(tmp_path: Path) -> None:
         manifest, indent=2, sort_keys=True), encoding="utf-8")
 
     module = runpy.run_path(
-        str(Path("tools/calibration/calibrate_system_stress_weights.py")))
+        str(Path("calibrators/policy_gates/calibrate_system_stress_weights.py")))
     main = module["main"]
     rc = main(
         [

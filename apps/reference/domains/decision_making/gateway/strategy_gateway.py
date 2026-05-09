@@ -557,7 +557,100 @@ class StrategyGateway:
             journal_only_capture_enabled = bool(
                 getattr(bridge, "journal_only_capture_enabled", False)
             )
-            journal_only_capture = getattr(bridge, "journal_only_capture", None)
+            shadow_counterfactual_capture = getattr(
+                bridge, "shadow_counterfactual_capture", None)
+            journal_only_capture = getattr(
+                bridge, "journal_only_capture", None)
+            if (
+                bool(getattr(bridge, "shadow_counterfactual_capture_enabled", False))
+                and callable(shadow_counterfactual_capture)
+            ):
+                decision_id = str(uuid.uuid4())
+                deadline_ms = int(getattr(bridge, "deadline_ms", 1))
+                observation = self._build_authority_observation(
+                    decision_id=decision_id,
+                    symbol=symbol,
+                    side=side,
+                    rid=rid,
+                    strategy_id=strategy_id,
+                    qty_dec=qty_dec,
+                    entry_price_dec=entry_price_dec,
+                    decision_basis_ts_ms=decision_basis_ts_ms,
+                    latest_risk=latest_risk,
+                    gate_ctx=gate_ctx,
+                    chain_result=chain_result,
+                )
+                request = ControlDecisionRequest(
+                    decision_id=decision_id,
+                    rid=str(rid),
+                    symbol=str(symbol),
+                    request_kind=ControlDecisionRequestKind.NEW_RISK_INTENT,
+                    authority_mode=authority_mode,
+                    decision_basis_ts_ms=int(decision_basis_ts_ms),
+                    deadline_ms=deadline_ms,
+                    expires_at_ms=int(decision_basis_ts_ms) + deadline_ms,
+                    observation=observation,
+                    candidate_intent_summary=dict(
+                        observation.candidate_intent_summary),
+                    idempotent_key=decision_id,
+                )
+                request_row = request.model_dump(mode="json")
+                request_row["capture_mode"] = "shadow_counterfactual"
+                self._append_authority_journal_row(
+                    "authority_request_journal_v1.jsonl",
+                    request_row,
+                )
+
+                response = shadow_counterfactual_capture(request)
+                apply_result = response.apply_result or ControlDecisionApplyResult.SHADOW_RECORDED
+                supports_counterfactual_join = (
+                    apply_result == ControlDecisionApplyResult.SHADOW_RECORDED
+                )
+
+                inc_neocortex_authority_request(
+                    mode=authority_mode.value,
+                    symbol=str(symbol),
+                    apply_result=apply_result.value,
+                )
+
+                authority_context = {
+                    "decision_id": request.decision_id,
+                    "authority_mode": request.authority_mode.value,
+                    "action": response.action.value,
+                    "apply_result": apply_result.value,
+                    "reason_code": response.reason_code,
+                    "reason_text": response.reason_text,
+                    "idempotent_key": response.idempotent_key,
+                    "capture_mode": "shadow_counterfactual",
+                    "authority_applied": False,
+                    "no_effect": True,
+                    "supports_counterfactual_join": supports_counterfactual_join,
+                }
+                if supports_counterfactual_join:
+                    authority_context["returned_action"] = ControlDecisionAction.ALLOW.value
+                    authority_context["counterfactual_evaluation"] = True
+                if response.overlay_patch is not None:
+                    authority_context["overlay_patch"] = dict(
+                        response.overlay_patch)
+
+                if bool(getattr(bridge, "shadow_counterfactual_response_journal_enabled", False)):
+                    response_row = response.model_dump(mode="json")
+                    response_row["apply_result"] = apply_result.value
+                    response_row["authority_mode"] = request.authority_mode.value
+                    response_row["expires_at_ms"] = int(request.expires_at_ms)
+                    response_row["capture_mode"] = "shadow_counterfactual"
+                    response_row["authority_applied"] = False
+                    response_row["no_effect"] = True
+                    response_row["supports_counterfactual_join"] = supports_counterfactual_join
+                    if supports_counterfactual_join:
+                        response_row["returned_action"] = ControlDecisionAction.ALLOW.value
+                        response_row["counterfactual_evaluation"] = True
+                    self._append_authority_journal_row(
+                        "authority_response_journal_v1.jsonl",
+                        response_row,
+                    )
+                return authority_context, False
+
             if journal_only_capture_enabled and callable(journal_only_capture):
                 decision_id = str(uuid.uuid4())
                 deadline_ms = int(getattr(bridge, "deadline_ms", 1))
@@ -1351,6 +1444,16 @@ class StrategyGateway:
                         "decision_id")
                 if pld.get("cycle_key") is not None:
                     strategy_trace_payload["cycle_key"] = pld.get("cycle_key")
+
+                # Additive observability only: propagate existing feature fields
+                # into strategy_trace so low_vol_cost_floor can surface causal context.
+                features_payload = pld.get("features")
+                if isinstance(features_payload, dict):
+                    for obs_key in ("ret_60s", "ret_300s", "spread_bps", "liquidity_kappa", "absorption"):
+                        if obs_key in features_payload:
+                            strategy_trace_payload[obs_key] = _obs_float(
+                                features_payload.get(obs_key)
+                            )
 
             # Dispatch through facade (safety gates already ran in chain)
             dm._propose_trade_intent(

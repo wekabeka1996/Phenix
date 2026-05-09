@@ -66,6 +66,7 @@ def _dm_cfg():
         risk_skew=risk_skew,
         risk_gate=risk_gate,
         flip=flip,
+        neocortex_enforcement_mode="shadow",
     )
 
 

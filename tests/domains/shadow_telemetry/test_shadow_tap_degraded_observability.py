@@ -135,7 +135,8 @@ def _build_publisher(
     *,
     required_for_mode: bool | None = None,
 ) -> tuple[ShadowEventTapPublisher, _FakeTapClient]:
-    config, _cfg_dir = _load_config(tmp_path, required_for_mode=required_for_mode)
+    config, _cfg_dir = _load_config(
+        tmp_path, required_for_mode=required_for_mode)
     monkeypatch.setattr(main_bridge, "JsonlTcpQueueClient", _FakeTapClient)
     _FakeTapClient.instances.clear()
     publisher = ShadowEventTapPublisher(
@@ -159,7 +160,8 @@ def test_shadow_tap_start_records_endpoint_unavailable_and_remains_nonfatal_when
     caplog,
 ) -> None:
     reset_failure_outcomes()
-    publisher, client = _build_publisher(monkeypatch, tmp_path, required_for_mode=False)
+    publisher, client = _build_publisher(
+        monkeypatch, tmp_path, required_for_mode=False)
     client.probe_failure = ShadowTapDeliveryFailure(
         failure_class="endpoint_unavailable",
         phase="startup",
@@ -182,7 +184,8 @@ def test_shadow_tap_start_records_endpoint_unavailable_and_remains_nonfatal_when
         failure_class="endpoint_unavailable",
         required_for_mode="false",
     ) == 1.0
-    assert any("endpoint_unavailable" in record.message for record in caplog.records)
+    assert any(
+        "endpoint_unavailable" in record.message for record in caplog.records)
     assert any("degraded_observability" in record.message or "Shadow event tap delivery degraded" in record.message for record in caplog.records)
 
 
@@ -192,7 +195,8 @@ def test_shadow_tap_start_fails_closed_when_required_and_endpoint_unavailable(
     caplog,
 ) -> None:
     reset_failure_outcomes()
-    publisher, client = _build_publisher(monkeypatch, tmp_path, required_for_mode=True)
+    publisher, client = _build_publisher(
+        monkeypatch, tmp_path, required_for_mode=True)
     client.probe_failure = ShadowTapDeliveryFailure(
         failure_class="endpoint_unavailable",
         phase="startup",
@@ -227,7 +231,8 @@ def test_shadow_tap_queue_overflow_is_counted_and_nonfatal_when_not_required(
     tmp_path: Path,
 ) -> None:
     reset_failure_outcomes()
-    publisher, client = _build_publisher(monkeypatch, tmp_path, required_for_mode=False)
+    publisher, client = _build_publisher(
+        monkeypatch, tmp_path, required_for_mode=False)
     client.enqueue_results = [False]
 
     outcome = publisher.publish(
@@ -257,7 +262,8 @@ def test_shadow_tap_publish_success_remains_clean(
     tmp_path: Path,
 ) -> None:
     reset_failure_outcomes()
-    publisher, client = _build_publisher(monkeypatch, tmp_path, required_for_mode=False)
+    publisher, client = _build_publisher(
+        monkeypatch, tmp_path, required_for_mode=False)
 
     publisher.start()
     outcome = publisher.publish(
@@ -280,7 +286,8 @@ def test_shadow_tap_repeated_failures_are_bounded(
     caplog,
 ) -> None:
     reset_failure_outcomes()
-    publisher, _client = _build_publisher(monkeypatch, tmp_path, required_for_mode=False)
+    publisher, _client = _build_publisher(
+        monkeypatch, tmp_path, required_for_mode=False)
     publisher._delivery_failure_log_every_n = 1_000
     publisher._delivery_failure_log_interval_sec = 9_999.0
     failure_metric_before = _metric_value(
@@ -332,7 +339,8 @@ def test_shadow_tap_repeated_failures_are_bounded(
 @pytest.mark.parametrize(
     "exc, phase, expected",
     [
-        (ConnectionRefusedError(111, "Connection refused"), "startup", "endpoint_unavailable"),
+        (ConnectionRefusedError(111, "Connection refused"),
+         "startup", "endpoint_unavailable"),
         (socket.timeout("timed out"), "connect", "timeout"),
         (OSError("connect failed"), "connect", "connect_failed"),
         (BrokenPipeError("broken pipe"), "send", "send_failed"),
@@ -372,7 +380,8 @@ def test_shadow_tap_wrapper_blocks_required_mode_before_emit() -> None:
             )
 
         def publish(self, **kwargs: Any) -> ShadowTapPublishOutcome:
-            raise AssertionError("publish should not be called when preflight fails")
+            raise AssertionError(
+                "publish should not be called when preflight fails")
 
     wrapped_emit = build_emit_with_monitoring(
         original_emit=original_emit,
@@ -395,7 +404,8 @@ def test_shadow_tap_wrapper_remains_nonfatal_when_not_required(
     config, _cfg_dir = _load_config(tmp_path, required_for_mode=False)
     monkeypatch.setattr(main_bridge, "JsonlTcpQueueClient", _FakeTapClient)
     _FakeTapClient.instances.clear()
-    publisher = ShadowEventTapPublisher(config.domains.shadow_telemetry, logger=MagicMock())
+    publisher = ShadowEventTapPublisher(
+        config.domains.shadow_telemetry, logger=MagicMock())
     client = _FakeTapClient.instances[-1]
     client.enqueue_results = [False]
 
@@ -408,8 +418,49 @@ def test_shadow_tap_wrapper_remains_nonfatal_when_not_required(
         logger=MagicMock(),
     )
 
-    result = wrapped_emit("EVT:FEATURES_CALCULATED", payload={"x": 1}, why="test")
+    result = wrapped_emit("EVT:FEATURES_CALCULATED",
+                          payload={"x": 1}, why="test")
 
     assert result == "ok"
     original_emit.assert_called_once()
     assert entropy_monitor.track_event.call_count == 1
+
+
+def test_build_emit_with_monitoring_canonicalizes_neocortex_shadow_event_message() -> None:
+    original_emit = MagicMock(return_value="ok")
+    entropy_monitor = MagicMock()
+    wrapped_emit = build_emit_with_monitoring(
+        original_emit=original_emit,
+        entropy_monitor=entropy_monitor,
+        shadow_event_tap_getter=lambda: None,
+        logger=MagicMock(),
+    )
+
+    payload = {
+        "decision_id": "decision-1",
+        "rid": "rid-1",
+        "symbol": "BTCUSDT",
+        "action": "ALLOW",
+    }
+
+    result = wrapped_emit(
+        "SHADOW:NEOCORTEX_DECISION_LOGGED",
+        payload=payload,
+        why="shadow_protocol_alignment",
+        rid="rid-1",
+    )
+
+    assert result == "ok"
+    original_emit.assert_called_once_with(
+        "SHADOW:NEOCORTEX_DECISION_LOGGED",
+        payload,
+        "shadow_protocol_alignment",
+        data_ref=None,
+        rid="rid-1",
+    )
+
+    tracked_message = entropy_monitor.track_event.call_args.args[0]
+    assert tracked_message.op == "EVT"
+    assert tracked_message.verb == "NEOCORTEX_DECISION_LOGGED"
+    assert tracked_message.rid == "rid-1"
+    assert tracked_message.pld == payload

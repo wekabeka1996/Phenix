@@ -118,8 +118,7 @@ trading:
       max_directional_ratio: 50.0
       count_pending_orders: true
       exclude_reduce_only: true
-      pending_ttl_sec: 90
-      post_fill_hold_ttl_sec: 5
+      # T3B-SSOT: post_fill_hold_ttl_sec removed — canonical path is domains.execution_position.exposure_guard.post_fill_ttl_sec
       leverage_defaults:
         BTCUSDT: 20
         ETHUSDT: 20

@@ -94,6 +94,15 @@ class _ShadowPercentNotionalArmCandidateState:
 
 
 @dataclass
+class _ShadowFeeAwareArmCandidateState:
+    peak_edge_usd: float = 0.0
+    is_armed: bool = False
+    first_arm_ts_ms: Optional[int] = None
+    has_emitted_arm_event: bool = False
+    has_emitted_trigger_event: bool = False
+
+
+@dataclass
 class _SymbolState:
     portfolio: _Envelope = field(default_factory=_Envelope)
     features: _Envelope = field(default_factory=_Envelope)
@@ -111,6 +120,8 @@ class _SymbolState:
     is_armed: bool = False
     shadow_percent_notional_arm_states: Dict[str,
                                              _ShadowPercentNotionalArmCandidateState] = field(default_factory=dict)
+    shadow_fee_aware_arm_states: Dict[str,
+                                      _ShadowFeeAwareArmCandidateState] = field(default_factory=dict)
 
 
 def _clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
@@ -292,12 +303,16 @@ class PositionPolicySidecar:
         bus: Any,
         manage_flow_getter: Callable[[str], Optional["ManageFlowFSM"]],
         known_symbols_getter: Callable[[], Iterable[str]],
+        lifecycle_fee_getter: Optional[Callable[[
+            str], Optional[float]]] = None,
     ) -> None:
         self.config = config
         self.mode = config.mode
         self._bus = bus
         self._manage_flow_getter = manage_flow_getter
         self._known_symbols_getter = known_symbols_getter
+        self._lifecycle_fee_getter = lifecycle_fee_getter or (
+            lambda _symbol: None)
         self._states: Dict[str, _SymbolState] = {}
         self._started_at_ms = get_clock().now_ms()
         self._trace_counter = 0
@@ -366,6 +381,7 @@ class PositionPolicySidecar:
             state.is_armed = False
             # R7O: Shadow candidate state must not leak across lifecycles.
             state.shadow_percent_notional_arm_states = {}
+            state.shadow_fee_aware_arm_states = {}
         self._evaluate_symbol(symbol, trigger_event=trigger_event)
 
     def on_order_state_changed(self, event: "Message") -> None:
@@ -517,6 +533,47 @@ class PositionPolicySidecar:
             base_payload.get("reason_codes", []),
             base_payload["peak_giveback_snapshot"].get("reason_codes", []),
         )
+
+        # R7T: Emit shadow standalone events for fee-aware candidate state transitions
+        fee_aware_snapshot = base_payload["peak_giveback_snapshot"].get("peak_giveback_shadow_arms", {}).get("fee_aware", {})
+        if fee_aware_snapshot.get("enabled"):
+            for candidate in fee_aware_snapshot.get("candidates", []):
+                fee_multiple_value = candidate.get("fee_multiple")
+                optional_pct_floor = candidate.get("optional_pct_floor")
+                optional_pct_floor_val = optional_pct_floor.get("candidate_pct") if optional_pct_floor else None
+                
+                c_state = self._shadow_fee_aware_candidate_state(
+                    state=state,
+                    fee_multiple=fee_multiple_value,
+                    optional_pct_floor=optional_pct_floor_val,
+                )
+                
+                transitions = []
+                if candidate.get("is_armed") and not getattr(c_state, "has_emitted_arm_event", False):
+                    transitions.append("ARMED")
+                    c_state.has_emitted_arm_event = True
+                
+                if candidate.get("would_trigger") and not getattr(c_state, "has_emitted_trigger_event", False):
+                    transitions.append("TRIGGERED")
+                    c_state.has_emitted_trigger_event = True
+                
+                if transitions:
+                    shadow_payload = {
+                        "ts_ms": now_ms,
+                        "trace_id": base_payload["trace_id"],
+                        "symbol": symbol,
+                        "sidecar_version": base_payload["sidecar_version"],
+                        "event_type": "POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE",
+                        "reason_codes": [f"shadow_fee_aware_{t.lower()}" for t in transitions],
+                        "shadow_only": True,
+                        "authority_applied": False,
+                        "no_effect": True,
+                        "trigger_event": trigger_event,
+                        "transitions": transitions,
+                        "candidate_state": candidate,
+                        "position_snapshot": base_payload["position_snapshot"],
+                    }
+                    self._publish("EVT:POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE", shadow_payload)
 
         if suppression is not None:
             payload = dict(base_payload)
@@ -1155,6 +1212,31 @@ class PositionPolicySidecar:
                 ],
                 "candidate_unit": "percent",
             },
+            "shadow_fee_aware_arm": {
+                "enabled": self.config.shadow_fee_aware_arm.enabled,
+                "fee_source_priority": [
+                    getattr(source, "value", str(source))
+                    for source in self.config.shadow_fee_aware_arm.fee_source_priority
+                ],
+                "candidate_fee_multiples": [
+                    float(candidate)
+                    for candidate in self.config.shadow_fee_aware_arm.candidate_fee_multiples
+                ],
+                "configured_fee_model": {
+                    "enabled": self.config.shadow_fee_aware_arm.configured_fee_model.enabled,
+                    "round_trip_fee_bps": _coerce_float(
+                        self.config.shadow_fee_aware_arm.configured_fee_model.round_trip_fee_bps
+                    ),
+                },
+                "optional_pct_notional_floor": {
+                    "enabled": self.config.shadow_fee_aware_arm.optional_pct_notional_floor.enabled,
+                    "candidate_unit": "percent",
+                    "candidate_pcts": [
+                        float(candidate)
+                        for candidate in self.config.shadow_fee_aware_arm.optional_pct_notional_floor.candidate_pcts
+                    ],
+                },
+            },
             "freshness": {
                 "portfolio_max_age_ms": self.config.freshness.portfolio_max_age_ms,
                 "features_max_age_ms": self.config.freshness.features_max_age_ms,
@@ -1308,6 +1390,285 @@ class PositionPolicySidecar:
 
         return {"percent_notional": percent_notional}
 
+    def _shadow_fee_aware_candidate_state(
+        self,
+        *,
+        state: _SymbolState,
+        fee_multiple: float,
+        optional_pct_floor: Optional[float],
+    ) -> _ShadowFeeAwareArmCandidateState:
+        optional_pct_key = "none" if optional_pct_floor is None else f"{float(optional_pct_floor):.8f}"
+        state_key = f"{float(fee_multiple):.8f}:{optional_pct_key}"
+        if state_key not in state.shadow_fee_aware_arm_states:
+            state.shadow_fee_aware_arm_states[state_key] = _ShadowFeeAwareArmCandidateState(
+            )
+        return state.shadow_fee_aware_arm_states[state_key]
+
+    def _position_notional_usdt(self, position_snapshot: Dict[str, Any]) -> Optional[float]:
+        entry_price = _coerce_float(position_snapshot.get("entry_price"))
+        if entry_price is None:
+            entry_price = _coerce_float(
+                position_snapshot.get("portfolio_entry_price"))
+
+        position_qty = _coerce_float(position_snapshot.get("position_qty"))
+        if position_qty is None:
+            portfolio_position_amt = _coerce_float(
+                position_snapshot.get("portfolio_position_amt"))
+            if portfolio_position_amt is not None:
+                position_qty = abs(portfolio_position_amt)
+
+        if entry_price is None or position_qty is None:
+            return None
+
+        notional_usdt = abs(position_qty) * entry_price
+        if notional_usdt <= 0.0:
+            return None
+        return float(notional_usdt)
+
+    def _resolve_fee_aware_source(
+        self,
+        *,
+        symbol: str,
+        state: _SymbolState,
+        position_notional_usdt: Optional[float],
+    ) -> tuple[Optional[float], Optional[str], str, Dict[str, str]]:
+        cfg = self.config.shadow_fee_aware_arm
+        null_reasons: Dict[str, str] = {}
+
+        for source in cfg.fee_source_priority:
+            source_name = getattr(source, "value", str(source))
+
+            if source_name == "realized_lifecycle_fee":
+                lifecycle_fee = _coerce_float(
+                    self._lifecycle_fee_getter(symbol))
+                if lifecycle_fee is None:
+                    null_reasons[source_name] = "missing_observed_lifecycle_fee"
+                    continue
+                if lifecycle_fee < 0.0:
+                    null_reasons[source_name] = "invalid_observed_lifecycle_fee"
+                    continue
+                return (
+                    float(lifecycle_fee),
+                    source_name,
+                    "observed_symbol_lifecycle_fee",
+                    null_reasons,
+                )
+
+            if source_name == "order_log_fee":
+                order_log_fee = _lookup_nested_numeric(
+                    state.last_fill.payload,
+                    ("fill_fees", "fees", "commission"),
+                )
+                if order_log_fee is None:
+                    null_reasons[source_name] = "missing_order_log_fee"
+                    continue
+                if order_log_fee < 0.0:
+                    null_reasons[source_name] = "invalid_order_log_fee"
+                    continue
+                return (
+                    float(order_log_fee),
+                    source_name,
+                    "observed_order_fill_fee",
+                    null_reasons,
+                )
+
+            if source_name == "configured_fee_model":
+                configured_fee_model = cfg.configured_fee_model
+                if not configured_fee_model.enabled:
+                    null_reasons[source_name] = "configured_fee_model_disabled"
+                    continue
+                if position_notional_usdt is None:
+                    null_reasons[source_name] = "missing_position_notional_usdt"
+                    continue
+                round_trip_fee_bps = _coerce_float(
+                    configured_fee_model.round_trip_fee_bps)
+                if round_trip_fee_bps is None:
+                    null_reasons[source_name] = "missing_configured_round_trip_fee_bps"
+                    continue
+                if round_trip_fee_bps < 0.0:
+                    null_reasons[source_name] = "invalid_configured_round_trip_fee_bps"
+                    continue
+                return (
+                    float(position_notional_usdt *
+                          (round_trip_fee_bps / 10000.0)),
+                    source_name,
+                    "configured_round_trip_bps_model",
+                    null_reasons,
+                )
+
+            null_reasons[source_name] = "unsupported_fee_source"
+
+        return None, None, "unavailable", null_reasons
+
+    def _shadow_fee_aware_snapshot(
+        self,
+        *,
+        state: _SymbolState,
+        position_snapshot: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        cfg = self.config.shadow_fee_aware_arm
+        fee_aware: Dict[str, Any] = {
+            "enabled": bool(cfg.enabled),
+            "fee_source_priority": [
+                getattr(source, "value", str(source)) for source in cfg.fee_source_priority
+            ],
+            "candidate_fee_multiples": [
+                float(candidate) for candidate in cfg.candidate_fee_multiples
+            ],
+            "giveback_trigger_pct": float(self.config.peak_giveback_close.giveback_trigger_pct),
+            "optional_pct_notional_floor": {
+                "enabled": bool(cfg.optional_pct_notional_floor.enabled),
+                "candidate_unit": "percent",
+                "candidate_pcts": [
+                    float(candidate) for candidate in cfg.optional_pct_notional_floor.candidate_pcts
+                ],
+            },
+            "candidates": [],
+        }
+
+        current_edge_usd = _coerce_float(
+            position_snapshot.get("unrealized_pnl_usdt"))
+        position_notional_usdt = self._position_notional_usdt(
+            position_snapshot)
+        symbol = _normalize_symbol(position_snapshot.get("symbol"))
+        estimated_fee_usd, fee_source, fee_source_confidence, source_null_reasons = self._resolve_fee_aware_source(
+            symbol=symbol,
+            state=state,
+            position_notional_usdt=position_notional_usdt,
+        )
+
+        if not cfg.enabled:
+            fee_aware["null_reason"] = "shadow_fee_aware_arm_disabled"
+        elif current_edge_usd is None:
+            fee_aware["null_reason"] = "missing_unrealized_pnl_usdt"
+        elif estimated_fee_usd is None:
+            fee_aware["null_reason"] = "missing_fee_source"
+
+        optional_pct_candidates: list[Optional[float]]
+        if cfg.optional_pct_notional_floor.enabled:
+            optional_pct_candidates = [
+                float(candidate) for candidate in cfg.optional_pct_notional_floor.candidate_pcts
+            ]
+        else:
+            optional_pct_candidates = [None]
+
+        now_ms = get_clock().now_ms()
+        for fee_multiple in cfg.candidate_fee_multiples:
+            fee_multiple_value = float(fee_multiple)
+            for optional_pct_floor in optional_pct_candidates:
+                candidate_state = self._shadow_fee_aware_candidate_state(
+                    state=state,
+                    fee_multiple=fee_multiple_value,
+                    optional_pct_floor=optional_pct_floor,
+                )
+
+                candidate_null_reasons = dict(source_null_reasons)
+                fee_floor_required_edge: Optional[float] = None
+                optional_pct_required_edge: Optional[float] = None
+                optional_pct_floor_payload: Optional[Dict[str, Any]] = None
+
+                if estimated_fee_usd is None:
+                    candidate_null_reasons["estimated_fee_usd"] = "missing_fee_source"
+                    candidate_null_reasons["required_edge_usd"] = "missing_fee_source"
+                else:
+                    fee_floor_required_edge = float(
+                        estimated_fee_usd) * fee_multiple_value
+
+                if optional_pct_floor is not None:
+                    if position_notional_usdt is None:
+                        candidate_null_reasons["optional_pct_floor.required_edge_usd"] = "missing_position_notional_usdt"
+                    else:
+                        optional_pct_required_edge = (
+                            position_notional_usdt * optional_pct_floor) / 100.0
+                    optional_pct_floor_payload = {
+                        "candidate_pct": float(optional_pct_floor),
+                        "required_edge_usd": optional_pct_required_edge,
+                    }
+
+                required_edge_usd: Optional[float] = None
+                if fee_floor_required_edge is not None:
+                    required_edge_usd = fee_floor_required_edge
+                    if optional_pct_required_edge is not None:
+                        required_edge_usd = max(
+                            required_edge_usd, optional_pct_required_edge)
+
+                if cfg.enabled and current_edge_usd is not None and current_edge_usd > candidate_state.peak_edge_usd:
+                    candidate_state.peak_edge_usd = float(current_edge_usd)
+
+                if (
+                    cfg.enabled
+                    and required_edge_usd is not None
+                    and not candidate_state.is_armed
+                    and candidate_state.peak_edge_usd >= required_edge_usd
+                ):
+                    candidate_state.is_armed = True
+                    if candidate_state.first_arm_ts_ms is None:
+                        candidate_state.first_arm_ts_ms = int(now_ms)
+
+                giveback_pct: Optional[float] = None
+                if current_edge_usd is None:
+                    candidate_null_reasons["giveback_pct"] = "missing_unrealized_pnl_usdt"
+                elif candidate_state.peak_edge_usd > 0.0:
+                    giveback_pct = (
+                        (candidate_state.peak_edge_usd - current_edge_usd)
+                        / candidate_state.peak_edge_usd
+                    ) * 100.0
+                else:
+                    candidate_null_reasons["giveback_pct"] = "peak_edge_not_positive"
+
+                threshold_met: Optional[bool] = None
+                if not cfg.enabled:
+                    candidate_null_reasons["would_trigger_under_current_giveback_trigger_pct"] = "shadow_fee_aware_arm_disabled"
+                elif current_edge_usd is None:
+                    candidate_null_reasons["would_trigger_under_current_giveback_trigger_pct"] = "missing_unrealized_pnl_usdt"
+                elif estimated_fee_usd is None:
+                    candidate_null_reasons["would_trigger_under_current_giveback_trigger_pct"] = "missing_fee_source"
+                elif required_edge_usd is None:
+                    candidate_null_reasons["would_trigger_under_current_giveback_trigger_pct"] = "required_edge_not_computable"
+                elif not candidate_state.is_armed:
+                    threshold_met = False
+                elif giveback_pct is None:
+                    candidate_null_reasons["would_trigger_under_current_giveback_trigger_pct"] = "missing_giveback_pct"
+                else:
+                    threshold_met = (
+                        giveback_pct >= self.config.peak_giveback_close.giveback_trigger_pct
+                    )
+
+                if not cfg.enabled:
+                    candidate_state_label = "shadow_fee_aware_disabled"
+                elif current_edge_usd is None:
+                    candidate_state_label = "shadow_fee_aware_unavailable_economics_missing"
+                elif estimated_fee_usd is None:
+                    candidate_state_label = "shadow_fee_aware_unavailable_fee_missing"
+                elif not candidate_state.is_armed:
+                    candidate_state_label = "shadow_fee_aware_not_armed_below_edge"
+                elif threshold_met:
+                    candidate_state_label = "shadow_fee_aware_threshold_met"
+                else:
+                    candidate_state_label = "shadow_fee_aware_below_trigger"
+
+                fee_aware["candidates"].append(
+                    {
+                        "fee_multiple": fee_multiple_value,
+                        "estimated_fee_usd": estimated_fee_usd,
+                        "fee_source": fee_source,
+                        "fee_source_confidence": fee_source_confidence,
+                        "optional_pct_floor": optional_pct_floor_payload,
+                        "required_edge_usd": required_edge_usd,
+                        "current_edge_usd": current_edge_usd,
+                        "is_armed": bool(candidate_state.is_armed),
+                        "first_arm_ts_ms": candidate_state.first_arm_ts_ms,
+                        "peak_edge_usd": float(candidate_state.peak_edge_usd),
+                        "giveback_pct": giveback_pct,
+                        "would_trigger_under_current_giveback_trigger_pct": threshold_met,
+                        "would_trigger": threshold_met,
+                        "state": candidate_state_label,
+                        "null_reasons": candidate_null_reasons,
+                    }
+                )
+
+        return {"fee_aware": fee_aware}
+
     def _config_source_path(self) -> Optional[str]:
         for attr in (
             "source_config_path",
@@ -1435,6 +1796,17 @@ class PositionPolicySidecar:
             threshold_crossed = None
             null_reasons["threshold_crossed"] = "threshold_not_evaluable"
 
+        shadow_arms = self._shadow_percent_notional_snapshot(
+            state=state,
+            position_snapshot=position_snapshot,
+        )
+        shadow_arms.update(
+            self._shadow_fee_aware_snapshot(
+                state=state,
+                position_snapshot=position_snapshot,
+            )
+        )
+
         return {
             "policy_enabled": cfg.enabled,
             "mark_price": mark_price,
@@ -1451,10 +1823,7 @@ class PositionPolicySidecar:
             "giveback_trigger_pct": float(cfg.giveback_trigger_pct),
             "threshold_crossed": threshold_crossed,
             "peak_giveback_state": peak_giveback_state,
-            "peak_giveback_shadow_arms": self._shadow_percent_notional_snapshot(
-                state=state,
-                position_snapshot=position_snapshot,
-            ),
+            "peak_giveback_shadow_arms": shadow_arms,
             "reason_codes": peak_reason_codes,
             "null_reasons": null_reasons,
         }

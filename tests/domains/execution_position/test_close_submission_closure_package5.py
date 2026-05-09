@@ -27,6 +27,8 @@ from apps.reference.domains.execution_position.flows.close.close_submission_adap
     build_close_submission_trace_ref,
 )
 from apps.reference.domains.execution_position.flows.close.close_executor import CloseExecutor
+from apps.reference.domains.execution_position.flows.close.fsm_close import CloseState
+from apps.reference.domains.execution_position.state.order_index import OrderIndex
 from apps.reference.adapters.binance_adapter import BinanceAPIError
 
 
@@ -90,10 +92,26 @@ def _build_close_executor_fsm(
             execution_position=SimpleNamespace(order_lifecycle=lifecycle_cfg)
         )
     )
+    close_flows: dict[str, Any] = {}
+
+    def _get_or_create_close_flow(symbol_key: str) -> Any:
+        normalized = str(symbol_key or "").strip().upper()
+        if normalized not in close_flows:
+            close_flows[normalized] = SimpleNamespace(
+                state=CloseState.FLAT,
+                position_active=False,
+                close_submission_restore_truth=None,
+            )
+        return close_flows[normalized]
+
     fsm = SimpleNamespace(
         adapter=adapter,
         config=config,
         manage_flows={},
+        close_flows=close_flows,
+        order_index=OrderIndex(ttl_sec=3600),
+        _get_or_create_close_flow=MagicMock(
+            side_effect=_get_or_create_close_flow),
         _symbol_brackets={},
         order_guardian=order_guardian,
         _cancel_order=AsyncMock(return_value={"status": "CANCELED"}),
@@ -428,11 +446,52 @@ class TestCloseExecutorTruthGate:
         place_close.assert_not_awaited()
         order_log_write.assert_not_called()
         fsm._clear_symbol_brackets.assert_not_called()
-        fsm._persist_restore_artifact_snapshot.assert_not_called()
+        fsm._persist_restore_artifact_snapshot.assert_called_once_with(
+            trigger="close_executor:truth_gate_full",
+            allow_empty=True,
+        )
         fsm.order_guardian.cleanup_orphans.assert_not_awaited()
         fsm.order_guardian.reconcile_symbol.assert_not_awaited()
         assert manage._closing_position is False
         assert manage._closing_position_ts == 0.0
+        contour = fsm.close_flows["BTCUSDT"].close_submission_restore_truth
+        assert contour["truth_classification"] == "POSITION_TRUTH_UNRESOLVED"
+        assert contour["truth_reason"] == "read_failed"
+        assert "submission_payload" not in contour
+
+
+class TestCloseExecutorRetainedContour:
+
+    @pytest.mark.asyncio
+    async def test_partial_close_persists_retained_contour_through_submit_boundary(self) -> None:
+        fsm, place_close = _build_close_executor_fsm(position_amt=0.25)
+        executor = CloseExecutor(fsm)
+        decision = _dec_close_decision(
+            symbol="BTCUSDT",
+            qty="0.04",
+            idempotent_key="RETAIN-1",
+        )
+        place_close.return_value = {"status": "NEW", "orderId": "close-123"}
+
+        await executor.execute_close(decision)
+
+        contour = fsm.close_flows["BTCUSDT"].close_submission_restore_truth
+        assert contour["close_cmd_rid"] == decision.rid
+        assert contour["truth_classification"] == "POSITION_PRESENT_AND_SUBMITTABLE"
+        assert contour["position_amount_at_close_request"] == "0.25"
+        assert contour["bridge_payload"]["idempotent_key"] == "RETAIN-1"
+        assert contour["submission_payload"] == {
+            "symbol": "BTCUSDT",
+            "side": "SELL",
+            "quantity": "0.04",
+            "client_order_id": contour["submission_payload"]["client_order_id"],
+            "partial_close": True,
+        }
+        assert contour["submit_boundary_result"] == {
+            "outcome": "submitted",
+            "status": "NEW",
+            "order_id": "close-123",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -479,6 +538,11 @@ class TestCloseExecutorFullCloseBranch:
         assert args[1] == "SELL"
         assert args[2] == "0.05"
         assert kwargs["new_client_order_id"].startswith("CLOSE-")
+        close_ref = fsm.order_index.get(clientOrderId=kwargs["new_client_order_id"])
+        assert close_ref is not None
+        assert close_ref.rid == decision.rid
+        assert close_ref.order_kind == "CLOSE"
+        assert close_ref.exchangeOrderId == "close-123"
 
         success_ref = build_close_submission_trace_ref(
             status="success", partial_close=False

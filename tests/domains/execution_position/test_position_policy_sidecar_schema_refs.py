@@ -98,6 +98,43 @@ def _peak_giveback_snapshot() -> dict:
                         "null_reasons": {},
                     }
                 ],
+            },
+            "fee_aware": {
+                "enabled": True,
+                "fee_source_priority": [
+                    "realized_lifecycle_fee",
+                    "order_log_fee",
+                    "configured_fee_model",
+                ],
+                "candidate_fee_multiples": [1.0, 1.5, 2.0],
+                "giveback_trigger_pct": 50.0,
+                "optional_pct_notional_floor": {
+                    "enabled": True,
+                    "candidate_unit": "percent",
+                    "candidate_pcts": [0.02, 0.05],
+                },
+                "candidates": [
+                    {
+                        "fee_multiple": 1.0,
+                        "estimated_fee_usd": 0.9,
+                        "fee_source": "realized_lifecycle_fee",
+                        "fee_source_confidence": "observed_symbol_lifecycle_fee",
+                        "optional_pct_floor": {
+                            "candidate_pct": 0.05,
+                            "required_edge_usd": 2.0,
+                        },
+                        "required_edge_usd": 2.0,
+                        "current_edge_usd": 20.0,
+                        "is_armed": True,
+                        "first_arm_ts_ms": 1700000000000,
+                        "peak_edge_usd": 30.0,
+                        "giveback_pct": 33.333333,
+                        "would_trigger_under_current_giveback_trigger_pct": False,
+                        "would_trigger": False,
+                        "state": "shadow_fee_aware_below_trigger",
+                        "null_reasons": {},
+                    }
+                ],
             }
         },
         "reason_codes": ["peak_giveback_armed", "peak_giveback_below_trigger"],

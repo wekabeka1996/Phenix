@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-from tools.calibration import calibrate_md_amr_weights as calibrator
+from calibrators.strategies import calibrate_md_amr_weights as calibrator
 
 import argparse
 from collections import Counter

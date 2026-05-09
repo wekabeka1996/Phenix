@@ -109,6 +109,7 @@ class OrderIndex:
         symbol: str,
         side: str,
         order_type: str,
+        order_kind: Optional[str] = None,
     ) -> OrderRef:
         """
         Create or update order reference from OPEN operation.
@@ -134,6 +135,8 @@ class OrderIndex:
                 rid=rid, idempotent_key=idempotent_key)
             ref.clientOrderId = clientOrderId or ref.clientOrderId
             ref.symbol, ref.side, ref.order_type = symbol, side, order_type
+            if order_kind:
+                ref.order_kind = str(order_kind)
             self._by_rid[rid] = ref
             if ref.clientOrderId:
                 self._by_client[ref.clientOrderId] = ref
@@ -150,6 +153,7 @@ class OrderIndex:
                 "symbol": symbol,
                 "side": side,
                 "order_type": order_type,
+                "order_kind": order_kind,
                 "clientOrderId": clientOrderId,
                 "idempotent_key": idempotent_key,
             },

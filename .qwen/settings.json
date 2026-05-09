@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(findstr *)"
-    ]
-  },
-  "$version": 3
-}

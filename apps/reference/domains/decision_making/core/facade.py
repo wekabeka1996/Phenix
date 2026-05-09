@@ -31,6 +31,7 @@ from apps.reference.domains.decision_making.primitives.position_queries import P
 from apps.reference.domains.decision_making.gates.readiness_gates import ReadinessGates
 from apps.reference.domains.decision_making.intent.emitter import IntentEmitter
 from apps.reference.domains.decision_making.intent.flip import FlipOrchestrator
+from apps.reference.domains.decision_making.intent.payload_assembler import build_decision_trace_payload
 from apps.reference.domains.decision_making.gates.low_vol_cost_floor import evaluate_low_vol_cost_floor_gate
 from apps.reference.domains.decision_making.gates.safety_gates import apply_safety_gates
 from apps.reference.domains.decision_making.intent.builder import IntentBuilder
@@ -41,6 +42,11 @@ from apps.reference.domains.decision_making.observability.log_adapter import Dec
 from apps.reference.domains.decision_making.gateway.strategy_gateway import StrategyGateway
 from apps.reference.domains.decision_making.gates.regime_loss_embargo import RegimeLossEmbargo
 from apps.reference.domains.neocortex.config_models import load_config as load_neocortex_config
+from apps.reference.domains.neocortex.logic.datasets.time_provenance import (
+    CausalTimeProvenance,
+    coerce_causal_time_provenance,
+    is_causal_time_provenance,
+)
 from apps.reference.domains.neocortex.transport.authority_bridge import NeocortexAuthorityBridge
 
 try:
@@ -61,6 +67,103 @@ except ImportError:
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
     from apps.reference.telemetry.alerts import AlertManager
+
+
+_CAUSAL_PROVENANCE_KEYS = (
+    "event_time_source",
+    "event_time_provenance",
+    "time_provenance",
+    "feature_time_provenance",
+)
+_CAUSAL_TIMESTAMP_KEYS = (
+    "event_ts_ms",
+    "timestamp_ms",
+    "timestamp",
+    "ts_ms",
+    "ts",
+)
+
+
+def _first_mapping_value(
+    *mappings: object,
+    aliases: tuple[str, ...],
+) -> object | None:
+    for mapping in mappings:
+        if not isinstance(mapping, Mapping):
+            continue
+        for alias in aliases:
+            if alias not in mapping:
+                continue
+            value = mapping.get(alias)
+            if value is None:
+                continue
+            if isinstance(value, str) and not value.strip():
+                continue
+            return value
+    return None
+
+
+def _coerce_positive_int(value: object) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        numeric = int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return None
+    if numeric < 1:
+        return None
+    return numeric
+
+
+def _build_snapshot_causal_time_fields(
+    feature_state: Mapping[str, Any],
+    *,
+    decision_basis_ts_ms: object,
+) -> dict[str, Any]:
+    payload = feature_state.get("payload") if isinstance(
+        feature_state.get("payload"), Mapping) else None
+    provenance_raw = _first_mapping_value(
+        feature_state,
+        payload,
+        aliases=_CAUSAL_PROVENANCE_KEYS,
+    )
+    provenance = coerce_causal_time_provenance(provenance_raw)
+    explicit_event_ts_ms = _coerce_positive_int(
+        _first_mapping_value(
+            feature_state,
+            payload,
+            aliases=_CAUSAL_TIMESTAMP_KEYS,
+        )
+    )
+    explicit_decision_basis_ts_ms = _coerce_positive_int(decision_basis_ts_ms)
+    causal_timestamp_present = (
+        explicit_event_ts_ms is not None or explicit_decision_basis_ts_ms is not None
+    )
+    causal_supported = bool(
+        provenance_raw is not None
+        and is_causal_time_provenance(provenance)
+        and causal_timestamp_present
+    )
+
+    fields: dict[str, Any] = {
+        "event_time_source": (
+            provenance.value
+            if provenance_raw is not None
+            else CausalTimeProvenance.UNKNOWN.value
+        ),
+        "event_time_is_causal": causal_supported,
+        "trainable": causal_supported,
+        "dataset_visibility": (
+            "trainable" if causal_supported else "diagnostics_only"
+        ),
+    }
+    if provenance_raw is not None:
+        fields["feature_time_provenance"] = provenance.value
+    if explicit_event_ts_ms is not None:
+        fields["event_ts_ms"] = explicit_event_ts_ms
+    if explicit_decision_basis_ts_ms is not None:
+        fields["decision_basis_ts_ms"] = explicit_decision_basis_ts_ms
+    return fields
 
 
 class DecisionMaking:
@@ -490,7 +593,11 @@ class DecisionMaking:
 
         raw_features = feature_state.get("features") if isinstance(
             feature_state.get("features"), dict) else feature_state or None
-        feature_ts_ms = feature_state.get("ts") or feature_state.get("ts_ms")
+        decision_basis_ts_ms = kwargs.get("decision_basis_ts") or kwargs.get(
+            "decision_ts_ms")
+        feature_ts_ms = _coerce_positive_int(
+            _first_mapping_value(feature_state, aliases=_CAUSAL_TIMESTAMP_KEYS)
+        )
         sg = kwargs.get("sg")
         regime_label = getattr(sg, "regime", None) if sg is not None else None
         regime_confidence = getattr(
@@ -508,7 +615,7 @@ class DecisionMaking:
         snapshot = {
             "snapshot_contract": "decision_making_projection_v1",
             "symbol": symbol,
-            "tick_ts_ms": feature_ts_ms or kwargs.get("decision_basis_ts") or kwargs.get("decision_ts_ms"),
+            "tick_ts_ms": feature_ts_ms or decision_basis_ts_ms,
             "feature_event_ts_ms": feature_ts_ms,
             "portfolio_event_ts_ms": portfolio_ts_ms,
             "trigger_event_type": "EVT:AUTHORITY_DECISION",
@@ -533,6 +640,12 @@ class DecisionMaking:
                 "intent_side": getattr(sg, "intent_side", None) if sg is not None else None,
             },
         }
+        snapshot.update(
+            _build_snapshot_causal_time_fields(
+                feature_state,
+                decision_basis_ts_ms=decision_basis_ts_ms,
+            )
+        )
         return snapshot, {
             "snapshot_missing": False,
             "supports_counterfactual_join": False,
@@ -778,48 +891,33 @@ class DecisionMaking:
         """Emit best-effort observability for a safety-gate denial."""
         def _g(a, d=None): return getattr(sg, a, d)  # noqa: E731
         deny_family = str(_g("deny_family", "SAFETY_GATES") or "SAFETY_GATES")
-        trace = {
-            "rid": rid,
-            "symbol": symbol, "ts": _g("trace_ts_ms"), "intent_side": _g("intent_side"),
-            "strategy_id": str(strategy_id),
-            "signal_score": _g("signal_score"), "regime": _g("regime"),
-            "regime_confidence": _g("regime_confidence"),
-            "resolved_regime_confidence_strategy_id": _g("resolved_regime_confidence_strategy_id"),
-            "resolved_regime_confidence_symbol": _g("resolved_regime_confidence_symbol"),
-            "resolved_regime_confidence_regime_key": _g("resolved_regime_confidence_regime_key"),
-            "min_regime_confidence": _g("min_regime_confidence"),
-            "resolved_min_regime_confidence": _g("resolved_min_regime_confidence"),
-            "resolved_min_regime_confidence_source": _g("resolved_min_regime_confidence_source"),
-            "resolved_min_regime_confidence_strategy_id": _g("resolved_min_regime_confidence_strategy_id"),
-            "resolved_min_regime_confidence_regime_key": _g("resolved_min_regime_confidence_regime_key"),
-            "resolved_max_regime_confidence": _g("resolved_max_regime_confidence"),
-            "resolved_max_regime_confidence_source": _g("resolved_max_regime_confidence_source"),
-            "resolved_max_regime_confidence_strategy_id": _g("resolved_max_regime_confidence_strategy_id"),
-            "resolved_max_regime_confidence_regime_key": _g("resolved_max_regime_confidence_regime_key"),
-            "resolved_regime_confidence_band_active": _g("resolved_regime_confidence_band_active"),
-            "regime_confidence_breach_kind": _g("regime_confidence_breach_kind"),
-            "regime_confidence_gate_verdict": _g("regime_confidence_gate_verdict"),
-            "trend_dir": _g("trend_dir"),
-            "trend_run_length": _g("trend_run_length"), "delta_price": _g("delta_price"), "pm_norm_10s": _g("pm_norm_10s"),
-            "pm_norm_60s": _g("pm_norm_60s"), "pm_norm_300s": _g("pm_norm_300s"),
-            "vol_pct_10s": _g("vol_pct_10s"), "vol_pct_60s": _g("vol_pct_60s"),
-            "vol_pct_300s": _g("vol_pct_300s"),
-            "gate_outcome": "DENY", "deny_reason": sg.deny_reason,
-            "why": (str(_g("why_short", ""))[:80]),
-        }
-        if isinstance(_g("regime_provenance"), dict):
-            trace["regime_provenance"] = _g("regime_provenance")
-        if isinstance(_g("low_vol_cost_floor_details"), dict):
-            trace["low_vol_cost_floor"] = dict(
-                _g("low_vol_cost_floor_details"))
+        trace = build_decision_trace_payload(
+            rid=str(rid),
+            symbol=str(symbol),
+            strategy_id=str(strategy_id),
+            trace_ts_ms=_g("trace_ts_ms"),
+            intent_side=_g("intent_side"),
+            order_side=str(side),
+            lifecycle_id=None,
+            sg=sg,
+            regime_provenance=_g("regime_provenance") if isinstance(
+                _g("regime_provenance"), dict) else None,
+            tpsl_owner_ctx=None,
+            gate_outcome="DENY",
+            deny_reason=sg.deny_reason,
+            why=_g("why_short", ""),
+        )
         # Observability is best-effort here: a failed trace emit must not turn a
         # denied decision into a runtime exception.
         try:
             self.fsm.emit("EVT:DECISION_TRACE_EMITTED", payload=trace,
                           why="decision_trace", data_ref=why_chain)
-        except Exception:
-            self.logger.debug(
-                "EVT:DECISION_TRACE_EMITTED emit failed", exc_info=True)
+        except Exception as emit_e:
+            self.logger.error(
+                f"[{symbol}] OBSERVABILITY: EVT:DECISION_TRACE_EMITTED emit failed. "
+                f"RID={rid}. reason={emit_e}",
+                exc_info=True,
+            )
         side_u = str(side).upper() if str(
             side).upper() in ("BUY", "SELL") else "NONE"
         # Mirror the denial into an explicitly decision-local journal row so it

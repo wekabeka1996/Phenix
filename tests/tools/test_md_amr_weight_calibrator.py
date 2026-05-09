@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 import yaml
 
-from tools.calibration import calibrate_md_amr_weights as calibrator
+from calibrators.strategies import calibrate_md_amr_weights as calibrator
 
 
 def _write_md_amr_recorder(root: Path, *, symbol: str, start_day: date, day_count: int) -> None:

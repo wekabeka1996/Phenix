@@ -150,6 +150,27 @@ def test_loss_below_threshold_does_not_latch() -> None:
     assert policy.get_entry_block("BTCUSDT") == {"blocked": False}
 
 
+def test_unresolved_close_pnl_latches_unproven_not_profit() -> None:
+    policy, states, _clock = _make_policy(threshold=0.05)
+
+    policy.on_regime(symbol="BTCUSDT", changed=False, bar_close_ts_ms=111, ts_ms=100)
+    epoch_ref = states["BTCUSDT"]["regime_loss_embargo"]["stable_regime_epoch_ref"]
+    policy.on_position_closed(
+        symbol="BTCUSDT",
+        entry_regime_epoch_ref=epoch_ref,
+        close_ts_ms=222,
+        realized_pnl_net=None,
+        realized_pnl=None,
+        fees=None,
+        close_reason="CLOSE",
+    )
+
+    block = policy.get_entry_block("BTCUSDT")
+    assert block["blocked"] is True
+    assert block["block_reason"] == RegimeLossEmbargo.CAUSAL_CONTEXT_UNPROVEN
+    assert block["trigger_pnl_net"] is None
+
+
 def test_previous_epoch_losing_close_does_not_latch_current_epoch() -> None:
     policy, states, _clock = _make_policy()
 

@@ -63,13 +63,13 @@ decision_making:
       TREND_UP: 0.20
       TREND_DOWN: 0.20
     max_regime_confidence_by_regime:
-      TREND_UP: 0.40
+      TREND_UP: 0.43
       TREND_DOWN: 0.40
     hard_veto_consecutive_bars: 2
     hard_veto_consecutive_bars_by_regime: {}
     consecutive_bars: 1
     nrr026_enabled: false
-    nrr027_enabled: true
+    nrr027_enabled: false
   low_vol_cost_floor_gate:
     enabled: true
     enforce_in_modes:
@@ -105,12 +105,12 @@ decision_making:
             LOW_VOLATILITY: 0.45
       min_direction_confidence_by_regime:
         DEFAULT: 0.55
-        LOW_VOLATILITY: 0.51
+        LOW_VOLATILITY: 0.25
       min_direction_confidence_overrides_by_strategy_symbol:
         aurora:
           XRPUSDT:
             DEFAULT: 0.55
-            LOW_VOLATILITY: 0.59
+            LOW_VOLATILITY: 0.25
         md_amr:
           XRPUSDT:
             DEFAULT: 0.55
@@ -127,7 +127,7 @@ decision_making:
       require_tpsl: true
       missing_policy: fail_closed
   price_motion_sanity:
-    enabled: true
+    enabled: false
     k_vol: 2.0
     flash_window_sec: 60
     bleed_window_sec: 300
@@ -573,6 +573,24 @@ execution_position:
       - 0.02
       - 0.05
       - 0.07
+    shadow_fee_aware_arm:
+      enabled: true
+      fee_source_priority:
+      - realized_lifecycle_fee
+      - order_log_fee
+      - configured_fee_model
+      candidate_fee_multiples:
+      - 1.0
+      - 1.5
+      - 2.0
+      configured_fee_model:
+        enabled: false
+        round_trip_fee_bps: null
+      optional_pct_notional_floor:
+        enabled: true
+        candidate_pcts:
+        - 0.02
+        - 0.05
 shadow_telemetry:
   enabled: true
   required_for_mode: false

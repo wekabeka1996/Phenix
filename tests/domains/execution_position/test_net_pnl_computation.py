@@ -30,6 +30,7 @@ def _make_mock_fsm():
     mock_fsm._last_trade_id_by_symbol = {}
     mock_fsm._last_entry_side_by_symbol = {}
     mock_fsm._accumulated_fees_by_symbol = {}
+    mock_fsm._close_accounting_truth_by_symbol = {}
     mock_fsm._pending_intent_data = {}
     mock_fsm._pending_entry_meta = {}
     mock_fsm._pending_brackets = {}
@@ -58,6 +59,21 @@ def _run_portfolio_close(mock_fsm, accumulated_fees=0.09, realized_pnl=-1.0):
     mock_fsm._last_trade_id_by_symbol = {"BTCUSDT": "10001"}
     mock_fsm._last_entry_side_by_symbol = {"BTCUSDT": "BUY"}
     mock_fsm._accumulated_fees_by_symbol = {"BTCUSDT": accumulated_fees}
+    mock_fsm._close_accounting_truth_by_symbol = {
+        "BTCUSDT": {
+            "trade_id": "10001",
+            "close_price": 50000.0,
+            "realized_pnl": realized_pnl,
+            "fees": accumulated_fees,
+            "lifecycle_id": "idem-key-001",
+            "entry_side": "BUY",
+            "close_reason": "POSITION_CLOSED_DETECTED",
+            "pnl_status": "resolved",
+            "pnl_source": "close_fill",
+            "economic_close_detected": True,
+            "economic_close_kind": "explicit_close_fill",
+        }
+    }
 
     event = SimpleNamespace(
         pld={"positions": [{"symbol": "BTCUSDT", "positionAmt": 0.0}]}

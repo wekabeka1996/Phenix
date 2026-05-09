@@ -391,6 +391,7 @@ class ExecPosFSM(
         self._last_realized_pnl_by_symbol: Dict[str, float] = {}
         self._last_close_reason_by_symbol: Dict[str, str] = {}
         self._proven_terminal_close_by_symbol: Dict[str, Dict[str, Any]] = {}
+        self._close_accounting_truth_by_symbol: Dict[str, Dict[str, Any]] = {}
 
         self._position_policy_mediator = PositionPolicyMediator(self)
 
@@ -574,12 +575,10 @@ class ExecPosFSM(
         self._async_loop: Optional[asyncio.AbstractEventLoop] = None
 
         # Initialize order timeout watchdog
-        watchdog_config = self._get_config_value(["execution", "watchdog"])
-        if not watchdog_config:
-            watchdog_config = self._get_config_value(
-                ["trading", "execution", "watchdog"])
-        if not watchdog_config:
-            watchdog_config = self._get_config_value(["trading", "watchdog"])
+        # T5A.1-SSOT: canonical path is trading.execution.watchdog (trading.yaml only).
+        # system.yaml execution.watchdog block removed 2026-05-07 — do not add it back.
+        watchdog_config = self._get_config_value(
+            ["trading", "execution", "watchdog"])
 
         if watchdog_config is None:
             watchdog_config = {}
@@ -607,9 +606,8 @@ class ExecPosFSM(
         rps_limit: int = int(get_watchdog_setting("rps_limit", None))
 
         # Log TTL configuration source and values
-        ttl_source = "execution.watchdog"
-        if watchdog_config is None or not watchdog_config:
-            ttl_source = "trading.watchdog"
+        # T5A.1-SSOT: sole canonical source is trading.execution.watchdog
+        ttl_source = "trading.execution.watchdog"
         # NOTE: shadow alias probe for trading.orders.default_ttl_seconds removed (P1 slice)
 
         LOG.info(
@@ -1115,6 +1113,10 @@ class ExecPosFSM(
         if close_flow is not None and close_state not in ("", CloseState.FLAT.value):
             close_flow.reset()
             anything_reset = True
+        elif close_flow is not None:
+            if getattr(close_flow, "close_submission_restore_truth", None) is not None:
+                close_flow.close_submission_restore_truth = None
+                anything_reset = True
 
         if (
             symbol_key in self._symbol_brackets
@@ -1725,6 +1727,9 @@ class ExecPosFSM(
             manage_flow_getter=lambda symbol: self.manage_flows.get(
                 str(symbol).upper()),
             known_symbols_getter=self._position_policy_known_symbols,
+            lifecycle_fee_getter=lambda symbol: self._accumulated_fees_by_symbol.get(
+                str(symbol).upper()
+            ),
         )
 
     def shutdown(self):
@@ -2054,7 +2059,7 @@ class ExecPosFSM(
                     )
                     return result
 
-                local_guard_err = self._local_open_guard(msg, manage_flow)
+                local_guard_err = self._pre_open_guard(msg, manage_flow)
                 if local_guard_err is not None:
                     self._cancel_entry_reservation(str(msg.rid))
                     result = local_guard_err
@@ -2488,7 +2493,7 @@ class ExecPosFSM(
         if not symbol:
             return None
         manage_flow = self.manage_flow(symbol)
-        return self._local_open_guard(msg, manage_flow)
+        return self._pre_open_guard(msg, manage_flow)
 
     def _cancel_entry_reservation(self, rid: str) -> None:
         """Clear OrderIndex reservation when an OPEN path is blocked fail-closed."""
@@ -2720,6 +2725,92 @@ class ExecPosFSM(
             pld=payload,
         )
 
+    @staticmethod
+    def _is_opposite_entry_against_portfolio(
+        *,
+        portfolio_state: str,
+        intent_side: str,
+    ) -> bool:
+        side = str(intent_side or "").strip().upper()
+        if portfolio_state == "LONG" and side == "SELL":
+            return True
+        if portfolio_state == "SHORT" and side == "BUY":
+            return True
+        return False
+
+    def _opposite_entry_contract_guard(
+        self,
+        msg: Message,
+        manage_flow: ManageFlowFSM,
+    ) -> Optional[Message]:
+        symbol = str((msg.pld or {}).get("symbol") or "").strip()
+        if not symbol:
+            return None
+
+        intent_side = str((msg.pld or {}).get("side") or "").strip().upper()
+        if intent_side not in {"BUY", "SELL"}:
+            return None
+
+        portfolio_state = self._get_portfolio_state_for_symbol(symbol)
+        if portfolio_state not in {"LONG", "SHORT"}:
+            return None
+
+        if not self._is_opposite_entry_against_portfolio(
+            portfolio_state=portfolio_state,
+            intent_side=intent_side,
+        ):
+            return None
+
+        local_state = str(
+            getattr(getattr(manage_flow, "state", None), "value", "UNKNOWN"))
+        has_active_lifecycle = (
+            manage_flow.has_active_lifecycle()
+            if hasattr(manage_flow, "has_active_lifecycle")
+            else local_state != "FLAT"
+        )
+        tracked_rid = self._last_lifecycle_rid_by_symbol.get(symbol)
+        lifecycle_id = self._last_lifecycle_ikey_by_symbol.get(symbol)
+        reason = "opposite_entry_requires_explicit_flip_contract"
+        why = f"execution:{reason}"
+        payload = {
+            "ts_ms": int(get_clock().now_sec() * 1000),
+            "symbol": symbol,
+            "rid": msg.rid,
+            "lifecycle_id": lifecycle_id,
+            "tracked_rid": tracked_rid,
+            "block_reason": reason,
+            "reason": reason,
+            "current_local_state": local_state,
+            "local_manage_state": local_state,
+            "portfolio_truth_state": portfolio_state,
+            "portfolio_state": portfolio_state,
+            "divergence_detected": (not has_active_lifecycle),
+            "has_active_lifecycle": has_active_lifecycle,
+            "closing_position": bool(getattr(manage_flow, "_closing_position", False)),
+            "position_qty": (
+                str(getattr(manage_flow, "position_qty", None))
+                if getattr(manage_flow, "position_qty", None) is not None
+                else None
+            ),
+            "entry_order_id": getattr(manage_flow, "entry_order_id", None),
+            "entry_client_order_id": getattr(manage_flow, "entry_client_order_id", None),
+            "sl_order_id": getattr(manage_flow, "sl_order_id", None),
+            "tp_order_id": getattr(manage_flow, "tp_order_id", None),
+            "tp1_order_id": getattr(manage_flow, "tp1_order_id", None),
+            "tp2_order_id": getattr(manage_flow, "tp2_order_id", None),
+            "why": why,
+        }
+        self._emit_execution_bus_event("EVT:EXECUTION_GUARD_BLOCKED", payload)
+        return Message(
+            op="ERR",
+            verb="OPEN",
+            src=msg.dst,
+            dst=msg.src,
+            rid=msg.rid,
+            why="OPEN_GUARD_FAIL",
+            pld=payload,
+        )
+
     def _local_open_guard(self, msg: Message, manage_flow: ManageFlowFSM) -> Optional[Message]:
         """Fail closed when local execution state still owns an unresolved lifecycle."""
         has_active_lifecycle = (
@@ -2793,6 +2884,12 @@ class ExecPosFSM(
             why="OPEN_GUARD_FAIL",
             pld=payload,
         )
+
+    def _pre_open_guard(self, msg: Message, manage_flow: ManageFlowFSM) -> Optional[Message]:
+        local_guard_err = self._local_open_guard(msg, manage_flow)
+        if local_guard_err is not None:
+            return local_guard_err
+        return self._opposite_entry_contract_guard(msg, manage_flow)
 
     def _check_exposure_fail_closed(self, msg: Message) -> Optional[Message]:
         """Phase 14A: Delegated to ExposureManager."""

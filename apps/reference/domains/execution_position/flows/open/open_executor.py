@@ -1090,6 +1090,9 @@ class OpenExecutor:
             side=side,
             fill_ttl_override_ms=valid_for_ms)
 
+        # T5C: TTL observability — computed once, used in both log sites below
+        fill_ttl_source = "per_order_override" if valid_for_ms else "global_watchdog"
+
         # Order logger
         _open_regime = (decision.pld or {}).get("regime")
         _open_regime_confidence = (decision.pld or {}).get("regime_confidence")
@@ -1103,7 +1106,9 @@ class OpenExecutor:
             "adapter_response": entry_resp, "regime": _open_regime,
             "regime_confidence": _open_regime_confidence,
             "regime_provenance": _open_regime_provenance,
-            "metadata": {"order_type": "MARKET_ENTRY", "corr_id": decision.corr_id}})
+            "metadata": {"order_type": "MARKET_ENTRY", "corr_id": decision.corr_id,
+                         "fill_ttl_override_ms": valid_for_ms,
+                         "fill_ttl_source": fill_ttl_source}})
 
         self._fsm._open_regime_by_symbol[symbol] = {
             "regime_epoch_ref": _open_regime_epoch_ref,
@@ -1141,7 +1146,9 @@ class OpenExecutor:
                      "order_id": str(entry_resp.get("orderId")), "rid": decision.rid,
                      "ts_ms": get_clock().now_ms(), "corr_id": decision.corr_id,
                      "regime": _open_regime, "regime_confidence": _open_regime_confidence,
-                     "regime_provenance": _open_regime_provenance},
+                     "regime_provenance": _open_regime_provenance,
+                     "fill_ttl_override_ms": valid_for_ms,
+                     "fill_ttl_source": fill_ttl_source},
                 why="order_placed",
                 data_ref=list(data_ref or []))
             wal.append(order_placed_msg.model_dump())

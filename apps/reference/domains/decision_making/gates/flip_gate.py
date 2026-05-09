@@ -36,8 +36,8 @@ def check(ctx: GateContext) -> GateResult:
         return GateResult(
             outcome=GateOutcome.REJECT,
             gate_name=GATE_NAME,
-            reason_code="FLIP_GATE_UNKNOWN",
-            reason="DECISION",
+            reason_code=str(flip_result),
+            reason=str(flip_result),
             context="strategy_signal_gateway:flip_unknown_state",
         )
 

@@ -165,7 +165,14 @@ class TestFlipGate:
         dm._handle_flip_orchestration.return_value = "ANTI_PYRAMIDING_BLOCK"
         r = flip_gate.check(_ctx(dm=dm))
         assert r.outcome == GateOutcome.REJECT
-        assert r.reason_code == "FLIP_GATE_UNKNOWN"
+        assert r.reason_code == "ANTI_PYRAMIDING_BLOCK"
+
+    def test_reject_preserves_explicit_opposite_entry_contract_reason(self):
+        dm = MagicMock()
+        dm._handle_flip_orchestration.return_value = "OPPOSITE_ENTRY_REQUIRES_EXPLICIT_FLIP_CONTRACT"
+        r = flip_gate.check(_ctx(dm=dm))
+        assert r.outcome == GateOutcome.REJECT
+        assert r.reason_code == "OPPOSITE_ENTRY_REQUIRES_EXPLICIT_FLIP_CONTRACT"
 
 
 # ---------------------------------------------------------------------------

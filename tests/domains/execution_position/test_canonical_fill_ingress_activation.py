@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from apps.reference.config_models import BracketsConfig, SLConfig, TPConfig
+from apps.reference.domains.execution_position.state.order_index import OrderIndex
 from vfoundation.core.protocol import Message
 
 
@@ -287,6 +288,91 @@ def test_trade_executed_partially_filled_keeps_pending_brackets_and_skips_deferr
     assert "order-1" in fsm._pending_brackets
     assert "fake_place_deferred" not in scheduled
     clear_pending.assert_not_called()
+
+
+def test_trade_executed_authoritative_path_applies_shared_fill_bookkeeping(
+    fsm_harness,
+) -> None:
+    fsm, _, _cfg = fsm_harness
+    fsm.config.domains.execution_position.trade_executed_cutover_active = True
+
+    manage_flow = MagicMock()
+    manage_flow.state = SimpleNamespace(value="FLAT")
+    manage_flow.handle.return_value = _fill_result_message()
+    fsm.manage_flows["BTCUSDT"] = manage_flow
+    fsm._get_or_create_flows = lambda symbol: (
+        MagicMock(), manage_flow, MagicMock())
+    fsm._position_policy_sidecar = None
+    fsm._process_flow_result = lambda result: None
+
+    fsm.fsm.order_index = OrderIndex(ttl_sec=3600)
+    ref = fsm.fsm.order_index.upsert_from_open(
+        rid="rid-fill-1",
+        idempotent_key="idem-fill-1",
+        clientOrderId="ENTRY-1",
+        symbol="BTCUSDT",
+        side="BUY",
+        order_type="ENTRY_INTENT",
+    )
+    fsm.fsm.order_index.attach_exchange_id(
+        clientOrderId="ENTRY-1",
+        exchangeOrderId="order-1",
+    )
+
+    fsm.watchdog.on_order_fill = MagicMock()
+    fsm.exposure_guard.record_postfill_hold = MagicMock(
+        return_value={"exp_ts": 1, "notional_source": "fill_payload"}
+    )
+    fsm.exposure_guard.get_exposure_summary = MagicMock(
+        return_value={"net": "1"})
+    fsm._pending_intent_data["rid-fill-1"] = {
+        "stop_price": 99.5,
+        "target_price": 101.0,
+    }
+
+    scheduled: list[str] = []
+
+    def fake_submit_async(coro, _loop) -> None:
+        scheduled.append(coro.cr_code.co_name)
+        coro.close()
+
+    fsm._get_async_loop = lambda: object()
+    fsm._submit_async = fake_submit_async
+
+    fill_msg = _trade_executed_message()
+    fill_msg.pld["status"] = "FILLED"
+    fill_msg.pld["tradeId"] = "trade-1"
+    fill_msg.pld["commission"] = "0.01"
+    fill_msg.pld["commissionAsset"] = "USDT"
+
+    written: list[dict] = []
+
+    with patch(
+        "apps.reference.domains.execution_position.orchestration.event_handlers._get_order_logger"
+    ) as mock_log_fn:
+        mock_log_fn.return_value.write.side_effect = written.append
+        fsm._on_trade_executed(fill_msg)
+
+    assert ref.terminal is True
+    fsm.watchdog.on_order_fill.assert_called_once_with("order-1")
+    manage_flow.set_intent_prices.assert_called_once_with(
+        sl_price=99.5, tp_price=101.0)
+    assert "rid-fill-1" not in fsm._pending_intent_data
+    assert fsm._last_lifecycle_ikey_by_symbol["BTCUSDT"] == "idem-fill-1"
+    assert fsm._last_trade_id_by_symbol["BTCUSDT"] == "trade-1"
+    assert fsm._last_entry_side_by_symbol["BTCUSDT"] == "BUY"
+    assert fsm._accumulated_fees_by_symbol["BTCUSDT"] == 0.01
+    fsm.exposure_guard.record_postfill_hold.assert_called_once()
+    fsm.exposure_guard.get_exposure_summary.assert_called_once()
+    assert "emit_compat" in scheduled
+    assert "delayed_cleanup" in scheduled
+
+    filled_writes = [
+        item for item in written if isinstance(item, dict) and item.get("event_type") == "ORDER_FILLED"
+    ]
+    assert len(filled_writes) == 1
+    assert filled_writes[0]["lifecycle_id"] == "idem-fill-1"
+    assert filled_writes[0]["metadata"]["fill_trade_id"] == "trade-1"
 
 
 def test_trade_executed_without_placement_success_keeps_pending_brackets(

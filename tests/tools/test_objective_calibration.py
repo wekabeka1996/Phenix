@@ -233,7 +233,7 @@ def test_search_candidates_is_deterministic_and_writes_overlays(tmp_path: Path) 
 def test_objective_stack_cli_builds_dataset_and_joint_artifacts(tmp_path: Path) -> None:
     recorder_dir, wal_dir, ledger_path = _dataset_fixture(tmp_path)
     module = runpy.run_path(
-        str(Path("tools/calibration/calibrate_objective_stack.py")))
+        str(Path("calibrators/strategies/calibrate_objective_stack.py")))
     main = module["main"]
 
     dataset_dir = tmp_path / "dataset_cli"
@@ -316,7 +316,7 @@ def test_mean_reversion_calibrator_emits_overlay_and_report(tmp_path: Path) -> N
         pd.DataFrame(rows).to_csv(day_dir / "DOGEUSDT_300.csv", index=False)
 
     module = runpy.run_path(
-        str(Path("tools/calibration/calibrate_mean_reversion_params.py")))
+        str(Path("calibrators/strategies/calibrate_mean_reversion_params.py")))
     main = module["main"]
     out_dir = tmp_path / "mr_calibration"
     registry_path = tmp_path / "strategies_registry.yaml"

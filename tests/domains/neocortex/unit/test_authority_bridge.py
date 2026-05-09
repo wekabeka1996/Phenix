@@ -54,13 +54,14 @@ def _config(
     collect_authority_response: bool = False,
     emit_shadow_decision_logged: bool = False,
 ):
+    capture_enabled = capture_mode in {"journal_only", "shadow_counterfactual"}
     return SimpleNamespace(
         trust_enabled=trust_enabled,
         authority=SimpleNamespace(mode=mode.value, deadline_ms=10),
         evidence_capture=SimpleNamespace(
             mode=capture_mode,
-            collect_observation=(capture_mode == "journal_only"),
-            collect_authority_request=(capture_mode == "journal_only"),
+            collect_observation=capture_enabled,
+            collect_authority_request=capture_enabled,
             collect_authority_response=collect_authority_response,
             emit_shadow_decision_logged=emit_shadow_decision_logged,
         ),
@@ -179,3 +180,41 @@ def test_journal_only_capture_emits_shadow_payload_without_decide(tmp_path: Path
     assert payload["data_quality_flags"]["capture_mode"] == "journal_only"
     assert payload["data_quality_flags"]["authority_applied"] is False
     assert payload["data_quality_flags"]["no_effect"] is True
+
+
+def test_shadow_counterfactual_capture_evaluates_and_emits_no_effect_payload(
+    tmp_path: Path,
+) -> None:
+    shadow_events: list[tuple[str, dict, str]] = []
+    bridge = NeocortexAuthorityBridge(
+        config=_config(
+            tmp_path,
+            trust_enabled=False,
+            capture_mode="shadow_counterfactual",
+            collect_authority_response=True,
+            emit_shadow_decision_logged=True,
+        ),
+        baseline_controller=_BaselineController("BLOCK"),
+        shadow_emit_fn=lambda event_name, payload, why: shadow_events.append(
+            (event_name, payload, why)),
+    )
+    bridge._now_ms = lambda: 1_700_000_000_005
+
+    response = bridge.shadow_counterfactual_capture(_request())
+
+    assert response.action == ControlDecisionAction.DENY
+    assert response.apply_result == ControlDecisionApplyResult.SHADOW_RECORDED
+    assert shadow_events
+
+    event_name, payload, why = shadow_events[0]
+    assert event_name == "SHADOW:NEOCORTEX_DECISION_LOGGED"
+    assert why == "neocortex_authority_bridge"
+    assert payload["capture_mode"] == "shadow_counterfactual"
+    assert payload["authority_applied"] is False
+    assert payload["no_effect"] is True
+    assert payload["action"] == "DENY"
+    assert payload["data_quality_flags"]["model_action"] == "DENY"
+    assert payload["data_quality_flags"]["returned_action"] == "ALLOW"
+    assert payload["data_quality_flags"]["counterfactual_evaluation"] is True
+    assert payload["data_quality_flags"]["supports_counterfactual_join"] is True
+    assert payload["data_quality_flags"]["shadow_mode_forced_allow"] is True

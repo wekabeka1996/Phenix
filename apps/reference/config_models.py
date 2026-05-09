@@ -235,6 +235,10 @@ from apps.reference.config.domains.execution_position import (
     PositionPolicySidecarLoggingConfig,
     PositionPolicySidecarMode,
     PositionPolicySidecarPeakGivebackConfig,
+    PositionPolicySidecarShadowFeeAwareArmConfig,
+    PositionPolicySidecarShadowFeeAwareArmFeeSource,
+    PositionPolicySidecarShadowFeeAwareConfiguredFeeModelConfig,
+    PositionPolicySidecarShadowFeeAwareOptionalPctFloorConfig,
     PositionPolicySidecarShadowPercentNotionalArmConfig,
     PositionPolicySidecarProfitabilityGuardConfig,
     PositionPolicySidecarScoringCapsConfig,
@@ -399,9 +403,16 @@ class ExposureConfig(BaseModel):
     # TASK-ZOMBIE-FIX: Removed max_side_utilization_pct (dead, never read in exposure_guard)
     max_directional_ratio: float = Field(...)
     # TASK-ZOMBIE-FIX: Removed per_symbol_cap_pct (dead, never read in exposure_guard)
-    pending_ttl_sec: int = Field(...)
+    # T3-SSOT: pending_ttl_sec SSOT is domains.execution_position.exposure_guard.pending_ttl_sec.
+    # Made Optional to allow removal from system.yaml/trading.yaml without breaking Pydantic load.
+    # ExposureGuard reads pending_ttl_sec from ExposureGuardConfig (domains.yaml), not this field.
+    pending_ttl_sec: Optional[int] = Field(default=None)
     # TASK-ZOMBIE-FIX: Removed pending_reservation_ttl_sec (dead, never read in exposure_guard)
-    post_fill_hold_ttl_sec: int = Field(...)
+    # T3B-SSOT: post_fill_hold_ttl_sec SSOT is domains.execution_position.exposure_guard.post_fill_ttl_sec.
+    # Made Optional to allow removal from system.yaml/trading.yaml without breaking Pydantic load.
+    # ExposureGuard reads post_fill_ttl_sec from ExposureGuardConfig (domains.yaml), not this field.
+    # Note: field-name drift — canonical uses post_fill_ttl_sec; this noncanonical stub retains _hold_ for legacy compat.
+    post_fill_hold_ttl_sec: Optional[int] = Field(default=None)
     # TASK-ZOMBIE-FIX: Removed positions_stale_ttl_sec (duplicate, SSOT is domains.execution_position.exposure_guard.stale_ttl_sec)
     leverage_defaults: Dict[str, int] = Field(...)
     count_pending_orders: bool = Field(
@@ -783,8 +794,11 @@ class ExecutionConfig(BaseModel):
 
     manage: Optional[ManageConfig] = Field(...)
     exposure: Optional[ExposureConfig] = Field(...)
-    # Typed (ack_ttl_ms, fill_ttl_ms, rps_limit)
-    watchdog: Optional[WatchdogConfig] = Field(...)
+    # T5A.1-SSOT: watchdog moved to trading.yaml only (trading.execution.watchdog.*).
+    # Field(default=None) so system.yaml execution block can omit watchdog without error.
+    # Canonical source: trading.yaml -> trading.execution.watchdog.*
+    # Compatibility debt: system.yaml execution.watchdog block removed 2026-05-07.
+    watchdog: Optional[WatchdogConfig] = Field(default=None)
 
     # CFG-TOPLEVEL-EXTRA-ALLOW-BURN-14: Newly typed configs
     fallback: Optional[FallbackConfig] = Field(...)

@@ -81,6 +81,40 @@ def _load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _sample_close_submission_contour(
+    *,
+    symbol: str = "BTCUSDT",
+    qty: str = "0.04",
+) -> dict:
+    return {
+        "close_cmd_rid": f"RID-CLOSE-{symbol}",
+        "truth_classification": "POSITION_PRESENT_AND_SUBMITTABLE",
+        "truth_reason": "matched_live_position",
+        "position_amount_at_close_request": "0.25",
+        "bridge_payload": {
+            "symbol": symbol,
+            "reason": "MANUAL_CLOSE",
+            "qty": qty,
+            "idempotent_key": f"IDEM-{symbol}",
+            "trigger": "CMD:CLOSE",
+            "command_trigger": "manual_close",
+            "close_guard_prevalidated": False,
+        },
+        "submission_payload": {
+            "symbol": symbol,
+            "side": "SELL",
+            "quantity": qty,
+            "client_order_id": f"CLOSE-{symbol}-CLIENT-1",
+            "partial_close": True,
+        },
+        "submit_boundary_result": {
+            "outcome": "submitted",
+            "status": "NEW",
+            "order_id": f"close-{symbol}-1",
+        },
+    }
+
+
 def test_mode_off_produces_no_writer_activity(fsm_harness, tmp_path: Path) -> None:
     fsm, _, _ = fsm_harness
     path = _configure_writer(fsm, tmp_path, mode="off")
@@ -134,6 +168,28 @@ def test_restore_artifact_writes_minimum_envelope_shape_from_runtime_state(
     assert "pnl" not in record
     assert "shadow" not in json.dumps(payload)
     assert "warm_state" not in json.dumps(payload)
+
+
+def test_restore_artifact_writes_close_submission_contour_when_present(
+    fsm_harness,
+    tmp_path: Path,
+) -> None:
+    fsm, _, _ = fsm_harness
+    path = _configure_writer(fsm, tmp_path)
+    _set_runtime_state(fsm, manage_state=ManageState.TRACKING,
+                       close_state=CloseState.OPENED)
+    fsm.close_flows["BTCUSDT"].close_submission_restore_truth = _sample_close_submission_contour()
+
+    wrote = fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot(
+        trigger="transition:close_contour",
+        allow_empty=True,
+    )
+
+    assert wrote is True
+    record = _load_json(path)["active_lifecycles"][0]
+    assert record["close_submission_contour"]["truth_classification"] == "POSITION_PRESENT_AND_SUBMITTABLE"
+    assert record["close_submission_contour"]["submission_payload"]["client_order_id"] == "CLOSE-BTCUSDT-CLIENT-1"
+    assert record["close_submission_contour"]["submit_boundary_result"]["order_id"] == "close-BTCUSDT-1"
 
 
 def test_authoritative_reset_removes_symbol_from_restore_artifact(
@@ -191,6 +247,61 @@ def test_authoritative_reset_removes_symbol_from_restore_artifact(
 
     wrote = fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot(
         trigger="after_reset",
+        allow_empty=True,
+    )
+    assert wrote is True
+    payload = _load_json(path)
+    assert payload["active_lifecycles"] == []
+
+
+def test_authoritative_reset_clears_contour_when_close_state_already_flat(
+    fsm_harness,
+    tmp_path: Path,
+) -> None:
+    fsm, _, _ = fsm_harness
+    path = _configure_writer(fsm, tmp_path)
+    symbol = "BTCUSDT"
+    fsm.manage_flows.clear()
+    fsm.close_flows.clear()
+    fsm._pending_brackets.clear()
+    fsm._symbol_brackets.clear()
+    fsm._symbol_bracket_truth_source.clear()
+
+    manage_flow = fsm.manage_flow(symbol)
+    manage_flow.state = ManageState.FLAT
+    manage_flow.has_active_lifecycle = MagicMock(return_value=False)
+
+    close_flow = fsm.close_flow(symbol)
+    close_flow.state = CloseState.FLAT
+    close_flow.position_active = False
+    close_flow.close_submission_restore_truth = _sample_close_submission_contour()
+
+    wrote = fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot(
+        trigger="before_reset_flat_contour",
+        allow_empty=True,
+    )
+    assert wrote is True
+    payload = _load_json(path)
+    assert len(payload["active_lifecycles"]) == 1
+    assert (
+        payload["active_lifecycles"][0]["close_submission_contour"]["truth_classification"]
+        == "POSITION_PRESENT_AND_SUBMITTABLE"
+    )
+
+    with patch(
+        "apps.reference.domains.execution_position.fsm.write_pending_brackets_cleared"
+    ):
+        changed = fsm._apply_authoritative_local_close_reset(
+            symbol,
+            reason="unit_test_reset_flat_contour",
+            source="unit_test",
+        )
+
+    assert changed is True
+    assert close_flow.close_submission_restore_truth is None
+
+    wrote = fsm._startup_truth_orchestrator._persist_restore_artifact_snapshot(
+        trigger="after_reset_flat_contour",
         allow_empty=True,
     )
     assert wrote is True

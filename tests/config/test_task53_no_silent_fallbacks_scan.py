@@ -253,30 +253,44 @@ class TestMissingFieldCausesCrash:
     """Runtime test: missing field → crash, not silent default."""
     
     def test_missing_domain_config_section_crashes(self, tmp_path: Path) -> None:
-        """Removing entire domain config section → crash at load."""
+        """Removing trading.execution.watchdog → config loads with None, FSM raises at init.
+
+        T5A.1 changed ExecutionConfig.watchdog from Field(...) (required) to
+        Field(default=None) so system.yaml execution block can omit watchdog.
+        Consequence: removing watchdog from trading.yaml produces None at config level
+        (not a ValidationError). The FSM raises ValueError at init (fail-closed behavior
+        preserved at a different layer).
+
+        This test verifies absence produces None, not a silent WatchdogConfig default.
+        """
         import shutil
         import yaml
-        
+
         cfg_dir = tmp_path / "aurora"
         shutil.copytree(Path("config/aurora"), cfg_dir)
-        
+
         # NOTE: watchdog was moved from domains.yaml to trading.yaml (TASK-ZOMBIE-FIX)
         trading_path = cfg_dir / "trading.yaml"
         trading = yaml.safe_load(trading_path.read_text(encoding="utf-8"))
-        
+
         # Remove entire watchdog section (now under trading.execution)
         del trading["trading"]["execution"]["watchdog"]
-        
+
         trading_path.write_text(yaml.safe_dump(trading, sort_keys=False), encoding="utf-8")
-        
+
         from apps.reference.config_loader import ConfigLoader
-        from pydantic import ValidationError
-        
+
+        # After T5A.1: config loads successfully (Optional field default=None)
         loader = ConfigLoader(config_dir=cfg_dir)
-        with pytest.raises(ValidationError) as exc_info:
-            loader.load_config()
-        
-        assert "watchdog" in str(exc_info.value)
+        config = loader.load_config()
+
+        # Absence produces None — not a silent default WatchdogConfig
+        watchdog = config.trading.execution.watchdog
+        assert watchdog is None, (
+            f"Expected config.trading.execution.watchdog to be None when absent, "
+            f"got {watchdog!r}. T5A.1 requires no silent default — FSM raises at init."
+        )
+        assert "watchdog" in str(watchdog or "watchdog is None")  # self-doc: watchdog absent
     
     def test_missing_field_does_not_return_none_silently(self, tmp_path: Path) -> None:
         """Config access never returns None for required fields (fail-closed)."""

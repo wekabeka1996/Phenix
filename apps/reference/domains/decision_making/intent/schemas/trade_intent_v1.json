@@ -556,6 +556,32 @@
                 }
               ],
               "description": "Optional advisory authority overlay patch emitted by the strategy gateway."
+            },
+            "capture_mode": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Authority evidence capture mode marker emitted by StrategyGateway for non-authoritative evidence rows."
+            },
+            "authority_applied": {
+              "type": "boolean",
+              "description": "False when the authority decision was captured for evidence only and had no execution effect."
+            },
+            "no_effect": {
+              "type": "boolean",
+              "description": "True when the authority decision did not alter execution behavior and remains diagnostics-only provenance."
+            },
+            "returned_action": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Execution-preserving returned action recorded when a no-effect shadow counterfactual decision is evaluated."
+            },
+            "supports_counterfactual_join": {
+              "type": "boolean",
+              "description": "True when the captured authority evidence is eligible for downstream counterfactual join once terminal truth is available."
+            },
+            "counterfactual_evaluation": {
+              "type": "boolean",
+              "description": "True when the authority path performed a real evaluation while preserving no-effect execution semantics."
             }
           },
           "required": [

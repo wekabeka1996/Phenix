@@ -28,6 +28,9 @@ class RecordingBus:
             handler(SimpleNamespace(pld=payload, verb=topic.split(
                 ":")[-1], rid=payload.get("rid")))
 
+    def clear(self) -> None:
+        self.events.clear()
+
 
 class DummyManageFlow:
     def __init__(
@@ -47,6 +50,7 @@ class DummyManageFlow:
         self.position_entry_price = entry_price
         self.position_open_ts = 1_000.0
         self.symbol = "BTCUSDT"
+        self._observed_fee_usd = None
 
     def has_active_lifecycle(self) -> bool:
         return self._active
@@ -124,6 +128,23 @@ def _sidecar_config(
             "shadow_percent_notional_arm": {
                 "enabled": True,
                 "candidate_pcts": [0.02, 0.05, 0.07],
+            },
+            "shadow_fee_aware_arm": {
+                "enabled": True,
+                "fee_source_priority": [
+                    "realized_lifecycle_fee",
+                    "order_log_fee",
+                    "configured_fee_model",
+                ],
+                "candidate_fee_multiples": [1.0, 1.5, 2.0],
+                "configured_fee_model": {
+                    "enabled": False,
+                    "round_trip_fee_bps": None,
+                },
+                "optional_pct_notional_floor": {
+                    "enabled": True,
+                    "candidate_pcts": [0.02, 0.05],
+                },
             },
         }
     )

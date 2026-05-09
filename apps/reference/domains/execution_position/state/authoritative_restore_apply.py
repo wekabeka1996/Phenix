@@ -27,6 +27,7 @@ from .restore_artifact import (
     BRACKET_STATE_PARTIAL_LINKAGE,
     BRACKET_STATE_UNKNOWN,
     RESTORE_PHASE_UNKNOWN,
+    ExecutionPositionRestoreCloseSubmissionContour,
     ExecutionPositionRestoreAuthoritativeSymbolStatus,
     ExecutionPositionRestoreLifecycleRecord,
     TRUTH_SOURCE_RESTORE_ARTIFACT,
@@ -119,6 +120,7 @@ class AuthoritativeRestoreApply:
         # --- Close phase apply ---
         close_phase = str(record.close_phase or "").strip(
         ).upper() or RESTORE_PHASE_UNKNOWN
+        close_flow = None
         if close_phase == RESTORE_PHASE_UNKNOWN:
             symbol_status.close_phase_value = RESTORE_PHASE_UNKNOWN
             symbol_status.close_phase_restore_status = "unknown"
@@ -138,6 +140,38 @@ class AuthoritativeRestoreApply:
                 }
                 symbol_status.close_phase_value = close_state.value
                 symbol_status.close_phase_restore_status = "exact"
+
+        # --- Close-submission contour apply ---
+        contour = record.close_submission_contour
+        if contour is not None:
+            if close_flow is None:
+                close_flow = self._fsm._get_or_create_close_flow(symbol_key)
+            close_flow.close_submission_restore_truth = contour.model_dump(
+                mode="json",
+                exclude_none=True,
+            )
+            symbol_status.close_submission_truth_classification_value = (
+                contour.truth_classification
+            )
+            symbol_status.close_submission_truth_classification_restore_status = "exact"
+            if contour.submission_payload is not None:
+                symbol_status.close_submission_client_order_id_value = (
+                    contour.submission_payload.client_order_id
+                )
+                symbol_status.close_submission_client_order_id_restore_status = "exact"
+                if contour.submit_boundary_result is not None:
+                    symbol_status.close_submission_boundary_outcome_value = (
+                        contour.submit_boundary_result.outcome
+                    )
+                    symbol_status.close_submission_boundary_outcome_restore_status = "exact"
+                else:
+                    symbol_status.close_submission_boundary_outcome_value = RESTORE_PHASE_UNKNOWN
+                    symbol_status.close_submission_boundary_outcome_restore_status = "unknown"
+                    symbol_status.unresolved_reasons.append(
+                        "close_submit_boundary_outcome_unknown"
+                    )
+        elif close_flow is not None:
+            close_flow.close_submission_restore_truth = None
 
         # --- Bracket state apply ---
         # Always clear existing bracket state before adopting authoritative truth.

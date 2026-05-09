@@ -44,6 +44,12 @@ except ImportError:
 project_root = Path(__file__).resolve().parent.parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Internal diagnostic cadence for the IPC heartbeat task.
+# This is NOT ws_heartbeat_sec (WebSocket ping/pong, configured in system.yaml).
+# Not an operator knob: governs how often the worker emits ticks_received/dropped
+# metrics to the main process via IPC queue.
+_MARKET_DATA_TELEMETRY_HEARTBEAT_INTERVAL_SEC = 5
+
 
 def _dget(d: Dict[str, Any], key: str, default: Any) -> Any:
     """Defaulting dict access without using the default-arg form of `dict.get` (TASK25 policy)."""
@@ -469,7 +475,7 @@ class MarketDataWorker:
             }
             self._put_with_backpressure(msg)
             self._last_heartbeat = time.time()
-            await asyncio.sleep(5)  # Heartbeat every 5 seconds
+            await asyncio.sleep(_MARKET_DATA_TELEMETRY_HEARTBEAT_INTERVAL_SEC)  # Heartbeat every 5 seconds
 
     async def _ws_loop(self) -> None:
         """Maintain WebSocket connection with reconnection logic."""

@@ -34,6 +34,7 @@ def test_contract_normalizes_enforce_mode_and_deny_action() -> None:
     assert row.symbol == "BTCUSDT"
     assert row.authority_mode == "gated"
     assert row.neocortex_action == "BLOCK"
+    assert row.counterfactual_support == "supported"
 
 
 def test_contract_rejects_response_before_request() -> None:
@@ -87,4 +88,14 @@ def test_contract_rejects_mismatched_execution_outcome() -> None:
                 terminal_status=DecisionOutcomeTerminalStatus.VETOED,
                 execution_outcome=ExecutionOutcome.EXECUTED,
             )
+        )
+
+
+def test_contract_rejects_trainable_unsupported_counterfactual_rows() -> None:
+    with pytest.raises(
+        ValueError,
+        match="trainable rows must carry counterfactual_support='supported'",
+    ):
+        DecisionOutcomeLedgerRow(
+            **_row_kwargs(counterfactual_support="unsupported")
         )

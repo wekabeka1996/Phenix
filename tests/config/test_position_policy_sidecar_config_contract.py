@@ -29,6 +29,18 @@ def test_production_config_exposes_position_policy_sidecar_contract() -> None:
     assert sidecar.shadow_percent_notional_arm.enabled is True
     assert sidecar.shadow_percent_notional_arm.candidate_pcts == [
         0.02, 0.05, 0.07]
+    assert sidecar.shadow_fee_aware_arm.enabled is True
+    assert [source.value for source in sidecar.shadow_fee_aware_arm.fee_source_priority] == [
+        "realized_lifecycle_fee",
+        "order_log_fee",
+        "configured_fee_model",
+    ]
+    assert sidecar.shadow_fee_aware_arm.candidate_fee_multiples == [
+        1.0, 1.5, 2.0]
+    assert sidecar.shadow_fee_aware_arm.optional_pct_notional_floor.candidate_pcts == [
+        0.02,
+        0.05,
+    ]
 
 
 def test_invalid_position_policy_sidecar_mode_is_rejected(tmp_path: Path) -> None:
@@ -184,3 +196,99 @@ def test_shadow_percent_notional_arm_disabled_block_is_explicit_and_loads(tmp_pa
 
     assert sidecar.shadow_percent_notional_arm.enabled is False
     assert sidecar.shadow_percent_notional_arm.candidate_pcts == [0.02, 0.05]
+
+
+def test_shadow_fee_aware_arm_missing_enabled_rejected(tmp_path: Path) -> None:
+    cfg_dir = _copy_config_to_tmp(tmp_path)
+    domains_path = cfg_dir / "domains.yaml"
+    domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
+    block = domains["execution_position"]["position_policy_sidecar"]["shadow_fee_aware_arm"]
+    block.pop("enabled", None)
+    _write_yaml(domains_path, domains)
+
+    with pytest.raises(ValidationError) as exc_info:
+        ConfigLoader(config_dir=cfg_dir).load_config()
+
+    assert "shadow_fee_aware_arm" in str(exc_info.value)
+    assert "enabled" in str(exc_info.value)
+
+
+def test_shadow_fee_aware_arm_negative_fee_multiple_rejected(tmp_path: Path) -> None:
+    cfg_dir = _copy_config_to_tmp(tmp_path)
+    domains_path = cfg_dir / "domains.yaml"
+    domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
+    domains["execution_position"]["position_policy_sidecar"]["shadow_fee_aware_arm"][
+        "candidate_fee_multiples"
+    ] = [1.0, -1.5]
+    _write_yaml(domains_path, domains)
+
+    with pytest.raises(ValidationError) as exc_info:
+        ConfigLoader(config_dir=cfg_dir).load_config()
+
+    assert "candidate_fee_multiples" in str(exc_info.value)
+    assert "positive unitless multipliers" in str(exc_info.value)
+
+
+def test_shadow_fee_aware_arm_zero_fee_multiple_rejected(tmp_path: Path) -> None:
+    cfg_dir = _copy_config_to_tmp(tmp_path)
+    domains_path = cfg_dir / "domains.yaml"
+    domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
+    domains["execution_position"]["position_policy_sidecar"]["shadow_fee_aware_arm"][
+        "candidate_fee_multiples"
+    ] = [1.0, 0.0]
+    _write_yaml(domains_path, domains)
+
+    with pytest.raises(ValidationError) as exc_info:
+        ConfigLoader(config_dir=cfg_dir).load_config()
+
+    assert "candidate_fee_multiples" in str(exc_info.value)
+    assert "positive unitless multipliers" in str(exc_info.value)
+
+
+def test_shadow_fee_aware_arm_extra_field_rejected(tmp_path: Path) -> None:
+    cfg_dir = _copy_config_to_tmp(tmp_path)
+    domains_path = cfg_dir / "domains.yaml"
+    domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
+    domains["execution_position"]["position_policy_sidecar"]["shadow_fee_aware_arm"][
+        "phantom"
+    ] = True
+    _write_yaml(domains_path, domains)
+
+    with pytest.raises(ValidationError) as exc_info:
+        ConfigLoader(config_dir=cfg_dir).load_config()
+
+    assert "shadow_fee_aware_arm" in str(exc_info.value)
+    assert "phantom" in str(exc_info.value)
+
+
+def test_shadow_fee_aware_arm_missing_candidates_rejected_when_enabled(tmp_path: Path) -> None:
+    cfg_dir = _copy_config_to_tmp(tmp_path)
+    domains_path = cfg_dir / "domains.yaml"
+    domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
+    block = domains["execution_position"]["position_policy_sidecar"]["shadow_fee_aware_arm"]
+    block["enabled"] = True
+    block.pop("candidate_fee_multiples", None)
+    _write_yaml(domains_path, domains)
+
+    with pytest.raises(ValidationError) as exc_info:
+        ConfigLoader(config_dir=cfg_dir).load_config()
+
+    assert "shadow_fee_aware_arm" in str(exc_info.value)
+    assert "candidate_fee_multiples" in str(exc_info.value)
+
+
+def test_shadow_fee_aware_arm_uses_percent_units_not_ratio(tmp_path: Path) -> None:
+    cfg_dir = _copy_config_to_tmp(tmp_path)
+    domains_path = cfg_dir / "domains.yaml"
+    domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
+    block = domains["execution_position"]["position_policy_sidecar"]["shadow_fee_aware_arm"]
+    block["optional_pct_notional_floor"]["candidate_pcts"] = [0.02, 0.05]
+    _write_yaml(domains_path, domains)
+
+    cfg = ConfigLoader(config_dir=cfg_dir).load_config()
+    sidecar = cfg.domains.execution_position.position_policy_sidecar
+
+    assert sidecar.shadow_fee_aware_arm.optional_pct_notional_floor.candidate_pcts == [
+        0.02,
+        0.05,
+    ]

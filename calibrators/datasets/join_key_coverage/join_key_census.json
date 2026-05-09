@@ -1,0 +1,8697 @@
+{
+  "data/authority_request_journal_v1.jsonl": {
+    "decision_id": 28,
+    "rid": 28,
+    "symbol": 28,
+    "decision_basis_ts_ms": 28
+  },
+  "data/authority_response_journal_v1.jsonl": {
+    "decision_id": 28
+  },
+  "logs/shadow_telemetry/decision_ledger_v1.jsonl": {
+    "decision_id": 31,
+    "rid": 31,
+    "lifecycle_id": 24,
+    "trade_id": 14,
+    "symbol": 31
+  },
+  "data/order_ledger.db::orders": {
+    "order_id": 1781,
+    "client_order_id": 1781,
+    "entry_client_id": 829,
+    "symbol": 1781,
+    "created_at": 1781,
+    "updated_at": 1781
+  },
+  "logs/order_log_v1.jsonl": {
+    "rid": 1495,
+    "order_id": 128,
+    "client_order_id": 119,
+    "lifecycle_id": 927,
+    "trade_id": 44,
+    "symbol": 1495,
+    "strategy_id": 309,
+    "side": 1410,
+    "regime": 365
+  },
+  "logs/trade_lifecycle.jsonl": {
+    "request_id": 86,
+    "rid": 1864,
+    "trace_id": 191549,
+    "order_id": 1660,
+    "client_order_id": 871,
+    "exchange_order_id": 58,
+    "entry_order_id": 97,
+    "symbol": 193437,
+    "strategy_id": 941,
+    "side": 861,
+    "regime": 861,
+    "ts_ms": 192576,
+    "event_ts_ms": 58
+  },
+  "logs/regime_confidence_audit_v1.jsonl": {
+    "rid": 322,
+    "lifecycle_id": 83,
+    "symbol": 3488,
+    "strategy_id": 322,
+    "regime": 3166,
+    "ts_ms": 3488
+  },
+  "reports/executed_trades_master.csv": {},
+  "reports/rejected_attempts_master.csv": {
+    "attempt_id": 4,
+    "synthetic_id": 4,
+    "symbol": 4,
+    "side": 4,
+    "intent_ts": 4
+  },
+  "reports/order_attempts_master.csv": {
+    "attempt_id": 4,
+    "synthetic_id": 4,
+    "symbol": 4,
+    "side": 4,
+    "intent_ts": 4
+  },
+  "ops/wal/2026-04-30.jsonl": {
+    "rid": 11155
+  },
+  "ops/wal/2026-05-01.jsonl": {
+    "rid": 31078,
+    "event_ts_ms": 196
+  },
+  "ops/wal/2026-05-02.jsonl": {
+    "rid": 22413,
+    "event_ts_ms": 80
+  },
+  "ops/wal/2026-05-03.jsonl": {
+    "rid": 28445,
+    "event_ts_ms": 353
+  },
+  "ops/wal/2026-05-04.jsonl": {
+    "rid": 31283
+  },
+  "ops/wal/2026-05-05.jsonl": {
+    "rid": 28141
+  },
+  "ops/wal/2026-05-06.jsonl": {
+    "rid": 21888,
+    "event_ts_ms": 213
+  },
+  "ops/wal/2026-05-07.jsonl": {
+    "rid": 14963,
+    "event_ts_ms": 600
+  },
+  "ops/wal/execution_position_pending_brackets_v1.jsonl": {
+    "rid": 137
+  },
+  "reports/AURORA_TREND_DOWN_BD1_ETH_STATEFUL_TRADES_2026_05_04.csv": {
+    "symbol": 19805
+  },
+  "reports/AURORA_TREND_DOWN_SEGMENT_LEVEL_BEST_TRADES_2026_05_04.csv": {
+    "symbol": 1326,
+    "exit_ts": 1326
+  },
+  "reports/AURORA_TREND_UP_BEST_CANDIDATE_TRADES_2026_05_04.csv": {
+    "symbol": 25
+  },
+  "reports/BTC_ETH_CLEAN_TREND_REGIME_EDGE_REPLAY_V1_smoke_trades.csv": {
+    "symbol": 6,
+    "side": 6
+  },
+  "reports/BTC_ETH_CLEAN_TREND_REGIME_EDGE_REPLAY_V1_trades.csv": {
+    "symbol": 9407,
+    "side": 9407
+  },
+  "reports/md_amr_integrated_validation_trades.csv": {
+    "trade_id": 346,
+    "symbol": 346,
+    "side": 346,
+    "entry_ts_ms": 346,
+    "exit_ts_ms": 346
+  },
+  "data/recorder/2026-02-08/BTCUSDT_180.csv": {
+    "symbol": 103,
+    "regime": 103,
+    "tf_sec": 103
+  },
+  "data/recorder/2026-02-08/BTCUSDT_300.csv": {
+    "symbol": 65,
+    "regime": 65,
+    "tf_sec": 65
+  },
+  "data/recorder/2026-02-08/BTCUSDT_900.csv": {
+    "symbol": 23,
+    "regime": 23,
+    "tf_sec": 23
+  },
+  "data/recorder/2026-02-08/DOGEUSDT_180.csv": {
+    "symbol": 103,
+    "regime": 103,
+    "tf_sec": 103
+  },
+  "data/recorder/2026-02-08/DOGEUSDT_300.csv": {
+    "symbol": 65,
+    "regime": 65,
+    "tf_sec": 65
+  },
+  "data/recorder/2026-02-08/DOGEUSDT_900.csv": {
+    "symbol": 23,
+    "regime": 23,
+    "tf_sec": 23
+  },
+  "data/recorder/2026-02-08/ETHUSDT_180.csv": {
+    "symbol": 103,
+    "regime": 103,
+    "tf_sec": 103
+  },
+  "data/recorder/2026-02-08/ETHUSDT_300.csv": {
+    "symbol": 65,
+    "regime": 65,
+    "tf_sec": 65
+  },
+  "data/recorder/2026-02-08/ETHUSDT_900.csv": {
+    "symbol": 23,
+    "regime": 23,
+    "tf_sec": 23
+  },
+  "data/recorder/2026-02-08/SOLUSDT_180.csv": {
+    "symbol": 103,
+    "regime": 103,
+    "tf_sec": 103
+  },
+  "data/recorder/2026-02-08/SOLUSDT_300.csv": {
+    "symbol": 65,
+    "regime": 65,
+    "tf_sec": 65
+  },
+  "data/recorder/2026-02-08/SOLUSDT_900.csv": {
+    "symbol": 23,
+    "regime": 23,
+    "tf_sec": 23
+  },
+  "data/recorder/2026-02-08/XRPUSDT_180.csv": {
+    "symbol": 103,
+    "regime": 103,
+    "tf_sec": 103
+  },
+  "data/recorder/2026-02-08/XRPUSDT_300.csv": {
+    "symbol": 65,
+    "regime": 65,
+    "tf_sec": 65
+  },
+  "data/recorder/2026-02-08/XRPUSDT_900.csv": {
+    "symbol": 23,
+    "regime": 23,
+    "tf_sec": 23
+  },
+  "data/recorder/2026-02-09/BTCUSDT_180.csv": {
+    "symbol": 255,
+    "regime": 255,
+    "tf_sec": 255
+  },
+  "data/recorder/2026-02-09/BTCUSDT_300.csv": {
+    "symbol": 156,
+    "regime": 156,
+    "tf_sec": 156
+  },
+  "data/recorder/2026-02-09/BTCUSDT_900.csv": {
+    "symbol": 56,
+    "regime": 56,
+    "tf_sec": 56
+  },
+  "data/recorder/2026-02-09/DOGEUSDT_180.csv": {
+    "symbol": 255,
+    "regime": 255,
+    "tf_sec": 255
+  },
+  "data/recorder/2026-02-09/DOGEUSDT_300.csv": {
+    "symbol": 156,
+    "regime": 156,
+    "tf_sec": 156
+  },
+  "data/recorder/2026-02-09/DOGEUSDT_900.csv": {
+    "symbol": 56,
+    "regime": 56,
+    "tf_sec": 56
+  },
+  "data/recorder/2026-02-09/ETHUSDT_180.csv": {
+    "symbol": 255,
+    "regime": 255,
+    "tf_sec": 255
+  },
+  "data/recorder/2026-02-09/ETHUSDT_300.csv": {
+    "symbol": 156,
+    "regime": 156,
+    "tf_sec": 156
+  },
+  "data/recorder/2026-02-09/ETHUSDT_900.csv": {
+    "symbol": 56,
+    "regime": 56,
+    "tf_sec": 56
+  },
+  "data/recorder/2026-02-09/SOLUSDT_180.csv": {
+    "symbol": 255,
+    "regime": 255,
+    "tf_sec": 255
+  },
+  "data/recorder/2026-02-09/SOLUSDT_300.csv": {
+    "symbol": 156,
+    "regime": 156,
+    "tf_sec": 156
+  },
+  "data/recorder/2026-02-09/SOLUSDT_900.csv": {
+    "symbol": 56,
+    "regime": 56,
+    "tf_sec": 56
+  },
+  "data/recorder/2026-02-09/XRPUSDT_180.csv": {
+    "symbol": 255,
+    "regime": 255,
+    "tf_sec": 255
+  },
+  "data/recorder/2026-02-09/XRPUSDT_300.csv": {
+    "symbol": 156,
+    "regime": 156,
+    "tf_sec": 156
+  },
+  "data/recorder/2026-02-09/XRPUSDT_900.csv": {
+    "symbol": 56,
+    "regime": 56,
+    "tf_sec": 56
+  },
+  "data/recorder/2026-02-10/BTCUSDT_180.csv": {
+    "symbol": 474,
+    "regime": 474,
+    "tf_sec": 474
+  },
+  "data/recorder/2026-02-10/BTCUSDT_300.csv": {
+    "symbol": 284,
+    "regime": 284,
+    "tf_sec": 284
+  },
+  "data/recorder/2026-02-10/BTCUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-10/DOGEUSDT_180.csv": {
+    "symbol": 474,
+    "regime": 474,
+    "tf_sec": 474
+  },
+  "data/recorder/2026-02-10/DOGEUSDT_300.csv": {
+    "symbol": 284,
+    "regime": 284,
+    "tf_sec": 284
+  },
+  "data/recorder/2026-02-10/DOGEUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-10/ETHUSDT_180.csv": {
+    "symbol": 474,
+    "regime": 474,
+    "tf_sec": 474
+  },
+  "data/recorder/2026-02-10/ETHUSDT_300.csv": {
+    "symbol": 284,
+    "regime": 284,
+    "tf_sec": 284
+  },
+  "data/recorder/2026-02-10/ETHUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-10/SOLUSDT_180.csv": {
+    "symbol": 474,
+    "regime": 474,
+    "tf_sec": 474
+  },
+  "data/recorder/2026-02-10/SOLUSDT_300.csv": {
+    "symbol": 284,
+    "regime": 284,
+    "tf_sec": 284
+  },
+  "data/recorder/2026-02-10/SOLUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-10/XRPUSDT_180.csv": {
+    "symbol": 474,
+    "regime": 474,
+    "tf_sec": 474
+  },
+  "data/recorder/2026-02-10/XRPUSDT_300.csv": {
+    "symbol": 283,
+    "regime": 283,
+    "tf_sec": 283
+  },
+  "data/recorder/2026-02-10/XRPUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-11/BTCUSDT_180.csv": {
+    "symbol": 385,
+    "regime": 385,
+    "tf_sec": 385
+  },
+  "data/recorder/2026-02-11/BTCUSDT_300.csv": {
+    "symbol": 231,
+    "regime": 231,
+    "tf_sec": 231
+  },
+  "data/recorder/2026-02-11/BTCUSDT_900.csv": {
+    "symbol": 77,
+    "regime": 77,
+    "tf_sec": 77
+  },
+  "data/recorder/2026-02-11/DOGEUSDT_180.csv": {
+    "symbol": 385,
+    "regime": 385,
+    "tf_sec": 385
+  },
+  "data/recorder/2026-02-11/DOGEUSDT_300.csv": {
+    "symbol": 231,
+    "regime": 231,
+    "tf_sec": 231
+  },
+  "data/recorder/2026-02-11/DOGEUSDT_900.csv": {
+    "symbol": 77,
+    "regime": 77,
+    "tf_sec": 77
+  },
+  "data/recorder/2026-02-11/ETHUSDT_180.csv": {
+    "symbol": 385,
+    "regime": 385,
+    "tf_sec": 385
+  },
+  "data/recorder/2026-02-11/ETHUSDT_300.csv": {
+    "symbol": 231,
+    "regime": 231,
+    "tf_sec": 231
+  },
+  "data/recorder/2026-02-11/ETHUSDT_900.csv": {
+    "symbol": 77,
+    "regime": 77,
+    "tf_sec": 77
+  },
+  "data/recorder/2026-02-11/SOLUSDT_180.csv": {
+    "symbol": 385,
+    "regime": 385,
+    "tf_sec": 385
+  },
+  "data/recorder/2026-02-11/SOLUSDT_300.csv": {
+    "symbol": 231,
+    "regime": 231,
+    "tf_sec": 231
+  },
+  "data/recorder/2026-02-11/SOLUSDT_900.csv": {
+    "symbol": 77,
+    "regime": 77,
+    "tf_sec": 77
+  },
+  "data/recorder/2026-02-11/XRPUSDT_180.csv": {
+    "symbol": 385,
+    "regime": 385,
+    "tf_sec": 385
+  },
+  "data/recorder/2026-02-11/XRPUSDT_300.csv": {
+    "symbol": 231,
+    "regime": 231,
+    "tf_sec": 231
+  },
+  "data/recorder/2026-02-11/XRPUSDT_900.csv": {
+    "symbol": 77,
+    "regime": 77,
+    "tf_sec": 77
+  },
+  "data/recorder/2026-02-12/BTCUSDT_180.csv": {
+    "symbol": 476,
+    "regime": 476,
+    "tf_sec": 476
+  },
+  "data/recorder/2026-02-12/BTCUSDT_300.csv": {
+    "symbol": 286,
+    "regime": 286,
+    "tf_sec": 286
+  },
+  "data/recorder/2026-02-12/BTCUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-12/DOGEUSDT_180.csv": {
+    "symbol": 476,
+    "regime": 476,
+    "tf_sec": 476
+  },
+  "data/recorder/2026-02-12/DOGEUSDT_300.csv": {
+    "symbol": 286,
+    "regime": 286,
+    "tf_sec": 286
+  },
+  "data/recorder/2026-02-12/DOGEUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-12/ETHUSDT_180.csv": {
+    "symbol": 476,
+    "regime": 476,
+    "tf_sec": 476
+  },
+  "data/recorder/2026-02-12/ETHUSDT_300.csv": {
+    "symbol": 286,
+    "regime": 286,
+    "tf_sec": 286
+  },
+  "data/recorder/2026-02-12/ETHUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-12/SOLUSDT_180.csv": {
+    "symbol": 476,
+    "regime": 476,
+    "tf_sec": 476
+  },
+  "data/recorder/2026-02-12/SOLUSDT_300.csv": {
+    "symbol": 286,
+    "regime": 286,
+    "tf_sec": 286
+  },
+  "data/recorder/2026-02-12/SOLUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-12/XRPUSDT_180.csv": {
+    "symbol": 476,
+    "regime": 476,
+    "tf_sec": 476
+  },
+  "data/recorder/2026-02-12/XRPUSDT_300.csv": {
+    "symbol": 286,
+    "regime": 286,
+    "tf_sec": 286
+  },
+  "data/recorder/2026-02-12/XRPUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-13/BTCUSDT_180.csv": {
+    "symbol": 450,
+    "regime": 450,
+    "tf_sec": 450
+  },
+  "data/recorder/2026-02-13/BTCUSDT_300.csv": {
+    "symbol": 270,
+    "regime": 270,
+    "tf_sec": 270
+  },
+  "data/recorder/2026-02-13/BTCUSDT_900.csv": {
+    "symbol": 90,
+    "regime": 90,
+    "tf_sec": 90
+  },
+  "data/recorder/2026-02-13/DOGEUSDT_180.csv": {
+    "symbol": 450,
+    "regime": 450,
+    "tf_sec": 450
+  },
+  "data/recorder/2026-02-13/DOGEUSDT_300.csv": {
+    "symbol": 270,
+    "regime": 270,
+    "tf_sec": 270
+  },
+  "data/recorder/2026-02-13/DOGEUSDT_900.csv": {
+    "symbol": 90,
+    "regime": 90,
+    "tf_sec": 90
+  },
+  "data/recorder/2026-02-13/ETHUSDT_180.csv": {
+    "symbol": 450,
+    "regime": 450,
+    "tf_sec": 450
+  },
+  "data/recorder/2026-02-13/ETHUSDT_300.csv": {
+    "symbol": 270,
+    "regime": 270,
+    "tf_sec": 270
+  },
+  "data/recorder/2026-02-13/ETHUSDT_900.csv": {
+    "symbol": 90,
+    "regime": 90,
+    "tf_sec": 90
+  },
+  "data/recorder/2026-02-13/SOLUSDT_180.csv": {
+    "symbol": 450,
+    "regime": 450,
+    "tf_sec": 450
+  },
+  "data/recorder/2026-02-13/SOLUSDT_300.csv": {
+    "symbol": 270,
+    "regime": 270,
+    "tf_sec": 270
+  },
+  "data/recorder/2026-02-13/SOLUSDT_900.csv": {
+    "symbol": 90,
+    "regime": 90,
+    "tf_sec": 90
+  },
+  "data/recorder/2026-02-13/XRPUSDT_180.csv": {
+    "symbol": 450,
+    "regime": 450,
+    "tf_sec": 450
+  },
+  "data/recorder/2026-02-13/XRPUSDT_300.csv": {
+    "symbol": 270,
+    "regime": 270,
+    "tf_sec": 270
+  },
+  "data/recorder/2026-02-13/XRPUSDT_900.csv": {
+    "symbol": 90,
+    "regime": 90,
+    "tf_sec": 90
+  },
+  "data/recorder/2026-02-14/BTCUSDT_180.csv": {
+    "symbol": 474,
+    "regime": 474,
+    "tf_sec": 474
+  },
+  "data/recorder/2026-02-14/BTCUSDT_300.csv": {
+    "symbol": 285,
+    "regime": 285,
+    "tf_sec": 285
+  },
+  "data/recorder/2026-02-14/BTCUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-14/DOGEUSDT_180.csv": {
+    "symbol": 474,
+    "regime": 474,
+    "tf_sec": 474
+  },
+  "data/recorder/2026-02-14/DOGEUSDT_300.csv": {
+    "symbol": 285,
+    "regime": 285,
+    "tf_sec": 285
+  },
+  "data/recorder/2026-02-14/DOGEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-14/ETHUSDT_180.csv": {
+    "symbol": 474,
+    "regime": 474,
+    "tf_sec": 474
+  },
+  "data/recorder/2026-02-14/ETHUSDT_300.csv": {
+    "symbol": 285,
+    "regime": 285,
+    "tf_sec": 285
+  },
+  "data/recorder/2026-02-14/ETHUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-14/SOLUSDT_180.csv": {
+    "symbol": 474,
+    "regime": 474,
+    "tf_sec": 474
+  },
+  "data/recorder/2026-02-14/SOLUSDT_300.csv": {
+    "symbol": 285,
+    "regime": 285,
+    "tf_sec": 285
+  },
+  "data/recorder/2026-02-14/SOLUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-14/XRPUSDT_180.csv": {
+    "symbol": 474,
+    "regime": 474,
+    "tf_sec": 474
+  },
+  "data/recorder/2026-02-14/XRPUSDT_300.csv": {
+    "symbol": 285,
+    "regime": 285,
+    "tf_sec": 285
+  },
+  "data/recorder/2026-02-14/XRPUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-15/BTCUSDT_180.csv": {
+    "symbol": 476,
+    "regime": 476,
+    "tf_sec": 476
+  },
+  "data/recorder/2026-02-15/BTCUSDT_300.csv": {
+    "symbol": 284,
+    "regime": 284,
+    "tf_sec": 284
+  },
+  "data/recorder/2026-02-15/BTCUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-15/DOGEUSDT_180.csv": {
+    "symbol": 476,
+    "regime": 476,
+    "tf_sec": 476
+  },
+  "data/recorder/2026-02-15/DOGEUSDT_300.csv": {
+    "symbol": 284,
+    "regime": 284,
+    "tf_sec": 284
+  },
+  "data/recorder/2026-02-15/DOGEUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-15/ETHUSDT_180.csv": {
+    "symbol": 476,
+    "regime": 476,
+    "tf_sec": 476
+  },
+  "data/recorder/2026-02-15/ETHUSDT_300.csv": {
+    "symbol": 284,
+    "regime": 284,
+    "tf_sec": 284
+  },
+  "data/recorder/2026-02-15/ETHUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-15/SOLUSDT_180.csv": {
+    "symbol": 476,
+    "regime": 476,
+    "tf_sec": 476
+  },
+  "data/recorder/2026-02-15/SOLUSDT_300.csv": {
+    "symbol": 284,
+    "regime": 284,
+    "tf_sec": 284
+  },
+  "data/recorder/2026-02-15/SOLUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-15/XRPUSDT_180.csv": {
+    "symbol": 476,
+    "regime": 476,
+    "tf_sec": 476
+  },
+  "data/recorder/2026-02-15/XRPUSDT_300.csv": {
+    "symbol": 284,
+    "regime": 284,
+    "tf_sec": 284
+  },
+  "data/recorder/2026-02-15/XRPUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-16/BTCUSDT_180.csv": {
+    "symbol": 461,
+    "regime": 461,
+    "tf_sec": 461
+  },
+  "data/recorder/2026-02-16/BTCUSDT_300.csv": {
+    "symbol": 280,
+    "regime": 280,
+    "tf_sec": 280
+  },
+  "data/recorder/2026-02-16/BTCUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-16/DOGEUSDT_180.csv": {
+    "symbol": 461,
+    "regime": 461,
+    "tf_sec": 461
+  },
+  "data/recorder/2026-02-16/DOGEUSDT_300.csv": {
+    "symbol": 280,
+    "regime": 280,
+    "tf_sec": 280
+  },
+  "data/recorder/2026-02-16/DOGEUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-16/ETHUSDT_180.csv": {
+    "symbol": 461,
+    "regime": 461,
+    "tf_sec": 461
+  },
+  "data/recorder/2026-02-16/ETHUSDT_300.csv": {
+    "symbol": 280,
+    "regime": 280,
+    "tf_sec": 280
+  },
+  "data/recorder/2026-02-16/ETHUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-16/SOLUSDT_180.csv": {
+    "symbol": 461,
+    "regime": 461,
+    "tf_sec": 461
+  },
+  "data/recorder/2026-02-16/SOLUSDT_300.csv": {
+    "symbol": 280,
+    "regime": 280,
+    "tf_sec": 280
+  },
+  "data/recorder/2026-02-16/SOLUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-16/XRPUSDT_180.csv": {
+    "symbol": 461,
+    "regime": 461,
+    "tf_sec": 461
+  },
+  "data/recorder/2026-02-16/XRPUSDT_300.csv": {
+    "symbol": 280,
+    "regime": 280,
+    "tf_sec": 280
+  },
+  "data/recorder/2026-02-16/XRPUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-17/BTCUSDT_180.csv": {
+    "symbol": 475,
+    "regime": 475,
+    "tf_sec": 475
+  },
+  "data/recorder/2026-02-17/BTCUSDT_300.csv": {
+    "symbol": 284,
+    "regime": 284,
+    "tf_sec": 284
+  },
+  "data/recorder/2026-02-17/BTCUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-17/DOGEUSDT_180.csv": {
+    "symbol": 475,
+    "regime": 475,
+    "tf_sec": 475
+  },
+  "data/recorder/2026-02-17/DOGEUSDT_300.csv": {
+    "symbol": 284,
+    "regime": 284,
+    "tf_sec": 284
+  },
+  "data/recorder/2026-02-17/DOGEUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-17/ETHUSDT_180.csv": {
+    "symbol": 475,
+    "regime": 475,
+    "tf_sec": 475
+  },
+  "data/recorder/2026-02-17/ETHUSDT_300.csv": {
+    "symbol": 284,
+    "regime": 284,
+    "tf_sec": 284
+  },
+  "data/recorder/2026-02-17/ETHUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-17/SOLUSDT_180.csv": {
+    "symbol": 475,
+    "regime": 475,
+    "tf_sec": 475
+  },
+  "data/recorder/2026-02-17/SOLUSDT_300.csv": {
+    "symbol": 284,
+    "regime": 284,
+    "tf_sec": 284
+  },
+  "data/recorder/2026-02-17/SOLUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-17/XRPUSDT_180.csv": {
+    "symbol": 475,
+    "regime": 475,
+    "tf_sec": 475
+  },
+  "data/recorder/2026-02-17/XRPUSDT_300.csv": {
+    "symbol": 284,
+    "regime": 284,
+    "tf_sec": 284
+  },
+  "data/recorder/2026-02-17/XRPUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-02-18/BTCUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-18/BTCUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-18/BTCUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-18/DOGEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-18/DOGEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-18/DOGEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-18/ETHUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-18/ETHUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-18/ETHUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-18/SOLUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-18/SOLUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-18/SOLUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-18/XRPUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-18/XRPUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-18/XRPUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-19/BTCUSDT_180.csv": {
+    "symbol": 385,
+    "regime": 385,
+    "tf_sec": 385
+  },
+  "data/recorder/2026-02-19/BTCUSDT_300.csv": {
+    "symbol": 230,
+    "regime": 230,
+    "tf_sec": 230
+  },
+  "data/recorder/2026-02-19/BTCUSDT_900.csv": {
+    "symbol": 76,
+    "regime": 76,
+    "tf_sec": 76
+  },
+  "data/recorder/2026-02-19/DOGEUSDT_180.csv": {
+    "symbol": 385,
+    "regime": 385,
+    "tf_sec": 385
+  },
+  "data/recorder/2026-02-19/DOGEUSDT_300.csv": {
+    "symbol": 230,
+    "regime": 230,
+    "tf_sec": 230
+  },
+  "data/recorder/2026-02-19/DOGEUSDT_900.csv": {
+    "symbol": 76,
+    "regime": 76,
+    "tf_sec": 76
+  },
+  "data/recorder/2026-02-19/ETHUSDT_180.csv": {
+    "symbol": 385,
+    "regime": 385,
+    "tf_sec": 385
+  },
+  "data/recorder/2026-02-19/ETHUSDT_300.csv": {
+    "symbol": 230,
+    "regime": 230,
+    "tf_sec": 230
+  },
+  "data/recorder/2026-02-19/ETHUSDT_900.csv": {
+    "symbol": 76,
+    "regime": 76,
+    "tf_sec": 76
+  },
+  "data/recorder/2026-02-19/SOLUSDT_180.csv": {
+    "symbol": 385,
+    "regime": 385,
+    "tf_sec": 385
+  },
+  "data/recorder/2026-02-19/SOLUSDT_300.csv": {
+    "symbol": 230,
+    "regime": 230,
+    "tf_sec": 230
+  },
+  "data/recorder/2026-02-19/SOLUSDT_900.csv": {
+    "symbol": 76,
+    "regime": 76,
+    "tf_sec": 76
+  },
+  "data/recorder/2026-02-19/XRPUSDT_180.csv": {
+    "symbol": 385,
+    "regime": 385,
+    "tf_sec": 385
+  },
+  "data/recorder/2026-02-19/XRPUSDT_300.csv": {
+    "symbol": 230,
+    "regime": 230,
+    "tf_sec": 230
+  },
+  "data/recorder/2026-02-19/XRPUSDT_900.csv": {
+    "symbol": 76,
+    "regime": 76,
+    "tf_sec": 76
+  },
+  "data/recorder/2026-02-20/BTCUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-20/BTCUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-20/BTCUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-20/DOGEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-20/DOGEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-20/DOGEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-20/ETHUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-20/ETHUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-20/ETHUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-20/SOLUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-20/SOLUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-20/SOLUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-20/XRPUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-20/XRPUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-20/XRPUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-21/BTCUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-21/BTCUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-21/BTCUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-21/DOGEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-21/DOGEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-21/DOGEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-21/ETHUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-21/ETHUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-21/ETHUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-21/SOLUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-21/SOLUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-21/SOLUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-21/XRPUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-21/XRPUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-21/XRPUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-22/BTCUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-22/BTCUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-22/BTCUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-22/DOGEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-22/DOGEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-22/DOGEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-22/ETHUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-22/ETHUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-22/ETHUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-22/SOLUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-22/SOLUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-22/SOLUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-22/XRPUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-22/XRPUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-22/XRPUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-23/BTCUSDT_180.csv": {
+    "symbol": 461,
+    "regime": 461,
+    "tf_sec": 461
+  },
+  "data/recorder/2026-02-23/BTCUSDT_300.csv": {
+    "symbol": 276,
+    "regime": 276,
+    "tf_sec": 276
+  },
+  "data/recorder/2026-02-23/BTCUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-02-23/DOGEUSDT_180.csv": {
+    "symbol": 461,
+    "regime": 461,
+    "tf_sec": 461
+  },
+  "data/recorder/2026-02-23/DOGEUSDT_300.csv": {
+    "symbol": 276,
+    "regime": 276,
+    "tf_sec": 276
+  },
+  "data/recorder/2026-02-23/DOGEUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-02-23/ETHUSDT_180.csv": {
+    "symbol": 461,
+    "regime": 461,
+    "tf_sec": 461
+  },
+  "data/recorder/2026-02-23/ETHUSDT_300.csv": {
+    "symbol": 276,
+    "regime": 276,
+    "tf_sec": 276
+  },
+  "data/recorder/2026-02-23/ETHUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-02-23/SOLUSDT_180.csv": {
+    "symbol": 461,
+    "regime": 461,
+    "tf_sec": 461
+  },
+  "data/recorder/2026-02-23/SOLUSDT_300.csv": {
+    "symbol": 276,
+    "regime": 276,
+    "tf_sec": 276
+  },
+  "data/recorder/2026-02-23/SOLUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-02-23/XRPUSDT_180.csv": {
+    "symbol": 461,
+    "regime": 461,
+    "tf_sec": 461
+  },
+  "data/recorder/2026-02-23/XRPUSDT_300.csv": {
+    "symbol": 276,
+    "regime": 276,
+    "tf_sec": 276
+  },
+  "data/recorder/2026-02-23/XRPUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-02-24/BTCUSDT_180.csv": {
+    "symbol": 310,
+    "regime": 310,
+    "tf_sec": 310
+  },
+  "data/recorder/2026-02-24/BTCUSDT_300.csv": {
+    "symbol": 186,
+    "regime": 186,
+    "tf_sec": 186
+  },
+  "data/recorder/2026-02-24/BTCUSDT_900.csv": {
+    "symbol": 62,
+    "regime": 62,
+    "tf_sec": 62
+  },
+  "data/recorder/2026-02-24/DOGEUSDT_180.csv": {
+    "symbol": 310,
+    "regime": 310,
+    "tf_sec": 310
+  },
+  "data/recorder/2026-02-24/DOGEUSDT_300.csv": {
+    "symbol": 186,
+    "regime": 186,
+    "tf_sec": 186
+  },
+  "data/recorder/2026-02-24/DOGEUSDT_900.csv": {
+    "symbol": 62,
+    "regime": 62,
+    "tf_sec": 62
+  },
+  "data/recorder/2026-02-24/ETHUSDT_180.csv": {
+    "symbol": 310,
+    "regime": 310,
+    "tf_sec": 310
+  },
+  "data/recorder/2026-02-24/ETHUSDT_300.csv": {
+    "symbol": 186,
+    "regime": 186,
+    "tf_sec": 186
+  },
+  "data/recorder/2026-02-24/ETHUSDT_900.csv": {
+    "symbol": 62,
+    "regime": 62,
+    "tf_sec": 62
+  },
+  "data/recorder/2026-02-24/SOLUSDT_180.csv": {
+    "symbol": 310,
+    "regime": 310,
+    "tf_sec": 310
+  },
+  "data/recorder/2026-02-24/SOLUSDT_300.csv": {
+    "symbol": 186,
+    "regime": 186,
+    "tf_sec": 186
+  },
+  "data/recorder/2026-02-24/SOLUSDT_900.csv": {
+    "symbol": 62,
+    "regime": 62,
+    "tf_sec": 62
+  },
+  "data/recorder/2026-02-24/XRPUSDT_180.csv": {
+    "symbol": 310,
+    "regime": 310,
+    "tf_sec": 310
+  },
+  "data/recorder/2026-02-24/XRPUSDT_300.csv": {
+    "symbol": 186,
+    "regime": 186,
+    "tf_sec": 186
+  },
+  "data/recorder/2026-02-24/XRPUSDT_900.csv": {
+    "symbol": 62,
+    "regime": 62,
+    "tf_sec": 62
+  },
+  "data/recorder/2026-02-25/BTCUSDT_180.csv": {
+    "symbol": 423,
+    "regime": 423,
+    "tf_sec": 423
+  },
+  "data/recorder/2026-02-25/BTCUSDT_300.csv": {
+    "symbol": 255,
+    "regime": 255,
+    "tf_sec": 255
+  },
+  "data/recorder/2026-02-25/BTCUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-02-25/DOGEUSDT_180.csv": {
+    "symbol": 423,
+    "regime": 423,
+    "tf_sec": 423
+  },
+  "data/recorder/2026-02-25/DOGEUSDT_300.csv": {
+    "symbol": 255,
+    "regime": 255,
+    "tf_sec": 255
+  },
+  "data/recorder/2026-02-25/DOGEUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-02-25/ETHUSDT_180.csv": {
+    "symbol": 423,
+    "regime": 423,
+    "tf_sec": 423
+  },
+  "data/recorder/2026-02-25/ETHUSDT_300.csv": {
+    "symbol": 255,
+    "regime": 255,
+    "tf_sec": 255
+  },
+  "data/recorder/2026-02-25/ETHUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-02-25/SOLUSDT_180.csv": {
+    "symbol": 423,
+    "regime": 423,
+    "tf_sec": 423
+  },
+  "data/recorder/2026-02-25/SOLUSDT_300.csv": {
+    "symbol": 255,
+    "regime": 255,
+    "tf_sec": 255
+  },
+  "data/recorder/2026-02-25/SOLUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-02-25/XRPUSDT_180.csv": {
+    "symbol": 423,
+    "regime": 423,
+    "tf_sec": 423
+  },
+  "data/recorder/2026-02-25/XRPUSDT_300.csv": {
+    "symbol": 255,
+    "regime": 255,
+    "tf_sec": 255
+  },
+  "data/recorder/2026-02-25/XRPUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-02-26/BTCUSDT_180.csv": {
+    "symbol": 465,
+    "regime": 465,
+    "tf_sec": 465
+  },
+  "data/recorder/2026-02-26/BTCUSDT_300.csv": {
+    "symbol": 279,
+    "regime": 279,
+    "tf_sec": 279
+  },
+  "data/recorder/2026-02-26/BTCUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-02-26/DOGEUSDT_180.csv": {
+    "symbol": 465,
+    "regime": 465,
+    "tf_sec": 465
+  },
+  "data/recorder/2026-02-26/DOGEUSDT_300.csv": {
+    "symbol": 279,
+    "regime": 279,
+    "tf_sec": 279
+  },
+  "data/recorder/2026-02-26/DOGEUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-02-26/ETHUSDT_180.csv": {
+    "symbol": 465,
+    "regime": 465,
+    "tf_sec": 465
+  },
+  "data/recorder/2026-02-26/ETHUSDT_300.csv": {
+    "symbol": 279,
+    "regime": 279,
+    "tf_sec": 279
+  },
+  "data/recorder/2026-02-26/ETHUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-02-26/SOLUSDT_180.csv": {
+    "symbol": 465,
+    "regime": 465,
+    "tf_sec": 465
+  },
+  "data/recorder/2026-02-26/SOLUSDT_300.csv": {
+    "symbol": 279,
+    "regime": 279,
+    "tf_sec": 279
+  },
+  "data/recorder/2026-02-26/SOLUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-02-26/XRPUSDT_180.csv": {
+    "symbol": 465,
+    "regime": 465,
+    "tf_sec": 465
+  },
+  "data/recorder/2026-02-26/XRPUSDT_300.csv": {
+    "symbol": 279,
+    "regime": 279,
+    "tf_sec": 279
+  },
+  "data/recorder/2026-02-26/XRPUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-02-27/BTCUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-27/BTCUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-27/BTCUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-27/DOGEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-27/DOGEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-27/DOGEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-27/ETHUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-27/ETHUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-27/ETHUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-27/SOLUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-27/SOLUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-27/SOLUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-27/XRPUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-02-27/XRPUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-02-27/XRPUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-02-28/BTCUSDT_180.csv": {
+    "symbol": 442,
+    "regime": 442,
+    "tf_sec": 442
+  },
+  "data/recorder/2026-02-28/BTCUSDT_300.csv": {
+    "symbol": 266,
+    "regime": 266,
+    "tf_sec": 266
+  },
+  "data/recorder/2026-02-28/BTCUSDT_900.csv": {
+    "symbol": 89,
+    "regime": 89,
+    "tf_sec": 89
+  },
+  "data/recorder/2026-02-28/DOGEUSDT_180.csv": {
+    "symbol": 442,
+    "regime": 442,
+    "tf_sec": 442
+  },
+  "data/recorder/2026-02-28/DOGEUSDT_300.csv": {
+    "symbol": 266,
+    "regime": 266,
+    "tf_sec": 266
+  },
+  "data/recorder/2026-02-28/DOGEUSDT_900.csv": {
+    "symbol": 89,
+    "regime": 89,
+    "tf_sec": 89
+  },
+  "data/recorder/2026-02-28/ETHUSDT_180.csv": {
+    "symbol": 442,
+    "regime": 442,
+    "tf_sec": 442
+  },
+  "data/recorder/2026-02-28/ETHUSDT_300.csv": {
+    "symbol": 266,
+    "regime": 266,
+    "tf_sec": 266
+  },
+  "data/recorder/2026-02-28/ETHUSDT_900.csv": {
+    "symbol": 89,
+    "regime": 89,
+    "tf_sec": 89
+  },
+  "data/recorder/2026-02-28/SOLUSDT_180.csv": {
+    "symbol": 442,
+    "regime": 442,
+    "tf_sec": 442
+  },
+  "data/recorder/2026-02-28/SOLUSDT_300.csv": {
+    "symbol": 266,
+    "regime": 266,
+    "tf_sec": 266
+  },
+  "data/recorder/2026-02-28/SOLUSDT_900.csv": {
+    "symbol": 89,
+    "regime": 89,
+    "tf_sec": 89
+  },
+  "data/recorder/2026-02-28/XRPUSDT_180.csv": {
+    "symbol": 442,
+    "regime": 442,
+    "tf_sec": 442
+  },
+  "data/recorder/2026-02-28/XRPUSDT_300.csv": {
+    "symbol": 266,
+    "regime": 266,
+    "tf_sec": 266
+  },
+  "data/recorder/2026-02-28/XRPUSDT_900.csv": {
+    "symbol": 89,
+    "regime": 89,
+    "tf_sec": 89
+  },
+  "data/recorder/2026-03-01/BTCUSDT_180.csv": {
+    "symbol": 352,
+    "regime": 352,
+    "tf_sec": 352
+  },
+  "data/recorder/2026-03-01/BTCUSDT_300.csv": {
+    "symbol": 213,
+    "regime": 213,
+    "tf_sec": 213
+  },
+  "data/recorder/2026-03-01/BTCUSDT_900.csv": {
+    "symbol": 71,
+    "regime": 71,
+    "tf_sec": 71
+  },
+  "data/recorder/2026-03-01/DOGEUSDT_180.csv": {
+    "symbol": 352,
+    "regime": 352,
+    "tf_sec": 352
+  },
+  "data/recorder/2026-03-01/DOGEUSDT_300.csv": {
+    "symbol": 213,
+    "regime": 213,
+    "tf_sec": 213
+  },
+  "data/recorder/2026-03-01/DOGEUSDT_900.csv": {
+    "symbol": 71,
+    "regime": 71,
+    "tf_sec": 71
+  },
+  "data/recorder/2026-03-01/ETHUSDT_180.csv": {
+    "symbol": 352,
+    "regime": 352,
+    "tf_sec": 352
+  },
+  "data/recorder/2026-03-01/ETHUSDT_300.csv": {
+    "symbol": 213,
+    "regime": 213,
+    "tf_sec": 213
+  },
+  "data/recorder/2026-03-01/ETHUSDT_900.csv": {
+    "symbol": 71,
+    "regime": 71,
+    "tf_sec": 71
+  },
+  "data/recorder/2026-03-01/SOLUSDT_180.csv": {
+    "symbol": 352,
+    "regime": 352,
+    "tf_sec": 352
+  },
+  "data/recorder/2026-03-01/SOLUSDT_300.csv": {
+    "symbol": 213,
+    "regime": 213,
+    "tf_sec": 213
+  },
+  "data/recorder/2026-03-01/SOLUSDT_900.csv": {
+    "symbol": 71,
+    "regime": 71,
+    "tf_sec": 71
+  },
+  "data/recorder/2026-03-01/XRPUSDT_180.csv": {
+    "symbol": 352,
+    "regime": 352,
+    "tf_sec": 352
+  },
+  "data/recorder/2026-03-01/XRPUSDT_300.csv": {
+    "symbol": 213,
+    "regime": 213,
+    "tf_sec": 213
+  },
+  "data/recorder/2026-03-01/XRPUSDT_900.csv": {
+    "symbol": 71,
+    "regime": 71,
+    "tf_sec": 71
+  },
+  "data/recorder/2026-03-02/BTCUSDT_180.csv": {
+    "symbol": 380,
+    "regime": 380,
+    "tf_sec": 380
+  },
+  "data/recorder/2026-03-02/BTCUSDT_300.csv": {
+    "symbol": 228,
+    "regime": 228,
+    "tf_sec": 228
+  },
+  "data/recorder/2026-03-02/BTCUSDT_900.csv": {
+    "symbol": 76,
+    "regime": 76,
+    "tf_sec": 76
+  },
+  "data/recorder/2026-03-02/DOGEUSDT_180.csv": {
+    "symbol": 380,
+    "regime": 380,
+    "tf_sec": 380
+  },
+  "data/recorder/2026-03-02/DOGEUSDT_300.csv": {
+    "symbol": 228,
+    "regime": 228,
+    "tf_sec": 228
+  },
+  "data/recorder/2026-03-02/DOGEUSDT_900.csv": {
+    "symbol": 76,
+    "regime": 76,
+    "tf_sec": 76
+  },
+  "data/recorder/2026-03-02/ETHUSDT_180.csv": {
+    "symbol": 380,
+    "regime": 380,
+    "tf_sec": 380
+  },
+  "data/recorder/2026-03-02/ETHUSDT_300.csv": {
+    "symbol": 228,
+    "regime": 228,
+    "tf_sec": 228
+  },
+  "data/recorder/2026-03-02/ETHUSDT_900.csv": {
+    "symbol": 76,
+    "regime": 76,
+    "tf_sec": 76
+  },
+  "data/recorder/2026-03-02/SOLUSDT_180.csv": {
+    "symbol": 380,
+    "regime": 380,
+    "tf_sec": 380
+  },
+  "data/recorder/2026-03-02/SOLUSDT_300.csv": {
+    "symbol": 228,
+    "regime": 228,
+    "tf_sec": 228
+  },
+  "data/recorder/2026-03-02/SOLUSDT_900.csv": {
+    "symbol": 76,
+    "regime": 76,
+    "tf_sec": 76
+  },
+  "data/recorder/2026-03-02/XRPUSDT_180.csv": {
+    "symbol": 380,
+    "regime": 380,
+    "tf_sec": 380
+  },
+  "data/recorder/2026-03-02/XRPUSDT_300.csv": {
+    "symbol": 228,
+    "regime": 228,
+    "tf_sec": 228
+  },
+  "data/recorder/2026-03-02/XRPUSDT_900.csv": {
+    "symbol": 76,
+    "regime": 76,
+    "tf_sec": 76
+  },
+  "data/recorder/2026-03-03/BTCUSDT_180.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-03/BTCUSDT_300.csv": {
+    "symbol": 17,
+    "regime": 17,
+    "tf_sec": 17
+  },
+  "data/recorder/2026-03-03/BTCUSDT_900.csv": {
+    "symbol": 27,
+    "regime": 27,
+    "tf_sec": 27
+  },
+  "data/recorder/2026-03-03/DOGEUSDT_180.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-03/DOGEUSDT_300.csv": {
+    "symbol": 17,
+    "regime": 17,
+    "tf_sec": 17
+  },
+  "data/recorder/2026-03-03/DOGEUSDT_900.csv": {
+    "symbol": 27,
+    "regime": 27,
+    "tf_sec": 27
+  },
+  "data/recorder/2026-03-03/ETHUSDT_180.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-03/ETHUSDT_300.csv": {
+    "symbol": 17,
+    "regime": 17,
+    "tf_sec": 17
+  },
+  "data/recorder/2026-03-03/ETHUSDT_900.csv": {
+    "symbol": 27,
+    "regime": 27,
+    "tf_sec": 27
+  },
+  "data/recorder/2026-03-03/SOLUSDT_180.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-03/SOLUSDT_300.csv": {
+    "symbol": 17,
+    "regime": 17,
+    "tf_sec": 17
+  },
+  "data/recorder/2026-03-03/SOLUSDT_900.csv": {
+    "symbol": 27,
+    "regime": 27,
+    "tf_sec": 27
+  },
+  "data/recorder/2026-03-03/XRPUSDT_180.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-03/XRPUSDT_300.csv": {
+    "symbol": 17,
+    "regime": 17,
+    "tf_sec": 17
+  },
+  "data/recorder/2026-03-03/XRPUSDT_900.csv": {
+    "symbol": 27,
+    "regime": 27,
+    "tf_sec": 27
+  },
+  "data/recorder/2026-03-04/BTCUSDT_180.csv": {
+    "symbol": 3,
+    "regime": 3,
+    "tf_sec": 3
+  },
+  "data/recorder/2026-03-04/BTCUSDT_300.csv": {
+    "symbol": 4,
+    "regime": 4,
+    "tf_sec": 4
+  },
+  "data/recorder/2026-03-04/BTCUSDT_900.csv": {
+    "symbol": 12,
+    "regime": 12,
+    "tf_sec": 12
+  },
+  "data/recorder/2026-03-04/DOGEUSDT_180.csv": {
+    "symbol": 3,
+    "regime": 3,
+    "tf_sec": 3
+  },
+  "data/recorder/2026-03-04/DOGEUSDT_300.csv": {
+    "symbol": 4,
+    "regime": 4,
+    "tf_sec": 4
+  },
+  "data/recorder/2026-03-04/DOGEUSDT_900.csv": {
+    "symbol": 12,
+    "regime": 12,
+    "tf_sec": 12
+  },
+  "data/recorder/2026-03-04/ETHUSDT_180.csv": {
+    "symbol": 3,
+    "regime": 3,
+    "tf_sec": 3
+  },
+  "data/recorder/2026-03-04/ETHUSDT_300.csv": {
+    "symbol": 4,
+    "regime": 4,
+    "tf_sec": 4
+  },
+  "data/recorder/2026-03-04/ETHUSDT_900.csv": {
+    "symbol": 12,
+    "regime": 12,
+    "tf_sec": 12
+  },
+  "data/recorder/2026-03-04/SOLUSDT_180.csv": {
+    "symbol": 3,
+    "regime": 3,
+    "tf_sec": 3
+  },
+  "data/recorder/2026-03-04/SOLUSDT_300.csv": {
+    "symbol": 4,
+    "regime": 4,
+    "tf_sec": 4
+  },
+  "data/recorder/2026-03-04/SOLUSDT_900.csv": {
+    "symbol": 12,
+    "regime": 12,
+    "tf_sec": 12
+  },
+  "data/recorder/2026-03-04/XRPUSDT_180.csv": {
+    "symbol": 3,
+    "regime": 3,
+    "tf_sec": 3
+  },
+  "data/recorder/2026-03-04/XRPUSDT_300.csv": {
+    "symbol": 4,
+    "regime": 4,
+    "tf_sec": 4
+  },
+  "data/recorder/2026-03-04/XRPUSDT_900.csv": {
+    "symbol": 12,
+    "regime": 12,
+    "tf_sec": 12
+  },
+  "data/recorder/2026-03-05/BNBUSDT_180.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-05/BNBUSDT_300.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-05/BNBUSDT_900.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-05/BTCUSDT_180.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-05/BTCUSDT_300.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-05/BTCUSDT_900.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-05/DOGEUSDT_180.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-05/DOGEUSDT_300.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-05/DOGEUSDT_900.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-05/ETHUSDT_180.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-05/ETHUSDT_300.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-05/ETHUSDT_900.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-05/SOLUSDT_180.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-05/SOLUSDT_300.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-05/SOLUSDT_900.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-05/XRPUSDT_180.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-05/XRPUSDT_300.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-05/XRPUSDT_900.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-06/BNBUSDT_180.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-06/BNBUSDT_300.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-06/BNBUSDT_900.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-06/BTCUSDT_180.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-06/BTCUSDT_300.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-06/BTCUSDT_900.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-06/DOGEUSDT_180.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-06/DOGEUSDT_300.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-06/DOGEUSDT_900.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-06/ETHUSDT_180.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-06/ETHUSDT_300.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-06/ETHUSDT_900.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-06/SOLUSDT_180.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-06/SOLUSDT_300.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-06/SOLUSDT_900.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-06/XRPUSDT_180.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-06/XRPUSDT_300.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-06/XRPUSDT_900.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-07/1000PEPEUSDT_180.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-07/1000PEPEUSDT_300.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-07/1000PEPEUSDT_900.csv": {
+    "symbol": 15,
+    "regime": 15,
+    "tf_sec": 15
+  },
+  "data/recorder/2026-03-07/BNBUSDT_180.csv": {
+    "symbol": 453,
+    "regime": 454,
+    "tf_sec": 450
+  },
+  "data/recorder/2026-03-07/BNBUSDT_300.csv": {
+    "symbol": 266,
+    "regime": 266,
+    "tf_sec": 262
+  },
+  "data/recorder/2026-03-07/BNBUSDT_900.csv": {
+    "symbol": 78,
+    "regime": 79,
+    "tf_sec": 75
+  },
+  "data/recorder/2026-03-07/BTCUSDT_180.csv": {
+    "symbol": 453,
+    "regime": 454,
+    "tf_sec": 450
+  },
+  "data/recorder/2026-03-07/BTCUSDT_300.csv": {
+    "symbol": 266,
+    "regime": 266,
+    "tf_sec": 262
+  },
+  "data/recorder/2026-03-07/BTCUSDT_900.csv": {
+    "symbol": 78,
+    "regime": 79,
+    "tf_sec": 75
+  },
+  "data/recorder/2026-03-07/DOGEUSDT_180.csv": {
+    "symbol": 453,
+    "regime": 454,
+    "tf_sec": 450
+  },
+  "data/recorder/2026-03-07/DOGEUSDT_300.csv": {
+    "symbol": 266,
+    "regime": 266,
+    "tf_sec": 262
+  },
+  "data/recorder/2026-03-07/DOGEUSDT_900.csv": {
+    "symbol": 78,
+    "regime": 79,
+    "tf_sec": 75
+  },
+  "data/recorder/2026-03-07/ETHUSDT_180.csv": {
+    "symbol": 453,
+    "regime": 454,
+    "tf_sec": 450
+  },
+  "data/recorder/2026-03-07/ETHUSDT_300.csv": {
+    "symbol": 266,
+    "regime": 266,
+    "tf_sec": 262
+  },
+  "data/recorder/2026-03-07/ETHUSDT_900.csv": {
+    "symbol": 78,
+    "regime": 79,
+    "tf_sec": 75
+  },
+  "data/recorder/2026-03-07/SOLUSDT_180.csv": {
+    "symbol": 453,
+    "regime": 454,
+    "tf_sec": 450
+  },
+  "data/recorder/2026-03-07/SOLUSDT_300.csv": {
+    "symbol": 266,
+    "regime": 266,
+    "tf_sec": 262
+  },
+  "data/recorder/2026-03-07/SOLUSDT_900.csv": {
+    "symbol": 78,
+    "regime": 79,
+    "tf_sec": 75
+  },
+  "data/recorder/2026-03-07/XRPUSDT_180.csv": {
+    "symbol": 453,
+    "regime": 454,
+    "tf_sec": 450
+  },
+  "data/recorder/2026-03-07/XRPUSDT_300.csv": {
+    "symbol": 266,
+    "regime": 266,
+    "tf_sec": 262
+  },
+  "data/recorder/2026-03-07/XRPUSDT_900.csv": {
+    "symbol": 78,
+    "regime": 79,
+    "tf_sec": 75
+  },
+  "data/recorder/2026-03-08/1000PEPEUSDT_180.csv": {
+    "symbol": 462,
+    "regime": 463,
+    "tf_sec": 459
+  },
+  "data/recorder/2026-03-08/1000PEPEUSDT_300.csv": {
+    "symbol": 272,
+    "regime": 273,
+    "tf_sec": 269
+  },
+  "data/recorder/2026-03-08/1000PEPEUSDT_900.csv": {
+    "symbol": 81,
+    "regime": 81,
+    "tf_sec": 77
+  },
+  "data/recorder/2026-03-08/BNBUSDT_180.csv": {
+    "symbol": 462,
+    "regime": 463,
+    "tf_sec": 459
+  },
+  "data/recorder/2026-03-08/BNBUSDT_300.csv": {
+    "symbol": 272,
+    "regime": 273,
+    "tf_sec": 269
+  },
+  "data/recorder/2026-03-08/BNBUSDT_900.csv": {
+    "symbol": 81,
+    "regime": 81,
+    "tf_sec": 77
+  },
+  "data/recorder/2026-03-08/BTCUSDT_180.csv": {
+    "symbol": 462,
+    "regime": 463,
+    "tf_sec": 459
+  },
+  "data/recorder/2026-03-08/BTCUSDT_300.csv": {
+    "symbol": 272,
+    "regime": 273,
+    "tf_sec": 269
+  },
+  "data/recorder/2026-03-08/BTCUSDT_900.csv": {
+    "symbol": 81,
+    "regime": 81,
+    "tf_sec": 77
+  },
+  "data/recorder/2026-03-08/DOGEUSDT_180.csv": {
+    "symbol": 463,
+    "regime": 464,
+    "tf_sec": 460
+  },
+  "data/recorder/2026-03-08/DOGEUSDT_300.csv": {
+    "symbol": 272,
+    "regime": 273,
+    "tf_sec": 269
+  },
+  "data/recorder/2026-03-08/DOGEUSDT_900.csv": {
+    "symbol": 81,
+    "regime": 81,
+    "tf_sec": 77
+  },
+  "data/recorder/2026-03-08/ETHUSDT_180.csv": {
+    "symbol": 462,
+    "regime": 463,
+    "tf_sec": 459
+  },
+  "data/recorder/2026-03-08/ETHUSDT_300.csv": {
+    "symbol": 272,
+    "regime": 273,
+    "tf_sec": 269
+  },
+  "data/recorder/2026-03-08/ETHUSDT_900.csv": {
+    "symbol": 81,
+    "regime": 81,
+    "tf_sec": 77
+  },
+  "data/recorder/2026-03-08/SOLUSDT_180.csv": {
+    "symbol": 462,
+    "regime": 463,
+    "tf_sec": 459
+  },
+  "data/recorder/2026-03-08/SOLUSDT_300.csv": {
+    "symbol": 272,
+    "regime": 273,
+    "tf_sec": 269
+  },
+  "data/recorder/2026-03-08/SOLUSDT_900.csv": {
+    "symbol": 81,
+    "regime": 81,
+    "tf_sec": 77
+  },
+  "data/recorder/2026-03-08/XRPUSDT_180.csv": {
+    "symbol": 462,
+    "regime": 463,
+    "tf_sec": 459
+  },
+  "data/recorder/2026-03-08/XRPUSDT_300.csv": {
+    "symbol": 272,
+    "regime": 273,
+    "tf_sec": 269
+  },
+  "data/recorder/2026-03-08/XRPUSDT_900.csv": {
+    "symbol": 81,
+    "regime": 81,
+    "tf_sec": 77
+  },
+  "data/recorder/2026-03-09/1000PEPEUSDT_180.csv": {
+    "symbol": 213,
+    "regime": 213,
+    "tf_sec": 213
+  },
+  "data/recorder/2026-03-09/1000PEPEUSDT_300.csv": {
+    "symbol": 128,
+    "regime": 128,
+    "tf_sec": 128
+  },
+  "data/recorder/2026-03-09/1000PEPEUSDT_900.csv": {
+    "symbol": 43,
+    "regime": 43,
+    "tf_sec": 43
+  },
+  "data/recorder/2026-03-09/BNBUSDT_180.csv": {
+    "symbol": 213,
+    "regime": 213,
+    "tf_sec": 213
+  },
+  "data/recorder/2026-03-09/BNBUSDT_300.csv": {
+    "symbol": 128,
+    "regime": 128,
+    "tf_sec": 128
+  },
+  "data/recorder/2026-03-09/BNBUSDT_900.csv": {
+    "symbol": 43,
+    "regime": 43,
+    "tf_sec": 43
+  },
+  "data/recorder/2026-03-09/BTCUSDT_180.csv": {
+    "symbol": 213,
+    "regime": 213,
+    "tf_sec": 213
+  },
+  "data/recorder/2026-03-09/BTCUSDT_300.csv": {
+    "symbol": 128,
+    "regime": 128,
+    "tf_sec": 128
+  },
+  "data/recorder/2026-03-09/BTCUSDT_900.csv": {
+    "symbol": 43,
+    "regime": 43,
+    "tf_sec": 43
+  },
+  "data/recorder/2026-03-09/DOGEUSDT_180.csv": {
+    "symbol": 212,
+    "regime": 212,
+    "tf_sec": 212
+  },
+  "data/recorder/2026-03-09/DOGEUSDT_300.csv": {
+    "symbol": 128,
+    "regime": 128,
+    "tf_sec": 128
+  },
+  "data/recorder/2026-03-09/DOGEUSDT_900.csv": {
+    "symbol": 43,
+    "regime": 43,
+    "tf_sec": 43
+  },
+  "data/recorder/2026-03-09/ETHUSDT_180.csv": {
+    "symbol": 213,
+    "regime": 213,
+    "tf_sec": 213
+  },
+  "data/recorder/2026-03-09/ETHUSDT_300.csv": {
+    "symbol": 128,
+    "regime": 128,
+    "tf_sec": 128
+  },
+  "data/recorder/2026-03-09/ETHUSDT_900.csv": {
+    "symbol": 43,
+    "regime": 43,
+    "tf_sec": 43
+  },
+  "data/recorder/2026-03-09/SOLUSDT_180.csv": {
+    "symbol": 213,
+    "regime": 213,
+    "tf_sec": 213
+  },
+  "data/recorder/2026-03-09/SOLUSDT_300.csv": {
+    "symbol": 128,
+    "regime": 128,
+    "tf_sec": 128
+  },
+  "data/recorder/2026-03-09/SOLUSDT_900.csv": {
+    "symbol": 43,
+    "regime": 43,
+    "tf_sec": 43
+  },
+  "data/recorder/2026-03-09/XRPUSDT_180.csv": {
+    "symbol": 213,
+    "regime": 213,
+    "tf_sec": 213
+  },
+  "data/recorder/2026-03-09/XRPUSDT_300.csv": {
+    "symbol": 128,
+    "regime": 128,
+    "tf_sec": 128
+  },
+  "data/recorder/2026-03-09/XRPUSDT_900.csv": {
+    "symbol": 43,
+    "regime": 43,
+    "tf_sec": 43
+  },
+  "data/recorder/2026-03-10/1000PEPEUSDT_180.csv": {
+    "symbol": 13,
+    "regime": 13,
+    "tf_sec": 13
+  },
+  "data/recorder/2026-03-10/1000PEPEUSDT_300.csv": {
+    "symbol": 7,
+    "regime": 7,
+    "tf_sec": 7
+  },
+  "data/recorder/2026-03-10/1000PEPEUSDT_900.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-10/BNBUSDT_180.csv": {
+    "symbol": 13,
+    "regime": 13,
+    "tf_sec": 13
+  },
+  "data/recorder/2026-03-10/BNBUSDT_300.csv": {
+    "symbol": 7,
+    "regime": 7,
+    "tf_sec": 7
+  },
+  "data/recorder/2026-03-10/BNBUSDT_900.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-10/BTCUSDT_180.csv": {
+    "symbol": 13,
+    "regime": 13,
+    "tf_sec": 13
+  },
+  "data/recorder/2026-03-10/BTCUSDT_300.csv": {
+    "symbol": 7,
+    "regime": 7,
+    "tf_sec": 7
+  },
+  "data/recorder/2026-03-10/BTCUSDT_900.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-10/DOGEUSDT_180.csv": {
+    "symbol": 13,
+    "regime": 13,
+    "tf_sec": 13
+  },
+  "data/recorder/2026-03-10/DOGEUSDT_300.csv": {
+    "symbol": 7,
+    "regime": 7,
+    "tf_sec": 7
+  },
+  "data/recorder/2026-03-10/DOGEUSDT_900.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-10/ETHUSDT_180.csv": {
+    "symbol": 13,
+    "regime": 13,
+    "tf_sec": 13
+  },
+  "data/recorder/2026-03-10/ETHUSDT_300.csv": {
+    "symbol": 7,
+    "regime": 7,
+    "tf_sec": 7
+  },
+  "data/recorder/2026-03-10/ETHUSDT_900.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-10/SOLUSDT_180.csv": {
+    "symbol": 13,
+    "regime": 13,
+    "tf_sec": 13
+  },
+  "data/recorder/2026-03-10/SOLUSDT_300.csv": {
+    "symbol": 3,
+    "regime": 3,
+    "tf_sec": 3
+  },
+  "data/recorder/2026-03-10/SOLUSDT_900.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-10/XRPUSDT_180.csv": {
+    "symbol": 13,
+    "regime": 13,
+    "tf_sec": 13
+  },
+  "data/recorder/2026-03-10/XRPUSDT_300.csv": {
+    "symbol": 7,
+    "regime": 7,
+    "tf_sec": 7
+  },
+  "data/recorder/2026-03-10/XRPUSDT_900.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-11/1000PEPEUSDT_180.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-11/1000PEPEUSDT_300.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-11/1000PEPEUSDT_900.csv": {
+    "symbol": 1,
+    "regime": 1,
+    "tf_sec": 1
+  },
+  "data/recorder/2026-03-11/BNBUSDT_180.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-11/BNBUSDT_300.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-11/BNBUSDT_900.csv": {
+    "symbol": 1,
+    "regime": 1,
+    "tf_sec": 1
+  },
+  "data/recorder/2026-03-11/BTCUSDT_180.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-11/BTCUSDT_300.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-11/BTCUSDT_900.csv": {
+    "symbol": 1,
+    "regime": 1,
+    "tf_sec": 1
+  },
+  "data/recorder/2026-03-11/DOGEUSDT_180.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-11/DOGEUSDT_300.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-11/DOGEUSDT_900.csv": {
+    "symbol": 1,
+    "regime": 1,
+    "tf_sec": 1
+  },
+  "data/recorder/2026-03-11/ETHUSDT_180.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-11/ETHUSDT_300.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-11/ETHUSDT_900.csv": {
+    "symbol": 1,
+    "regime": 1,
+    "tf_sec": 1
+  },
+  "data/recorder/2026-03-11/SOLUSDT_180.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-11/SOLUSDT_300.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-11/SOLUSDT_900.csv": {
+    "symbol": 1,
+    "regime": 1,
+    "tf_sec": 1
+  },
+  "data/recorder/2026-03-11/XRPUSDT_180.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-11/XRPUSDT_300.csv": {
+    "symbol": 2,
+    "regime": 2,
+    "tf_sec": 2
+  },
+  "data/recorder/2026-03-11/XRPUSDT_900.csv": {
+    "symbol": 1,
+    "regime": 1,
+    "tf_sec": 1
+  },
+  "data/recorder/2026-03-12/1000PEPEUSDT_180.csv": {
+    "symbol": 151,
+    "regime": 151,
+    "tf_sec": 151
+  },
+  "data/recorder/2026-03-12/1000PEPEUSDT_300.csv": {
+    "symbol": 91,
+    "regime": 91,
+    "tf_sec": 91
+  },
+  "data/recorder/2026-03-12/1000PEPEUSDT_900.csv": {
+    "symbol": 32,
+    "regime": 32,
+    "tf_sec": 32
+  },
+  "data/recorder/2026-03-12/BNBUSDT_180.csv": {
+    "symbol": 151,
+    "regime": 151,
+    "tf_sec": 151
+  },
+  "data/recorder/2026-03-12/BNBUSDT_300.csv": {
+    "symbol": 91,
+    "regime": 91,
+    "tf_sec": 91
+  },
+  "data/recorder/2026-03-12/BNBUSDT_900.csv": {
+    "symbol": 32,
+    "regime": 32,
+    "tf_sec": 32
+  },
+  "data/recorder/2026-03-12/BTCUSDT_180.csv": {
+    "symbol": 151,
+    "regime": 151,
+    "tf_sec": 151
+  },
+  "data/recorder/2026-03-12/BTCUSDT_300.csv": {
+    "symbol": 91,
+    "regime": 91,
+    "tf_sec": 91
+  },
+  "data/recorder/2026-03-12/BTCUSDT_900.csv": {
+    "symbol": 32,
+    "regime": 32,
+    "tf_sec": 32
+  },
+  "data/recorder/2026-03-12/DOGEUSDT_180.csv": {
+    "symbol": 151,
+    "regime": 151,
+    "tf_sec": 151
+  },
+  "data/recorder/2026-03-12/DOGEUSDT_300.csv": {
+    "symbol": 91,
+    "regime": 91,
+    "tf_sec": 91
+  },
+  "data/recorder/2026-03-12/DOGEUSDT_900.csv": {
+    "symbol": 32,
+    "regime": 32,
+    "tf_sec": 32
+  },
+  "data/recorder/2026-03-12/ETHUSDT_180.csv": {
+    "symbol": 151,
+    "regime": 151,
+    "tf_sec": 151
+  },
+  "data/recorder/2026-03-12/ETHUSDT_300.csv": {
+    "symbol": 91,
+    "regime": 91,
+    "tf_sec": 91
+  },
+  "data/recorder/2026-03-12/ETHUSDT_900.csv": {
+    "symbol": 32,
+    "regime": 32,
+    "tf_sec": 32
+  },
+  "data/recorder/2026-03-12/SOLUSDT_180.csv": {
+    "symbol": 151,
+    "regime": 151,
+    "tf_sec": 151
+  },
+  "data/recorder/2026-03-12/SOLUSDT_300.csv": {
+    "symbol": 91,
+    "regime": 91,
+    "tf_sec": 91
+  },
+  "data/recorder/2026-03-12/SOLUSDT_900.csv": {
+    "symbol": 32,
+    "regime": 32,
+    "tf_sec": 32
+  },
+  "data/recorder/2026-03-12/XRPUSDT_180.csv": {
+    "symbol": 151,
+    "regime": 151,
+    "tf_sec": 151
+  },
+  "data/recorder/2026-03-12/XRPUSDT_300.csv": {
+    "symbol": 91,
+    "regime": 91,
+    "tf_sec": 91
+  },
+  "data/recorder/2026-03-12/XRPUSDT_900.csv": {
+    "symbol": 32,
+    "regime": 32,
+    "tf_sec": 32
+  },
+  "data/recorder/2026-03-13/1000PEPEUSDT_180.csv": {
+    "symbol": 228,
+    "regime": 228,
+    "tf_sec": 228
+  },
+  "data/recorder/2026-03-13/1000PEPEUSDT_300.csv": {
+    "symbol": 138,
+    "regime": 138,
+    "tf_sec": 138
+  },
+  "data/recorder/2026-03-13/1000PEPEUSDT_900.csv": {
+    "symbol": 46,
+    "regime": 46,
+    "tf_sec": 46
+  },
+  "data/recorder/2026-03-13/BNBUSDT_180.csv": {
+    "symbol": 228,
+    "regime": 228,
+    "tf_sec": 228
+  },
+  "data/recorder/2026-03-13/BNBUSDT_300.csv": {
+    "symbol": 138,
+    "regime": 138,
+    "tf_sec": 138
+  },
+  "data/recorder/2026-03-13/BNBUSDT_900.csv": {
+    "symbol": 46,
+    "regime": 46,
+    "tf_sec": 46
+  },
+  "data/recorder/2026-03-13/BTCUSDT_180.csv": {
+    "symbol": 228,
+    "regime": 228,
+    "tf_sec": 228
+  },
+  "data/recorder/2026-03-13/BTCUSDT_300.csv": {
+    "symbol": 138,
+    "regime": 138,
+    "tf_sec": 138
+  },
+  "data/recorder/2026-03-13/BTCUSDT_900.csv": {
+    "symbol": 46,
+    "regime": 46,
+    "tf_sec": 46
+  },
+  "data/recorder/2026-03-13/DOGEUSDT_180.csv": {
+    "symbol": 228,
+    "regime": 228,
+    "tf_sec": 228
+  },
+  "data/recorder/2026-03-13/DOGEUSDT_300.csv": {
+    "symbol": 138,
+    "regime": 138,
+    "tf_sec": 138
+  },
+  "data/recorder/2026-03-13/DOGEUSDT_900.csv": {
+    "symbol": 46,
+    "regime": 46,
+    "tf_sec": 46
+  },
+  "data/recorder/2026-03-13/ETHUSDT_180.csv": {
+    "symbol": 228,
+    "regime": 228,
+    "tf_sec": 228
+  },
+  "data/recorder/2026-03-13/ETHUSDT_300.csv": {
+    "symbol": 138,
+    "regime": 138,
+    "tf_sec": 138
+  },
+  "data/recorder/2026-03-13/ETHUSDT_900.csv": {
+    "symbol": 46,
+    "regime": 46,
+    "tf_sec": 46
+  },
+  "data/recorder/2026-03-13/SOLUSDT_180.csv": {
+    "symbol": 228,
+    "regime": 228,
+    "tf_sec": 228
+  },
+  "data/recorder/2026-03-13/SOLUSDT_300.csv": {
+    "symbol": 138,
+    "regime": 138,
+    "tf_sec": 138
+  },
+  "data/recorder/2026-03-13/SOLUSDT_900.csv": {
+    "symbol": 46,
+    "regime": 46,
+    "tf_sec": 46
+  },
+  "data/recorder/2026-03-13/XRPUSDT_180.csv": {
+    "symbol": 228,
+    "regime": 228,
+    "tf_sec": 228
+  },
+  "data/recorder/2026-03-13/XRPUSDT_300.csv": {
+    "symbol": 138,
+    "regime": 138,
+    "tf_sec": 138
+  },
+  "data/recorder/2026-03-13/XRPUSDT_900.csv": {
+    "symbol": 46,
+    "regime": 46,
+    "tf_sec": 46
+  },
+  "data/recorder/2026-03-14/1000PEPEUSDT_180.csv": {
+    "symbol": 286,
+    "regime": 286,
+    "tf_sec": 286
+  },
+  "data/recorder/2026-03-14/1000PEPEUSDT_300.csv": {
+    "symbol": 170,
+    "regime": 170,
+    "tf_sec": 170
+  },
+  "data/recorder/2026-03-14/1000PEPEUSDT_900.csv": {
+    "symbol": 57,
+    "regime": 57,
+    "tf_sec": 57
+  },
+  "data/recorder/2026-03-14/BNBUSDT_180.csv": {
+    "symbol": 286,
+    "regime": 286,
+    "tf_sec": 286
+  },
+  "data/recorder/2026-03-14/BNBUSDT_300.csv": {
+    "symbol": 170,
+    "regime": 170,
+    "tf_sec": 170
+  },
+  "data/recorder/2026-03-14/BNBUSDT_900.csv": {
+    "symbol": 57,
+    "regime": 57,
+    "tf_sec": 57
+  },
+  "data/recorder/2026-03-14/BTCUSDT_180.csv": {
+    "symbol": 286,
+    "regime": 286,
+    "tf_sec": 286
+  },
+  "data/recorder/2026-03-14/BTCUSDT_300.csv": {
+    "symbol": 170,
+    "regime": 170,
+    "tf_sec": 170
+  },
+  "data/recorder/2026-03-14/BTCUSDT_900.csv": {
+    "symbol": 57,
+    "regime": 57,
+    "tf_sec": 57
+  },
+  "data/recorder/2026-03-14/DOGEUSDT_180.csv": {
+    "symbol": 286,
+    "regime": 286,
+    "tf_sec": 286
+  },
+  "data/recorder/2026-03-14/DOGEUSDT_300.csv": {
+    "symbol": 170,
+    "regime": 170,
+    "tf_sec": 170
+  },
+  "data/recorder/2026-03-14/DOGEUSDT_900.csv": {
+    "symbol": 57,
+    "regime": 57,
+    "tf_sec": 57
+  },
+  "data/recorder/2026-03-14/ETHUSDT_180.csv": {
+    "symbol": 286,
+    "regime": 286,
+    "tf_sec": 286
+  },
+  "data/recorder/2026-03-14/ETHUSDT_300.csv": {
+    "symbol": 170,
+    "regime": 170,
+    "tf_sec": 170
+  },
+  "data/recorder/2026-03-14/ETHUSDT_900.csv": {
+    "symbol": 57,
+    "regime": 57,
+    "tf_sec": 57
+  },
+  "data/recorder/2026-03-14/SOLUSDT_180.csv": {
+    "symbol": 286,
+    "regime": 286,
+    "tf_sec": 286
+  },
+  "data/recorder/2026-03-14/SOLUSDT_300.csv": {
+    "symbol": 170,
+    "regime": 170,
+    "tf_sec": 170
+  },
+  "data/recorder/2026-03-14/SOLUSDT_900.csv": {
+    "symbol": 57,
+    "regime": 57,
+    "tf_sec": 57
+  },
+  "data/recorder/2026-03-14/XRPUSDT_180.csv": {
+    "symbol": 286,
+    "regime": 286,
+    "tf_sec": 286
+  },
+  "data/recorder/2026-03-14/XRPUSDT_300.csv": {
+    "symbol": 170,
+    "regime": 170,
+    "tf_sec": 170
+  },
+  "data/recorder/2026-03-14/XRPUSDT_900.csv": {
+    "symbol": 57,
+    "regime": 57,
+    "tf_sec": 57
+  },
+  "data/recorder/2026-03-15/1000PEPEUSDT_180.csv": {
+    "symbol": 419,
+    "regime": 419,
+    "tf_sec": 419
+  },
+  "data/recorder/2026-03-15/1000PEPEUSDT_300.csv": {
+    "symbol": 251,
+    "regime": 251,
+    "tf_sec": 251
+  },
+  "data/recorder/2026-03-15/1000PEPEUSDT_900.csv": {
+    "symbol": 83,
+    "regime": 83,
+    "tf_sec": 83
+  },
+  "data/recorder/2026-03-15/BNBUSDT_180.csv": {
+    "symbol": 419,
+    "regime": 419,
+    "tf_sec": 419
+  },
+  "data/recorder/2026-03-15/BNBUSDT_300.csv": {
+    "symbol": 251,
+    "regime": 251,
+    "tf_sec": 251
+  },
+  "data/recorder/2026-03-15/BNBUSDT_900.csv": {
+    "symbol": 83,
+    "regime": 83,
+    "tf_sec": 83
+  },
+  "data/recorder/2026-03-15/BTCUSDT_180.csv": {
+    "symbol": 419,
+    "regime": 419,
+    "tf_sec": 419
+  },
+  "data/recorder/2026-03-15/BTCUSDT_300.csv": {
+    "symbol": 251,
+    "regime": 251,
+    "tf_sec": 251
+  },
+  "data/recorder/2026-03-15/BTCUSDT_900.csv": {
+    "symbol": 83,
+    "regime": 83,
+    "tf_sec": 83
+  },
+  "data/recorder/2026-03-15/DOGEUSDT_180.csv": {
+    "symbol": 419,
+    "regime": 419,
+    "tf_sec": 419
+  },
+  "data/recorder/2026-03-15/DOGEUSDT_300.csv": {
+    "symbol": 251,
+    "regime": 251,
+    "tf_sec": 251
+  },
+  "data/recorder/2026-03-15/DOGEUSDT_900.csv": {
+    "symbol": 83,
+    "regime": 83,
+    "tf_sec": 83
+  },
+  "data/recorder/2026-03-15/ETHUSDT_180.csv": {
+    "symbol": 419,
+    "regime": 419,
+    "tf_sec": 419
+  },
+  "data/recorder/2026-03-15/ETHUSDT_300.csv": {
+    "symbol": 251,
+    "regime": 251,
+    "tf_sec": 251
+  },
+  "data/recorder/2026-03-15/ETHUSDT_900.csv": {
+    "symbol": 83,
+    "regime": 83,
+    "tf_sec": 83
+  },
+  "data/recorder/2026-03-15/SOLUSDT_180.csv": {
+    "symbol": 419,
+    "regime": 419,
+    "tf_sec": 419
+  },
+  "data/recorder/2026-03-15/SOLUSDT_300.csv": {
+    "symbol": 251,
+    "regime": 251,
+    "tf_sec": 251
+  },
+  "data/recorder/2026-03-15/SOLUSDT_900.csv": {
+    "symbol": 83,
+    "regime": 83,
+    "tf_sec": 83
+  },
+  "data/recorder/2026-03-15/XRPUSDT_180.csv": {
+    "symbol": 419,
+    "regime": 419,
+    "tf_sec": 419
+  },
+  "data/recorder/2026-03-15/XRPUSDT_300.csv": {
+    "symbol": 251,
+    "regime": 251,
+    "tf_sec": 251
+  },
+  "data/recorder/2026-03-15/XRPUSDT_900.csv": {
+    "symbol": 83,
+    "regime": 83,
+    "tf_sec": 83
+  },
+  "data/recorder/2026-03-16/1000PEPEUSDT_180.csv": {
+    "symbol": 348,
+    "regime": 348,
+    "tf_sec": 348
+  },
+  "data/recorder/2026-03-16/1000PEPEUSDT_300.csv": {
+    "symbol": 207,
+    "regime": 207,
+    "tf_sec": 207
+  },
+  "data/recorder/2026-03-16/1000PEPEUSDT_900.csv": {
+    "symbol": 69,
+    "regime": 69,
+    "tf_sec": 69
+  },
+  "data/recorder/2026-03-16/BNBUSDT_180.csv": {
+    "symbol": 348,
+    "regime": 348,
+    "tf_sec": 348
+  },
+  "data/recorder/2026-03-16/BNBUSDT_300.csv": {
+    "symbol": 208,
+    "regime": 208,
+    "tf_sec": 208
+  },
+  "data/recorder/2026-03-16/BNBUSDT_900.csv": {
+    "symbol": 197,
+    "regime": 197,
+    "tf_sec": 197
+  },
+  "data/recorder/2026-03-16/BTCUSDT_180.csv": {
+    "symbol": 348,
+    "regime": 348,
+    "tf_sec": 348
+  },
+  "data/recorder/2026-03-16/BTCUSDT_300.csv": {
+    "symbol": 765,
+    "regime": 765,
+    "tf_sec": 765
+  },
+  "data/recorder/2026-03-16/BTCUSDT_900.csv": {
+    "symbol": 69,
+    "regime": 69,
+    "tf_sec": 69
+  },
+  "data/recorder/2026-03-16/DOGEUSDT_180.csv": {
+    "symbol": 348,
+    "regime": 348,
+    "tf_sec": 348
+  },
+  "data/recorder/2026-03-16/DOGEUSDT_300.csv": {
+    "symbol": 810,
+    "regime": 810,
+    "tf_sec": 810
+  },
+  "data/recorder/2026-03-16/DOGEUSDT_900.csv": {
+    "symbol": 69,
+    "regime": 69,
+    "tf_sec": 69
+  },
+  "data/recorder/2026-03-16/ETHUSDT_180.csv": {
+    "symbol": 348,
+    "regime": 348,
+    "tf_sec": 348
+  },
+  "data/recorder/2026-03-16/ETHUSDT_300.csv": {
+    "symbol": 765,
+    "regime": 765,
+    "tf_sec": 765
+  },
+  "data/recorder/2026-03-16/ETHUSDT_900.csv": {
+    "symbol": 69,
+    "regime": 69,
+    "tf_sec": 69
+  },
+  "data/recorder/2026-03-16/SOLUSDT_180.csv": {
+    "symbol": 348,
+    "regime": 348,
+    "tf_sec": 348
+  },
+  "data/recorder/2026-03-16/SOLUSDT_300.csv": {
+    "symbol": 765,
+    "regime": 765,
+    "tf_sec": 765
+  },
+  "data/recorder/2026-03-16/SOLUSDT_900.csv": {
+    "symbol": 69,
+    "regime": 69,
+    "tf_sec": 69
+  },
+  "data/recorder/2026-03-16/XRPUSDT_180.csv": {
+    "symbol": 347,
+    "regime": 347,
+    "tf_sec": 347
+  },
+  "data/recorder/2026-03-16/XRPUSDT_300.csv": {
+    "symbol": 208,
+    "regime": 208,
+    "tf_sec": 208
+  },
+  "data/recorder/2026-03-16/XRPUSDT_900.csv": {
+    "symbol": 197,
+    "regime": 197,
+    "tf_sec": 197
+  },
+  "data/recorder/2026-03-17/1000PEPEUSDT_180.csv": {
+    "symbol": 250,
+    "regime": 250,
+    "tf_sec": 250
+  },
+  "data/recorder/2026-03-17/1000PEPEUSDT_300.csv": {
+    "symbol": 150,
+    "regime": 150,
+    "tf_sec": 150
+  },
+  "data/recorder/2026-03-17/1000PEPEUSDT_900.csv": {
+    "symbol": 50,
+    "regime": 50,
+    "tf_sec": 50
+  },
+  "data/recorder/2026-03-17/BNBUSDT_180.csv": {
+    "symbol": 250,
+    "regime": 250,
+    "tf_sec": 250
+  },
+  "data/recorder/2026-03-17/BNBUSDT_300.csv": {
+    "symbol": 150,
+    "regime": 150,
+    "tf_sec": 150
+  },
+  "data/recorder/2026-03-17/BNBUSDT_900.csv": {
+    "symbol": 210,
+    "regime": 210,
+    "tf_sec": 210
+  },
+  "data/recorder/2026-03-17/BTCUSDT_180.csv": {
+    "symbol": 250,
+    "regime": 250,
+    "tf_sec": 250
+  },
+  "data/recorder/2026-03-17/BTCUSDT_300.csv": {
+    "symbol": 752,
+    "regime": 752,
+    "tf_sec": 752
+  },
+  "data/recorder/2026-03-17/BTCUSDT_900.csv": {
+    "symbol": 50,
+    "regime": 50,
+    "tf_sec": 50
+  },
+  "data/recorder/2026-03-17/DOGEUSDT_180.csv": {
+    "symbol": 250,
+    "regime": 250,
+    "tf_sec": 250
+  },
+  "data/recorder/2026-03-17/DOGEUSDT_300.csv": {
+    "symbol": 752,
+    "regime": 752,
+    "tf_sec": 752
+  },
+  "data/recorder/2026-03-17/DOGEUSDT_900.csv": {
+    "symbol": 50,
+    "regime": 50,
+    "tf_sec": 50
+  },
+  "data/recorder/2026-03-17/ETHUSDT_180.csv": {
+    "symbol": 250,
+    "regime": 250,
+    "tf_sec": 250
+  },
+  "data/recorder/2026-03-17/ETHUSDT_300.csv": {
+    "symbol": 752,
+    "regime": 752,
+    "tf_sec": 752
+  },
+  "data/recorder/2026-03-17/ETHUSDT_900.csv": {
+    "symbol": 50,
+    "regime": 50,
+    "tf_sec": 50
+  },
+  "data/recorder/2026-03-17/SOLUSDT_180.csv": {
+    "symbol": 250,
+    "regime": 250,
+    "tf_sec": 250
+  },
+  "data/recorder/2026-03-17/SOLUSDT_300.csv": {
+    "symbol": 752,
+    "regime": 752,
+    "tf_sec": 752
+  },
+  "data/recorder/2026-03-17/SOLUSDT_900.csv": {
+    "symbol": 50,
+    "regime": 50,
+    "tf_sec": 50
+  },
+  "data/recorder/2026-03-17/XRPUSDT_180.csv": {
+    "symbol": 250,
+    "regime": 250,
+    "tf_sec": 250
+  },
+  "data/recorder/2026-03-17/XRPUSDT_300.csv": {
+    "symbol": 150,
+    "regime": 150,
+    "tf_sec": 150
+  },
+  "data/recorder/2026-03-17/XRPUSDT_900.csv": {
+    "symbol": 210,
+    "regime": 210,
+    "tf_sec": 210
+  },
+  "data/recorder/2026-03-18/1000PEPEUSDT_180.csv": {
+    "symbol": 432,
+    "regime": 432,
+    "tf_sec": 432
+  },
+  "data/recorder/2026-03-18/1000PEPEUSDT_300.csv": {
+    "symbol": 259,
+    "regime": 259,
+    "tf_sec": 259
+  },
+  "data/recorder/2026-03-18/1000PEPEUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-03-18/BNBUSDT_180.csv": {
+    "symbol": 432,
+    "regime": 432,
+    "tf_sec": 432
+  },
+  "data/recorder/2026-03-18/BNBUSDT_300.csv": {
+    "symbol": 259,
+    "regime": 259,
+    "tf_sec": 259
+  },
+  "data/recorder/2026-03-18/BNBUSDT_900.csv": {
+    "symbol": 133,
+    "regime": 133,
+    "tf_sec": 133
+  },
+  "data/recorder/2026-03-18/BTCUSDT_180.csv": {
+    "symbol": 432,
+    "regime": 432,
+    "tf_sec": 432
+  },
+  "data/recorder/2026-03-18/BTCUSDT_300.csv": {
+    "symbol": 1162,
+    "regime": 1162,
+    "tf_sec": 1162
+  },
+  "data/recorder/2026-03-18/BTCUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-03-18/DOGEUSDT_180.csv": {
+    "symbol": 432,
+    "regime": 432,
+    "tf_sec": 432
+  },
+  "data/recorder/2026-03-18/DOGEUSDT_300.csv": {
+    "symbol": 1162,
+    "regime": 1162,
+    "tf_sec": 1162
+  },
+  "data/recorder/2026-03-18/DOGEUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-03-18/ETHUSDT_180.csv": {
+    "symbol": 432,
+    "regime": 432,
+    "tf_sec": 432
+  },
+  "data/recorder/2026-03-18/ETHUSDT_300.csv": {
+    "symbol": 1162,
+    "regime": 1162,
+    "tf_sec": 1162
+  },
+  "data/recorder/2026-03-18/ETHUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-03-18/SOLUSDT_180.csv": {
+    "symbol": 432,
+    "regime": 432,
+    "tf_sec": 432
+  },
+  "data/recorder/2026-03-18/SOLUSDT_300.csv": {
+    "symbol": 1162,
+    "regime": 1162,
+    "tf_sec": 1162
+  },
+  "data/recorder/2026-03-18/SOLUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-03-18/XRPUSDT_180.csv": {
+    "symbol": 432,
+    "regime": 432,
+    "tf_sec": 432
+  },
+  "data/recorder/2026-03-18/XRPUSDT_300.csv": {
+    "symbol": 259,
+    "regime": 259,
+    "tf_sec": 259
+  },
+  "data/recorder/2026-03-18/XRPUSDT_900.csv": {
+    "symbol": 134,
+    "regime": 134,
+    "tf_sec": 134
+  },
+  "data/recorder/2026-03-19/1000PEPEUSDT_180.csv": {
+    "symbol": 371,
+    "regime": 371,
+    "tf_sec": 371
+  },
+  "data/recorder/2026-03-19/1000PEPEUSDT_300.csv": {
+    "symbol": 223,
+    "regime": 223,
+    "tf_sec": 223
+  },
+  "data/recorder/2026-03-19/1000PEPEUSDT_900.csv": {
+    "symbol": 75,
+    "regime": 75,
+    "tf_sec": 75
+  },
+  "data/recorder/2026-03-19/BNBUSDT_180.csv": {
+    "symbol": 371,
+    "regime": 371,
+    "tf_sec": 371
+  },
+  "data/recorder/2026-03-19/BNBUSDT_300.csv": {
+    "symbol": 223,
+    "regime": 223,
+    "tf_sec": 223
+  },
+  "data/recorder/2026-03-19/BNBUSDT_900.csv": {
+    "symbol": 18,
+    "regime": 18,
+    "tf_sec": 18
+  },
+  "data/recorder/2026-03-19/BTCUSDT_180.csv": {
+    "symbol": 371,
+    "regime": 371,
+    "tf_sec": 371
+  },
+  "data/recorder/2026-03-19/BTCUSDT_300.csv": {
+    "symbol": 1125,
+    "regime": 1125,
+    "tf_sec": 1125
+  },
+  "data/recorder/2026-03-19/BTCUSDT_900.csv": {
+    "symbol": 75,
+    "regime": 75,
+    "tf_sec": 75
+  },
+  "data/recorder/2026-03-19/DOGEUSDT_180.csv": {
+    "symbol": 371,
+    "regime": 371,
+    "tf_sec": 371
+  },
+  "data/recorder/2026-03-19/DOGEUSDT_300.csv": {
+    "symbol": 1126,
+    "regime": 1126,
+    "tf_sec": 1126
+  },
+  "data/recorder/2026-03-19/DOGEUSDT_900.csv": {
+    "symbol": 75,
+    "regime": 75,
+    "tf_sec": 75
+  },
+  "data/recorder/2026-03-19/ETHUSDT_180.csv": {
+    "symbol": 371,
+    "regime": 371,
+    "tf_sec": 371
+  },
+  "data/recorder/2026-03-19/ETHUSDT_300.csv": {
+    "symbol": 1126,
+    "regime": 1126,
+    "tf_sec": 1126
+  },
+  "data/recorder/2026-03-19/ETHUSDT_900.csv": {
+    "symbol": 75,
+    "regime": 75,
+    "tf_sec": 75
+  },
+  "data/recorder/2026-03-19/SOLUSDT_180.csv": {
+    "symbol": 371,
+    "regime": 371,
+    "tf_sec": 371
+  },
+  "data/recorder/2026-03-19/SOLUSDT_300.csv": {
+    "symbol": 1126,
+    "regime": 1126,
+    "tf_sec": 1126
+  },
+  "data/recorder/2026-03-19/SOLUSDT_900.csv": {
+    "symbol": 75,
+    "regime": 75,
+    "tf_sec": 75
+  },
+  "data/recorder/2026-03-19/XRPUSDT_180.csv": {
+    "symbol": 371,
+    "regime": 371,
+    "tf_sec": 371
+  },
+  "data/recorder/2026-03-19/XRPUSDT_300.csv": {
+    "symbol": 223,
+    "regime": 223,
+    "tf_sec": 223
+  },
+  "data/recorder/2026-03-19/XRPUSDT_900.csv": {
+    "symbol": 8,
+    "regime": 8,
+    "tf_sec": 8
+  },
+  "data/recorder/2026-03-20/1000PEPEUSDT_180.csv": {
+    "symbol": 477,
+    "regime": 477,
+    "tf_sec": 477
+  },
+  "data/recorder/2026-03-20/1000PEPEUSDT_300.csv": {
+    "symbol": 286,
+    "regime": 286,
+    "tf_sec": 286
+  },
+  "data/recorder/2026-03-20/1000PEPEUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-03-20/BNBUSDT_180.csv": {
+    "symbol": 477,
+    "regime": 477,
+    "tf_sec": 477
+  },
+  "data/recorder/2026-03-20/BNBUSDT_300.csv": {
+    "symbol": 286,
+    "regime": 286,
+    "tf_sec": 286
+  },
+  "data/recorder/2026-03-20/BNBUSDT_900.csv": {
+    "symbol": 110,
+    "regime": 110,
+    "tf_sec": 110
+  },
+  "data/recorder/2026-03-20/BTCUSDT_180.csv": {
+    "symbol": 477,
+    "regime": 477,
+    "tf_sec": 477
+  },
+  "data/recorder/2026-03-20/BTCUSDT_300.csv": {
+    "symbol": 302,
+    "regime": 302,
+    "tf_sec": 302
+  },
+  "data/recorder/2026-03-20/BTCUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-03-20/DOGEUSDT_180.csv": {
+    "symbol": 477,
+    "regime": 477,
+    "tf_sec": 477
+  },
+  "data/recorder/2026-03-20/DOGEUSDT_300.csv": {
+    "symbol": 888,
+    "regime": 888,
+    "tf_sec": 888
+  },
+  "data/recorder/2026-03-20/DOGEUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-03-20/ETHUSDT_180.csv": {
+    "symbol": 477,
+    "regime": 477,
+    "tf_sec": 477
+  },
+  "data/recorder/2026-03-20/ETHUSDT_300.csv": {
+    "symbol": 302,
+    "regime": 302,
+    "tf_sec": 302
+  },
+  "data/recorder/2026-03-20/ETHUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-03-20/SOLUSDT_180.csv": {
+    "symbol": 477,
+    "regime": 477,
+    "tf_sec": 477
+  },
+  "data/recorder/2026-03-20/SOLUSDT_300.csv": {
+    "symbol": 302,
+    "regime": 302,
+    "tf_sec": 302
+  },
+  "data/recorder/2026-03-20/SOLUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-03-20/XRPUSDT_180.csv": {
+    "symbol": 477,
+    "regime": 477,
+    "tf_sec": 477
+  },
+  "data/recorder/2026-03-20/XRPUSDT_300.csv": {
+    "symbol": 286,
+    "regime": 286,
+    "tf_sec": 286
+  },
+  "data/recorder/2026-03-20/XRPUSDT_900.csv": {
+    "symbol": 104,
+    "regime": 104,
+    "tf_sec": 104
+  },
+  "data/recorder/2026-03-21/1000PEPEUSDT_180.csv": {
+    "symbol": 466,
+    "regime": 466,
+    "tf_sec": 466
+  },
+  "data/recorder/2026-03-21/1000PEPEUSDT_300.csv": {
+    "symbol": 281,
+    "regime": 281,
+    "tf_sec": 281
+  },
+  "data/recorder/2026-03-21/1000PEPEUSDT_900.csv": {
+    "symbol": 93,
+    "regime": 93,
+    "tf_sec": 93
+  },
+  "data/recorder/2026-03-21/BNBUSDT_180.csv": {
+    "symbol": 466,
+    "regime": 466,
+    "tf_sec": 466
+  },
+  "data/recorder/2026-03-21/BNBUSDT_300.csv": {
+    "symbol": 281,
+    "regime": 281,
+    "tf_sec": 281
+  },
+  "data/recorder/2026-03-21/BNBUSDT_900.csv": {
+    "symbol": 7,
+    "regime": 7,
+    "tf_sec": 7
+  },
+  "data/recorder/2026-03-21/BTCUSDT_180.csv": {
+    "symbol": 466,
+    "regime": 466,
+    "tf_sec": 466
+  },
+  "data/recorder/2026-03-21/BTCUSDT_300.csv": {
+    "symbol": 883,
+    "regime": 883,
+    "tf_sec": 883
+  },
+  "data/recorder/2026-03-21/BTCUSDT_900.csv": {
+    "symbol": 93,
+    "regime": 93,
+    "tf_sec": 93
+  },
+  "data/recorder/2026-03-21/DOGEUSDT_180.csv": {
+    "symbol": 466,
+    "regime": 466,
+    "tf_sec": 466
+  },
+  "data/recorder/2026-03-21/DOGEUSDT_300.csv": {
+    "symbol": 883,
+    "regime": 883,
+    "tf_sec": 883
+  },
+  "data/recorder/2026-03-21/DOGEUSDT_900.csv": {
+    "symbol": 93,
+    "regime": 93,
+    "tf_sec": 93
+  },
+  "data/recorder/2026-03-21/ETHUSDT_180.csv": {
+    "symbol": 466,
+    "regime": 466,
+    "tf_sec": 466
+  },
+  "data/recorder/2026-03-21/ETHUSDT_300.csv": {
+    "symbol": 883,
+    "regime": 883,
+    "tf_sec": 883
+  },
+  "data/recorder/2026-03-21/ETHUSDT_900.csv": {
+    "symbol": 93,
+    "regime": 93,
+    "tf_sec": 93
+  },
+  "data/recorder/2026-03-21/SOLUSDT_180.csv": {
+    "symbol": 466,
+    "regime": 466,
+    "tf_sec": 466
+  },
+  "data/recorder/2026-03-21/SOLUSDT_300.csv": {
+    "symbol": 883,
+    "regime": 883,
+    "tf_sec": 883
+  },
+  "data/recorder/2026-03-21/SOLUSDT_900.csv": {
+    "symbol": 93,
+    "regime": 93,
+    "tf_sec": 93
+  },
+  "data/recorder/2026-03-21/XRPUSDT_180.csv": {
+    "symbol": 466,
+    "regime": 466,
+    "tf_sec": 466
+  },
+  "data/recorder/2026-03-21/XRPUSDT_300.csv": {
+    "symbol": 281,
+    "regime": 281,
+    "tf_sec": 281
+  },
+  "data/recorder/2026-03-21/XRPUSDT_900.csv": {
+    "symbol": 24,
+    "regime": 24,
+    "tf_sec": 24
+  },
+  "data/recorder/2026-03-22/1000PEPEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-22/1000PEPEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-22/1000PEPEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-22/BNBUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-22/BNBUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-22/BNBUSDT_900.csv": {
+    "symbol": 26,
+    "regime": 26,
+    "tf_sec": 26
+  },
+  "data/recorder/2026-03-22/BTCUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-22/BTCUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-22/BTCUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-22/DOGEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-22/DOGEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-22/DOGEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-22/ETHUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-22/ETHUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-22/ETHUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-22/SOLUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-22/SOLUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-22/SOLUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-22/XRPUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-22/XRPUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-22/XRPUSDT_900.csv": {
+    "symbol": 24,
+    "regime": 24,
+    "tf_sec": 24
+  },
+  "data/recorder/2026-03-23/1000PEPEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-23/1000PEPEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-23/1000PEPEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-23/BNBUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-23/BNBUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-23/BNBUSDT_900.csv": {
+    "symbol": 4,
+    "regime": 4,
+    "tf_sec": 4
+  },
+  "data/recorder/2026-03-23/BTCUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-23/BTCUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-23/BTCUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-23/DOGEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-23/DOGEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-23/DOGEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-23/ETHUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-23/ETHUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-23/ETHUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-23/SOLUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-23/SOLUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-23/SOLUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-23/XRPUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-23/XRPUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-23/XRPUSDT_900.csv": {
+    "symbol": 5,
+    "regime": 5,
+    "tf_sec": 5
+  },
+  "data/recorder/2026-03-24/1000PEPEUSDT_180.csv": {
+    "symbol": 428,
+    "regime": 428,
+    "tf_sec": 428
+  },
+  "data/recorder/2026-03-24/1000PEPEUSDT_300.csv": {
+    "symbol": 257,
+    "regime": 257,
+    "tf_sec": 257
+  },
+  "data/recorder/2026-03-24/1000PEPEUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-03-24/BNBUSDT_180.csv": {
+    "symbol": 428,
+    "regime": 428,
+    "tf_sec": 428
+  },
+  "data/recorder/2026-03-24/BNBUSDT_300.csv": {
+    "symbol": 257,
+    "regime": 257,
+    "tf_sec": 257
+  },
+  "data/recorder/2026-03-24/BNBUSDT_900.csv": {
+    "symbol": 4,
+    "regime": 4,
+    "tf_sec": 4
+  },
+  "data/recorder/2026-03-24/BTCUSDT_180.csv": {
+    "symbol": 428,
+    "regime": 428,
+    "tf_sec": 428
+  },
+  "data/recorder/2026-03-24/BTCUSDT_300.csv": {
+    "symbol": 257,
+    "regime": 257,
+    "tf_sec": 257
+  },
+  "data/recorder/2026-03-24/BTCUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-03-24/DOGEUSDT_180.csv": {
+    "symbol": 428,
+    "regime": 428,
+    "tf_sec": 428
+  },
+  "data/recorder/2026-03-24/DOGEUSDT_300.csv": {
+    "symbol": 257,
+    "regime": 257,
+    "tf_sec": 257
+  },
+  "data/recorder/2026-03-24/DOGEUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-03-24/ETHUSDT_180.csv": {
+    "symbol": 428,
+    "regime": 428,
+    "tf_sec": 428
+  },
+  "data/recorder/2026-03-24/ETHUSDT_300.csv": {
+    "symbol": 257,
+    "regime": 257,
+    "tf_sec": 257
+  },
+  "data/recorder/2026-03-24/ETHUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-03-24/SOLUSDT_180.csv": {
+    "symbol": 428,
+    "regime": 428,
+    "tf_sec": 428
+  },
+  "data/recorder/2026-03-24/SOLUSDT_300.csv": {
+    "symbol": 257,
+    "regime": 257,
+    "tf_sec": 257
+  },
+  "data/recorder/2026-03-24/SOLUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-03-24/XRPUSDT_180.csv": {
+    "symbol": 428,
+    "regime": 428,
+    "tf_sec": 428
+  },
+  "data/recorder/2026-03-24/XRPUSDT_300.csv": {
+    "symbol": 257,
+    "regime": 257,
+    "tf_sec": 257
+  },
+  "data/recorder/2026-03-24/XRPUSDT_900.csv": {
+    "symbol": 3,
+    "regime": 3,
+    "tf_sec": 3
+  },
+  "data/recorder/2026-03-25/1000PEPEUSDT_180.csv": {
+    "symbol": 349,
+    "regime": 349,
+    "tf_sec": 349
+  },
+  "data/recorder/2026-03-25/1000PEPEUSDT_300.csv": {
+    "symbol": 209,
+    "regime": 209,
+    "tf_sec": 209
+  },
+  "data/recorder/2026-03-25/1000PEPEUSDT_900.csv": {
+    "symbol": 69,
+    "regime": 69,
+    "tf_sec": 69
+  },
+  "data/recorder/2026-03-25/BNBUSDT_180.csv": {
+    "symbol": 349,
+    "regime": 349,
+    "tf_sec": 349
+  },
+  "data/recorder/2026-03-25/BNBUSDT_300.csv": {
+    "symbol": 209,
+    "regime": 209,
+    "tf_sec": 209
+  },
+  "data/recorder/2026-03-25/BNBUSDT_900.csv": {
+    "symbol": 105,
+    "regime": 105,
+    "tf_sec": 105
+  },
+  "data/recorder/2026-03-25/BTCUSDT_180.csv": {
+    "symbol": 349,
+    "regime": 349,
+    "tf_sec": 349
+  },
+  "data/recorder/2026-03-25/BTCUSDT_300.csv": {
+    "symbol": 302,
+    "regime": 302,
+    "tf_sec": 302
+  },
+  "data/recorder/2026-03-25/BTCUSDT_900.csv": {
+    "symbol": 69,
+    "regime": 69,
+    "tf_sec": 69
+  },
+  "data/recorder/2026-03-25/DOGEUSDT_180.csv": {
+    "symbol": 349,
+    "regime": 349,
+    "tf_sec": 349
+  },
+  "data/recorder/2026-03-25/DOGEUSDT_300.csv": {
+    "symbol": 510,
+    "regime": 510,
+    "tf_sec": 510
+  },
+  "data/recorder/2026-03-25/DOGEUSDT_900.csv": {
+    "symbol": 69,
+    "regime": 69,
+    "tf_sec": 69
+  },
+  "data/recorder/2026-03-25/ETHUSDT_180.csv": {
+    "symbol": 349,
+    "regime": 349,
+    "tf_sec": 349
+  },
+  "data/recorder/2026-03-25/ETHUSDT_300.csv": {
+    "symbol": 302,
+    "regime": 302,
+    "tf_sec": 302
+  },
+  "data/recorder/2026-03-25/ETHUSDT_900.csv": {
+    "symbol": 69,
+    "regime": 69,
+    "tf_sec": 69
+  },
+  "data/recorder/2026-03-25/SOLUSDT_180.csv": {
+    "symbol": 349,
+    "regime": 349,
+    "tf_sec": 349
+  },
+  "data/recorder/2026-03-25/SOLUSDT_300.csv": {
+    "symbol": 302,
+    "regime": 302,
+    "tf_sec": 302
+  },
+  "data/recorder/2026-03-25/SOLUSDT_900.csv": {
+    "symbol": 69,
+    "regime": 69,
+    "tf_sec": 69
+  },
+  "data/recorder/2026-03-25/XRPUSDT_180.csv": {
+    "symbol": 349,
+    "regime": 349,
+    "tf_sec": 349
+  },
+  "data/recorder/2026-03-25/XRPUSDT_300.csv": {
+    "symbol": 209,
+    "regime": 209,
+    "tf_sec": 209
+  },
+  "data/recorder/2026-03-25/XRPUSDT_900.csv": {
+    "symbol": 115,
+    "regime": 115,
+    "tf_sec": 115
+  },
+  "data/recorder/2026-03-26/1000PEPEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-26/1000PEPEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-26/1000PEPEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-26/BNBUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-26/BNBUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-26/BNBUSDT_900.csv": {
+    "symbol": 10,
+    "regime": 10,
+    "tf_sec": 10
+  },
+  "data/recorder/2026-03-26/BTCUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-26/BTCUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-26/BTCUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-26/DOGEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-26/DOGEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-26/DOGEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-26/ETHUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-26/ETHUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-26/ETHUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-26/SOLUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-26/SOLUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-26/SOLUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-26/XRPUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-26/XRPUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-26/XRPUSDT_900.csv": {
+    "symbol": 8,
+    "regime": 8,
+    "tf_sec": 8
+  },
+  "data/recorder/2026-03-27/1000PEPEUSDT_180.csv": {
+    "symbol": 440,
+    "regime": 440,
+    "tf_sec": 440
+  },
+  "data/recorder/2026-03-27/1000PEPEUSDT_300.csv": {
+    "symbol": 263,
+    "regime": 263,
+    "tf_sec": 263
+  },
+  "data/recorder/2026-03-27/1000PEPEUSDT_900.csv": {
+    "symbol": 88,
+    "regime": 88,
+    "tf_sec": 88
+  },
+  "data/recorder/2026-03-27/BNBUSDT_180.csv": {
+    "symbol": 440,
+    "regime": 440,
+    "tf_sec": 440
+  },
+  "data/recorder/2026-03-27/BNBUSDT_300.csv": {
+    "symbol": 263,
+    "regime": 263,
+    "tf_sec": 263
+  },
+  "data/recorder/2026-03-27/BNBUSDT_900.csv": {
+    "symbol": 7,
+    "regime": 7,
+    "tf_sec": 7
+  },
+  "data/recorder/2026-03-27/BTCUSDT_180.csv": {
+    "symbol": 440,
+    "regime": 440,
+    "tf_sec": 440
+  },
+  "data/recorder/2026-03-27/BTCUSDT_300.csv": {
+    "symbol": 564,
+    "regime": 564,
+    "tf_sec": 564
+  },
+  "data/recorder/2026-03-27/BTCUSDT_900.csv": {
+    "symbol": 88,
+    "regime": 88,
+    "tf_sec": 88
+  },
+  "data/recorder/2026-03-27/DOGEUSDT_180.csv": {
+    "symbol": 440,
+    "regime": 440,
+    "tf_sec": 440
+  },
+  "data/recorder/2026-03-27/DOGEUSDT_300.csv": {
+    "symbol": 564,
+    "regime": 564,
+    "tf_sec": 564
+  },
+  "data/recorder/2026-03-27/DOGEUSDT_900.csv": {
+    "symbol": 88,
+    "regime": 88,
+    "tf_sec": 88
+  },
+  "data/recorder/2026-03-27/ETHUSDT_180.csv": {
+    "symbol": 440,
+    "regime": 440,
+    "tf_sec": 440
+  },
+  "data/recorder/2026-03-27/ETHUSDT_300.csv": {
+    "symbol": 565,
+    "regime": 565,
+    "tf_sec": 565
+  },
+  "data/recorder/2026-03-27/ETHUSDT_900.csv": {
+    "symbol": 88,
+    "regime": 88,
+    "tf_sec": 88
+  },
+  "data/recorder/2026-03-27/SOLUSDT_180.csv": {
+    "symbol": 440,
+    "regime": 440,
+    "tf_sec": 440
+  },
+  "data/recorder/2026-03-27/SOLUSDT_300.csv": {
+    "symbol": 565,
+    "regime": 565,
+    "tf_sec": 565
+  },
+  "data/recorder/2026-03-27/SOLUSDT_900.csv": {
+    "symbol": 88,
+    "regime": 88,
+    "tf_sec": 88
+  },
+  "data/recorder/2026-03-27/XRPUSDT_180.csv": {
+    "symbol": 440,
+    "regime": 440,
+    "tf_sec": 440
+  },
+  "data/recorder/2026-03-27/XRPUSDT_300.csv": {
+    "symbol": 263,
+    "regime": 263,
+    "tf_sec": 263
+  },
+  "data/recorder/2026-03-27/XRPUSDT_900.csv": {
+    "symbol": 6,
+    "regime": 6,
+    "tf_sec": 6
+  },
+  "data/recorder/2026-03-28/1000PEPEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-28/1000PEPEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-28/1000PEPEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-28/BNBUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-28/BNBUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-28/BNBUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-28/BTCUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-28/BTCUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-28/BTCUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-28/DOGEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-28/DOGEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-28/DOGEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-28/ETHUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-28/ETHUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-28/ETHUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-28/SOLUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-28/SOLUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-28/SOLUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-28/XRPUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-28/XRPUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-28/XRPUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-29/1000PEPEUSDT_180.csv": {
+    "symbol": 178,
+    "regime": 178,
+    "tf_sec": 178
+  },
+  "data/recorder/2026-03-29/1000PEPEUSDT_300.csv": {
+    "symbol": 107,
+    "regime": 107,
+    "tf_sec": 107
+  },
+  "data/recorder/2026-03-29/1000PEPEUSDT_900.csv": {
+    "symbol": 36,
+    "regime": 36,
+    "tf_sec": 36
+  },
+  "data/recorder/2026-03-29/BNBUSDT_180.csv": {
+    "symbol": 178,
+    "regime": 178,
+    "tf_sec": 178
+  },
+  "data/recorder/2026-03-29/BNBUSDT_300.csv": {
+    "symbol": 107,
+    "regime": 107,
+    "tf_sec": 107
+  },
+  "data/recorder/2026-03-29/BNBUSDT_900.csv": {
+    "symbol": 324,
+    "regime": 324,
+    "tf_sec": 324
+  },
+  "data/recorder/2026-03-29/BTCUSDT_180.csv": {
+    "symbol": 178,
+    "regime": 178,
+    "tf_sec": 178
+  },
+  "data/recorder/2026-03-29/BTCUSDT_300.csv": {
+    "symbol": 2495,
+    "regime": 2495,
+    "tf_sec": 2495
+  },
+  "data/recorder/2026-03-29/BTCUSDT_900.csv": {
+    "symbol": 36,
+    "regime": 36,
+    "tf_sec": 36
+  },
+  "data/recorder/2026-03-29/DOGEUSDT_180.csv": {
+    "symbol": 178,
+    "regime": 178,
+    "tf_sec": 178
+  },
+  "data/recorder/2026-03-29/DOGEUSDT_300.csv": {
+    "symbol": 961,
+    "regime": 961,
+    "tf_sec": 961
+  },
+  "data/recorder/2026-03-29/DOGEUSDT_900.csv": {
+    "symbol": 36,
+    "regime": 36,
+    "tf_sec": 36
+  },
+  "data/recorder/2026-03-29/ETHUSDT_180.csv": {
+    "symbol": 178,
+    "regime": 178,
+    "tf_sec": 178
+  },
+  "data/recorder/2026-03-29/ETHUSDT_300.csv": {
+    "symbol": 2096,
+    "regime": 2096,
+    "tf_sec": 2096
+  },
+  "data/recorder/2026-03-29/ETHUSDT_900.csv": {
+    "symbol": 36,
+    "regime": 36,
+    "tf_sec": 36
+  },
+  "data/recorder/2026-03-29/SOLUSDT_180.csv": {
+    "symbol": 178,
+    "regime": 178,
+    "tf_sec": 178
+  },
+  "data/recorder/2026-03-29/SOLUSDT_300.csv": {
+    "symbol": 1913,
+    "regime": 1913,
+    "tf_sec": 1913
+  },
+  "data/recorder/2026-03-29/SOLUSDT_900.csv": {
+    "symbol": 36,
+    "regime": 36,
+    "tf_sec": 36
+  },
+  "data/recorder/2026-03-29/XRPUSDT_180.csv": {
+    "symbol": 178,
+    "regime": 178,
+    "tf_sec": 178
+  },
+  "data/recorder/2026-03-29/XRPUSDT_300.csv": {
+    "symbol": 107,
+    "regime": 107,
+    "tf_sec": 107
+  },
+  "data/recorder/2026-03-29/XRPUSDT_900.csv": {
+    "symbol": 228,
+    "regime": 228,
+    "tf_sec": 228
+  },
+  "data/recorder/2026-03-30/1000PEPEUSDT_180.csv": {
+    "symbol": 479,
+    "regime": 479,
+    "tf_sec": 479
+  },
+  "data/recorder/2026-03-30/1000PEPEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-30/1000PEPEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-30/BNBUSDT_180.csv": {
+    "symbol": 479,
+    "regime": 479,
+    "tf_sec": 479
+  },
+  "data/recorder/2026-03-30/BNBUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-30/BNBUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-30/BTCUSDT_180.csv": {
+    "symbol": 479,
+    "regime": 479,
+    "tf_sec": 479
+  },
+  "data/recorder/2026-03-30/BTCUSDT_300.csv": {
+    "symbol": 589,
+    "regime": 589,
+    "tf_sec": 589
+  },
+  "data/recorder/2026-03-30/BTCUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-30/DOGEUSDT_180.csv": {
+    "symbol": 479,
+    "regime": 479,
+    "tf_sec": 479
+  },
+  "data/recorder/2026-03-30/DOGEUSDT_300.csv": {
+    "symbol": 589,
+    "regime": 589,
+    "tf_sec": 589
+  },
+  "data/recorder/2026-03-30/DOGEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-30/ETHUSDT_180.csv": {
+    "symbol": 479,
+    "regime": 479,
+    "tf_sec": 479
+  },
+  "data/recorder/2026-03-30/ETHUSDT_300.csv": {
+    "symbol": 589,
+    "regime": 589,
+    "tf_sec": 589
+  },
+  "data/recorder/2026-03-30/ETHUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-30/SOLUSDT_180.csv": {
+    "symbol": 479,
+    "regime": 479,
+    "tf_sec": 479
+  },
+  "data/recorder/2026-03-30/SOLUSDT_300.csv": {
+    "symbol": 589,
+    "regime": 589,
+    "tf_sec": 589
+  },
+  "data/recorder/2026-03-30/SOLUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-30/XRPUSDT_180.csv": {
+    "symbol": 479,
+    "regime": 479,
+    "tf_sec": 479
+  },
+  "data/recorder/2026-03-30/XRPUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-30/XRPUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-31/1000PEPEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-31/1000PEPEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-31/1000PEPEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-31/BNBUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-31/BNBUSDT_300.csv": {
+    "symbol": 214,
+    "regime": 214,
+    "tf_sec": 214
+  },
+  "data/recorder/2026-03-31/BNBUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-31/BTCUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-31/BTCUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-31/BTCUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-31/DOGEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-31/DOGEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-31/DOGEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-31/ETHUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-31/ETHUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-31/ETHUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-31/SOLUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-31/SOLUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-03-31/SOLUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-03-31/XRPUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-03-31/XRPUSDT_300.csv": {
+    "symbol": 214,
+    "regime": 214,
+    "tf_sec": 214
+  },
+  "data/recorder/2026-03-31/XRPUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-01/1000PEPEUSDT_180.csv": {
+    "symbol": 174,
+    "regime": 174,
+    "tf_sec": 174
+  },
+  "data/recorder/2026-04-01/1000PEPEUSDT_300.csv": {
+    "symbol": 104,
+    "regime": 104,
+    "tf_sec": 104
+  },
+  "data/recorder/2026-04-01/1000PEPEUSDT_900.csv": {
+    "symbol": 35,
+    "regime": 35,
+    "tf_sec": 35
+  },
+  "data/recorder/2026-04-01/BNBUSDT_180.csv": {
+    "symbol": 174,
+    "regime": 174,
+    "tf_sec": 174
+  },
+  "data/recorder/2026-04-01/BNBUSDT_300.csv": {
+    "symbol": 104,
+    "regime": 104,
+    "tf_sec": 104
+  },
+  "data/recorder/2026-04-01/BNBUSDT_900.csv": {
+    "symbol": 35,
+    "regime": 35,
+    "tf_sec": 35
+  },
+  "data/recorder/2026-04-01/BTCUSDT_180.csv": {
+    "symbol": 174,
+    "regime": 174,
+    "tf_sec": 174
+  },
+  "data/recorder/2026-04-01/BTCUSDT_300.csv": {
+    "symbol": 405,
+    "regime": 405,
+    "tf_sec": 405
+  },
+  "data/recorder/2026-04-01/BTCUSDT_900.csv": {
+    "symbol": 35,
+    "regime": 35,
+    "tf_sec": 35
+  },
+  "data/recorder/2026-04-01/DOGEUSDT_180.csv": {
+    "symbol": 174,
+    "regime": 174,
+    "tf_sec": 174
+  },
+  "data/recorder/2026-04-01/DOGEUSDT_300.csv": {
+    "symbol": 405,
+    "regime": 405,
+    "tf_sec": 405
+  },
+  "data/recorder/2026-04-01/DOGEUSDT_900.csv": {
+    "symbol": 35,
+    "regime": 35,
+    "tf_sec": 35
+  },
+  "data/recorder/2026-04-01/ETHUSDT_180.csv": {
+    "symbol": 174,
+    "regime": 174,
+    "tf_sec": 174
+  },
+  "data/recorder/2026-04-01/ETHUSDT_300.csv": {
+    "symbol": 405,
+    "regime": 405,
+    "tf_sec": 405
+  },
+  "data/recorder/2026-04-01/ETHUSDT_900.csv": {
+    "symbol": 35,
+    "regime": 35,
+    "tf_sec": 35
+  },
+  "data/recorder/2026-04-01/SOLUSDT_180.csv": {
+    "symbol": 174,
+    "regime": 174,
+    "tf_sec": 174
+  },
+  "data/recorder/2026-04-01/SOLUSDT_300.csv": {
+    "symbol": 405,
+    "regime": 405,
+    "tf_sec": 405
+  },
+  "data/recorder/2026-04-01/SOLUSDT_900.csv": {
+    "symbol": 35,
+    "regime": 35,
+    "tf_sec": 35
+  },
+  "data/recorder/2026-04-01/XRPUSDT_180.csv": {
+    "symbol": 174,
+    "regime": 174,
+    "tf_sec": 174
+  },
+  "data/recorder/2026-04-01/XRPUSDT_300.csv": {
+    "symbol": 104,
+    "regime": 104,
+    "tf_sec": 104
+  },
+  "data/recorder/2026-04-01/XRPUSDT_900.csv": {
+    "symbol": 35,
+    "regime": 35,
+    "tf_sec": 35
+  },
+  "data/recorder/2026-04-02/1000PEPEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-02/1000PEPEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-02/1000PEPEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-02/BNBUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-02/BNBUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-02/BNBUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-02/BTCUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-02/BTCUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-02/BTCUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-02/DOGEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-02/DOGEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-02/DOGEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-02/ETHUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-02/ETHUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-02/ETHUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-02/SOLUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-02/SOLUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-02/SOLUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-02/XRPUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-02/XRPUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-02/XRPUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-03/1000PEPEUSDT_180.csv": {
+    "symbol": 263,
+    "regime": 263,
+    "tf_sec": 262
+  },
+  "data/recorder/2026-04-03/1000PEPEUSDT_300.csv": {
+    "symbol": 158,
+    "regime": 158,
+    "tf_sec": 157
+  },
+  "data/recorder/2026-04-03/1000PEPEUSDT_900.csv": {
+    "symbol": 53,
+    "regime": 53,
+    "tf_sec": 52
+  },
+  "data/recorder/2026-04-03/BNBUSDT_180.csv": {
+    "symbol": 263,
+    "regime": 263,
+    "tf_sec": 262
+  },
+  "data/recorder/2026-04-03/BNBUSDT_300.csv": {
+    "symbol": 157,
+    "regime": 157,
+    "tf_sec": 158
+  },
+  "data/recorder/2026-04-03/BNBUSDT_900.csv": {
+    "symbol": 53,
+    "regime": 53,
+    "tf_sec": 52
+  },
+  "data/recorder/2026-04-03/BTCUSDT_180.csv": {
+    "symbol": 263,
+    "regime": 263,
+    "tf_sec": 262
+  },
+  "data/recorder/2026-04-03/BTCUSDT_300.csv": {
+    "symbol": 459,
+    "regime": 459,
+    "tf_sec": 459
+  },
+  "data/recorder/2026-04-03/BTCUSDT_900.csv": {
+    "symbol": 53,
+    "regime": 53,
+    "tf_sec": 52
+  },
+  "data/recorder/2026-04-03/DOGEUSDT_180.csv": {
+    "symbol": 263,
+    "regime": 263,
+    "tf_sec": 262
+  },
+  "data/recorder/2026-04-03/DOGEUSDT_300.csv": {
+    "symbol": 459,
+    "regime": 459,
+    "tf_sec": 459
+  },
+  "data/recorder/2026-04-03/DOGEUSDT_900.csv": {
+    "symbol": 53,
+    "regime": 53,
+    "tf_sec": 52
+  },
+  "data/recorder/2026-04-03/ETHUSDT_180.csv": {
+    "symbol": 263,
+    "regime": 263,
+    "tf_sec": 262
+  },
+  "data/recorder/2026-04-03/ETHUSDT_300.csv": {
+    "symbol": 459,
+    "regime": 459,
+    "tf_sec": 459
+  },
+  "data/recorder/2026-04-03/ETHUSDT_900.csv": {
+    "symbol": 53,
+    "regime": 53,
+    "tf_sec": 52
+  },
+  "data/recorder/2026-04-03/SOLUSDT_180.csv": {
+    "symbol": 263,
+    "regime": 263,
+    "tf_sec": 262
+  },
+  "data/recorder/2026-04-03/SOLUSDT_300.csv": {
+    "symbol": 459,
+    "regime": 459,
+    "tf_sec": 459
+  },
+  "data/recorder/2026-04-03/SOLUSDT_900.csv": {
+    "symbol": 53,
+    "regime": 53,
+    "tf_sec": 52
+  },
+  "data/recorder/2026-04-03/XRPUSDT_180.csv": {
+    "symbol": 263,
+    "regime": 263,
+    "tf_sec": 262
+  },
+  "data/recorder/2026-04-03/XRPUSDT_300.csv": {
+    "symbol": 157,
+    "regime": 157,
+    "tf_sec": 158
+  },
+  "data/recorder/2026-04-03/XRPUSDT_900.csv": {
+    "symbol": 53,
+    "regime": 53,
+    "tf_sec": 52
+  },
+  "data/recorder/2026-04-04/1000PEPEUSDT_180.csv": {
+    "symbol": 465,
+    "regime": 465,
+    "tf_sec": 465
+  },
+  "data/recorder/2026-04-04/1000PEPEUSDT_300.csv": {
+    "symbol": 279,
+    "regime": 279,
+    "tf_sec": 279
+  },
+  "data/recorder/2026-04-04/1000PEPEUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-04/BNBUSDT_180.csv": {
+    "symbol": 465,
+    "regime": 465,
+    "tf_sec": 465
+  },
+  "data/recorder/2026-04-04/BNBUSDT_300.csv": {
+    "symbol": 279,
+    "regime": 279,
+    "tf_sec": 279
+  },
+  "data/recorder/2026-04-04/BNBUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-04/BTCUSDT_180.csv": {
+    "symbol": 465,
+    "regime": 465,
+    "tf_sec": 465
+  },
+  "data/recorder/2026-04-04/BTCUSDT_300.csv": {
+    "symbol": 301,
+    "regime": 302,
+    "tf_sec": 301
+  },
+  "data/recorder/2026-04-04/BTCUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-04/DOGEUSDT_180.csv": {
+    "symbol": 465,
+    "regime": 465,
+    "tf_sec": 465
+  },
+  "data/recorder/2026-04-04/DOGEUSDT_300.csv": {
+    "symbol": 881,
+    "regime": 881,
+    "tf_sec": 881
+  },
+  "data/recorder/2026-04-04/DOGEUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-04/ETHUSDT_180.csv": {
+    "symbol": 465,
+    "regime": 465,
+    "tf_sec": 465
+  },
+  "data/recorder/2026-04-04/ETHUSDT_300.csv": {
+    "symbol": 302,
+    "regime": 303,
+    "tf_sec": 302
+  },
+  "data/recorder/2026-04-04/ETHUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-04/SOLUSDT_180.csv": {
+    "symbol": 465,
+    "regime": 465,
+    "tf_sec": 465
+  },
+  "data/recorder/2026-04-04/SOLUSDT_300.csv": {
+    "symbol": 301,
+    "regime": 302,
+    "tf_sec": 301
+  },
+  "data/recorder/2026-04-04/SOLUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-04/XRPUSDT_180.csv": {
+    "symbol": 465,
+    "regime": 465,
+    "tf_sec": 465
+  },
+  "data/recorder/2026-04-04/XRPUSDT_300.csv": {
+    "symbol": 279,
+    "regime": 279,
+    "tf_sec": 279
+  },
+  "data/recorder/2026-04-04/XRPUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-05/1000PEPEUSDT_180.csv": {
+    "symbol": 212,
+    "regime": 212,
+    "tf_sec": 212
+  },
+  "data/recorder/2026-04-05/1000PEPEUSDT_300.csv": {
+    "symbol": 128,
+    "regime": 128,
+    "tf_sec": 128
+  },
+  "data/recorder/2026-04-05/1000PEPEUSDT_900.csv": {
+    "symbol": 42,
+    "regime": 42,
+    "tf_sec": 42
+  },
+  "data/recorder/2026-04-05/BNBUSDT_180.csv": {
+    "symbol": 212,
+    "regime": 212,
+    "tf_sec": 212
+  },
+  "data/recorder/2026-04-05/BNBUSDT_300.csv": {
+    "symbol": 128,
+    "regime": 128,
+    "tf_sec": 128
+  },
+  "data/recorder/2026-04-05/BNBUSDT_900.csv": {
+    "symbol": 42,
+    "regime": 42,
+    "tf_sec": 42
+  },
+  "data/recorder/2026-04-05/BTCUSDT_180.csv": {
+    "symbol": 212,
+    "regime": 212,
+    "tf_sec": 212
+  },
+  "data/recorder/2026-04-05/BTCUSDT_300.csv": {
+    "symbol": 730,
+    "regime": 728,
+    "tf_sec": 730
+  },
+  "data/recorder/2026-04-05/BTCUSDT_900.csv": {
+    "symbol": 42,
+    "regime": 42,
+    "tf_sec": 42
+  },
+  "data/recorder/2026-04-05/DOGEUSDT_180.csv": {
+    "symbol": 212,
+    "regime": 212,
+    "tf_sec": 212
+  },
+  "data/recorder/2026-04-05/DOGEUSDT_300.csv": {
+    "symbol": 730,
+    "regime": 730,
+    "tf_sec": 730
+  },
+  "data/recorder/2026-04-05/DOGEUSDT_900.csv": {
+    "symbol": 42,
+    "regime": 42,
+    "tf_sec": 42
+  },
+  "data/recorder/2026-04-05/ETHUSDT_180.csv": {
+    "symbol": 212,
+    "regime": 212,
+    "tf_sec": 212
+  },
+  "data/recorder/2026-04-05/ETHUSDT_300.csv": {
+    "symbol": 730,
+    "regime": 727,
+    "tf_sec": 730
+  },
+  "data/recorder/2026-04-05/ETHUSDT_900.csv": {
+    "symbol": 42,
+    "regime": 42,
+    "tf_sec": 42
+  },
+  "data/recorder/2026-04-05/SOLUSDT_180.csv": {
+    "symbol": 212,
+    "regime": 212,
+    "tf_sec": 212
+  },
+  "data/recorder/2026-04-05/SOLUSDT_300.csv": {
+    "symbol": 730,
+    "regime": 727,
+    "tf_sec": 730
+  },
+  "data/recorder/2026-04-05/SOLUSDT_900.csv": {
+    "symbol": 42,
+    "regime": 42,
+    "tf_sec": 42
+  },
+  "data/recorder/2026-04-05/XRPUSDT_180.csv": {
+    "symbol": 212,
+    "regime": 212,
+    "tf_sec": 212
+  },
+  "data/recorder/2026-04-05/XRPUSDT_300.csv": {
+    "symbol": 128,
+    "regime": 128,
+    "tf_sec": 128
+  },
+  "data/recorder/2026-04-05/XRPUSDT_900.csv": {
+    "symbol": 42,
+    "regime": 42,
+    "tf_sec": 42
+  },
+  "data/recorder/2026-04-06/1000PEPEUSDT_180.csv": {
+    "symbol": 458,
+    "regime": 458,
+    "tf_sec": 458
+  },
+  "data/recorder/2026-04-06/1000PEPEUSDT_300.csv": {
+    "symbol": 275,
+    "regime": 275,
+    "tf_sec": 275
+  },
+  "data/recorder/2026-04-06/1000PEPEUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-06/BNBUSDT_180.csv": {
+    "symbol": 458,
+    "regime": 458,
+    "tf_sec": 458
+  },
+  "data/recorder/2026-04-06/BNBUSDT_300.csv": {
+    "symbol": 275,
+    "regime": 275,
+    "tf_sec": 275
+  },
+  "data/recorder/2026-04-06/BNBUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-06/BTCUSDT_180.csv": {
+    "symbol": 458,
+    "regime": 458,
+    "tf_sec": 458
+  },
+  "data/recorder/2026-04-06/BTCUSDT_300.csv": {
+    "symbol": 877,
+    "regime": 876,
+    "tf_sec": 877
+  },
+  "data/recorder/2026-04-06/BTCUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-06/DOGEUSDT_180.csv": {
+    "symbol": 458,
+    "regime": 458,
+    "tf_sec": 458
+  },
+  "data/recorder/2026-04-06/DOGEUSDT_300.csv": {
+    "symbol": 877,
+    "regime": 877,
+    "tf_sec": 877
+  },
+  "data/recorder/2026-04-06/DOGEUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-06/ETHUSDT_180.csv": {
+    "symbol": 458,
+    "regime": 458,
+    "tf_sec": 458
+  },
+  "data/recorder/2026-04-06/ETHUSDT_300.csv": {
+    "symbol": 877,
+    "regime": 876,
+    "tf_sec": 877
+  },
+  "data/recorder/2026-04-06/ETHUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-06/SOLUSDT_180.csv": {
+    "symbol": 458,
+    "regime": 458,
+    "tf_sec": 458
+  },
+  "data/recorder/2026-04-06/SOLUSDT_300.csv": {
+    "symbol": 877,
+    "regime": 874,
+    "tf_sec": 877
+  },
+  "data/recorder/2026-04-06/SOLUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-06/XRPUSDT_180.csv": {
+    "symbol": 458,
+    "regime": 458,
+    "tf_sec": 458
+  },
+  "data/recorder/2026-04-06/XRPUSDT_300.csv": {
+    "symbol": 275,
+    "regime": 275,
+    "tf_sec": 275
+  },
+  "data/recorder/2026-04-06/XRPUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-07/1000PEPEUSDT_180.csv": {
+    "symbol": 470,
+    "regime": 470,
+    "tf_sec": 470
+  },
+  "data/recorder/2026-04-07/1000PEPEUSDT_300.csv": {
+    "symbol": 282,
+    "regime": 282,
+    "tf_sec": 282
+  },
+  "data/recorder/2026-04-07/1000PEPEUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-04-07/BNBUSDT_180.csv": {
+    "symbol": 470,
+    "regime": 470,
+    "tf_sec": 470
+  },
+  "data/recorder/2026-04-07/BNBUSDT_300.csv": {
+    "symbol": 282,
+    "regime": 282,
+    "tf_sec": 282
+  },
+  "data/recorder/2026-04-07/BNBUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-04-07/BTCUSDT_180.csv": {
+    "symbol": 470,
+    "regime": 470,
+    "tf_sec": 470
+  },
+  "data/recorder/2026-04-07/BTCUSDT_300.csv": {
+    "symbol": 583,
+    "regime": 582,
+    "tf_sec": 583
+  },
+  "data/recorder/2026-04-07/BTCUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-04-07/DOGEUSDT_180.csv": {
+    "symbol": 470,
+    "regime": 470,
+    "tf_sec": 470
+  },
+  "data/recorder/2026-04-07/DOGEUSDT_300.csv": {
+    "symbol": 583,
+    "regime": 583,
+    "tf_sec": 583
+  },
+  "data/recorder/2026-04-07/DOGEUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-04-07/ETHUSDT_180.csv": {
+    "symbol": 470,
+    "regime": 470,
+    "tf_sec": 470
+  },
+  "data/recorder/2026-04-07/ETHUSDT_300.csv": {
+    "symbol": 583,
+    "regime": 582,
+    "tf_sec": 583
+  },
+  "data/recorder/2026-04-07/ETHUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-04-07/SOLUSDT_180.csv": {
+    "symbol": 470,
+    "regime": 470,
+    "tf_sec": 470
+  },
+  "data/recorder/2026-04-07/SOLUSDT_300.csv": {
+    "symbol": 583,
+    "regime": 582,
+    "tf_sec": 583
+  },
+  "data/recorder/2026-04-07/SOLUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-04-07/XRPUSDT_180.csv": {
+    "symbol": 470,
+    "regime": 470,
+    "tf_sec": 470
+  },
+  "data/recorder/2026-04-07/XRPUSDT_300.csv": {
+    "symbol": 282,
+    "regime": 282,
+    "tf_sec": 282
+  },
+  "data/recorder/2026-04-07/XRPUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-04-08/1000PEPEUSDT_180.csv": {
+    "symbol": 365,
+    "regime": 365,
+    "tf_sec": 365
+  },
+  "data/recorder/2026-04-08/1000PEPEUSDT_300.csv": {
+    "symbol": 219,
+    "regime": 219,
+    "tf_sec": 219
+  },
+  "data/recorder/2026-04-08/1000PEPEUSDT_900.csv": {
+    "symbol": 73,
+    "regime": 73,
+    "tf_sec": 73
+  },
+  "data/recorder/2026-04-08/BNBUSDT_180.csv": {
+    "symbol": 365,
+    "regime": 365,
+    "tf_sec": 365
+  },
+  "data/recorder/2026-04-08/BNBUSDT_300.csv": {
+    "symbol": 219,
+    "regime": 219,
+    "tf_sec": 219
+  },
+  "data/recorder/2026-04-08/BNBUSDT_900.csv": {
+    "symbol": 73,
+    "regime": 73,
+    "tf_sec": 73
+  },
+  "data/recorder/2026-04-08/BTCUSDT_180.csv": {
+    "symbol": 365,
+    "regime": 365,
+    "tf_sec": 365
+  },
+  "data/recorder/2026-04-08/BTCUSDT_300.csv": {
+    "symbol": 821,
+    "regime": 819,
+    "tf_sec": 821
+  },
+  "data/recorder/2026-04-08/BTCUSDT_900.csv": {
+    "symbol": 73,
+    "regime": 73,
+    "tf_sec": 73
+  },
+  "data/recorder/2026-04-08/DOGEUSDT_180.csv": {
+    "symbol": 365,
+    "regime": 365,
+    "tf_sec": 365
+  },
+  "data/recorder/2026-04-08/DOGEUSDT_300.csv": {
+    "symbol": 821,
+    "regime": 821,
+    "tf_sec": 821
+  },
+  "data/recorder/2026-04-08/DOGEUSDT_900.csv": {
+    "symbol": 73,
+    "regime": 73,
+    "tf_sec": 73
+  },
+  "data/recorder/2026-04-08/ETHUSDT_180.csv": {
+    "symbol": 365,
+    "regime": 365,
+    "tf_sec": 365
+  },
+  "data/recorder/2026-04-08/ETHUSDT_300.csv": {
+    "symbol": 821,
+    "regime": 819,
+    "tf_sec": 821
+  },
+  "data/recorder/2026-04-08/ETHUSDT_900.csv": {
+    "symbol": 73,
+    "regime": 73,
+    "tf_sec": 73
+  },
+  "data/recorder/2026-04-08/SOLUSDT_180.csv": {
+    "symbol": 365,
+    "regime": 365,
+    "tf_sec": 365
+  },
+  "data/recorder/2026-04-08/SOLUSDT_300.csv": {
+    "symbol": 821,
+    "regime": 819,
+    "tf_sec": 821
+  },
+  "data/recorder/2026-04-08/SOLUSDT_900.csv": {
+    "symbol": 73,
+    "regime": 73,
+    "tf_sec": 73
+  },
+  "data/recorder/2026-04-08/XRPUSDT_180.csv": {
+    "symbol": 365,
+    "regime": 365,
+    "tf_sec": 365
+  },
+  "data/recorder/2026-04-08/XRPUSDT_300.csv": {
+    "symbol": 219,
+    "regime": 219,
+    "tf_sec": 219
+  },
+  "data/recorder/2026-04-08/XRPUSDT_900.csv": {
+    "symbol": 73,
+    "regime": 73,
+    "tf_sec": 73
+  },
+  "data/recorder/2026-04-09/1000PEPEUSDT_180.csv": {
+    "symbol": 456,
+    "regime": 456,
+    "tf_sec": 456
+  },
+  "data/recorder/2026-04-09/1000PEPEUSDT_300.csv": {
+    "symbol": 274,
+    "regime": 274,
+    "tf_sec": 274
+  },
+  "data/recorder/2026-04-09/1000PEPEUSDT_900.csv": {
+    "symbol": 91,
+    "regime": 91,
+    "tf_sec": 91
+  },
+  "data/recorder/2026-04-09/BNBUSDT_180.csv": {
+    "symbol": 456,
+    "regime": 456,
+    "tf_sec": 456
+  },
+  "data/recorder/2026-04-09/BNBUSDT_300.csv": {
+    "symbol": 274,
+    "regime": 274,
+    "tf_sec": 274
+  },
+  "data/recorder/2026-04-09/BNBUSDT_900.csv": {
+    "symbol": 91,
+    "regime": 91,
+    "tf_sec": 91
+  },
+  "data/recorder/2026-04-09/BTCUSDT_180.csv": {
+    "symbol": 456,
+    "regime": 456,
+    "tf_sec": 456
+  },
+  "data/recorder/2026-04-09/BTCUSDT_300.csv": {
+    "symbol": 575,
+    "regime": 573,
+    "tf_sec": 575
+  },
+  "data/recorder/2026-04-09/BTCUSDT_900.csv": {
+    "symbol": 91,
+    "regime": 91,
+    "tf_sec": 91
+  },
+  "data/recorder/2026-04-09/DOGEUSDT_180.csv": {
+    "symbol": 456,
+    "regime": 456,
+    "tf_sec": 456
+  },
+  "data/recorder/2026-04-09/DOGEUSDT_300.csv": {
+    "symbol": 575,
+    "regime": 575,
+    "tf_sec": 575
+  },
+  "data/recorder/2026-04-09/DOGEUSDT_900.csv": {
+    "symbol": 91,
+    "regime": 91,
+    "tf_sec": 91
+  },
+  "data/recorder/2026-04-09/ETHUSDT_180.csv": {
+    "symbol": 456,
+    "regime": 456,
+    "tf_sec": 456
+  },
+  "data/recorder/2026-04-09/ETHUSDT_300.csv": {
+    "symbol": 575,
+    "regime": 573,
+    "tf_sec": 575
+  },
+  "data/recorder/2026-04-09/ETHUSDT_900.csv": {
+    "symbol": 91,
+    "regime": 91,
+    "tf_sec": 91
+  },
+  "data/recorder/2026-04-09/SOLUSDT_180.csv": {
+    "symbol": 456,
+    "regime": 456,
+    "tf_sec": 456
+  },
+  "data/recorder/2026-04-09/SOLUSDT_300.csv": {
+    "symbol": 575,
+    "regime": 573,
+    "tf_sec": 575
+  },
+  "data/recorder/2026-04-09/SOLUSDT_900.csv": {
+    "symbol": 91,
+    "regime": 91,
+    "tf_sec": 91
+  },
+  "data/recorder/2026-04-09/XRPUSDT_180.csv": {
+    "symbol": 456,
+    "regime": 456,
+    "tf_sec": 456
+  },
+  "data/recorder/2026-04-09/XRPUSDT_300.csv": {
+    "symbol": 274,
+    "regime": 274,
+    "tf_sec": 274
+  },
+  "data/recorder/2026-04-09/XRPUSDT_900.csv": {
+    "symbol": 91,
+    "regime": 91,
+    "tf_sec": 91
+  },
+  "data/recorder/2026-04-10/1000PEPEUSDT_180.csv": {
+    "symbol": 397,
+    "regime": 397,
+    "tf_sec": 397
+  },
+  "data/recorder/2026-04-10/1000PEPEUSDT_300.csv": {
+    "symbol": 238,
+    "regime": 238,
+    "tf_sec": 238
+  },
+  "data/recorder/2026-04-10/1000PEPEUSDT_900.csv": {
+    "symbol": 80,
+    "regime": 80,
+    "tf_sec": 80
+  },
+  "data/recorder/2026-04-10/BNBUSDT_180.csv": {
+    "symbol": 397,
+    "regime": 397,
+    "tf_sec": 397
+  },
+  "data/recorder/2026-04-10/BNBUSDT_300.csv": {
+    "symbol": 132,
+    "regime": 133,
+    "tf_sec": 132
+  },
+  "data/recorder/2026-04-10/BNBUSDT_900.csv": {
+    "symbol": 267,
+    "regime": 268,
+    "tf_sec": 268
+  },
+  "data/recorder/2026-04-10/BTCUSDT_180.csv": {
+    "symbol": 397,
+    "regime": 397,
+    "tf_sec": 397
+  },
+  "data/recorder/2026-04-10/BTCUSDT_300.csv": {
+    "symbol": 1140,
+    "regime": 1137,
+    "tf_sec": 1140
+  },
+  "data/recorder/2026-04-10/BTCUSDT_900.csv": {
+    "symbol": 80,
+    "regime": 80,
+    "tf_sec": 80
+  },
+  "data/recorder/2026-04-10/DOGEUSDT_180.csv": {
+    "symbol": 397,
+    "regime": 397,
+    "tf_sec": 397
+  },
+  "data/recorder/2026-04-10/DOGEUSDT_300.csv": {
+    "symbol": 840,
+    "regime": 840,
+    "tf_sec": 840
+  },
+  "data/recorder/2026-04-10/DOGEUSDT_900.csv": {
+    "symbol": 80,
+    "regime": 80,
+    "tf_sec": 80
+  },
+  "data/recorder/2026-04-10/ETHUSDT_180.csv": {
+    "symbol": 397,
+    "regime": 397,
+    "tf_sec": 397
+  },
+  "data/recorder/2026-04-10/ETHUSDT_300.csv": {
+    "symbol": 840,
+    "regime": 837,
+    "tf_sec": 840
+  },
+  "data/recorder/2026-04-10/ETHUSDT_900.csv": {
+    "symbol": 80,
+    "regime": 80,
+    "tf_sec": 80
+  },
+  "data/recorder/2026-04-10/SOLUSDT_180.csv": {
+    "symbol": 397,
+    "regime": 397,
+    "tf_sec": 397
+  },
+  "data/recorder/2026-04-10/SOLUSDT_300.csv": {
+    "symbol": 840,
+    "regime": 837,
+    "tf_sec": 840
+  },
+  "data/recorder/2026-04-10/SOLUSDT_900.csv": {
+    "symbol": 80,
+    "regime": 80,
+    "tf_sec": 80
+  },
+  "data/recorder/2026-04-10/XRPUSDT_180.csv": {
+    "symbol": 397,
+    "regime": 397,
+    "tf_sec": 397
+  },
+  "data/recorder/2026-04-10/XRPUSDT_300.csv": {
+    "symbol": 132,
+    "regime": 133,
+    "tf_sec": 132
+  },
+  "data/recorder/2026-04-10/XRPUSDT_900.csv": {
+    "symbol": 266,
+    "regime": 267,
+    "tf_sec": 267
+  },
+  "data/recorder/2026-04-11/1000PEPEUSDT_180.csv": {
+    "symbol": 386,
+    "regime": 386,
+    "tf_sec": 386
+  },
+  "data/recorder/2026-04-11/1000PEPEUSDT_300.csv": {
+    "symbol": 235,
+    "regime": 235,
+    "tf_sec": 235
+  },
+  "data/recorder/2026-04-11/1000PEPEUSDT_900.csv": {
+    "symbol": 81,
+    "regime": 81,
+    "tf_sec": 81
+  },
+  "data/recorder/2026-04-11/BNBUSDT_180.csv": {
+    "symbol": 386,
+    "regime": 386,
+    "tf_sec": 386
+  },
+  "data/recorder/2026-04-11/BNBUSDT_300.csv": {
+    "symbol": 235,
+    "regime": 235,
+    "tf_sec": 235
+  },
+  "data/recorder/2026-04-11/BNBUSDT_900.csv": {
+    "symbol": 81,
+    "regime": 81,
+    "tf_sec": 81
+  },
+  "data/recorder/2026-04-11/BTCUSDT_180.csv": {
+    "symbol": 386,
+    "regime": 386,
+    "tf_sec": 386
+  },
+  "data/recorder/2026-04-11/BTCUSDT_300.csv": {
+    "symbol": 235,
+    "regime": 235,
+    "tf_sec": 235
+  },
+  "data/recorder/2026-04-11/BTCUSDT_900.csv": {
+    "symbol": 81,
+    "regime": 81,
+    "tf_sec": 81
+  },
+  "data/recorder/2026-04-11/DOGEUSDT_180.csv": {
+    "symbol": 386,
+    "regime": 386,
+    "tf_sec": 386
+  },
+  "data/recorder/2026-04-11/DOGEUSDT_300.csv": {
+    "symbol": 235,
+    "regime": 235,
+    "tf_sec": 235
+  },
+  "data/recorder/2026-04-11/DOGEUSDT_900.csv": {
+    "symbol": 81,
+    "regime": 81,
+    "tf_sec": 81
+  },
+  "data/recorder/2026-04-11/ETHUSDT_180.csv": {
+    "symbol": 386,
+    "regime": 386,
+    "tf_sec": 386
+  },
+  "data/recorder/2026-04-11/ETHUSDT_300.csv": {
+    "symbol": 235,
+    "regime": 235,
+    "tf_sec": 235
+  },
+  "data/recorder/2026-04-11/ETHUSDT_900.csv": {
+    "symbol": 81,
+    "regime": 81,
+    "tf_sec": 81
+  },
+  "data/recorder/2026-04-11/SOLUSDT_180.csv": {
+    "symbol": 386,
+    "regime": 386,
+    "tf_sec": 386
+  },
+  "data/recorder/2026-04-11/SOLUSDT_300.csv": {
+    "symbol": 235,
+    "regime": 232,
+    "tf_sec": 235
+  },
+  "data/recorder/2026-04-11/SOLUSDT_900.csv": {
+    "symbol": 81,
+    "regime": 81,
+    "tf_sec": 81
+  },
+  "data/recorder/2026-04-11/XRPUSDT_180.csv": {
+    "symbol": 386,
+    "regime": 386,
+    "tf_sec": 386
+  },
+  "data/recorder/2026-04-11/XRPUSDT_300.csv": {
+    "symbol": 235,
+    "regime": 235,
+    "tf_sec": 235
+  },
+  "data/recorder/2026-04-11/XRPUSDT_900.csv": {
+    "symbol": 39,
+    "regime": 40,
+    "tf_sec": 40
+  },
+  "data/recorder/2026-04-12/1000PEPEUSDT_180.csv": {
+    "symbol": 464,
+    "regime": 464,
+    "tf_sec": 464
+  },
+  "data/recorder/2026-04-12/1000PEPEUSDT_300.csv": {
+    "symbol": 278,
+    "regime": 278,
+    "tf_sec": 278
+  },
+  "data/recorder/2026-04-12/1000PEPEUSDT_900.csv": {
+    "symbol": 93,
+    "regime": 93,
+    "tf_sec": 93
+  },
+  "data/recorder/2026-04-12/BNBUSDT_180.csv": {
+    "symbol": 464,
+    "regime": 464,
+    "tf_sec": 464
+  },
+  "data/recorder/2026-04-12/BNBUSDT_300.csv": {
+    "symbol": 278,
+    "regime": 278,
+    "tf_sec": 278
+  },
+  "data/recorder/2026-04-12/BNBUSDT_900.csv": {
+    "symbol": 179,
+    "regime": 180,
+    "tf_sec": 180
+  },
+  "data/recorder/2026-04-12/BTCUSDT_180.csv": {
+    "symbol": 464,
+    "regime": 464,
+    "tf_sec": 464
+  },
+  "data/recorder/2026-04-12/BTCUSDT_300.csv": {
+    "symbol": 579,
+    "regime": 578,
+    "tf_sec": 579
+  },
+  "data/recorder/2026-04-12/BTCUSDT_900.csv": {
+    "symbol": 93,
+    "regime": 93,
+    "tf_sec": 93
+  },
+  "data/recorder/2026-04-12/DOGEUSDT_180.csv": {
+    "symbol": 464,
+    "regime": 464,
+    "tf_sec": 464
+  },
+  "data/recorder/2026-04-12/DOGEUSDT_300.csv": {
+    "symbol": 579,
+    "regime": 579,
+    "tf_sec": 579
+  },
+  "data/recorder/2026-04-12/DOGEUSDT_900.csv": {
+    "symbol": 93,
+    "regime": 93,
+    "tf_sec": 93
+  },
+  "data/recorder/2026-04-12/ETHUSDT_180.csv": {
+    "symbol": 464,
+    "regime": 464,
+    "tf_sec": 464
+  },
+  "data/recorder/2026-04-12/ETHUSDT_300.csv": {
+    "symbol": 579,
+    "regime": 577,
+    "tf_sec": 579
+  },
+  "data/recorder/2026-04-12/ETHUSDT_900.csv": {
+    "symbol": 93,
+    "regime": 93,
+    "tf_sec": 93
+  },
+  "data/recorder/2026-04-12/SOLUSDT_180.csv": {
+    "symbol": 464,
+    "regime": 464,
+    "tf_sec": 464
+  },
+  "data/recorder/2026-04-12/SOLUSDT_300.csv": {
+    "symbol": 579,
+    "regime": 577,
+    "tf_sec": 579
+  },
+  "data/recorder/2026-04-12/SOLUSDT_900.csv": {
+    "symbol": 93,
+    "regime": 93,
+    "tf_sec": 93
+  },
+  "data/recorder/2026-04-12/XRPUSDT_180.csv": {
+    "symbol": 464,
+    "regime": 464,
+    "tf_sec": 464
+  },
+  "data/recorder/2026-04-12/XRPUSDT_300.csv": {
+    "symbol": 278,
+    "regime": 278,
+    "tf_sec": 278
+  },
+  "data/recorder/2026-04-12/XRPUSDT_900.csv": {
+    "symbol": 177,
+    "regime": 178,
+    "tf_sec": 178
+  },
+  "data/recorder/2026-04-13/1000PEPEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-13/1000PEPEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-13/1000PEPEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-13/BNBUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-13/BNBUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-13/BNBUSDT_900.csv": {
+    "symbol": 3,
+    "regime": 4,
+    "tf_sec": 4
+  },
+  "data/recorder/2026-04-13/BTCUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-13/BTCUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-13/BTCUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-13/DOGEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-13/DOGEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-13/DOGEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-13/ETHUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-13/ETHUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-13/ETHUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-13/SOLUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-13/SOLUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-13/SOLUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-13/XRPUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-13/XRPUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-13/XRPUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-14/1000PEPEUSDT_180.csv": {
+    "symbol": 265,
+    "regime": 265,
+    "tf_sec": 265
+  },
+  "data/recorder/2026-04-14/1000PEPEUSDT_300.csv": {
+    "symbol": 159,
+    "regime": 159,
+    "tf_sec": 159
+  },
+  "data/recorder/2026-04-14/1000PEPEUSDT_900.csv": {
+    "symbol": 53,
+    "regime": 53,
+    "tf_sec": 53
+  },
+  "data/recorder/2026-04-14/BNBUSDT_180.csv": {
+    "symbol": 264,
+    "regime": 264,
+    "tf_sec": 264
+  },
+  "data/recorder/2026-04-14/BNBUSDT_300.csv": {
+    "symbol": 385,
+    "regime": 386,
+    "tf_sec": 385
+  },
+  "data/recorder/2026-04-14/BNBUSDT_900.csv": {
+    "symbol": 141,
+    "regime": 142,
+    "tf_sec": 142
+  },
+  "data/recorder/2026-04-14/BTCUSDT_180.csv": {
+    "symbol": 265,
+    "regime": 265,
+    "tf_sec": 265
+  },
+  "data/recorder/2026-04-14/BTCUSDT_300.csv": {
+    "symbol": 460,
+    "regime": 458,
+    "tf_sec": 460
+  },
+  "data/recorder/2026-04-14/BTCUSDT_900.csv": {
+    "symbol": 53,
+    "regime": 53,
+    "tf_sec": 53
+  },
+  "data/recorder/2026-04-14/DOGEUSDT_180.csv": {
+    "symbol": 265,
+    "regime": 265,
+    "tf_sec": 265
+  },
+  "data/recorder/2026-04-14/DOGEUSDT_300.csv": {
+    "symbol": 387,
+    "regime": 387,
+    "tf_sec": 387
+  },
+  "data/recorder/2026-04-14/DOGEUSDT_900.csv": {
+    "symbol": 53,
+    "regime": 53,
+    "tf_sec": 53
+  },
+  "data/recorder/2026-04-14/ETHUSDT_180.csv": {
+    "symbol": 265,
+    "regime": 265,
+    "tf_sec": 265
+  },
+  "data/recorder/2026-04-14/ETHUSDT_300.csv": {
+    "symbol": 460,
+    "regime": 458,
+    "tf_sec": 460
+  },
+  "data/recorder/2026-04-14/ETHUSDT_900.csv": {
+    "symbol": 53,
+    "regime": 53,
+    "tf_sec": 53
+  },
+  "data/recorder/2026-04-14/SOLUSDT_180.csv": {
+    "symbol": 265,
+    "regime": 265,
+    "tf_sec": 265
+  },
+  "data/recorder/2026-04-14/SOLUSDT_300.csv": {
+    "symbol": 460,
+    "regime": 458,
+    "tf_sec": 460
+  },
+  "data/recorder/2026-04-14/SOLUSDT_900.csv": {
+    "symbol": 53,
+    "regime": 53,
+    "tf_sec": 53
+  },
+  "data/recorder/2026-04-14/XRPUSDT_180.csv": {
+    "symbol": 265,
+    "regime": 265,
+    "tf_sec": 265
+  },
+  "data/recorder/2026-04-14/XRPUSDT_300.csv": {
+    "symbol": 387,
+    "regime": 387,
+    "tf_sec": 387
+  },
+  "data/recorder/2026-04-14/XRPUSDT_900.csv": {
+    "symbol": 132,
+    "regime": 133,
+    "tf_sec": 133
+  },
+  "data/recorder/2026-04-15/1000PEPEUSDT_180.csv": {
+    "symbol": 463,
+    "regime": 463,
+    "tf_sec": 463
+  },
+  "data/recorder/2026-04-15/1000PEPEUSDT_300.csv": {
+    "symbol": 278,
+    "regime": 278,
+    "tf_sec": 278
+  },
+  "data/recorder/2026-04-15/1000PEPEUSDT_900.csv": {
+    "symbol": 93,
+    "regime": 93,
+    "tf_sec": 93
+  },
+  "data/recorder/2026-04-15/BNBUSDT_180.csv": {
+    "symbol": 463,
+    "regime": 463,
+    "tf_sec": 463
+  },
+  "data/recorder/2026-04-15/BNBUSDT_300.csv": {
+    "symbol": 579,
+    "regime": 577,
+    "tf_sec": 579
+  },
+  "data/recorder/2026-04-15/BNBUSDT_900.csv": {
+    "symbol": 2,
+    "regime": 3,
+    "tf_sec": 3
+  },
+  "data/recorder/2026-04-15/BTCUSDT_180.csv": {
+    "symbol": 463,
+    "regime": 463,
+    "tf_sec": 463
+  },
+  "data/recorder/2026-04-15/BTCUSDT_300.csv": {
+    "symbol": 579,
+    "regime": 577,
+    "tf_sec": 579
+  },
+  "data/recorder/2026-04-15/BTCUSDT_900.csv": {
+    "symbol": 93,
+    "regime": 93,
+    "tf_sec": 93
+  },
+  "data/recorder/2026-04-15/DOGEUSDT_180.csv": {
+    "symbol": 463,
+    "regime": 463,
+    "tf_sec": 463
+  },
+  "data/recorder/2026-04-15/DOGEUSDT_300.csv": {
+    "symbol": 579,
+    "regime": 577,
+    "tf_sec": 579
+  },
+  "data/recorder/2026-04-15/DOGEUSDT_900.csv": {
+    "symbol": 93,
+    "regime": 93,
+    "tf_sec": 93
+  },
+  "data/recorder/2026-04-15/ETHUSDT_180.csv": {
+    "symbol": 463,
+    "regime": 463,
+    "tf_sec": 463
+  },
+  "data/recorder/2026-04-15/ETHUSDT_300.csv": {
+    "symbol": 579,
+    "regime": 577,
+    "tf_sec": 579
+  },
+  "data/recorder/2026-04-15/ETHUSDT_900.csv": {
+    "symbol": 93,
+    "regime": 93,
+    "tf_sec": 93
+  },
+  "data/recorder/2026-04-15/SOLUSDT_180.csv": {
+    "symbol": 463,
+    "regime": 463,
+    "tf_sec": 463
+  },
+  "data/recorder/2026-04-15/SOLUSDT_300.csv": {
+    "symbol": 579,
+    "regime": 577,
+    "tf_sec": 579
+  },
+  "data/recorder/2026-04-15/SOLUSDT_900.csv": {
+    "symbol": 93,
+    "regime": 93,
+    "tf_sec": 93
+  },
+  "data/recorder/2026-04-15/XRPUSDT_180.csv": {
+    "symbol": 463,
+    "regime": 463,
+    "tf_sec": 463
+  },
+  "data/recorder/2026-04-15/XRPUSDT_300.csv": {
+    "symbol": 579,
+    "regime": 577,
+    "tf_sec": 579
+  },
+  "data/recorder/2026-04-15/XRPUSDT_900.csv": {
+    "symbol": 11,
+    "regime": 12,
+    "tf_sec": 12
+  },
+  "data/recorder/2026-04-16/1000PEPEUSDT_180.csv": {
+    "symbol": 376,
+    "regime": 376,
+    "tf_sec": 376
+  },
+  "data/recorder/2026-04-16/1000PEPEUSDT_300.csv": {
+    "symbol": 225,
+    "regime": 225,
+    "tf_sec": 225
+  },
+  "data/recorder/2026-04-16/1000PEPEUSDT_900.csv": {
+    "symbol": 74,
+    "regime": 74,
+    "tf_sec": 74
+  },
+  "data/recorder/2026-04-16/BNBUSDT_180.csv": {
+    "symbol": 376,
+    "regime": 376,
+    "tf_sec": 376
+  },
+  "data/recorder/2026-04-16/BNBUSDT_300.csv": {
+    "symbol": 1068,
+    "regime": 1064,
+    "tf_sec": 1068
+  },
+  "data/recorder/2026-04-16/BNBUSDT_900.csv": {
+    "symbol": 74,
+    "regime": 74,
+    "tf_sec": 74
+  },
+  "data/recorder/2026-04-16/BTCUSDT_180.csv": {
+    "symbol": 376,
+    "regime": 376,
+    "tf_sec": 376
+  },
+  "data/recorder/2026-04-16/BTCUSDT_300.csv": {
+    "symbol": 1068,
+    "regime": 1062,
+    "tf_sec": 1068
+  },
+  "data/recorder/2026-04-16/BTCUSDT_900.csv": {
+    "symbol": 74,
+    "regime": 74,
+    "tf_sec": 74
+  },
+  "data/recorder/2026-04-16/DOGEUSDT_180.csv": {
+    "symbol": 376,
+    "regime": 376,
+    "tf_sec": 376
+  },
+  "data/recorder/2026-04-16/DOGEUSDT_300.csv": {
+    "symbol": 1068,
+    "regime": 1061,
+    "tf_sec": 1068
+  },
+  "data/recorder/2026-04-16/DOGEUSDT_900.csv": {
+    "symbol": 74,
+    "regime": 74,
+    "tf_sec": 74
+  },
+  "data/recorder/2026-04-16/ETHUSDT_180.csv": {
+    "symbol": 376,
+    "regime": 376,
+    "tf_sec": 376
+  },
+  "data/recorder/2026-04-16/ETHUSDT_300.csv": {
+    "symbol": 1068,
+    "regime": 1062,
+    "tf_sec": 1068
+  },
+  "data/recorder/2026-04-16/ETHUSDT_900.csv": {
+    "symbol": 74,
+    "regime": 74,
+    "tf_sec": 74
+  },
+  "data/recorder/2026-04-16/SOLUSDT_180.csv": {
+    "symbol": 376,
+    "regime": 376,
+    "tf_sec": 376
+  },
+  "data/recorder/2026-04-16/SOLUSDT_300.csv": {
+    "symbol": 1068,
+    "regime": 1062,
+    "tf_sec": 1068
+  },
+  "data/recorder/2026-04-16/SOLUSDT_900.csv": {
+    "symbol": 74,
+    "regime": 74,
+    "tf_sec": 74
+  },
+  "data/recorder/2026-04-16/XRPUSDT_180.csv": {
+    "symbol": 376,
+    "regime": 376,
+    "tf_sec": 376
+  },
+  "data/recorder/2026-04-16/XRPUSDT_300.csv": {
+    "symbol": 1066,
+    "regime": 1062,
+    "tf_sec": 1066
+  },
+  "data/recorder/2026-04-16/XRPUSDT_900.csv": {
+    "symbol": 362,
+    "regime": 362,
+    "tf_sec": 362
+  },
+  "data/recorder/2026-04-17/1000PEPEUSDT_180.csv": {
+    "symbol": 475,
+    "regime": 475,
+    "tf_sec": 475
+  },
+  "data/recorder/2026-04-17/1000PEPEUSDT_300.csv": {
+    "symbol": 285,
+    "regime": 285,
+    "tf_sec": 285
+  },
+  "data/recorder/2026-04-17/1000PEPEUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-04-17/BNBUSDT_180.csv": {
+    "symbol": 475,
+    "regime": 475,
+    "tf_sec": 475
+  },
+  "data/recorder/2026-04-17/BNBUSDT_300.csv": {
+    "symbol": 70,
+    "regime": 1188,
+    "tf_sec": 70
+  },
+  "data/recorder/2026-04-17/BNBUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-04-17/BTCUSDT_180.csv": {
+    "symbol": 475,
+    "regime": 475,
+    "tf_sec": 475
+  },
+  "data/recorder/2026-04-17/BTCUSDT_300.csv": {
+    "symbol": 70,
+    "regime": 1188,
+    "tf_sec": 70
+  },
+  "data/recorder/2026-04-17/BTCUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-04-17/DOGEUSDT_180.csv": {
+    "symbol": 475,
+    "regime": 475,
+    "tf_sec": 475
+  },
+  "data/recorder/2026-04-17/DOGEUSDT_300.csv": {
+    "symbol": 70,
+    "regime": 1188,
+    "tf_sec": 70
+  },
+  "data/recorder/2026-04-17/DOGEUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-04-17/ETHUSDT_180.csv": {
+    "symbol": 475,
+    "regime": 475,
+    "tf_sec": 475
+  },
+  "data/recorder/2026-04-17/ETHUSDT_300.csv": {
+    "symbol": 70,
+    "regime": 1188,
+    "tf_sec": 70
+  },
+  "data/recorder/2026-04-17/ETHUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-04-17/SOLUSDT_180.csv": {
+    "symbol": 475,
+    "regime": 475,
+    "tf_sec": 475
+  },
+  "data/recorder/2026-04-17/SOLUSDT_300.csv": {
+    "symbol": 70,
+    "regime": 1187,
+    "tf_sec": 70
+  },
+  "data/recorder/2026-04-17/SOLUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-04-17/XRPUSDT_180.csv": {
+    "symbol": 475,
+    "regime": 475,
+    "tf_sec": 475
+  },
+  "data/recorder/2026-04-17/XRPUSDT_300.csv": {
+    "symbol": 70,
+    "regime": 1188,
+    "tf_sec": 70
+  },
+  "data/recorder/2026-04-17/XRPUSDT_900.csv": {
+    "symbol": 383,
+    "regime": 383,
+    "tf_sec": 383
+  },
+  "data/recorder/2026-04-18/1000PEPEUSDT_180.csv": {
+    "symbol": 421,
+    "regime": 421,
+    "tf_sec": 421
+  },
+  "data/recorder/2026-04-18/1000PEPEUSDT_300.csv": {
+    "symbol": 252,
+    "regime": 252,
+    "tf_sec": 252
+  },
+  "data/recorder/2026-04-18/1000PEPEUSDT_900.csv": {
+    "symbol": 84,
+    "regime": 84,
+    "tf_sec": 84
+  },
+  "data/recorder/2026-04-18/BNBUSDT_180.csv": {
+    "symbol": 421,
+    "regime": 421,
+    "tf_sec": 421
+  },
+  "data/recorder/2026-04-18/BNBUSDT_300.csv": {
+    "symbol": 853,
+    "regime": 853,
+    "tf_sec": 853
+  },
+  "data/recorder/2026-04-18/BNBUSDT_900.csv": {
+    "symbol": 84,
+    "regime": 84,
+    "tf_sec": 84
+  },
+  "data/recorder/2026-04-18/BTCUSDT_180.csv": {
+    "symbol": 421,
+    "regime": 421,
+    "tf_sec": 421
+  },
+  "data/recorder/2026-04-18/BTCUSDT_300.csv": {
+    "symbol": 853,
+    "regime": 853,
+    "tf_sec": 853
+  },
+  "data/recorder/2026-04-18/BTCUSDT_900.csv": {
+    "symbol": 84,
+    "regime": 84,
+    "tf_sec": 84
+  },
+  "data/recorder/2026-04-18/DOGEUSDT_180.csv": {
+    "symbol": 421,
+    "regime": 421,
+    "tf_sec": 421
+  },
+  "data/recorder/2026-04-18/DOGEUSDT_300.csv": {
+    "symbol": 853,
+    "regime": 853,
+    "tf_sec": 853
+  },
+  "data/recorder/2026-04-18/DOGEUSDT_900.csv": {
+    "symbol": 84,
+    "regime": 84,
+    "tf_sec": 84
+  },
+  "data/recorder/2026-04-18/ETHUSDT_180.csv": {
+    "symbol": 421,
+    "regime": 421,
+    "tf_sec": 421
+  },
+  "data/recorder/2026-04-18/ETHUSDT_300.csv": {
+    "symbol": 853,
+    "regime": 853,
+    "tf_sec": 853
+  },
+  "data/recorder/2026-04-18/ETHUSDT_900.csv": {
+    "symbol": 84,
+    "regime": 84,
+    "tf_sec": 84
+  },
+  "data/recorder/2026-04-18/SOLUSDT_180.csv": {
+    "symbol": 421,
+    "regime": 421,
+    "tf_sec": 421
+  },
+  "data/recorder/2026-04-18/SOLUSDT_300.csv": {
+    "symbol": 854,
+    "regime": 854,
+    "tf_sec": 854
+  },
+  "data/recorder/2026-04-18/SOLUSDT_900.csv": {
+    "symbol": 84,
+    "regime": 84,
+    "tf_sec": 84
+  },
+  "data/recorder/2026-04-18/XRPUSDT_180.csv": {
+    "symbol": 421,
+    "regime": 421,
+    "tf_sec": 421
+  },
+  "data/recorder/2026-04-18/XRPUSDT_300.csv": {
+    "symbol": 854,
+    "regime": 854,
+    "tf_sec": 854
+  },
+  "data/recorder/2026-04-18/XRPUSDT_900.csv": {
+    "symbol": 276,
+    "regime": 276,
+    "tf_sec": 276
+  },
+  "data/recorder/2026-04-19/1000PEPEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-19/1000PEPEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-19/1000PEPEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-19/BNBUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-19/BNBUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-19/BNBUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-19/BTCUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-19/BTCUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-19/BTCUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-19/DOGEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-19/DOGEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-19/DOGEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-19/ETHUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-19/ETHUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-19/ETHUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-19/SOLUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-19/SOLUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-19/SOLUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-19/XRPUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-19/XRPUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-19/XRPUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-20/1000PEPEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-20/1000PEPEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-20/1000PEPEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-20/BNBUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-20/BNBUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-20/BNBUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-20/BTCUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-20/BTCUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-20/BTCUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-20/DOGEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-20/DOGEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-20/DOGEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-20/ETHUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-20/ETHUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-20/ETHUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-20/SOLUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-20/SOLUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-20/SOLUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-20/XRPUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-20/XRPUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-04-20/XRPUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-04-21/1000PEPEUSDT_180.csv": {
+    "symbol": 429,
+    "regime": 429,
+    "tf_sec": 429
+  },
+  "data/recorder/2026-04-21/1000PEPEUSDT_300.csv": {
+    "symbol": 258,
+    "regime": 258,
+    "tf_sec": 258
+  },
+  "data/recorder/2026-04-21/1000PEPEUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-04-21/BNBUSDT_180.csv": {
+    "symbol": 427,
+    "regime": 427,
+    "tf_sec": 427
+  },
+  "data/recorder/2026-04-21/BNBUSDT_300.csv": {
+    "symbol": 559,
+    "regime": 559,
+    "tf_sec": 559
+  },
+  "data/recorder/2026-04-21/BNBUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-04-21/BTCUSDT_180.csv": {
+    "symbol": 429,
+    "regime": 429,
+    "tf_sec": 429
+  },
+  "data/recorder/2026-04-21/BTCUSDT_300.csv": {
+    "symbol": 559,
+    "regime": 559,
+    "tf_sec": 559
+  },
+  "data/recorder/2026-04-21/BTCUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-04-21/DOGEUSDT_180.csv": {
+    "symbol": 429,
+    "regime": 429,
+    "tf_sec": 429
+  },
+  "data/recorder/2026-04-21/DOGEUSDT_300.csv": {
+    "symbol": 559,
+    "regime": 559,
+    "tf_sec": 559
+  },
+  "data/recorder/2026-04-21/DOGEUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-04-21/ETHUSDT_180.csv": {
+    "symbol": 428,
+    "regime": 428,
+    "tf_sec": 428
+  },
+  "data/recorder/2026-04-21/ETHUSDT_300.csv": {
+    "symbol": 559,
+    "regime": 559,
+    "tf_sec": 559
+  },
+  "data/recorder/2026-04-21/ETHUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-04-21/SOLUSDT_180.csv": {
+    "symbol": 428,
+    "regime": 428,
+    "tf_sec": 428
+  },
+  "data/recorder/2026-04-21/SOLUSDT_300.csv": {
+    "symbol": 559,
+    "regime": 559,
+    "tf_sec": 559
+  },
+  "data/recorder/2026-04-21/SOLUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-04-21/XRPUSDT_180.csv": {
+    "symbol": 427,
+    "regime": 427,
+    "tf_sec": 427
+  },
+  "data/recorder/2026-04-21/XRPUSDT_300.csv": {
+    "symbol": 559,
+    "regime": 559,
+    "tf_sec": 559
+  },
+  "data/recorder/2026-04-21/XRPUSDT_900.csv": {
+    "symbol": 182,
+    "regime": 182,
+    "tf_sec": 182
+  },
+  "data/recorder/2026-04-22/1000PEPEUSDT_180.csv": {
+    "symbol": 460,
+    "regime": 460,
+    "tf_sec": 460
+  },
+  "data/recorder/2026-04-22/1000PEPEUSDT_300.csv": {
+    "symbol": 276,
+    "regime": 276,
+    "tf_sec": 276
+  },
+  "data/recorder/2026-04-22/1000PEPEUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-22/BNBUSDT_180.csv": {
+    "symbol": 460,
+    "regime": 460,
+    "tf_sec": 460
+  },
+  "data/recorder/2026-04-22/BNBUSDT_300.csv": {
+    "symbol": 577,
+    "regime": 577,
+    "tf_sec": 577
+  },
+  "data/recorder/2026-04-22/BNBUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-22/BTCUSDT_180.csv": {
+    "symbol": 460,
+    "regime": 460,
+    "tf_sec": 460
+  },
+  "data/recorder/2026-04-22/BTCUSDT_300.csv": {
+    "symbol": 577,
+    "regime": 577,
+    "tf_sec": 577
+  },
+  "data/recorder/2026-04-22/BTCUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-22/DOGEUSDT_180.csv": {
+    "symbol": 460,
+    "regime": 460,
+    "tf_sec": 460
+  },
+  "data/recorder/2026-04-22/DOGEUSDT_300.csv": {
+    "symbol": 276,
+    "regime": 276,
+    "tf_sec": 276
+  },
+  "data/recorder/2026-04-22/DOGEUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-22/ETHUSDT_180.csv": {
+    "symbol": 460,
+    "regime": 460,
+    "tf_sec": 460
+  },
+  "data/recorder/2026-04-22/ETHUSDT_300.csv": {
+    "symbol": 276,
+    "regime": 276,
+    "tf_sec": 276
+  },
+  "data/recorder/2026-04-22/ETHUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-22/SOLUSDT_180.csv": {
+    "symbol": 460,
+    "regime": 460,
+    "tf_sec": 460
+  },
+  "data/recorder/2026-04-22/SOLUSDT_300.csv": {
+    "symbol": 577,
+    "regime": 577,
+    "tf_sec": 577
+  },
+  "data/recorder/2026-04-22/SOLUSDT_900.csv": {
+    "symbol": 92,
+    "regime": 92,
+    "tf_sec": 92
+  },
+  "data/recorder/2026-04-22/XRPUSDT_180.csv": {
+    "symbol": 460,
+    "regime": 460,
+    "tf_sec": 460
+  },
+  "data/recorder/2026-04-22/XRPUSDT_300.csv": {
+    "symbol": 577,
+    "regime": 577,
+    "tf_sec": 577
+  },
+  "data/recorder/2026-04-22/XRPUSDT_900.csv": {
+    "symbol": 188,
+    "regime": 188,
+    "tf_sec": 188
+  },
+  "data/recorder/2026-04-23/1000PEPEUSDT_180.csv": {
+    "symbol": 472,
+    "regime": 472,
+    "tf_sec": 472
+  },
+  "data/recorder/2026-04-23/1000PEPEUSDT_300.csv": {
+    "symbol": 283,
+    "regime": 283,
+    "tf_sec": 283
+  },
+  "data/recorder/2026-04-23/1000PEPEUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-04-23/BNBUSDT_180.csv": {
+    "symbol": 421,
+    "regime": 421,
+    "tf_sec": 421
+  },
+  "data/recorder/2026-04-23/BNBUSDT_300.csv": {
+    "symbol": 554,
+    "regime": 554,
+    "tf_sec": 554
+  },
+  "data/recorder/2026-04-23/BNBUSDT_900.csv": {
+    "symbol": 85,
+    "regime": 85,
+    "tf_sec": 85
+  },
+  "data/recorder/2026-04-23/BTCUSDT_180.csv": {
+    "symbol": 421,
+    "regime": 421,
+    "tf_sec": 421
+  },
+  "data/recorder/2026-04-23/BTCUSDT_300.csv": {
+    "symbol": 554,
+    "regime": 554,
+    "tf_sec": 554
+  },
+  "data/recorder/2026-04-23/BTCUSDT_900.csv": {
+    "symbol": 85,
+    "regime": 85,
+    "tf_sec": 85
+  },
+  "data/recorder/2026-04-23/DOGEUSDT_180.csv": {
+    "symbol": 472,
+    "regime": 472,
+    "tf_sec": 472
+  },
+  "data/recorder/2026-04-23/DOGEUSDT_300.csv": {
+    "symbol": 283,
+    "regime": 283,
+    "tf_sec": 283
+  },
+  "data/recorder/2026-04-23/DOGEUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-04-23/ETHUSDT_180.csv": {
+    "symbol": 421,
+    "regime": 421,
+    "tf_sec": 421
+  },
+  "data/recorder/2026-04-23/ETHUSDT_300.csv": {
+    "symbol": 554,
+    "regime": 554,
+    "tf_sec": 554
+  },
+  "data/recorder/2026-04-23/ETHUSDT_900.csv": {
+    "symbol": 85,
+    "regime": 85,
+    "tf_sec": 85
+  },
+  "data/recorder/2026-04-23/SOLUSDT_180.csv": {
+    "symbol": 421,
+    "regime": 421,
+    "tf_sec": 421
+  },
+  "data/recorder/2026-04-23/SOLUSDT_300.csv": {
+    "symbol": 554,
+    "regime": 554,
+    "tf_sec": 554
+  },
+  "data/recorder/2026-04-23/SOLUSDT_900.csv": {
+    "symbol": 85,
+    "regime": 85,
+    "tf_sec": 85
+  },
+  "data/recorder/2026-04-23/XRPUSDT_180.csv": {
+    "symbol": 421,
+    "regime": 421,
+    "tf_sec": 421
+  },
+  "data/recorder/2026-04-23/XRPUSDT_300.csv": {
+    "symbol": 554,
+    "regime": 554,
+    "tf_sec": 554
+  },
+  "data/recorder/2026-04-23/XRPUSDT_900.csv": {
+    "symbol": 181,
+    "regime": 181,
+    "tf_sec": 181
+  },
+  "data/recorder/2026-04-24/1000PEPEUSDT_180.csv": {
+    "symbol": 247,
+    "regime": 247,
+    "tf_sec": 247
+  },
+  "data/recorder/2026-04-24/1000PEPEUSDT_300.csv": {
+    "symbol": 148,
+    "regime": 148,
+    "tf_sec": 148
+  },
+  "data/recorder/2026-04-24/1000PEPEUSDT_900.csv": {
+    "symbol": 49,
+    "regime": 49,
+    "tf_sec": 49
+  },
+  "data/recorder/2026-04-24/BNBUSDT_180.csv": {
+    "symbol": 247,
+    "regime": 247,
+    "tf_sec": 247
+  },
+  "data/recorder/2026-04-24/BNBUSDT_300.csv": {
+    "symbol": 750,
+    "regime": 750,
+    "tf_sec": 750
+  },
+  "data/recorder/2026-04-24/BNBUSDT_900.csv": {
+    "symbol": 49,
+    "regime": 49,
+    "tf_sec": 49
+  },
+  "data/recorder/2026-04-24/BTCUSDT_180.csv": {
+    "symbol": 247,
+    "regime": 247,
+    "tf_sec": 247
+  },
+  "data/recorder/2026-04-24/BTCUSDT_300.csv": {
+    "symbol": 750,
+    "regime": 750,
+    "tf_sec": 750
+  },
+  "data/recorder/2026-04-24/BTCUSDT_900.csv": {
+    "symbol": 49,
+    "regime": 49,
+    "tf_sec": 49
+  },
+  "data/recorder/2026-04-24/DOGEUSDT_180.csv": {
+    "symbol": 247,
+    "regime": 247,
+    "tf_sec": 247
+  },
+  "data/recorder/2026-04-24/DOGEUSDT_300.csv": {
+    "symbol": 148,
+    "regime": 148,
+    "tf_sec": 148
+  },
+  "data/recorder/2026-04-24/DOGEUSDT_900.csv": {
+    "symbol": 49,
+    "regime": 49,
+    "tf_sec": 49
+  },
+  "data/recorder/2026-04-24/ETHUSDT_180.csv": {
+    "symbol": 247,
+    "regime": 247,
+    "tf_sec": 247
+  },
+  "data/recorder/2026-04-24/ETHUSDT_300.csv": {
+    "symbol": 750,
+    "regime": 750,
+    "tf_sec": 750
+  },
+  "data/recorder/2026-04-24/ETHUSDT_900.csv": {
+    "symbol": 49,
+    "regime": 49,
+    "tf_sec": 49
+  },
+  "data/recorder/2026-04-24/SOLUSDT_180.csv": {
+    "symbol": 247,
+    "regime": 247,
+    "tf_sec": 247
+  },
+  "data/recorder/2026-04-24/SOLUSDT_300.csv": {
+    "symbol": 750,
+    "regime": 750,
+    "tf_sec": 750
+  },
+  "data/recorder/2026-04-24/SOLUSDT_900.csv": {
+    "symbol": 49,
+    "regime": 49,
+    "tf_sec": 49
+  },
+  "data/recorder/2026-04-24/XRPUSDT_180.csv": {
+    "symbol": 247,
+    "regime": 247,
+    "tf_sec": 247
+  },
+  "data/recorder/2026-04-24/XRPUSDT_300.csv": {
+    "symbol": 750,
+    "regime": 750,
+    "tf_sec": 750
+  },
+  "data/recorder/2026-04-24/XRPUSDT_900.csv": {
+    "symbol": 241,
+    "regime": 241,
+    "tf_sec": 241
+  },
+  "data/recorder/2026-04-25/1000PEPEUSDT_180.csv": {
+    "symbol": 449,
+    "regime": 449,
+    "tf_sec": 449
+  },
+  "data/recorder/2026-04-25/1000PEPEUSDT_300.csv": {
+    "symbol": 270,
+    "regime": 270,
+    "tf_sec": 270
+  },
+  "data/recorder/2026-04-25/1000PEPEUSDT_900.csv": {
+    "symbol": 90,
+    "regime": 90,
+    "tf_sec": 90
+  },
+  "data/recorder/2026-04-25/BNBUSDT_180.csv": {
+    "symbol": 449,
+    "regime": 449,
+    "tf_sec": 449
+  },
+  "data/recorder/2026-04-25/BNBUSDT_300.csv": {
+    "symbol": 872,
+    "regime": 872,
+    "tf_sec": 872
+  },
+  "data/recorder/2026-04-25/BNBUSDT_900.csv": {
+    "symbol": 90,
+    "regime": 90,
+    "tf_sec": 90
+  },
+  "data/recorder/2026-04-25/BTCUSDT_180.csv": {
+    "symbol": 449,
+    "regime": 449,
+    "tf_sec": 449
+  },
+  "data/recorder/2026-04-25/BTCUSDT_300.csv": {
+    "symbol": 872,
+    "regime": 872,
+    "tf_sec": 872
+  },
+  "data/recorder/2026-04-25/BTCUSDT_900.csv": {
+    "symbol": 90,
+    "regime": 90,
+    "tf_sec": 90
+  },
+  "data/recorder/2026-04-25/DOGEUSDT_180.csv": {
+    "symbol": 449,
+    "regime": 449,
+    "tf_sec": 449
+  },
+  "data/recorder/2026-04-25/DOGEUSDT_300.csv": {
+    "symbol": 270,
+    "regime": 270,
+    "tf_sec": 270
+  },
+  "data/recorder/2026-04-25/DOGEUSDT_900.csv": {
+    "symbol": 90,
+    "regime": 90,
+    "tf_sec": 90
+  },
+  "data/recorder/2026-04-25/ETHUSDT_180.csv": {
+    "symbol": 449,
+    "regime": 449,
+    "tf_sec": 449
+  },
+  "data/recorder/2026-04-25/ETHUSDT_300.csv": {
+    "symbol": 872,
+    "regime": 872,
+    "tf_sec": 872
+  },
+  "data/recorder/2026-04-25/ETHUSDT_900.csv": {
+    "symbol": 90,
+    "regime": 90,
+    "tf_sec": 90
+  },
+  "data/recorder/2026-04-25/SOLUSDT_180.csv": {
+    "symbol": 449,
+    "regime": 449,
+    "tf_sec": 449
+  },
+  "data/recorder/2026-04-25/SOLUSDT_300.csv": {
+    "symbol": 872,
+    "regime": 872,
+    "tf_sec": 872
+  },
+  "data/recorder/2026-04-25/SOLUSDT_900.csv": {
+    "symbol": 90,
+    "regime": 90,
+    "tf_sec": 90
+  },
+  "data/recorder/2026-04-25/XRPUSDT_180.csv": {
+    "symbol": 449,
+    "regime": 449,
+    "tf_sec": 449
+  },
+  "data/recorder/2026-04-25/XRPUSDT_300.csv": {
+    "symbol": 872,
+    "regime": 872,
+    "tf_sec": 872
+  },
+  "data/recorder/2026-04-25/XRPUSDT_900.csv": {
+    "symbol": 282,
+    "regime": 282,
+    "tf_sec": 282
+  },
+  "data/recorder/2026-04-26/1000PEPEUSDT_180.csv": {
+    "symbol": 478,
+    "regime": 478,
+    "tf_sec": 478
+  },
+  "data/recorder/2026-04-26/1000PEPEUSDT_300.csv": {
+    "symbol": 287,
+    "regime": 287,
+    "tf_sec": 287
+  },
+  "data/recorder/2026-04-26/1000PEPEUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-04-26/BNBUSDT_180.csv": {
+    "symbol": 478,
+    "regime": 478,
+    "tf_sec": 478
+  },
+  "data/recorder/2026-04-26/BNBUSDT_300.csv": {
+    "symbol": 588,
+    "regime": 588,
+    "tf_sec": 588
+  },
+  "data/recorder/2026-04-26/BNBUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-04-26/BTCUSDT_180.csv": {
+    "symbol": 478,
+    "regime": 478,
+    "tf_sec": 478
+  },
+  "data/recorder/2026-04-26/BTCUSDT_300.csv": {
+    "symbol": 588,
+    "regime": 588,
+    "tf_sec": 588
+  },
+  "data/recorder/2026-04-26/BTCUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-04-26/DOGEUSDT_180.csv": {
+    "symbol": 478,
+    "regime": 478,
+    "tf_sec": 478
+  },
+  "data/recorder/2026-04-26/DOGEUSDT_300.csv": {
+    "symbol": 287,
+    "regime": 287,
+    "tf_sec": 287
+  },
+  "data/recorder/2026-04-26/DOGEUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-04-26/ETHUSDT_180.csv": {
+    "symbol": 478,
+    "regime": 478,
+    "tf_sec": 478
+  },
+  "data/recorder/2026-04-26/ETHUSDT_300.csv": {
+    "symbol": 588,
+    "regime": 588,
+    "tf_sec": 588
+  },
+  "data/recorder/2026-04-26/ETHUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-04-26/SOLUSDT_180.csv": {
+    "symbol": 478,
+    "regime": 478,
+    "tf_sec": 478
+  },
+  "data/recorder/2026-04-26/SOLUSDT_300.csv": {
+    "symbol": 588,
+    "regime": 588,
+    "tf_sec": 588
+  },
+  "data/recorder/2026-04-26/SOLUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-04-26/XRPUSDT_180.csv": {
+    "symbol": 478,
+    "regime": 478,
+    "tf_sec": 478
+  },
+  "data/recorder/2026-04-26/XRPUSDT_300.csv": {
+    "symbol": 588,
+    "regime": 588,
+    "tf_sec": 588
+  },
+  "data/recorder/2026-04-26/XRPUSDT_900.csv": {
+    "symbol": 15,
+    "regime": 16,
+    "tf_sec": 16
+  },
+  "data/recorder/2026-04-27/1000PEPEUSDT_180.csv": {
+    "symbol": 299,
+    "regime": 299,
+    "tf_sec": 299
+  },
+  "data/recorder/2026-04-27/1000PEPEUSDT_300.csv": {
+    "symbol": 179,
+    "regime": 179,
+    "tf_sec": 179
+  },
+  "data/recorder/2026-04-27/1000PEPEUSDT_900.csv": {
+    "symbol": 60,
+    "regime": 60,
+    "tf_sec": 60
+  },
+  "data/recorder/2026-04-27/BNBUSDT_180.csv": {
+    "symbol": 299,
+    "regime": 299,
+    "tf_sec": 299
+  },
+  "data/recorder/2026-04-27/BNBUSDT_300.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-27/BNBUSDT_900.csv": {
+    "symbol": 60,
+    "regime": 60,
+    "tf_sec": 60
+  },
+  "data/recorder/2026-04-27/BTCUSDT_180.csv": {
+    "symbol": 299,
+    "regime": 299,
+    "tf_sec": 299
+  },
+  "data/recorder/2026-04-27/BTCUSDT_300.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-27/BTCUSDT_900.csv": {
+    "symbol": 60,
+    "regime": 60,
+    "tf_sec": 60
+  },
+  "data/recorder/2026-04-27/DOGEUSDT_180.csv": {
+    "symbol": 299,
+    "regime": 299,
+    "tf_sec": 299
+  },
+  "data/recorder/2026-04-27/DOGEUSDT_300.csv": {
+    "symbol": 179,
+    "regime": 179,
+    "tf_sec": 179
+  },
+  "data/recorder/2026-04-27/DOGEUSDT_900.csv": {
+    "symbol": 60,
+    "regime": 60,
+    "tf_sec": 60
+  },
+  "data/recorder/2026-04-27/ETHUSDT_180.csv": {
+    "symbol": 299,
+    "regime": 299,
+    "tf_sec": 299
+  },
+  "data/recorder/2026-04-27/ETHUSDT_300.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-27/ETHUSDT_900.csv": {
+    "symbol": 60,
+    "regime": 60,
+    "tf_sec": 60
+  },
+  "data/recorder/2026-04-27/SOLUSDT_180.csv": {
+    "symbol": 299,
+    "regime": 299,
+    "tf_sec": 299
+  },
+  "data/recorder/2026-04-27/SOLUSDT_300.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-27/SOLUSDT_900.csv": {
+    "symbol": 60,
+    "regime": 60,
+    "tf_sec": 60
+  },
+  "data/recorder/2026-04-27/XRPUSDT_180.csv": {
+    "symbol": 299,
+    "regime": 299,
+    "tf_sec": 299
+  },
+  "data/recorder/2026-04-27/XRPUSDT_300.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-04-27/XRPUSDT_900.csv": {
+    "symbol": 156,
+    "regime": 156,
+    "tf_sec": 156
+  },
+  "data/recorder/2026-04-28/1000PEPEUSDT_180.csv": {
+    "symbol": 471,
+    "regime": 471,
+    "tf_sec": 471
+  },
+  "data/recorder/2026-04-28/1000PEPEUSDT_300.csv": {
+    "symbol": 282,
+    "regime": 282,
+    "tf_sec": 282
+  },
+  "data/recorder/2026-04-28/1000PEPEUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-04-28/BNBUSDT_180.csv": {
+    "symbol": 471,
+    "regime": 471,
+    "tf_sec": 471
+  },
+  "data/recorder/2026-04-28/BNBUSDT_300.csv": {
+    "symbol": 884,
+    "regime": 884,
+    "tf_sec": 884
+  },
+  "data/recorder/2026-04-28/BNBUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-04-28/BTCUSDT_180.csv": {
+    "symbol": 471,
+    "regime": 471,
+    "tf_sec": 471
+  },
+  "data/recorder/2026-04-28/BTCUSDT_300.csv": {
+    "symbol": 884,
+    "regime": 884,
+    "tf_sec": 884
+  },
+  "data/recorder/2026-04-28/BTCUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-04-28/DOGEUSDT_180.csv": {
+    "symbol": 471,
+    "regime": 471,
+    "tf_sec": 471
+  },
+  "data/recorder/2026-04-28/DOGEUSDT_300.csv": {
+    "symbol": 282,
+    "regime": 282,
+    "tf_sec": 282
+  },
+  "data/recorder/2026-04-28/DOGEUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-04-28/ETHUSDT_180.csv": {
+    "symbol": 471,
+    "regime": 471,
+    "tf_sec": 471
+  },
+  "data/recorder/2026-04-28/ETHUSDT_300.csv": {
+    "symbol": 884,
+    "regime": 884,
+    "tf_sec": 884
+  },
+  "data/recorder/2026-04-28/ETHUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-04-28/SOLUSDT_180.csv": {
+    "symbol": 471,
+    "regime": 471,
+    "tf_sec": 471
+  },
+  "data/recorder/2026-04-28/SOLUSDT_300.csv": {
+    "symbol": 884,
+    "regime": 884,
+    "tf_sec": 884
+  },
+  "data/recorder/2026-04-28/SOLUSDT_900.csv": {
+    "symbol": 94,
+    "regime": 94,
+    "tf_sec": 94
+  },
+  "data/recorder/2026-04-28/XRPUSDT_180.csv": {
+    "symbol": 471,
+    "regime": 471,
+    "tf_sec": 471
+  },
+  "data/recorder/2026-04-28/XRPUSDT_300.csv": {
+    "symbol": 884,
+    "regime": 884,
+    "tf_sec": 884
+  },
+  "data/recorder/2026-04-28/XRPUSDT_900.csv": {
+    "symbol": 155,
+    "regime": 156,
+    "tf_sec": 156
+  },
+  "data/recorder/2026-04-29/1000PEPEUSDT_180.csv": {
+    "symbol": 439,
+    "regime": 439,
+    "tf_sec": 439
+  },
+  "data/recorder/2026-04-29/1000PEPEUSDT_300.csv": {
+    "symbol": 265,
+    "regime": 265,
+    "tf_sec": 265
+  },
+  "data/recorder/2026-04-29/1000PEPEUSDT_900.csv": {
+    "symbol": 87,
+    "regime": 87,
+    "tf_sec": 87
+  },
+  "data/recorder/2026-04-29/BNBUSDT_180.csv": {
+    "symbol": 439,
+    "regime": 439,
+    "tf_sec": 439
+  },
+  "data/recorder/2026-04-29/BNBUSDT_300.csv": {
+    "symbol": 2071,
+    "regime": 2071,
+    "tf_sec": 2071
+  },
+  "data/recorder/2026-04-29/BNBUSDT_900.csv": {
+    "symbol": 87,
+    "regime": 87,
+    "tf_sec": 87
+  },
+  "data/recorder/2026-04-29/BTCUSDT_180.csv": {
+    "symbol": 439,
+    "regime": 439,
+    "tf_sec": 439
+  },
+  "data/recorder/2026-04-29/BTCUSDT_300.csv": {
+    "symbol": 2071,
+    "regime": 2071,
+    "tf_sec": 2071
+  },
+  "data/recorder/2026-04-29/BTCUSDT_900.csv": {
+    "symbol": 87,
+    "regime": 87,
+    "tf_sec": 87
+  },
+  "data/recorder/2026-04-29/DOGEUSDT_180.csv": {
+    "symbol": 439,
+    "regime": 439,
+    "tf_sec": 439
+  },
+  "data/recorder/2026-04-29/DOGEUSDT_300.csv": {
+    "symbol": 265,
+    "regime": 265,
+    "tf_sec": 265
+  },
+  "data/recorder/2026-04-29/DOGEUSDT_900.csv": {
+    "symbol": 87,
+    "regime": 87,
+    "tf_sec": 87
+  },
+  "data/recorder/2026-04-29/ETHUSDT_180.csv": {
+    "symbol": 439,
+    "regime": 439,
+    "tf_sec": 439
+  },
+  "data/recorder/2026-04-29/ETHUSDT_300.csv": {
+    "symbol": 2071,
+    "regime": 2071,
+    "tf_sec": 2071
+  },
+  "data/recorder/2026-04-29/ETHUSDT_900.csv": {
+    "symbol": 87,
+    "regime": 87,
+    "tf_sec": 87
+  },
+  "data/recorder/2026-04-29/SOLUSDT_180.csv": {
+    "symbol": 439,
+    "regime": 439,
+    "tf_sec": 439
+  },
+  "data/recorder/2026-04-29/SOLUSDT_300.csv": {
+    "symbol": 2071,
+    "regime": 2071,
+    "tf_sec": 2071
+  },
+  "data/recorder/2026-04-29/SOLUSDT_900.csv": {
+    "symbol": 87,
+    "regime": 87,
+    "tf_sec": 87
+  },
+  "data/recorder/2026-04-29/XRPUSDT_180.csv": {
+    "symbol": 439,
+    "regime": 439,
+    "tf_sec": 439
+  },
+  "data/recorder/2026-04-29/XRPUSDT_300.csv": {
+    "symbol": 2071,
+    "regime": 2071,
+    "tf_sec": 2071
+  },
+  "data/recorder/2026-04-29/XRPUSDT_900.csv": {
+    "symbol": 531,
+    "regime": 532,
+    "tf_sec": 532
+  },
+  "data/recorder/2026-04-30/1000PEPEUSDT_180.csv": {
+    "symbol": 433,
+    "regime": 433,
+    "tf_sec": 433
+  },
+  "data/recorder/2026-04-30/1000PEPEUSDT_300.csv": {
+    "symbol": 260,
+    "regime": 260,
+    "tf_sec": 260
+  },
+  "data/recorder/2026-04-30/1000PEPEUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-04-30/BNBUSDT_180.csv": {
+    "symbol": 433,
+    "regime": 433,
+    "tf_sec": 433
+  },
+  "data/recorder/2026-04-30/BNBUSDT_300.csv": {
+    "symbol": 561,
+    "regime": 561,
+    "tf_sec": 561
+  },
+  "data/recorder/2026-04-30/BNBUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-04-30/BTCUSDT_180.csv": {
+    "symbol": 433,
+    "regime": 433,
+    "tf_sec": 433
+  },
+  "data/recorder/2026-04-30/BTCUSDT_300.csv": {
+    "symbol": 561,
+    "regime": 561,
+    "tf_sec": 561
+  },
+  "data/recorder/2026-04-30/BTCUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-04-30/DOGEUSDT_180.csv": {
+    "symbol": 433,
+    "regime": 433,
+    "tf_sec": 433
+  },
+  "data/recorder/2026-04-30/DOGEUSDT_300.csv": {
+    "symbol": 260,
+    "regime": 260,
+    "tf_sec": 260
+  },
+  "data/recorder/2026-04-30/DOGEUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-04-30/ETHUSDT_180.csv": {
+    "symbol": 433,
+    "regime": 433,
+    "tf_sec": 433
+  },
+  "data/recorder/2026-04-30/ETHUSDT_300.csv": {
+    "symbol": 561,
+    "regime": 561,
+    "tf_sec": 561
+  },
+  "data/recorder/2026-04-30/ETHUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-04-30/SOLUSDT_180.csv": {
+    "symbol": 433,
+    "regime": 433,
+    "tf_sec": 433
+  },
+  "data/recorder/2026-04-30/SOLUSDT_300.csv": {
+    "symbol": 561,
+    "regime": 561,
+    "tf_sec": 561
+  },
+  "data/recorder/2026-04-30/SOLUSDT_900.csv": {
+    "symbol": 86,
+    "regime": 86,
+    "tf_sec": 86
+  },
+  "data/recorder/2026-04-30/XRPUSDT_180.csv": {
+    "symbol": 433,
+    "regime": 433,
+    "tf_sec": 433
+  },
+  "data/recorder/2026-04-30/XRPUSDT_300.csv": {
+    "symbol": 561,
+    "regime": 561,
+    "tf_sec": 561
+  },
+  "data/recorder/2026-04-30/XRPUSDT_900.csv": {
+    "symbol": 4,
+    "regime": 5,
+    "tf_sec": 5
+  },
+  "data/recorder/2026-05-01/1000PEPEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-05-01/1000PEPEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-05-01/1000PEPEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-05-01/BNBUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-05-01/BNBUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-05-01/BNBUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-05-01/BTCUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-05-01/BTCUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-05-01/BTCUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-05-01/DOGEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-05-01/DOGEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-05-01/DOGEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-05-01/ETHUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-05-01/ETHUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-05-01/ETHUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-05-01/SOLUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-05-01/SOLUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-05-01/SOLUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-05-01/XRPUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-05-01/XRPUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-05-01/XRPUSDT_900.csv": {
+    "symbol": 5,
+    "regime": 6,
+    "tf_sec": 6
+  },
+  "data/recorder/2026-05-02/1000PEPEUSDT_180.csv": {
+    "symbol": 343,
+    "regime": 343,
+    "tf_sec": 343
+  },
+  "data/recorder/2026-05-02/1000PEPEUSDT_300.csv": {
+    "symbol": 206,
+    "regime": 206,
+    "tf_sec": 206
+  },
+  "data/recorder/2026-05-02/1000PEPEUSDT_900.csv": {
+    "symbol": 69,
+    "regime": 69,
+    "tf_sec": 69
+  },
+  "data/recorder/2026-05-02/BNBUSDT_180.csv": {
+    "symbol": 343,
+    "regime": 343,
+    "tf_sec": 343
+  },
+  "data/recorder/2026-05-02/BNBUSDT_300.csv": {
+    "symbol": 808,
+    "regime": 808,
+    "tf_sec": 808
+  },
+  "data/recorder/2026-05-02/BNBUSDT_900.csv": {
+    "symbol": 69,
+    "regime": 69,
+    "tf_sec": 69
+  },
+  "data/recorder/2026-05-02/BTCUSDT_180.csv": {
+    "symbol": 343,
+    "regime": 343,
+    "tf_sec": 343
+  },
+  "data/recorder/2026-05-02/BTCUSDT_300.csv": {
+    "symbol": 808,
+    "regime": 808,
+    "tf_sec": 808
+  },
+  "data/recorder/2026-05-02/BTCUSDT_900.csv": {
+    "symbol": 69,
+    "regime": 69,
+    "tf_sec": 69
+  },
+  "data/recorder/2026-05-02/DOGEUSDT_180.csv": {
+    "symbol": 343,
+    "regime": 343,
+    "tf_sec": 343
+  },
+  "data/recorder/2026-05-02/DOGEUSDT_300.csv": {
+    "symbol": 206,
+    "regime": 206,
+    "tf_sec": 206
+  },
+  "data/recorder/2026-05-02/DOGEUSDT_900.csv": {
+    "symbol": 69,
+    "regime": 69,
+    "tf_sec": 69
+  },
+  "data/recorder/2026-05-02/ETHUSDT_180.csv": {
+    "symbol": 343,
+    "regime": 343,
+    "tf_sec": 343
+  },
+  "data/recorder/2026-05-02/ETHUSDT_300.csv": {
+    "symbol": 808,
+    "regime": 808,
+    "tf_sec": 808
+  },
+  "data/recorder/2026-05-02/ETHUSDT_900.csv": {
+    "symbol": 69,
+    "regime": 69,
+    "tf_sec": 69
+  },
+  "data/recorder/2026-05-02/SOLUSDT_180.csv": {
+    "symbol": 343,
+    "regime": 343,
+    "tf_sec": 343
+  },
+  "data/recorder/2026-05-02/SOLUSDT_300.csv": {
+    "symbol": 808,
+    "regime": 808,
+    "tf_sec": 808
+  },
+  "data/recorder/2026-05-02/SOLUSDT_900.csv": {
+    "symbol": 69,
+    "regime": 69,
+    "tf_sec": 69
+  },
+  "data/recorder/2026-05-02/XRPUSDT_180.csv": {
+    "symbol": 343,
+    "regime": 343,
+    "tf_sec": 343
+  },
+  "data/recorder/2026-05-02/XRPUSDT_300.csv": {
+    "symbol": 808,
+    "regime": 808,
+    "tf_sec": 808
+  },
+  "data/recorder/2026-05-02/XRPUSDT_900.csv": {
+    "symbol": 261,
+    "regime": 261,
+    "tf_sec": 261
+  },
+  "data/recorder/2026-05-03/1000PEPEUSDT_180.csv": {
+    "symbol": 403,
+    "regime": 403,
+    "tf_sec": 403
+  },
+  "data/recorder/2026-05-03/1000PEPEUSDT_300.csv": {
+    "symbol": 243,
+    "regime": 243,
+    "tf_sec": 243
+  },
+  "data/recorder/2026-05-03/1000PEPEUSDT_900.csv": {
+    "symbol": 80,
+    "regime": 80,
+    "tf_sec": 80
+  },
+  "data/recorder/2026-05-03/BNBUSDT_180.csv": {
+    "symbol": 403,
+    "regime": 403,
+    "tf_sec": 403
+  },
+  "data/recorder/2026-05-03/BNBUSDT_300.csv": {
+    "symbol": 2350,
+    "regime": 2350,
+    "tf_sec": 2350
+  },
+  "data/recorder/2026-05-03/BNBUSDT_900.csv": {
+    "symbol": 80,
+    "regime": 80,
+    "tf_sec": 80
+  },
+  "data/recorder/2026-05-03/BTCUSDT_180.csv": {
+    "symbol": 403,
+    "regime": 403,
+    "tf_sec": 403
+  },
+  "data/recorder/2026-05-03/BTCUSDT_300.csv": {
+    "symbol": 2349,
+    "regime": 2349,
+    "tf_sec": 2349
+  },
+  "data/recorder/2026-05-03/BTCUSDT_900.csv": {
+    "symbol": 80,
+    "regime": 80,
+    "tf_sec": 80
+  },
+  "data/recorder/2026-05-03/DOGEUSDT_180.csv": {
+    "symbol": 403,
+    "regime": 403,
+    "tf_sec": 403
+  },
+  "data/recorder/2026-05-03/DOGEUSDT_300.csv": {
+    "symbol": 243,
+    "regime": 243,
+    "tf_sec": 243
+  },
+  "data/recorder/2026-05-03/DOGEUSDT_900.csv": {
+    "symbol": 80,
+    "regime": 80,
+    "tf_sec": 80
+  },
+  "data/recorder/2026-05-03/ETHUSDT_180.csv": {
+    "symbol": 403,
+    "regime": 403,
+    "tf_sec": 403
+  },
+  "data/recorder/2026-05-03/ETHUSDT_300.csv": {
+    "symbol": 2350,
+    "regime": 2350,
+    "tf_sec": 2350
+  },
+  "data/recorder/2026-05-03/ETHUSDT_900.csv": {
+    "symbol": 80,
+    "regime": 80,
+    "tf_sec": 80
+  },
+  "data/recorder/2026-05-03/SOLUSDT_180.csv": {
+    "symbol": 403,
+    "regime": 403,
+    "tf_sec": 403
+  },
+  "data/recorder/2026-05-03/SOLUSDT_300.csv": {
+    "symbol": 2350,
+    "regime": 2350,
+    "tf_sec": 2350
+  },
+  "data/recorder/2026-05-03/SOLUSDT_900.csv": {
+    "symbol": 80,
+    "regime": 80,
+    "tf_sec": 80
+  },
+  "data/recorder/2026-05-03/XRPUSDT_180.csv": {
+    "symbol": 403,
+    "regime": 403,
+    "tf_sec": 403
+  },
+  "data/recorder/2026-05-03/XRPUSDT_300.csv": {
+    "symbol": 2349,
+    "regime": 2349,
+    "tf_sec": 2349
+  },
+  "data/recorder/2026-05-03/XRPUSDT_900.csv": {
+    "symbol": 3,
+    "regime": 4,
+    "tf_sec": 4
+  },
+  "data/recorder/2026-05-04/1000PEPEUSDT_180.csv": {
+    "symbol": 474,
+    "regime": 474,
+    "tf_sec": 474
+  },
+  "data/recorder/2026-05-04/1000PEPEUSDT_300.csv": {
+    "symbol": 284,
+    "regime": 284,
+    "tf_sec": 284
+  },
+  "data/recorder/2026-05-04/1000PEPEUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-05-04/BNBUSDT_180.csv": {
+    "symbol": 474,
+    "regime": 474,
+    "tf_sec": 474
+  },
+  "data/recorder/2026-05-04/BNBUSDT_300.csv": {
+    "symbol": 1789,
+    "regime": 1789,
+    "tf_sec": 1789
+  },
+  "data/recorder/2026-05-04/BNBUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-05-04/BTCUSDT_180.csv": {
+    "symbol": 474,
+    "regime": 474,
+    "tf_sec": 474
+  },
+  "data/recorder/2026-05-04/BTCUSDT_300.csv": {
+    "symbol": 1788,
+    "regime": 1788,
+    "tf_sec": 1788
+  },
+  "data/recorder/2026-05-04/BTCUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-05-04/DOGEUSDT_180.csv": {
+    "symbol": 474,
+    "regime": 474,
+    "tf_sec": 474
+  },
+  "data/recorder/2026-05-04/DOGEUSDT_300.csv": {
+    "symbol": 284,
+    "regime": 284,
+    "tf_sec": 284
+  },
+  "data/recorder/2026-05-04/DOGEUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-05-04/ETHUSDT_180.csv": {
+    "symbol": 474,
+    "regime": 474,
+    "tf_sec": 474
+  },
+  "data/recorder/2026-05-04/ETHUSDT_300.csv": {
+    "symbol": 1488,
+    "regime": 1488,
+    "tf_sec": 1488
+  },
+  "data/recorder/2026-05-04/ETHUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-05-04/SOLUSDT_180.csv": {
+    "symbol": 474,
+    "regime": 474,
+    "tf_sec": 474
+  },
+  "data/recorder/2026-05-04/SOLUSDT_300.csv": {
+    "symbol": 1789,
+    "regime": 1789,
+    "tf_sec": 1789
+  },
+  "data/recorder/2026-05-04/SOLUSDT_900.csv": {
+    "symbol": 95,
+    "regime": 95,
+    "tf_sec": 95
+  },
+  "data/recorder/2026-05-04/XRPUSDT_180.csv": {
+    "symbol": 474,
+    "regime": 474,
+    "tf_sec": 474
+  },
+  "data/recorder/2026-05-04/XRPUSDT_300.csv": {
+    "symbol": 1789,
+    "regime": 1789,
+    "tf_sec": 1789
+  },
+  "data/recorder/2026-05-04/XRPUSDT_900.csv": {
+    "symbol": 3,
+    "regime": 4,
+    "tf_sec": 4
+  },
+  "data/recorder/2026-05-05/1000PEPEUSDT_180.csv": {
+    "symbol": 434,
+    "regime": 434,
+    "tf_sec": 434
+  },
+  "data/recorder/2026-05-05/1000PEPEUSDT_300.csv": {
+    "symbol": 262,
+    "regime": 262,
+    "tf_sec": 262
+  },
+  "data/recorder/2026-05-05/1000PEPEUSDT_900.csv": {
+    "symbol": 88,
+    "regime": 88,
+    "tf_sec": 88
+  },
+  "data/recorder/2026-05-05/BNBUSDT_180.csv": {
+    "symbol": 434,
+    "regime": 434,
+    "tf_sec": 434
+  },
+  "data/recorder/2026-05-05/BNBUSDT_300.csv": {
+    "symbol": 1165,
+    "regime": 1165,
+    "tf_sec": 1165
+  },
+  "data/recorder/2026-05-05/BNBUSDT_900.csv": {
+    "symbol": 88,
+    "regime": 88,
+    "tf_sec": 88
+  },
+  "data/recorder/2026-05-05/BTCUSDT_180.csv": {
+    "symbol": 434,
+    "regime": 434,
+    "tf_sec": 434
+  },
+  "data/recorder/2026-05-05/BTCUSDT_300.csv": {
+    "symbol": 1165,
+    "regime": 1165,
+    "tf_sec": 1165
+  },
+  "data/recorder/2026-05-05/BTCUSDT_900.csv": {
+    "symbol": 88,
+    "regime": 88,
+    "tf_sec": 88
+  },
+  "data/recorder/2026-05-05/DOGEUSDT_180.csv": {
+    "symbol": 434,
+    "regime": 434,
+    "tf_sec": 434
+  },
+  "data/recorder/2026-05-05/DOGEUSDT_300.csv": {
+    "symbol": 262,
+    "regime": 262,
+    "tf_sec": 262
+  },
+  "data/recorder/2026-05-05/DOGEUSDT_900.csv": {
+    "symbol": 88,
+    "regime": 88,
+    "tf_sec": 88
+  },
+  "data/recorder/2026-05-05/ETHUSDT_180.csv": {
+    "symbol": 434,
+    "regime": 434,
+    "tf_sec": 434
+  },
+  "data/recorder/2026-05-05/ETHUSDT_300.csv": {
+    "symbol": 1165,
+    "regime": 1165,
+    "tf_sec": 1165
+  },
+  "data/recorder/2026-05-05/ETHUSDT_900.csv": {
+    "symbol": 88,
+    "regime": 88,
+    "tf_sec": 88
+  },
+  "data/recorder/2026-05-05/SOLUSDT_180.csv": {
+    "symbol": 434,
+    "regime": 434,
+    "tf_sec": 434
+  },
+  "data/recorder/2026-05-05/SOLUSDT_300.csv": {
+    "symbol": 1165,
+    "regime": 1165,
+    "tf_sec": 1165
+  },
+  "data/recorder/2026-05-05/SOLUSDT_900.csv": {
+    "symbol": 88,
+    "regime": 88,
+    "tf_sec": 88
+  },
+  "data/recorder/2026-05-05/XRPUSDT_180.csv": {
+    "symbol": 434,
+    "regime": 434,
+    "tf_sec": 434
+  },
+  "data/recorder/2026-05-05/XRPUSDT_300.csv": {
+    "symbol": 1165,
+    "regime": 1165,
+    "tf_sec": 1165
+  },
+  "data/recorder/2026-05-05/XRPUSDT_900.csv": {
+    "symbol": 59,
+    "regime": 60,
+    "tf_sec": 60
+  },
+  "data/recorder/2026-05-06/1000PEPEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-05-06/1000PEPEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-05-06/1000PEPEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-05-06/BNBUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-05-06/BNBUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-05-06/BNBUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-05-06/BTCUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-05-06/BTCUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-05-06/BTCUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-05-06/DOGEUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-05-06/DOGEUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-05-06/DOGEUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-05-06/ETHUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-05-06/ETHUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-05-06/ETHUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-05-06/SOLUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-05-06/SOLUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-05-06/SOLUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-05-06/XRPUSDT_180.csv": {
+    "symbol": 480,
+    "regime": 480,
+    "tf_sec": 480
+  },
+  "data/recorder/2026-05-06/XRPUSDT_300.csv": {
+    "symbol": 288,
+    "regime": 288,
+    "tf_sec": 288
+  },
+  "data/recorder/2026-05-06/XRPUSDT_900.csv": {
+    "symbol": 96,
+    "regime": 96,
+    "tf_sec": 96
+  },
+  "data/recorder/2026-05-07/1000PEPEUSDT_180.csv": {
+    "symbol": 254,
+    "regime": 254,
+    "tf_sec": 254
+  },
+  "data/recorder/2026-05-07/1000PEPEUSDT_300.csv": {
+    "symbol": 153,
+    "regime": 153,
+    "tf_sec": 153
+  },
+  "data/recorder/2026-05-07/1000PEPEUSDT_900.csv": {
+    "symbol": 52,
+    "regime": 52,
+    "tf_sec": 52
+  },
+  "data/recorder/2026-05-07/BNBUSDT_180.csv": {
+    "symbol": 254,
+    "regime": 254,
+    "tf_sec": 254
+  },
+  "data/recorder/2026-05-07/BNBUSDT_300.csv": {
+    "symbol": 454,
+    "regime": 454,
+    "tf_sec": 454
+  },
+  "data/recorder/2026-05-07/BNBUSDT_900.csv": {
+    "symbol": 52,
+    "regime": 52,
+    "tf_sec": 52
+  },
+  "data/recorder/2026-05-07/BTCUSDT_180.csv": {
+    "symbol": 254,
+    "regime": 254,
+    "tf_sec": 254
+  },
+  "data/recorder/2026-05-07/BTCUSDT_300.csv": {
+    "symbol": 454,
+    "regime": 454,
+    "tf_sec": 454
+  },
+  "data/recorder/2026-05-07/BTCUSDT_900.csv": {
+    "symbol": 52,
+    "regime": 52,
+    "tf_sec": 52
+  },
+  "data/recorder/2026-05-07/DOGEUSDT_180.csv": {
+    "symbol": 254,
+    "regime": 254,
+    "tf_sec": 254
+  },
+  "data/recorder/2026-05-07/DOGEUSDT_300.csv": {
+    "symbol": 153,
+    "regime": 153,
+    "tf_sec": 153
+  },
+  "data/recorder/2026-05-07/DOGEUSDT_900.csv": {
+    "symbol": 52,
+    "regime": 52,
+    "tf_sec": 52
+  },
+  "data/recorder/2026-05-07/ETHUSDT_180.csv": {
+    "symbol": 254,
+    "regime": 254,
+    "tf_sec": 254
+  },
+  "data/recorder/2026-05-07/ETHUSDT_300.csv": {
+    "symbol": 424,
+    "regime": 424,
+    "tf_sec": 424
+  },
+  "data/recorder/2026-05-07/ETHUSDT_900.csv": {
+    "symbol": 52,
+    "regime": 52,
+    "tf_sec": 52
+  },
+  "data/recorder/2026-05-07/SOLUSDT_180.csv": {
+    "symbol": 254,
+    "regime": 254,
+    "tf_sec": 254
+  },
+  "data/recorder/2026-05-07/SOLUSDT_300.csv": {
+    "symbol": 424,
+    "regime": 424,
+    "tf_sec": 424
+  },
+  "data/recorder/2026-05-07/SOLUSDT_900.csv": {
+    "symbol": 52,
+    "regime": 52,
+    "tf_sec": 52
+  },
+  "data/recorder/2026-05-07/XRPUSDT_180.csv": {
+    "symbol": 254,
+    "regime": 254,
+    "tf_sec": 254
+  },
+  "data/recorder/2026-05-07/XRPUSDT_300.csv": {
+    "symbol": 424,
+    "regime": 424,
+    "tf_sec": 424
+  },
+  "data/recorder/2026-05-07/XRPUSDT_900.csv": {
+    "symbol": 148,
+    "regime": 148,
+    "tf_sec": 148
+  }
+}

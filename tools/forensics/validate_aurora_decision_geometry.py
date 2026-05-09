@@ -14,7 +14,7 @@ from apps.reference.domains.decision_making.primitives.operational_mode import M
 from apps.reference.shared.decision_primitives.scoring_kernel import QuadraticScoringKernel
 from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
 from apps.reference.config_models import OperationalMode
-from tools.calibration.calibrate_aurora_thresholds import (
+from calibrators.strategies.calibrate_aurora_thresholds import (
     _ReplayClock,
     _ReplayFsm,
     _bar_is_eligible,

@@ -18,6 +18,25 @@
       "type": "string",
       "description": "Trading symbol (e.g., SOLUSDT)"
     },
+    "side": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "BUY",
+        "SELL",
+        null
+      ],
+      "description": "Raw order-side when available"
+    },
+    "strategy_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Strategy identifier associated with the decision trace"
+    },
     "ts": {
       "type": "integer",
       "description": "Decision timestamp in ms epoch"
@@ -137,6 +156,19 @@
         "null"
       ]
     },
+    "regime_confidence_gate_verdict": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "ALLOW",
+        "DENY",
+        "BYPASS",
+        null
+      ],
+      "description": "Directional sanity regime-confidence gate verdict when available"
+    },
     "trend_dir": {
       "type": "string",
       "enum": [
@@ -153,6 +185,15 @@
       ],
       "minimum": 0,
       "description": "Consecutive bar count for the active trend direction if available"
+    },
+    "trend_confidence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Directional trend confidence if available"
     },
     "delta_price": {
       "type": [
@@ -572,6 +613,155 @@
             "final_owner",
             "owner_loss_reason"
           ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "price_motion_context": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "pm_norm_10s": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "pm_norm_60s": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "pm_norm_300s": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "vol_pct_10s": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "vol_pct_60s": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "vol_pct_300s": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "missing": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pm_norm_10s": {"type": "boolean"},
+                "pm_norm_60s": {"type": "boolean"},
+                "pm_norm_300s": {"type": "boolean"},
+                "vol_pct_10s": {"type": "boolean"},
+                "vol_pct_60s": {"type": "boolean"},
+                "vol_pct_300s": {"type": "boolean"}
+              }
+            },
+            "missing_reason": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pm_norm_10s": {"type": ["string", "null"]},
+                "pm_norm_60s": {"type": ["string", "null"]},
+                "pm_norm_300s": {"type": ["string", "null"]},
+                "vol_pct_10s": {"type": ["string", "null"]},
+                "vol_pct_60s": {"type": ["string", "null"]},
+                "vol_pct_300s": {"type": ["string", "null"]}
+              }
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "missing_inputs": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "regime_confidence": {"type": ["string", "null"]},
+            "trend_dir": {"type": ["string", "null"]},
+            "trend_confidence": {"type": ["string", "null"]},
+            "trend_run_length": {"type": ["string", "null"]},
+            "pm_norm_10s": {"type": ["string", "null"]},
+            "pm_norm_60s": {"type": ["string", "null"]},
+            "pm_norm_300s": {"type": ["string", "null"]},
+            "vol_pct_10s": {"type": ["string", "null"]},
+            "vol_pct_60s": {"type": ["string", "null"]},
+            "vol_pct_300s": {"type": ["string", "null"]},
+            "low_vol_cost_floor": {"type": ["string", "null"]}
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "safety_gate_snapshot": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "apply_safety_gates": {"type": ["boolean", "null"]},
+            "directional_sanity_enabled": {"type": ["boolean", "null"]},
+            "nrr026_enabled": {"type": ["boolean", "null"]},
+            "nrr026_effective_enforced": {"type": ["boolean", "null"]},
+            "nrr027_enabled": {"type": ["boolean", "null"]},
+            "nrr027_effective_enforced": {"type": ["boolean", "null"]},
+            "price_motion_sanity_enabled": {"type": ["boolean", "null"]},
+            "price_motion_backtest_bypass": {"type": ["boolean", "null"]},
+            "nrr028_enabled": {"type": ["boolean", "null"]},
+            "nrr028_effective_enforced": {"type": ["boolean", "null"]},
+            "nrr029_enabled": {"type": ["boolean", "null"]},
+            "nrr029_effective_enforced": {"type": ["boolean", "null"]},
+            "nrr030_enabled": {"type": ["boolean", "null"]},
+            "nrr030_effective_enforced": {"type": ["boolean", "null"]},
+            "nrr063_enabled": {"type": ["boolean", "null"]},
+            "nrr063_effective_enforced": {"type": ["boolean", "null"]},
+            "regime_confidence_gate_verdict": {
+              "type": ["string", "null"],
+              "enum": ["ALLOW", "DENY", "BYPASS", null]
+            },
+            "threshold_verdict": {
+              "type": ["string", "null"],
+              "enum": ["PASS", "BLOCK", "BYPASS", null]
+            },
+            "threshold_reason": {"type": ["string", "null"]}
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "low_vol_cost_floor": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": true
         },
         {
           "type": "null"

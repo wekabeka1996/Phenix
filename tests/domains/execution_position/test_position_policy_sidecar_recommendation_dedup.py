@@ -130,6 +130,23 @@ def _sidecar_config(
                 "enabled": True,
                 "candidate_pcts": [0.02, 0.05, 0.07],
             },
+            "shadow_fee_aware_arm": {
+                "enabled": True,
+                "fee_source_priority": [
+                    "realized_lifecycle_fee",
+                    "order_log_fee",
+                    "configured_fee_model",
+                ],
+                "candidate_fee_multiples": [1.0, 1.5, 2.0],
+                "configured_fee_model": {
+                    "enabled": False,
+                    "round_trip_fee_bps": None,
+                },
+                "optional_pct_notional_floor": {
+                    "enabled": True,
+                    "candidate_pcts": [0.02, 0.05],
+                },
+            },
         }
     )
 

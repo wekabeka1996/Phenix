@@ -5,6 +5,134 @@ import uuid
 from typing import Any, Optional
 
 
+def _normalize_intent_side(value: Any) -> str:
+    side_u = str(value).upper()
+    if side_u == "BUY":
+        return "LONG"
+    if side_u == "SELL":
+        return "SHORT"
+    if side_u in {"LONG", "SHORT"}:
+        return side_u
+    return side_u
+
+
+def _normalize_order_side(value: Any) -> str | None:
+    side_u = str(value).upper()
+    if side_u in {"BUY", "SELL"}:
+        return side_u
+    return None
+
+
+def _normalize_trend_dir(value: Any) -> str:
+    if isinstance(value, (int, float)):
+        if float(value) > 0:
+            return "UP"
+        if float(value) < 0:
+            return "DOWN"
+        return "UNKNOWN"
+    trend_dir = str(value).upper()
+    if trend_dir in {"UP", "DOWN", "UNKNOWN"}:
+        return trend_dir
+    return "UNKNOWN"
+
+
+def _pick_price_motion_value(sg: Any, field_name: str) -> Any:
+    direct_value = getattr(sg, field_name, None)
+    if direct_value is not None:
+        return direct_value
+    low_vol_details = getattr(sg, "low_vol_cost_floor_details", None)
+    if isinstance(low_vol_details, dict):
+        price_motion_context = low_vol_details.get("price_motion_context")
+        if isinstance(price_motion_context, dict):
+            return price_motion_context.get(field_name)
+    return None
+
+
+def _build_price_motion_context(sg: Any) -> dict[str, Any]:
+    context: dict[str, Any] = {}
+    missing: dict[str, bool] = {}
+    missing_reason: dict[str, str | None] = {}
+    for field_name in (
+        "pm_norm_10s",
+        "pm_norm_60s",
+        "pm_norm_300s",
+        "vol_pct_10s",
+        "vol_pct_60s",
+        "vol_pct_300s",
+    ):
+        value = _pick_price_motion_value(sg, field_name)
+        context[field_name] = value
+        is_missing = value is None
+        missing[field_name] = is_missing
+        missing_reason[field_name] = (
+            "absent_from_safety_gate_result" if is_missing else None
+        )
+    context["missing"] = missing
+    context["missing_reason"] = missing_reason
+    return context
+
+
+def _build_missing_inputs(sg: Any) -> dict[str, str | None]:
+    price_motion_context = _build_price_motion_context(sg)
+    return {
+        "regime_confidence": (
+            "absent_from_safety_gate_result"
+            if getattr(sg, "regime_confidence", None) is None
+            else None
+        ),
+        "trend_dir": (
+            "absent_from_safety_gate_result"
+            if getattr(sg, "trend_dir", None) is None
+            else None
+        ),
+        "trend_confidence": (
+            "absent_from_safety_gate_result"
+            if getattr(sg, "trend_confidence", None) is None
+            else None
+        ),
+        "trend_run_length": (
+            "absent_from_safety_gate_result"
+            if getattr(sg, "trend_run_length", None) is None
+            else None
+        ),
+        "pm_norm_10s": price_motion_context["missing_reason"]["pm_norm_10s"],
+        "pm_norm_60s": price_motion_context["missing_reason"]["pm_norm_60s"],
+        "pm_norm_300s": price_motion_context["missing_reason"]["pm_norm_300s"],
+        "vol_pct_10s": price_motion_context["missing_reason"]["vol_pct_10s"],
+        "vol_pct_60s": price_motion_context["missing_reason"]["vol_pct_60s"],
+        "vol_pct_300s": price_motion_context["missing_reason"]["vol_pct_300s"],
+        "low_vol_cost_floor": (
+            None
+            if isinstance(getattr(sg, "low_vol_cost_floor_details", None), dict)
+            else "not_evaluated_or_not_attached"
+        ),
+    }
+
+
+def _build_safety_gate_snapshot(sg: Any) -> dict[str, Any]:
+    return {
+        "apply_safety_gates": getattr(sg, "apply_safety_gates", None),
+        "directional_sanity_enabled": getattr(sg, "directional_sanity_enabled", None),
+        "nrr026_enabled": getattr(sg, "nrr026_enabled", None),
+        "nrr026_effective_enforced": getattr(sg, "nrr026_effective_enforced", None),
+        "nrr027_enabled": getattr(sg, "nrr027_enabled", None),
+        "nrr027_effective_enforced": getattr(sg, "nrr027_effective_enforced", None),
+        "price_motion_sanity_enabled": getattr(sg, "price_motion_sanity_enabled", None),
+        "price_motion_backtest_bypass": getattr(sg, "price_motion_backtest_bypass", None),
+        "nrr028_enabled": getattr(sg, "nrr028_enabled", None),
+        "nrr028_effective_enforced": getattr(sg, "nrr028_effective_enforced", None),
+        "nrr029_enabled": getattr(sg, "nrr029_enabled", None),
+        "nrr029_effective_enforced": getattr(sg, "nrr029_effective_enforced", None),
+        "nrr030_enabled": getattr(sg, "nrr030_enabled", None),
+        "nrr030_effective_enforced": getattr(sg, "nrr030_effective_enforced", None),
+        "nrr063_enabled": getattr(sg, "nrr063_enabled", None),
+        "nrr063_effective_enforced": getattr(sg, "nrr063_effective_enforced", None),
+        "regime_confidence_gate_verdict": getattr(sg, "regime_confidence_gate_verdict", None),
+        "threshold_verdict": getattr(sg, "threshold_verdict", None),
+        "threshold_reason": getattr(sg, "threshold_reason", None),
+    }
+
+
 def build_trade_intent_payload(
     *,
     symbol: str,
@@ -107,18 +235,23 @@ def build_decision_trace_payload(
     strategy_id: str,
     trace_ts_ms: int,
     intent_side: str,
+    order_side: Optional[str],
     lifecycle_id: Optional[str],
     sg: Any,
     regime_provenance: Optional[dict],
     tpsl_owner_ctx: Optional[dict],
+    gate_outcome: str = "ALLOW",
+    deny_reason: Optional[str] = None,
+    why: Optional[str] = None,
 ) -> dict[str, Any]:
     """Build the side-channel decision trace payload emitted before the trade intent."""
     trace_payload = {
         "rid": rid,
         "symbol": symbol,
+        "side": _normalize_order_side(order_side),
         "strategy_id": strategy_id,
         "ts": trace_ts_ms,
-        "intent_side": intent_side,
+        "intent_side": _normalize_intent_side(intent_side),
         "signal_score": sg.signal_score,
         "regime": sg.regime,
         "regime_confidence": sg.regime_confidence,
@@ -137,7 +270,8 @@ def build_decision_trace_payload(
         "resolved_regime_confidence_band_active": getattr(sg, "resolved_regime_confidence_band_active", None),
         "regime_confidence_breach_kind": getattr(sg, "regime_confidence_breach_kind", None),
         "regime_confidence_gate_verdict": getattr(sg, "regime_confidence_gate_verdict", None),
-        "trend_dir": sg.trend_dir,
+        "trend_dir": _normalize_trend_dir(getattr(sg, "trend_dir", None)),
+        "trend_confidence": getattr(sg, "trend_confidence", None),
         "trend_run_length": sg.trend_run_length,
         "delta_price": sg.delta_price,
         "pm_norm_10s": sg.pm_norm_10s,
@@ -146,9 +280,12 @@ def build_decision_trace_payload(
         "vol_pct_10s": sg.vol_pct_10s,
         "vol_pct_60s": sg.vol_pct_60s,
         "vol_pct_300s": sg.vol_pct_300s,
-        "gate_outcome": "ALLOW",
-        "deny_reason": None,
-        "why": (str(sg.why_short)[:80] if sg.why_short else ""),
+        "gate_outcome": gate_outcome,
+        "deny_reason": deny_reason,
+        "why": (str(why if why is not None else getattr(sg, "why_short", ""))[:80]),
+        "price_motion_context": _build_price_motion_context(sg),
+        "missing_inputs": _build_missing_inputs(sg),
+        "safety_gate_snapshot": _build_safety_gate_snapshot(sg),
     }
     if lifecycle_id is not None:
         trace_payload["lifecycle_id"] = lifecycle_id

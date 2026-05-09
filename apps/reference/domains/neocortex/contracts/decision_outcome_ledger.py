@@ -1,4 +1,6 @@
 from __future__ import annotations
+from typing import Literal
+
 from apps.reference.domains.neocortex.contracts.causal_time import DatasetVisibility
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -6,6 +8,7 @@ from enum import Enum
 
 JsonScalar = str | int | float | bool | None
 JsonValue = JsonScalar | dict[str, object] | list[object]
+CounterfactualSupport = Literal["supported", "unsupported"]
 
 
 DECISION_OUTCOME_LEDGER_SCHEMA_PASSPORT_ID = "neocortex.decision_outcome_ledger_row.v1"
@@ -65,6 +68,7 @@ class DecisionOutcomeLedgerRow(BaseModel):
     stress_metrics: dict[str, JsonValue] = Field(default_factory=dict)
     support_quality: dict[str, JsonValue] = Field(default_factory=dict)
     dataset_visibility: DatasetVisibility
+    counterfactual_support: CounterfactualSupport | None = None
     invalid_reason_code: str | None = None
     causal_state_snapshot: dict[str, JsonValue] = Field(default_factory=dict)
     neocortex_action: str = Field(min_length=1)
@@ -109,6 +113,14 @@ class DecisionOutcomeLedgerRow(BaseModel):
             raise ValueError(
                 "trainable rows cannot carry invalid_reason_code"
             )
+        if self.counterfactual_support is None:
+            self.counterfactual_support = (
+                "supported" if self.dataset_visibility == "trainable" else "unsupported"
+            )
+        if self.dataset_visibility == "trainable" and self.counterfactual_support != "supported":
+            raise ValueError(
+                "trainable rows must carry counterfactual_support='supported'"
+            )
         expected_execution_outcome = map_terminal_status_to_execution_outcome(
             self.terminal_status
         )
@@ -124,6 +136,7 @@ class DecisionOutcomeLedgerRow(BaseModel):
 __all__ = [
     "DECISION_OUTCOME_LEDGER_SCHEMA_PASSPORT_ID",
     "DECISION_OUTCOME_LEDGER_VERSION",
+    "CounterfactualSupport",
     "DecisionOutcomeLedgerRow",
     "DecisionOutcomeTerminalStatus",
     "ExecutionOutcome",

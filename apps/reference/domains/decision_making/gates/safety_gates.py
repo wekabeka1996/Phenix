@@ -78,6 +78,21 @@ class SafetyGateResult:
     threshold_applied: bool = False
     threshold_verdict: str = "BYPASS"
     threshold_reason: str = "threshold_not_evaluated"
+    directional_sanity_enabled: Optional[bool] = None
+    nrr026_enabled: Optional[bool] = None
+    nrr026_effective_enforced: Optional[bool] = None
+    nrr027_enabled: Optional[bool] = None
+    nrr027_effective_enforced: Optional[bool] = None
+    price_motion_sanity_enabled: Optional[bool] = None
+    price_motion_backtest_bypass: Optional[bool] = None
+    nrr028_enabled: Optional[bool] = None
+    nrr028_effective_enforced: Optional[bool] = None
+    nrr029_enabled: Optional[bool] = None
+    nrr029_effective_enforced: Optional[bool] = None
+    nrr030_enabled: Optional[bool] = None
+    nrr030_effective_enforced: Optional[bool] = None
+    nrr063_enabled: Optional[bool] = None
+    nrr063_effective_enforced: Optional[bool] = None
     trend_dir: str = "UNKNOWN"
     trend_run_length: int = 0
     delta_price: Optional[float] = None
@@ -935,6 +950,9 @@ def apply_safety_gates(
     ds_enabled = bool(ds_cfg.enabled)
     nrr026_enabled = bool(getattr(ds_cfg, 'nrr026_enabled', True))
     nrr027_enabled = bool(getattr(ds_cfg, 'nrr027_enabled', True))
+    result.directional_sanity_enabled = ds_enabled
+    result.nrr026_enabled = nrr026_enabled
+    result.nrr027_enabled = nrr027_enabled
     min_abs_delta = float(ds_cfg.min_abs_delta_price)
     min_conf = float(ds_cfg.min_confidence)
     min_regime_conf = _coerce_runtime_threshold(
@@ -998,6 +1016,26 @@ def apply_safety_gates(
     result.resolved_regime_confidence_band_active = bool(
         (resolved_min_regime_conf is not None and resolved_min_regime_conf > 0.0)
         or result.resolved_max_regime_confidence is not None
+    )
+    result.nrr026_effective_enforced = bool(
+        apply_flag
+        and not reduce_only
+        and ds_enabled
+        and nrr026_enabled
+        and result.resolved_regime_confidence_band_active
+    )
+    result.nrr027_effective_enforced = bool(
+        apply_flag
+        and not reduce_only
+        and ds_enabled
+        and nrr027_enabled
+    )
+    result.nrr063_enabled = result.resolved_max_regime_confidence is not None
+    result.nrr063_effective_enforced = bool(
+        apply_flag
+        and not reduce_only
+        and ds_enabled
+        and result.resolved_max_regime_confidence is not None
     )
     consecutive = int(ds_cfg.consecutive_bars)
     raw_hard_veto = getattr(ds_cfg, 'hard_veto_consecutive_bars', None)
@@ -1170,6 +1208,24 @@ def apply_safety_gates(
     result.why_short = why_short
 
     # ── Gate 3: Price motion multi-window gate ─────────────────
+    pm_cfg = config.domains.decision_making.price_motion_sanity
+    pm_enabled = bool(pm_cfg.enabled)
+    try:
+        is_backtest = str(getattr(config, "trading_mode", "")
+                          ).strip().lower() == "backtest"
+    except Exception:
+        is_backtest = False
+    result.price_motion_sanity_enabled = pm_enabled
+    result.price_motion_backtest_bypass = is_backtest
+    result.nrr028_enabled = pm_enabled
+    result.nrr029_enabled = pm_enabled
+    result.nrr030_enabled = pm_enabled
+    result.nrr028_effective_enforced = bool(
+        apply_flag and not reduce_only and pm_enabled and not is_backtest
+    )
+    result.nrr029_effective_enforced = result.nrr028_effective_enforced
+    result.nrr030_effective_enforced = result.nrr028_effective_enforced
+
     pm_outcome, pm_deny, pm_why = _check_price_motion_gate(
         config=config,
         symbol=symbol,

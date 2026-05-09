@@ -178,6 +178,19 @@ def _observation_time_support(snapshot: Mapping[str, object]) -> JsonObject:
         break
 
     provenance = coerce_causal_time_provenance(provenance_raw)
+    observation_event_ts_ms = None
+    for key in (
+        "event_ts_ms",
+        "decision_basis_ts_ms",
+        "decision_basis_ts",
+        "feature_event_ts_ms",
+    ):
+        timestamp = _safe_int(snapshot.get(key))
+        if timestamp is None or timestamp < 1:
+            continue
+        observation_event_ts_ms = timestamp
+        break
+    observation_event_ts_present = observation_event_ts_ms is not None
     raw_visibility = snapshot.get("dataset_visibility")
     dataset_visibility = None
     if isinstance(raw_visibility, str):
@@ -188,13 +201,21 @@ def _observation_time_support(snapshot: Mapping[str, object]) -> JsonObject:
     return {
         "observation_provenance_present": provenance_raw is not None,
         "observation_provenance_causal": bool(
-            provenance_raw is not None and is_causal_time_provenance(
-                provenance)
+            observation_event_ts_present
+            and provenance_raw is not None
+            and is_causal_time_provenance(provenance)
         ),
         "observation_time_source": provenance.value,
-        "observation_time_is_causal": bool(snapshot.get("event_time_is_causal") is True),
-        "observation_trainable": bool(snapshot.get("trainable") is True),
+        "observation_time_is_causal": bool(
+            observation_event_ts_present and snapshot.get(
+                "event_time_is_causal") is True
+        ),
+        "observation_trainable": bool(
+            observation_event_ts_present and snapshot.get("trainable") is True
+        ),
         "observation_dataset_visibility": dataset_visibility,
+        "observation_event_ts_present": observation_event_ts_present,
+        "observation_event_ts_ms": observation_event_ts_ms,
     }
 
 
@@ -769,6 +790,12 @@ class DecisionOutcomeLedgerSink:
                 flags.get("authority_applied"), default=True
             ),
             "no_effect": _coerce_bool(flags.get("no_effect"), default=False),
+            "counterfactual_evaluation": _coerce_bool(
+                flags.get("counterfactual_evaluation"), default=False
+            ),
+            "returned_action_present": _string_alias(
+                flags, "returned_action"
+            ) is not None,
             "explicit_request_ts_present": _explicit_timestamp_present(
                 payload, "request_ts_ms"
             ),
@@ -797,6 +824,20 @@ class DecisionOutcomeLedgerSink:
                 return (
                     DecisionOutcomeTerminalStatus.INVALID_FOR_DATASET,
                     "UNJOINABLE_LIFECYCLE",
+                )
+            pnl_status = _string_alias(payload, "pnl_status")
+            realized_pnl_net = _safe_float(
+                payload.get("realized_pnl_net")
+                or payload.get("net_pnl")
+                or payload.get("realized_pnl")
+            )
+            if (
+                (pnl_status is not None and pnl_status.strip().lower() != "resolved")
+                or realized_pnl_net is None
+            ):
+                return (
+                    DecisionOutcomeTerminalStatus.INVALID_FOR_DATASET,
+                    "TERMINAL_PNL_MISSING",
                 )
             if self._is_fallback(entry):
                 return DecisionOutcomeTerminalStatus.BASELINE_FALLBACK_EXECUTED, None
@@ -893,6 +934,8 @@ class DecisionOutcomeLedgerSink:
             return FailureReasonCode.MISSING_REQUIRED_STATE.value
         if not entry.support_quality.get("observation_provenance_present", False):
             return FailureReasonCode.MISSING_REQUIRED_STATE.value
+        if not entry.support_quality.get("observation_event_ts_present", False):
+            return FailureReasonCode.MISSING_REQUIRED_STATE.value
         if not entry.support_quality.get("observation_provenance_causal", False):
             return FailureReasonCode.NON_CAUSAL_TIME.value
         if not entry.support_quality.get("observation_time_is_causal", False):
@@ -902,6 +945,49 @@ class DecisionOutcomeLedgerSink:
         if entry.support_quality.get("observation_dataset_visibility") != "trainable":
             return FailureReasonCode.MISSING_REQUIRED_STATE.value
         return None
+
+    def _counterfactual_support(
+        self,
+        entry: _PendingDecision,
+        terminal_status: DecisionOutcomeTerminalStatus,
+        invalid_reason_code: str | None,
+    ) -> str:
+        if invalid_reason_code is not None or entry.authority_mode == "unknown":
+            return "unsupported"
+        if terminal_status == DecisionOutcomeTerminalStatus.INVALID_FOR_DATASET:
+            return "unsupported"
+        if entry.support_quality.get("capture_mode") == "journal_only":
+            return "unsupported"
+        if not entry.support_quality.get("supports_counterfactual_join", False):
+            return "unsupported"
+        if entry.support_quality.get("snapshot_missing", False):
+            return "unsupported"
+        if entry.support_quality.get("has_nan", False):
+            return "unsupported"
+        if entry.support_quality.get("is_stale", False):
+            return "unsupported"
+        if not entry.support_quality.get("explicit_request_ts_present", False):
+            return "unsupported"
+        if not entry.support_quality.get("explicit_response_ts_present", False):
+            return "unsupported"
+        if not entry.support_quality.get("observation_provenance_present", False):
+            return "unsupported"
+        if not entry.support_quality.get("observation_event_ts_present", False):
+            return "unsupported"
+        if not entry.support_quality.get("observation_provenance_causal", False):
+            return "unsupported"
+        if not entry.support_quality.get("observation_time_is_causal", False):
+            return "unsupported"
+        if not entry.support_quality.get("observation_trainable", False):
+            return "unsupported"
+        if entry.support_quality.get("observation_dataset_visibility") != "trainable":
+            return "unsupported"
+        if entry.support_quality.get("no_effect", False):
+            if not entry.support_quality.get("counterfactual_evaluation", False):
+                return "unsupported"
+            if not entry.support_quality.get("returned_action_present", False):
+                return "unsupported"
+        return "supported"
 
     def _build_row(
         self,
@@ -947,6 +1033,12 @@ class DecisionOutcomeLedgerSink:
             entry,
             invalid_reason_code,
         )
+        counterfactual_support = self._counterfactual_support(
+            entry,
+            terminal_status,
+            effective_invalid_reason_code,
+        )
+        support_quality["counterfactual_support"] = counterfactual_support
         if effective_invalid_reason_code is not None:
             inc_neocortex_dataset_invalid(effective_invalid_reason_code)
 
@@ -972,6 +1064,7 @@ class DecisionOutcomeLedgerSink:
                 terminal_status,
                 effective_invalid_reason_code,
             ),
+            counterfactual_support=counterfactual_support,
             invalid_reason_code=effective_invalid_reason_code,
             causal_state_snapshot=dict(entry.causal_state_snapshot),
             neocortex_action=entry.neocortex_action,

@@ -34,6 +34,7 @@ def _make_mock_fsm():
     # Phase 2 caches — may not exist yet on real FSM; tests set to validate
     mock_fsm._last_trade_id_by_symbol = {}
     mock_fsm._last_entry_side_by_symbol = {}
+    mock_fsm._close_accounting_truth_by_symbol = {}
     mock_fsm._pending_intent_data = {}
     mock_fsm._pending_entry_meta = {}
     mock_fsm._pending_brackets = {}
@@ -156,6 +157,21 @@ def _run_portfolio_close(
     mock_fsm._last_close_reason_by_symbol = (
         {"BTCUSDT": close_reason} if close_reason is not None else {}
     )
+    mock_fsm._close_accounting_truth_by_symbol = {
+        "BTCUSDT": {
+            "trade_id": trade_id,
+            "close_price": 50100.0,
+            "realized_pnl": -0.5,
+            "fees": 0.0,
+            "lifecycle_id": "test-idem-lifecycle-000",
+            "entry_side": entry_side,
+            "close_reason": close_reason or "POSITION_CLOSED_DETECTED",
+            "pnl_status": "resolved",
+            "pnl_source": "close_fill",
+            "economic_close_detected": True,
+            "economic_close_kind": "explicit_close_fill",
+        }
+    }
     mock_fsm.get_recent_terminal_close_proof.return_value = recent_close_proof
 
     event = SimpleNamespace(

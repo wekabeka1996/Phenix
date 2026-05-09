@@ -245,7 +245,7 @@ class ExposureManager:
 
             if use_absolute:
                 is_mismatch = diff_abs > shadow_cfg.absolute_threshold_usd
-                threshold_desc = f">${shadow_cfg.absolute_threshold_usd:.0f}"
+                threshold_desc = f"${shadow_cfg.absolute_threshold_usd:.0f}"
             else:
                 is_mismatch = diff_pct > shadow_cfg.tolerance_pct
                 threshold_desc = f">{shadow_cfg.tolerance_pct}%"
@@ -286,7 +286,7 @@ class ExposureManager:
         """
         EXP-FIX: Handle order cancellation events for exposure summary update.
         """
-        from vfoundation.core.fsm_emit_compat import Message, emit_compat
+        from vfoundation.core.fsm_emit_compat import Message
         from ..flows.manage.pending_brackets_wal import write_pending_brackets_cleared
 
         pld = msg.pld or {}
@@ -296,6 +296,13 @@ class ExposureManager:
 
         LOG.info(
             f"CANCEL_EVENT: Processing cancellation for {symbol} order {order_id}")
+
+        # DEF-WATCHDOG-DEREG-AFTER-FILL: Ensure terminal states remove order from watchdog
+        # This prevents stale fill_timeout events for cancelled/rejected/expired orders.
+        if order_id and hasattr(self._fsm, "watchdog") and self._fsm.watchdog:
+            _status = str(pld.get("status") or "").upper()
+            if _status in {"CANCELED", "REJECTED", "EXPIRED", "FILLED"}:
+                self._fsm.watchdog.on_order_cancel(str(order_id))
 
         # Cleanup pending brackets if entry was cancelled
         if order_id and order_id in self._fsm._pending_brackets:
@@ -334,6 +341,7 @@ class ExposureManager:
 
         # Emit exposure summary update after cancellation
         try:
+            exposure_summary = self._fsm.exposure_guard.get_exposure_summary()
             exposure_msg = Message(
                 op="EVT",
                 verb="EXPOSURE_SUMMARY_UPDATED",
@@ -341,11 +349,14 @@ class ExposureManager:
                 dst="monitoring",
                 rid=pld.get("rid") or msg.rid or f"cancel_{order_id}",
                 pld={
-                    "symbol": symbol,
-                    "order_id": order_id,
-                    "client_order_id": client_order_id,
-                    "reason": "order_cancelled",
-                    "timestamp": get_clock().now_ms()
+                    "exposure_summary": exposure_summary,
+                    "portfolio_state": getattr(
+                        self._fsm, "_latest_portfolio_state", None),
+                    "timestamp_ms": get_clock().now_ms(),
+                    "cancel_order_id": order_id,
+                    "cancel_symbol": symbol,
+                    "cancel_client_order_id": client_order_id,
+                    "update_reason": "order_cancelled",
                 },
                 why="order_cancelled_exposure_update",
             )

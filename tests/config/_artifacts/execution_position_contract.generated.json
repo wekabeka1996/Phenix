@@ -642,6 +642,11 @@
           "default": "'<required>'",
           "default_factory": null,
           "required": true
+        },
+        "shadow_fee_aware_arm": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
         }
       }
     },
@@ -674,6 +679,66 @@
           "required": true
         },
         "candidate_pcts": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "PositionPolicySidecarShadowFeeAwareConfiguredFeeModelConfig": {
+      "extra": "forbid",
+      "fields": {
+        "enabled": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "round_trip_fee_bps": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "PositionPolicySidecarShadowFeeAwareOptionalPctFloorConfig": {
+      "extra": "forbid",
+      "fields": {
+        "enabled": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "candidate_pcts": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        }
+      }
+    },
+    "PositionPolicySidecarShadowFeeAwareArmConfig": {
+      "extra": "forbid",
+      "fields": {
+        "enabled": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "fee_source_priority": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "candidate_fee_multiples": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "configured_fee_model": {
+          "default": "'<required>'",
+          "default_factory": null,
+          "required": true
+        },
+        "optional_pct_notional_floor": {
           "default": "'<required>'",
           "default_factory": null,
           "required": true
@@ -997,6 +1062,22 @@
         {
           "name": "ENABLE",
           "value": "enable"
+        }
+      ]
+    },
+    "PositionPolicySidecarShadowFeeAwareArmFeeSource": {
+      "members": [
+        {
+          "name": "REALIZED_LIFECYCLE_FEE",
+          "value": "realized_lifecycle_fee"
+        },
+        {
+          "name": "ORDER_LOG_FEE",
+          "value": "order_log_fee"
+        },
+        {
+          "name": "CONFIGURED_FEE_MODEL",
+          "value": "configured_fee_model"
         }
       ]
     }

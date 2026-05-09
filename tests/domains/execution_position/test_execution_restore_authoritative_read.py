@@ -127,6 +127,7 @@ def _record(
     bracket_state: str = BRACKET_STATE_UNKNOWN,
     deferred_entry_order_id: str | None = None,
     linked_bracket_ref: dict | None = None,
+    close_submission_contour: dict | None = None,
 ) -> ExecutionPositionRestoreLifecycleRecord:
     kwargs = {
         "symbol": symbol,
@@ -142,7 +143,46 @@ def _record(
             "entry_order_id": deferred_entry_order_id}
     if linked_bracket_ref:
         kwargs["linked_bracket_ref"] = linked_bracket_ref
+    if close_submission_contour:
+        kwargs["close_submission_contour"] = close_submission_contour
     return ExecutionPositionRestoreLifecycleRecord.model_validate(kwargs)
+
+
+def _sample_close_submission_contour() -> dict:
+    return {
+        "close_cmd_rid": "RID-CLOSE-BTCUSDT",
+        "truth_classification": "POSITION_PRESENT_AND_SUBMITTABLE",
+        "truth_reason": "matched_live_position",
+        "position_amount_at_close_request": "0.25",
+        "bridge_payload": {
+            "symbol": "BTCUSDT",
+            "reason": "MANUAL_CLOSE",
+            "qty": "0.04",
+            "idempotent_key": "IDEM-BTCUSDT",
+            "trigger": "CMD:CLOSE",
+            "command_trigger": "manual_close",
+            "close_guard_prevalidated": False,
+        },
+        "submission_payload": {
+            "symbol": "BTCUSDT",
+            "side": "SELL",
+            "quantity": "0.04",
+            "client_order_id": "CLOSE-BTCUSDT-CLIENT-1",
+            "partial_close": True,
+        },
+        "submit_boundary_result": {
+            "outcome": "submitted",
+            "status": "NEW",
+            "order_id": "close-123",
+        },
+    }
+
+
+def _sample_close_submission_contour_without_reason_trigger() -> dict:
+    contour = _sample_close_submission_contour()
+    contour["bridge_payload"].pop("reason")
+    contour["bridge_payload"].pop("trigger")
+    return contour
 
 
 def _load_startup_truth_rows(path: Path) -> list[dict]:
@@ -188,6 +228,85 @@ def test_authoritative_read_restores_exact_manage_and_close_fields_from_envelope
     assert result.symbol_statuses[0].manage_phase_restore_status == "exact"
     assert result.symbol_statuses[0].close_phase_restore_status == "exact"
     assert result.symbol_statuses[0].bracket_state_restore_status == "unknown"
+
+
+def test_authoritative_read_restores_close_submission_contour_statuses(
+    fsm_harness,
+    tmp_path: Path,
+) -> None:
+    fsm, _, _ = fsm_harness
+    path = _configure_authoritative(fsm, tmp_path)
+    _write_envelope(
+        path,
+        ExecutionPositionRestoreEnvelope(
+            schema_version="1.0.0",
+            artifact_type="execution_position_restore_envelope_v1",
+            generated_at_ms=1_775_000_000_000,
+            writer_component="execution_position",
+            requires_live_reconcile=True,
+            active_lifecycles=[
+                _record(
+                    close_submission_contour=_sample_close_submission_contour(),
+                )
+            ],
+        ),
+    )
+
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_authoritative_read(
+        now_ms=1_775_000_001_000
+    )
+
+    symbol_status = result.symbol_statuses[0]
+    assert result.restored_exact_field_count == 5
+    assert result.restored_unknown_field_count == 1
+    assert symbol_status.close_submission_truth_classification_restore_status == "exact"
+    assert symbol_status.close_submission_truth_classification_value == "POSITION_PRESENT_AND_SUBMITTABLE"
+    assert symbol_status.close_submission_client_order_id_restore_status == "exact"
+    assert symbol_status.close_submission_client_order_id_value == "CLOSE-BTCUSDT-CLIENT-1"
+    assert symbol_status.close_submission_boundary_outcome_restore_status == "exact"
+    assert symbol_status.close_submission_boundary_outcome_value == "submitted"
+    assert fsm.close_flows["BTCUSDT"].close_submission_restore_truth["submit_boundary_result"]["order_id"] == "close-123"
+
+
+def test_authoritative_read_preserves_absent_bridge_reason_trigger_without_defaults(
+    fsm_harness,
+    tmp_path: Path,
+) -> None:
+    fsm, _, _ = fsm_harness
+    path = _configure_authoritative(fsm, tmp_path)
+    _write_envelope(
+        path,
+        ExecutionPositionRestoreEnvelope(
+            schema_version="1.0.0",
+            artifact_type="execution_position_restore_envelope_v1",
+            generated_at_ms=1_775_000_000_000,
+            writer_component="execution_position",
+            requires_live_reconcile=True,
+            active_lifecycles=[
+                _record(
+                    close_submission_contour=_sample_close_submission_contour_without_reason_trigger(),
+                )
+            ],
+        ),
+    )
+
+    result = fsm._startup_truth_orchestrator._run_restore_artifact_authoritative_read(
+        now_ms=1_775_000_001_000
+    )
+
+    symbol_status = result.symbol_statuses[0]
+    assert result.artifact_state == "valid"
+    assert result.parse_success is True
+    assert result.applied_record_count == 1
+    assert symbol_status.close_submission_truth_classification_restore_status == "exact"
+    assert symbol_status.close_submission_client_order_id_restore_status == "exact"
+    assert symbol_status.close_submission_boundary_outcome_restore_status == "exact"
+
+    contour = fsm.close_flows["BTCUSDT"].close_submission_restore_truth
+    assert contour["bridge_payload"]["symbol"] == "BTCUSDT"
+    assert contour["bridge_payload"]["idempotent_key"] == "IDEM-BTCUSDT"
+    assert "reason" not in contour["bridge_payload"]
+    assert "trigger" not in contour["bridge_payload"]
 
 
 def test_authoritative_read_keeps_linked_bracket_state_unknown_without_lineage(

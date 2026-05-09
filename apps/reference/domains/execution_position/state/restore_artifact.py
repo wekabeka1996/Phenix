@@ -4,10 +4,11 @@ import json
 import logging
 import os
 import tempfile
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from apps.reference.config_models import (
     ExecutionPositionRestoreArtifactConfig,
@@ -64,6 +65,150 @@ class LinkedBracketRef(BaseModel):
         return self
 
 
+def _parse_decimal_text(
+    value: Optional[str],
+    *,
+    field_name: str,
+) -> Optional[Decimal]:
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be a decimal string") from exc
+
+
+class ExecutionPositionRestoreDecCloseBridgePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str = Field(min_length=1)
+    reason: Optional[str] = Field(default=None, min_length=1)
+    qty: Optional[str] = Field(default=None, pattern=r"^[0-9]+(\.[0-9]+)?$")
+    idempotent_key: str = Field(min_length=1)
+    trigger: Optional[str] = Field(default=None, min_length=1)
+    command_trigger: Optional[str] = Field(default=None, min_length=1)
+    close_guard_prevalidated: bool = False
+
+    @field_validator("reason", "trigger", "command_trigger", mode="before")
+    @classmethod
+    def _normalize_optional_text(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+
+class ExecutionPositionRestoreCloseSubmissionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str = Field(min_length=1)
+    side: Literal["BUY", "SELL"]
+    quantity: str = Field(..., pattern=r"^[0-9]+(\.[0-9]+)?$")
+    client_order_id: str = Field(min_length=1)
+    partial_close: bool
+
+
+class ExecutionPositionRestoreSubmitBoundaryResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    outcome: Literal["submitted", "rejected"]
+    status: Optional[str] = Field(default=None, min_length=1)
+    order_id: Optional[str] = Field(default=None, min_length=1)
+    reject_reason: Optional[str] = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _validate_result(self) -> "ExecutionPositionRestoreSubmitBoundaryResult":
+        if self.outcome == "submitted":
+            if not (self.status or self.order_id):
+                raise ValueError(
+                    "submit_boundary_result requires status or order_id when outcome=submitted"
+                )
+            if self.reject_reason is not None:
+                raise ValueError(
+                    "reject_reason is not allowed when outcome=submitted"
+                )
+            return self
+        if self.reject_reason is None:
+            raise ValueError(
+                "reject_reason is required when outcome=rejected"
+            )
+        if self.order_id is not None:
+            raise ValueError(
+                "order_id is not allowed when outcome=rejected"
+            )
+        return self
+
+
+class ExecutionPositionRestoreCloseSubmissionContour(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    close_cmd_rid: str = Field(min_length=1)
+    truth_classification: Literal[
+        "GENUINELY_FLAT",
+        "POSITION_TRUTH_UNRESOLVED",
+        "POSITION_PRESENT_AND_SUBMITTABLE",
+    ]
+    truth_reason: str = Field(min_length=1)
+    position_amount_at_close_request: Optional[str] = Field(
+        default=None,
+        pattern=r"^-?[0-9]+(\.[0-9]+)?$",
+    )
+    bridge_payload: ExecutionPositionRestoreDecCloseBridgePayload
+    submission_payload: Optional[ExecutionPositionRestoreCloseSubmissionPayload] = Field(
+        default=None
+    )
+    submit_boundary_result: Optional[ExecutionPositionRestoreSubmitBoundaryResult] = Field(
+        default=None
+    )
+
+    @model_validator(mode="after")
+    def _validate_contour(self) -> "ExecutionPositionRestoreCloseSubmissionContour":
+        position_amount = _parse_decimal_text(
+            self.position_amount_at_close_request,
+            field_name="position_amount_at_close_request",
+        )
+        if (
+            self.submit_boundary_result is not None
+            and self.submission_payload is None
+        ):
+            raise ValueError(
+                "submit_boundary_result requires submission_payload"
+            )
+        if self.truth_classification == "POSITION_TRUTH_UNRESOLVED":
+            if position_amount is not None:
+                raise ValueError(
+                    "position_amount_at_close_request is not allowed when truth_classification=POSITION_TRUTH_UNRESOLVED"
+                )
+            if self.submission_payload is not None:
+                raise ValueError(
+                    "submission_payload is not allowed when truth_classification=POSITION_TRUTH_UNRESOLVED"
+                )
+            if self.submit_boundary_result is not None:
+                raise ValueError(
+                    "submit_boundary_result is not allowed when truth_classification=POSITION_TRUTH_UNRESOLVED"
+                )
+            return self
+        if self.truth_classification == "GENUINELY_FLAT":
+            if position_amount is None or position_amount != Decimal("0"):
+                raise ValueError(
+                    "position_amount_at_close_request must be exactly 0 when truth_classification=GENUINELY_FLAT"
+                )
+            if self.submission_payload is not None:
+                raise ValueError(
+                    "submission_payload is not allowed when truth_classification=GENUINELY_FLAT"
+                )
+            if self.submit_boundary_result is not None:
+                raise ValueError(
+                    "submit_boundary_result is not allowed when truth_classification=GENUINELY_FLAT"
+                )
+            return self
+        if position_amount is None or position_amount == Decimal("0"):
+            raise ValueError(
+                "position_amount_at_close_request must be non-zero when truth_classification=POSITION_PRESENT_AND_SUBMITTABLE"
+            )
+        return self
+
+
 class ExecutionPositionRestoreLifecycleRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -78,6 +223,9 @@ class ExecutionPositionRestoreLifecycleRecord(BaseModel):
     live_reconcile_required: bool = Field(default=True)
     deferred_bracket_ref: Optional[DeferredBracketRef] = Field(default=None)
     linked_bracket_ref: Optional[LinkedBracketRef] = Field(default=None)
+    close_submission_contour: Optional[ExecutionPositionRestoreCloseSubmissionContour] = Field(
+        default=None
+    )
 
     @model_validator(mode="after")
     def _validate_deferred_ref(self) -> "ExecutionPositionRestoreLifecycleRecord":
@@ -113,6 +261,19 @@ class ExecutionPositionRestoreLifecycleRecord(BaseModel):
             raise ValueError(
                 "linked_bracket_ref is only allowed when bracket_state is LINKED_ACTIVE or PARTIAL_LINKAGE"
             )
+        if self.close_submission_contour is not None:
+            if self.close_submission_contour.bridge_payload.symbol != self.symbol:
+                raise ValueError(
+                    "close_submission_contour.bridge_payload.symbol must match lifecycle record symbol"
+                )
+            submission_payload = self.close_submission_contour.submission_payload
+            if (
+                submission_payload is not None
+                and submission_payload.symbol != self.symbol
+            ):
+                raise ValueError(
+                    "close_submission_contour.submission_payload.symbol must match lifecycle record symbol"
+                )
         return self
 
 
@@ -202,6 +363,33 @@ class ExecutionPositionRestoreAuthoritativeSymbolStatus(BaseModel):
     bracket_state_value: str = Field(
         min_length=1, default=BRACKET_STATE_UNKNOWN)
     bracket_state_restore_status: Literal["exact", "unknown"] = "unknown"
+    close_submission_truth_classification_value: str = Field(
+        min_length=1,
+        default=RESTORE_PHASE_UNKNOWN,
+    )
+    close_submission_truth_classification_restore_status: Literal[
+        "exact",
+        "unknown",
+        "not_applicable",
+    ] = "not_applicable"
+    close_submission_client_order_id_value: str = Field(
+        min_length=1,
+        default=RESTORE_PHASE_UNKNOWN,
+    )
+    close_submission_client_order_id_restore_status: Literal[
+        "exact",
+        "unknown",
+        "not_applicable",
+    ] = "not_applicable"
+    close_submission_boundary_outcome_value: str = Field(
+        min_length=1,
+        default=RESTORE_PHASE_UNKNOWN,
+    )
+    close_submission_boundary_outcome_restore_status: Literal[
+        "exact",
+        "unknown",
+        "not_applicable",
+    ] = "not_applicable"
     live_reconcile_required: bool = True
     deferred_entry_order_id: Optional[str] = Field(default=None, min_length=1)
     portfolio_presence: Literal["unknown", "present", "absent"] = "unknown"
@@ -559,6 +747,26 @@ class ExecutionPositionRestoreArtifactDarkReader:
         "linked_bracket_ref.tp_order_id",
         "linked_bracket_ref.sl_client_order_id",
         "linked_bracket_ref.tp_client_order_id",
+        "close_submission_contour.close_cmd_rid",
+        "close_submission_contour.truth_classification",
+        "close_submission_contour.truth_reason",
+        "close_submission_contour.position_amount_at_close_request",
+        "close_submission_contour.bridge_payload.symbol",
+        "close_submission_contour.bridge_payload.reason",
+        "close_submission_contour.bridge_payload.qty",
+        "close_submission_contour.bridge_payload.idempotent_key",
+        "close_submission_contour.bridge_payload.trigger",
+        "close_submission_contour.bridge_payload.command_trigger",
+        "close_submission_contour.bridge_payload.close_guard_prevalidated",
+        "close_submission_contour.submission_payload.symbol",
+        "close_submission_contour.submission_payload.side",
+        "close_submission_contour.submission_payload.quantity",
+        "close_submission_contour.submission_payload.client_order_id",
+        "close_submission_contour.submission_payload.partial_close",
+        "close_submission_contour.submit_boundary_result.outcome",
+        "close_submission_contour.submit_boundary_result.status",
+        "close_submission_contour.submit_boundary_result.order_id",
+        "close_submission_contour.submit_boundary_result.reject_reason",
     )
 
     def __init__(
@@ -722,18 +930,15 @@ class ExecutionPositionRestoreArtifactDarkReader:
     ) -> Any:
         if record is None:
             return None
-        if field_name == "deferred_bracket_ref.entry_order_id":
-            if record.deferred_bracket_ref is None:
+        current: Any = record
+        for part in field_name.split("."):
+            if current is None:
                 return None
-            return record.deferred_bracket_ref.entry_order_id
-        if field_name.startswith("linked_bracket_ref."):
-            if record.linked_bracket_ref is None:
-                return None
-            return getattr(
-                record.linked_bracket_ref,
-                field_name.split(".", 1)[1],
-            )
-        return getattr(record, field_name)
+            if isinstance(current, dict):
+                current = current.get(part)
+                continue
+            current = getattr(current, part, None)
+        return current
 
     @classmethod
     def _classify_field_mismatch(cls, artifact_value: Any, heuristic_value: Any) -> str:

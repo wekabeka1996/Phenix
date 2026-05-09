@@ -38,7 +38,8 @@ class _FakeSG:
         self.regime = "TREND_UP"
         self.regime_confidence = 0.82
         self.regime_provenance = REGIME_PROVENANCE
-        self.trend_dir = 1
+        self.trend_dir = "UP"
+        self.trend_confidence = 0.75
         self.trend_run_length = 7
         self.delta_price = 12.5
         self.pm_norm_10s = 0.1
@@ -62,9 +63,43 @@ class _FakeSG:
         self.resolved_regime_confidence_band_active = True
         self.regime_confidence_breach_kind = "none"
         self.regime_confidence_gate_verdict = "ALLOW"
+        self.apply_safety_gates = True
+        self.directional_sanity_enabled = True
+        self.nrr026_enabled = False
+        self.nrr026_effective_enforced = False
+        self.nrr027_enabled = False
+        self.nrr027_effective_enforced = False
+        self.price_motion_sanity_enabled = False
+        self.price_motion_backtest_bypass = False
+        self.nrr028_enabled = False
+        self.nrr028_effective_enforced = False
+        self.nrr029_enabled = False
+        self.nrr029_effective_enforced = False
+        self.nrr030_enabled = False
+        self.nrr030_effective_enforced = False
+        self.nrr063_enabled = True
+        self.nrr063_effective_enforced = True
         self.threshold_applied = True
         self.threshold_verdict = "PASS"
         self.threshold_reason = "regime_confidence=0.82 within band min=0.45 min_source=scalar_legacy max=None max_source=None"
+        self.low_vol_cost_floor_details = {
+            "evaluation_stage": "observe_only",
+            "gate_mode": "observe_only",
+            "would_block": False,
+            "price_motion_context": {
+                "pm_norm_10s": 0.1,
+                "pm_norm_60s": 0.2,
+                "pm_norm_300s": 0.3,
+                "vol_pct_10s": 1.1,
+                "vol_pct_60s": 1.2,
+                "vol_pct_300s": 1.3,
+            },
+            "persistence_context": {
+                "decision_trace_event": "EVT:DECISION_TRACE_EMITTED",
+                "order_logger_event": "ORDER_INTENT",
+                "persisted_in": ["EVT:DECISION_TRACE_EMITTED", "ORDER_INTENT"],
+            },
+        }
 
 
 def _safe_decimal(value, default=None):
@@ -306,6 +341,7 @@ def test_build_and_emit_preserves_decision_trace_payload_contract() -> None:
         {
             "rid": "rid-payload-001",
             "symbol": "BTCUSDT",
+            "side": "BUY",
             "strategy_id": "aurora",
             "ts": 1700000001234,
             "intent_side": "LONG",
@@ -328,7 +364,8 @@ def test_build_and_emit_preserves_decision_trace_payload_contract() -> None:
             "resolved_regime_confidence_band_active": True,
             "regime_confidence_breach_kind": "none",
             "regime_confidence_gate_verdict": "ALLOW",
-            "trend_dir": 1,
+            "trend_dir": "UP",
+            "trend_confidence": 0.75,
             "trend_run_length": 7,
             "delta_price": 12.5,
             "pm_norm_10s": 0.1,
@@ -340,7 +377,156 @@ def test_build_and_emit_preserves_decision_trace_payload_contract() -> None:
             "gate_outcome": "ALLOW",
             "deny_reason": None,
             "why": "allow:trend-up",
+            "price_motion_context": {
+                "pm_norm_10s": 0.1,
+                "pm_norm_60s": 0.2,
+                "pm_norm_300s": 0.3,
+                "vol_pct_10s": 1.1,
+                "vol_pct_60s": 1.2,
+                "vol_pct_300s": 1.3,
+                "missing": {
+                    "pm_norm_10s": False,
+                    "pm_norm_60s": False,
+                    "pm_norm_300s": False,
+                    "vol_pct_10s": False,
+                    "vol_pct_60s": False,
+                    "vol_pct_300s": False,
+                },
+                "missing_reason": {
+                    "pm_norm_10s": None,
+                    "pm_norm_60s": None,
+                    "pm_norm_300s": None,
+                    "vol_pct_10s": None,
+                    "vol_pct_60s": None,
+                    "vol_pct_300s": None,
+                },
+            },
+            "missing_inputs": {
+                "regime_confidence": None,
+                "trend_dir": None,
+                "trend_confidence": None,
+                "trend_run_length": None,
+                "pm_norm_10s": None,
+                "pm_norm_60s": None,
+                "pm_norm_300s": None,
+                "vol_pct_10s": None,
+                "vol_pct_60s": None,
+                "vol_pct_300s": None,
+                "low_vol_cost_floor": None,
+            },
+            "safety_gate_snapshot": {
+                "apply_safety_gates": True,
+                "directional_sanity_enabled": True,
+                "nrr026_enabled": False,
+                "nrr026_effective_enforced": False,
+                "nrr027_enabled": False,
+                "nrr027_effective_enforced": False,
+                "price_motion_sanity_enabled": False,
+                "price_motion_backtest_bypass": False,
+                "nrr028_enabled": False,
+                "nrr028_effective_enforced": False,
+                "nrr029_enabled": False,
+                "nrr029_effective_enforced": False,
+                "nrr030_enabled": False,
+                "nrr030_effective_enforced": False,
+                "nrr063_enabled": True,
+                "nrr063_effective_enforced": True,
+                "regime_confidence_gate_verdict": "ALLOW",
+                "threshold_verdict": "PASS",
+                "threshold_reason": "regime_confidence=0.82 within band min=0.45 min_source=scalar_legacy max=None max_source=None",
+            },
             "regime_provenance": REGIME_PROVENANCE,
             "tpsl_owner_ctx": OWNER_CTX,
+            "low_vol_cost_floor": {
+                "evaluation_stage": "observe_only",
+                "gate_mode": "observe_only",
+                "would_block": False,
+                "price_motion_context": {
+                    "pm_norm_10s": 0.1,
+                    "pm_norm_60s": 0.2,
+                    "pm_norm_300s": 0.3,
+                    "vol_pct_10s": 1.1,
+                    "vol_pct_60s": 1.2,
+                    "vol_pct_300s": 1.3,
+                },
+                "persistence_context": {
+                    "decision_trace_event": "EVT:DECISION_TRACE_EMITTED",
+                    "order_logger_event": "ORDER_INTENT",
+                    "persisted_in": ["EVT:DECISION_TRACE_EMITTED", "ORDER_INTENT"],
+                },
+            },
         }
     ]
+
+
+def test_build_and_emit_persists_explicit_missing_reasons_for_absent_inputs() -> None:
+    builder = _make_builder()
+    sg = _FakeSG()
+    sg.regime_confidence = None
+    sg.trend_confidence = None
+    sg.pm_norm_60s = None
+    sg.pm_norm_300s = None
+    sg.vol_pct_60s = None
+    sg.vol_pct_300s = None
+    sg.low_vol_cost_floor_details = None
+    kwargs = _build_kwargs()
+    kwargs["sg"] = sg
+
+    with (
+        patch("apps.reference.domains.decision_making.intent.builder.wal.append",
+              return_value="wal-ok"),
+        patch("apps.reference.domains.decision_making.intent.builder.order_logger.write"),
+        patch("apps.reference.domains.decision_making.intent.builder.print"),
+        patch("apps.reference.domains.decision_making.intent.builder.emit_regime_decision_audit"),
+        patch(
+            "apps.reference.domains.decision_making.intent.builder._trade_lifecycle", None),
+    ):
+        builder.build_and_emit(**kwargs)
+
+    decision_trace_payload = next(
+        call.kwargs["payload"]
+        for call in builder._fsm.emit.call_args_list
+        if call.args[0] == "EVT:DECISION_TRACE_EMITTED"
+    )
+
+    assert decision_trace_payload["price_motion_context"]["pm_norm_60s"] is None
+    assert decision_trace_payload["price_motion_context"]["pm_norm_300s"] is None
+    assert decision_trace_payload["price_motion_context"]["missing"]["pm_norm_60s"] is True
+    assert decision_trace_payload["price_motion_context"]["missing_reason"]["pm_norm_60s"] == "absent_from_safety_gate_result"
+    assert decision_trace_payload["missing_inputs"]["regime_confidence"] == "absent_from_safety_gate_result"
+    assert decision_trace_payload["missing_inputs"]["trend_confidence"] == "absent_from_safety_gate_result"
+    assert decision_trace_payload["missing_inputs"]["low_vol_cost_floor"] == "not_evaluated_or_not_attached"
+
+
+def test_decision_trace_emit_failure_logs_loudly_without_blocking_trade_intent() -> None:
+    builder = _make_builder()
+
+    def _emit_side_effect(event_name, *args, **kwargs):
+        if event_name == "EVT:DECISION_TRACE_EMITTED":
+            raise RuntimeError(
+                "Payload validation failed for EVT:DECISION_TRACE_EMITTED: Additional properties are not allowed"
+            )
+        return None
+
+    builder._fsm.emit.side_effect = _emit_side_effect
+
+    with (
+        patch("apps.reference.domains.decision_making.intent.builder.wal.append", return_value="wal-ok") as mock_wal,
+        patch("apps.reference.domains.decision_making.intent.builder.order_logger.write"),
+        patch("apps.reference.domains.decision_making.intent.builder.print"),
+        patch("apps.reference.domains.decision_making.intent.builder.emit_regime_decision_audit"),
+        patch(
+            "apps.reference.domains.decision_making.intent.builder._trade_lifecycle", None),
+    ):
+        builder.build_and_emit(**_build_kwargs())
+
+    emitted_events = [call.args[0]
+                      for call in builder._fsm.emit.call_args_list]
+    assert "EVT:DECISION_TRACE_EMITTED" in emitted_events
+    assert "EVT:TRADE_INTENT_PROPOSED" in emitted_events
+    assert mock_wal.call_count == 1
+    assert builder.logger.error.call_count == 1
+    log_line = builder.logger.error.call_args[0][0]
+    assert "EVT:DECISION_TRACE_EMITTED" in log_line
+    assert "RID=rid-payload-001" in log_line
+    assert "Payload validation failed" in log_line

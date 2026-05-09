@@ -340,6 +340,90 @@ def test_fsm_emit_validates_trade_intent_proposed_with_trust_disabled_authority_
     assert observed[0]["authority_context"]["reason_code"] == "TRUST_DISABLED"
 
 
+def test_fsm_emit_validates_trade_intent_proposed_with_journal_only_authority_context() -> None:
+    """Journal-only authority evidence fields must be accepted without relaxing the rest of the contract."""
+    init_global_registry(project_root=".")
+    fsm = FSMCore()
+    observed: list[dict] = []
+    fsm.listen("EVT:TRADE_INTENT_PROPOSED",
+               lambda msg: observed.append(msg.pld))
+
+    payload = _trade_intent_payload()
+    payload["authority_context"] = {
+        "decision_id": "decision-002",
+        "authority_mode": "shadow",
+        "action": "allow",
+        "apply_result": "SHADOW_RECORDED",
+        "capture_mode": "journal_only",
+        "authority_applied": False,
+        "no_effect": True,
+    }
+
+    fsm.emit("EVT:TRADE_INTENT_PROPOSED",
+             payload=payload, why="journal_only_authority_context_contract")
+
+    assert observed
+    authority_context = observed[0]["authority_context"]
+    assert authority_context["capture_mode"] == "journal_only"
+    assert authority_context["authority_applied"] is False
+    assert authority_context["no_effect"] is True
+
+
+def test_fsm_emit_validates_trade_intent_proposed_with_shadow_counterfactual_authority_context() -> None:
+    """Shadow-counterfactual authority evidence fields must be accepted without relaxing the rest of the contract."""
+    init_global_registry(project_root=".")
+    fsm = FSMCore()
+    observed: list[dict] = []
+    fsm.listen("EVT:TRADE_INTENT_PROPOSED",
+               lambda msg: observed.append(msg.pld))
+
+    payload = _trade_intent_payload()
+    payload["authority_context"] = {
+        "decision_id": "decision-004",
+        "authority_mode": "shadow",
+        "action": "deny",
+        "apply_result": "SHADOW_RECORDED",
+        "capture_mode": "shadow_counterfactual",
+        "authority_applied": False,
+        "no_effect": True,
+        "returned_action": "allow",
+        "supports_counterfactual_join": True,
+        "counterfactual_evaluation": True,
+    }
+
+    fsm.emit("EVT:TRADE_INTENT_PROPOSED",
+             payload=payload, why="shadow_counterfactual_authority_context_contract")
+
+    assert observed
+    authority_context = observed[0]["authority_context"]
+    assert authority_context["capture_mode"] == "shadow_counterfactual"
+    assert authority_context["returned_action"] == "allow"
+    assert authority_context["supports_counterfactual_join"] is True
+    assert authority_context["counterfactual_evaluation"] is True
+
+
+def test_fsm_emit_rejects_trade_intent_proposed_with_unexpected_authority_context_field() -> None:
+    """Strict authority_context additionalProperties must still reject unknown journal fields."""
+    init_global_registry(project_root=".")
+    fsm = FSMCore()
+
+    payload = _trade_intent_payload()
+    payload["authority_context"] = {
+        "decision_id": "decision-003",
+        "authority_mode": "shadow",
+        "action": "allow",
+        "apply_result": "SHADOW_RECORDED",
+        "capture_mode": "journal_only",
+        "authority_applied": False,
+        "no_effect": True,
+        "unexpected_inner": "boom",
+    }
+
+    with pytest.raises(InvalidMessagePayloadError, match="unexpected_inner"):
+        fsm.emit("EVT:TRADE_INTENT_PROPOSED",
+                 payload=payload, why="strict_authority_context")
+
+
 def test_fsm_emit_rejects_trade_intent_proposed_with_unexpected_top_level_field() -> None:
     """Strict root additionalProperties must still reject unknown top-level fields."""
     init_global_registry(project_root=".")
@@ -406,12 +490,40 @@ def test_fsm_emit_validates_position_closed_contract() -> None:
         "realized_pnl_net": -1.25,
         "fees": 0.05,
         "entry_regime_epoch_ref": None,
+        "pnl_status": "resolved",
     }
 
     fsm.emit("EVT:POSITION_CLOSED", payload=payload, why="close_contract")
 
     assert observed
     assert observed[0]["trade_id"] == "10001"
+
+
+def test_fsm_emit_validates_unresolved_position_closed_contract() -> None:
+    """Unresolved close accounting must validate without fake numeric PnL."""
+    init_global_registry(project_root=".")
+    fsm = FSMCore()
+    observed: list[dict] = []
+    fsm.listen("EVT:POSITION_CLOSED", lambda msg: observed.append(msg.pld))
+
+    payload = {
+        "symbol": "BTCUSDT",
+        "trade_id": None,
+        "close_reason": "CLOSE",
+        "close_ts_ms": 1700000000000,
+        "realized_pnl_net": None,
+        "fees": None,
+        "entry_regime_epoch_ref": None,
+        "pnl_status": "unresolved",
+        "pnl_source": "unresolved",
+        "accounting_unresolved_reason": "missing_close_fill_truth",
+    }
+
+    fsm.emit("EVT:POSITION_CLOSED", payload=payload,
+             why="close_contract_unresolved")
+
+    assert observed
+    assert observed[0]["pnl_status"] == "unresolved"
 
 
 def test_fsm_emit_rejects_position_closed_without_entry_regime_epoch_ref_field() -> None:
@@ -426,6 +538,7 @@ def test_fsm_emit_rejects_position_closed_without_entry_regime_epoch_ref_field()
         "close_ts_ms": 1700000000000,
         "realized_pnl_net": -1.25,
         "fees": 0.05,
+        "pnl_status": "resolved",
     }
 
     with pytest.raises(InvalidMessagePayloadError, match="entry_regime_epoch_ref"):

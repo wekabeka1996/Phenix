@@ -1,4 +1,7 @@
-# Calibration Tool Registry
+# Calibration Compatibility Registry
+
+Canonical calibrator implementations now live under `calibrators/`.
+Files in `tools/calibration/` are compatibility wrappers kept for legacy CLI and import paths.
 
 This file records the current calibration class of each calibrator in the repository.
 

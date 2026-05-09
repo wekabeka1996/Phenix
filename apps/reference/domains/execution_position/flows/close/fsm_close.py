@@ -68,6 +68,7 @@ class CloseFlowFSM:
         self.last_close_reason: Optional[str] = None
         self.last_close_qty: Optional[str] = None
         self.last_close_symbol: Optional[str] = None
+        self.close_submission_restore_truth: Optional[Dict[str, Any]] = None
         self._shadow_journal: Optional[Any] = None
         self._metrics: Dict[str, int] = {
             "fsm_close_decisions_total": 0,
@@ -269,7 +270,8 @@ class CloseFlowFSM:
                     except Exception:
                         LOG.warning(
                             "CLOSE_SHADOW_BRIDGE_COMPARE_FAILURE: rid=%s",
-                            getattr(result, "rid", None) or getattr(msg, "rid", None),
+                            getattr(result, "rid", None) or getattr(
+                                msg, "rid", None),
                             exc_info=True,
                         )
                 # INPUT record: triggering event context only (no transition window)
@@ -313,3 +315,4 @@ class CloseFlowFSM:
         self.last_close_reason = None
         self.last_close_qty = None
         self.last_close_symbol = None
+        self.close_submission_restore_truth = None

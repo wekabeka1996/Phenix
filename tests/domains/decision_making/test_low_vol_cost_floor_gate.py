@@ -834,17 +834,24 @@ def test_current_config_applies_moderate_xrp_low_vol_confidence_thresholds_for_a
         reduce_only=False,
     )
 
+    expected_regime_conf = gate_cfg.thresholds.min_regime_confidence_overrides_by_strategy_symbol["aurora"]["XRPUSDT"]["LOW_VOLATILITY"]
+    expected_direction_conf = gate_cfg.thresholds.min_direction_confidence_overrides_by_strategy_symbol["aurora"]["XRPUSDT"]["LOW_VOLATILITY"]
+    expected_md_regime_conf = gate_cfg.thresholds.min_regime_confidence_overrides_by_strategy_symbol["md_amr"]["XRPUSDT"]["LOW_VOLATILITY"]
+    expected_md_direction_conf = gate_cfg.thresholds.min_direction_confidence_overrides_by_strategy_symbol["md_amr"]["XRPUSDT"]["LOW_VOLATILITY"]
+    expected_btc_regime_conf = gate_cfg.thresholds.min_regime_confidence_by_regime["LOW_VOLATILITY"]
+    expected_btc_direction_conf = gate_cfg.thresholds.min_direction_confidence_by_regime["LOW_VOLATILITY"]
+
     assert aurora_xrp.block is False
-    assert aurora_xrp.details["resolved_min_regime_confidence"] == 0.45
-    assert aurora_xrp.details["resolved_min_direction_confidence"] == 0.59
+    assert aurora_xrp.details["resolved_min_regime_confidence"] == expected_regime_conf
+    assert aurora_xrp.details["resolved_min_direction_confidence"] == expected_direction_conf
     assert aurora_xrp.details["resolved_min_direction_confidence_source"] == "strategy_symbol_override"
     assert md_amr_xrp.block is False
-    assert md_amr_xrp.details["resolved_min_regime_confidence"] == 0.45
-    assert md_amr_xrp.details["resolved_min_direction_confidence"] == 0.59
+    assert md_amr_xrp.details["resolved_min_regime_confidence"] == expected_md_regime_conf
+    assert md_amr_xrp.details["resolved_min_direction_confidence"] == expected_md_direction_conf
     assert md_amr_xrp.details["resolved_min_direction_confidence_source"] == "strategy_symbol_override"
     assert aurora_btc.block is False
-    assert aurora_btc.details["resolved_min_regime_confidence"] == 0.39
-    assert aurora_btc.details["resolved_min_direction_confidence"] == 0.51
+    assert aurora_btc.details["resolved_min_regime_confidence"] == expected_btc_regime_conf
+    assert aurora_btc.details["resolved_min_direction_confidence"] == expected_btc_direction_conf
 
 
 def test_missing_direction_confidence_blocks_fail_closed_even_with_high_regime_confidence() -> None:

@@ -31,6 +31,7 @@ def _make_mock_fsm():
     mock_fsm._last_close_reason_by_symbol = {}
     # Phase 1 cache — may not exist yet on real FSM; tests set it to validate
     mock_fsm._last_lifecycle_ikey_by_symbol = {}
+    mock_fsm._close_accounting_truth_by_symbol = {}
     mock_fsm._pending_intent_data = {}
     mock_fsm._pending_entry_meta = {}
     mock_fsm._pending_brackets = {}
@@ -138,6 +139,21 @@ def _run_portfolio_close(mock_fsm, lifecycle_ikey: str = "test-idem-lifecycle-45
     mock_fsm._last_realized_pnl_by_symbol = {"BTCUSDT": -0.5}
     # Pre-populate the Phase 1 cache to validate POSITION_CLOSED emission
     mock_fsm._last_lifecycle_ikey_by_symbol = {"BTCUSDT": lifecycle_ikey}
+    mock_fsm._close_accounting_truth_by_symbol = {
+        "BTCUSDT": {
+            "trade_id": "10001",
+            "close_price": 50100.0,
+            "realized_pnl": -0.5,
+            "fees": 0.0,
+            "lifecycle_id": lifecycle_ikey,
+            "entry_side": "BUY",
+            "close_reason": "POSITION_CLOSED_DETECTED",
+            "pnl_status": "resolved",
+            "pnl_source": "close_fill",
+            "economic_close_detected": True,
+            "economic_close_kind": "explicit_close_fill",
+        }
+    }
 
     event = SimpleNamespace(
         pld={"positions": [{"symbol": "BTCUSDT", "positionAmt": 0.0}]}

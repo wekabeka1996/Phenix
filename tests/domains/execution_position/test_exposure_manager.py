@@ -237,12 +237,15 @@ async def test_check_shadow_notional_absolute_threshold(mock_emit, exposure_mana
 
 
 @patch("apps.reference.domains.execution_position.flows.manage.pending_brackets_wal.write_pending_brackets_cleared")
-def test_handle_cancel_event(mock_wal, exposure_manager, fsm):
+@patch("vfoundation.core.fsm_emit_compat.emit_compat", new_callable=AsyncMock)
+def test_handle_cancel_event(mock_emit, mock_wal, exposure_manager, fsm):
     tasks = []
-    def _capture_and_close(coro, loop):
+
+    def _capture_and_run(coro, loop):
         tasks.append(coro.cr_code.co_name)
-        coro.close()
-    fsm._submit_async = _capture_and_close
+        loop.run_until_complete(coro)
+
+    fsm._submit_async = _capture_and_run
 
     fsm._pending_brackets = {"o1": {"symbol": "BTCUSDT"}}
     fsm._supersede_canceling.add("BTCUSDT")
@@ -265,6 +268,16 @@ def test_handle_cancel_event(mock_wal, exposure_manager, fsm):
 
     # 3. Emits exposure summary (async)
     assert tasks == ["emit_exposure_update_async"]
+    mock_emit.assert_awaited_once()
+    emitted_msg = mock_emit.await_args.args[1]
+    assert emitted_msg.verb == "EXPOSURE_SUMMARY_UPDATED"
+    assert emitted_msg.pld["exposure_summary"] == {"mock": "summary"}
+    assert emitted_msg.pld["portfolio_state"] == fsm._latest_portfolio_state
+    assert emitted_msg.pld["cancel_order_id"] == "o1"
+    assert emitted_msg.pld["cancel_symbol"] == "BTCUSDT"
+    assert emitted_msg.pld["cancel_client_order_id"] == "c1"
+    assert emitted_msg.pld["update_reason"] == "order_cancelled"
+    assert isinstance(emitted_msg.pld["timestamp_ms"], int)
 
     # 4. Processes queued supersede
     fsm._entry_mgr.process_queued_supersede.assert_called_with("BTCUSDT")

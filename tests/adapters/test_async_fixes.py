@@ -10,7 +10,7 @@ import pytest
 pytest.importorskip("httpx")
 
 from unittest.mock import AsyncMock, MagicMock, patch
-from apps.reference.adapters.binance_adapter import BinanceAdapter
+from apps.reference.adapters.binance_adapter import BinanceAPIError, BinanceAdapter
 from apps.reference.domains.execution_position.adapters.watchdog import OrderTimeoutWatchdog
 
 
@@ -112,6 +112,27 @@ class TestOpenOrdersTTLCache:
         assert adapter._request.call_count == 1, (
             "_find_symbol_by_order_id should leverage cache, not call REST twice"
         )
+
+    @pytest.mark.anyio
+    async def test_get_order_by_client_order_id_bypasses_stale_open_orders_cache(self, adapter):
+        """origClientOrderId recovery must not be trapped behind a stale openOrders TTL snapshot."""
+        stale_orders = [{"orderId": "111", "symbol": "XRPUSDT", "clientOrderId": "ENTRY-stale"}]
+        fresh_orders = [{"orderId": "222", "symbol": "XRPUSDT", "clientOrderId": "ENTRY-fresh"}]
+        adapter._open_orders_scan_cache = (int(time.time() * 1000), stale_orders)
+
+        async def _fake_request(method, path, params, signed=True):
+            if method == "GET" and path == "/fapi/v1/order":
+                raise BinanceAPIError(code=-2013, msg="Order does not exist.")
+            if method == "GET" and path == "/fapi/v1/openOrders":
+                return fresh_orders
+            raise AssertionError(f"Unexpected request: {method} {path} {params}")
+
+        adapter._request = AsyncMock(side_effect=_fake_request)
+
+        result = await adapter.get_order_by_client_order_id("XRPUSDT", "ENTRY-fresh")
+
+        assert result == fresh_orders[0]
+        assert adapter._request.await_count == 2
 
 
 # ---------------------------------------------------------------------------

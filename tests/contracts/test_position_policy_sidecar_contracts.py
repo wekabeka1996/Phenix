@@ -130,6 +130,24 @@ def _sidecar_config_snapshot() -> dict:
             "candidate_pcts": [0.02, 0.05, 0.07],
             "candidate_unit": "percent",
         },
+        "shadow_fee_aware_arm": {
+            "enabled": True,
+            "fee_source_priority": [
+                "realized_lifecycle_fee",
+                "order_log_fee",
+                "configured_fee_model",
+            ],
+            "candidate_fee_multiples": [1.0, 1.5, 2.0],
+            "configured_fee_model": {
+                "enabled": False,
+                "round_trip_fee_bps": None,
+            },
+            "optional_pct_notional_floor": {
+                "enabled": True,
+                "candidate_pcts": [0.02, 0.05],
+                "candidate_unit": "percent",
+            },
+        },
         "freshness": {
             "portfolio_max_age_ms": 15_000,
             "features_max_age_ms": 15_000,
@@ -176,6 +194,43 @@ def _peak_giveback_snapshot(*, null_economics: bool = False) -> dict:
                         "null_reasons": {},
                     }
                 ],
+            },
+            "fee_aware": {
+                "enabled": True,
+                "fee_source_priority": [
+                    "realized_lifecycle_fee",
+                    "order_log_fee",
+                    "configured_fee_model",
+                ],
+                "candidate_fee_multiples": [1.0, 1.5, 2.0],
+                "giveback_trigger_pct": 50.0,
+                "optional_pct_notional_floor": {
+                    "enabled": True,
+                    "candidate_unit": "percent",
+                    "candidate_pcts": [0.02, 0.05],
+                },
+                "candidates": [
+                    {
+                        "fee_multiple": 1.0,
+                        "estimated_fee_usd": 0.8,
+                        "fee_source": "realized_lifecycle_fee",
+                        "fee_source_confidence": "observed_symbol_lifecycle_fee",
+                        "optional_pct_floor": {
+                            "candidate_pct": 0.02,
+                            "required_edge_usd": 0.8,
+                        },
+                        "required_edge_usd": 0.8,
+                        "current_edge_usd": 10.0,
+                        "is_armed": True,
+                        "first_arm_ts_ms": 1700000000001,
+                        "peak_edge_usd": 30.0,
+                        "giveback_pct": 66.6666666667,
+                        "would_trigger_under_current_giveback_trigger_pct": True,
+                        "would_trigger": True,
+                        "state": "shadow_fee_aware_threshold_met",
+                        "null_reasons": {},
+                    }
+                ],
             }
         },
         "reason_codes": ["peak_giveback_armed", "peak_giveback_threshold_met"],
@@ -211,6 +266,53 @@ def _peak_giveback_snapshot(*, null_economics: bool = False) -> dict:
                                     "arm_threshold_usd": "missing_position_notional_usdt",
                                     "giveback_pct": "missing_unrealized_pnl_usdt",
                                     "threshold_met_under_current_giveback_trigger_pct": "missing_giveback_pct",
+                                },
+                            }
+                        ],
+                        "null_reason": "missing_unrealized_pnl_usdt",
+                    },
+                    "fee_aware": {
+                        "enabled": True,
+                        "fee_source_priority": [
+                            "realized_lifecycle_fee",
+                            "order_log_fee",
+                            "configured_fee_model",
+                        ],
+                        "candidate_fee_multiples": [1.0, 1.5, 2.0],
+                        "giveback_trigger_pct": 50.0,
+                        "optional_pct_notional_floor": {
+                            "enabled": True,
+                            "candidate_unit": "percent",
+                            "candidate_pcts": [0.02, 0.05],
+                        },
+                        "candidates": [
+                            {
+                                "fee_multiple": 1.0,
+                                "estimated_fee_usd": None,
+                                "fee_source": None,
+                                "fee_source_confidence": "unavailable_fee_missing",
+                                "optional_pct_floor": {
+                                    "candidate_pct": 0.02,
+                                    "required_edge_usd": None,
+                                },
+                                "required_edge_usd": None,
+                                "current_edge_usd": None,
+                                "is_armed": False,
+                                "first_arm_ts_ms": None,
+                                "peak_edge_usd": 0.0,
+                                "giveback_pct": None,
+                                "would_trigger_under_current_giveback_trigger_pct": None,
+                                "would_trigger": None,
+                                "state": "shadow_fee_aware_unavailable_economics_missing",
+                                "null_reasons": {
+                                    "estimated_fee_usd": "missing_fee_source",
+                                    "realized_lifecycle_fee": "missing_observed_lifecycle_fee",
+                                    "order_log_fee": "missing_order_log_fee",
+                                    "configured_fee_model": "configured_fee_model_disabled",
+                                    "required_edge_usd": "missing_fee_source",
+                                    "optional_pct_floor": "missing_position_notional_usdt",
+                                    "giveback_pct": "missing_unrealized_pnl_usdt",
+                                    "would_trigger_under_current_giveback_trigger_pct": "missing_unrealized_pnl_usdt"
                                 },
                             }
                         ],

@@ -203,6 +203,7 @@ def test_observability_extraction_preserves_field_contract() -> None:
             "recent_alerts_max_keys",
             "entropy_volume_threshold",
             "entropy_error_rate_threshold",
+            "check_interval_sec",
         },
         defaults={},
         factory_fields={},

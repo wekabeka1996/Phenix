@@ -48,6 +48,7 @@ def _dm_cfg():
         bar_gating=bar_gating,
         behavior_fsm=behavior_fsm,
         flip=flip,
+        neocortex_enforcement_mode="shadow",
         risk_skew=SimpleNamespace(
             max_skew_sec=5,
             max_defer_count=3,
@@ -225,6 +226,26 @@ def test_flip_flat_allows_open_returns_none():
         source="aurora",
     )
     assert res is None
+
+
+def test_flip_disabled_opposite_side_rejects_without_clean_open():
+    symbol = "BTCUSDT"
+    dm, _bus = _mk_dm(symbol=symbol, position_mode="STRICT")
+    dm.flip_global_enabled = False
+    dm.latest_portfolio = {
+        "positions": [{"symbol": symbol, "net_position": "1"}],
+        "equity": "1000",
+        "positions_last_ts_ms": int(time.time() * 1000),
+    }
+
+    res = dm._handle_flip_orchestration(
+        symbol=symbol,
+        intent_side="SELL",
+        original_pld={"rid": "r-disabled-flip"},
+        source="aurora",
+    )
+
+    assert res == "OPPOSITE_ENTRY_REQUIRES_EXPLICIT_FLIP_CONTRACT"
 
 
 def test_same_side_missing_position_mode_returns_config_invalid():

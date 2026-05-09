@@ -171,9 +171,16 @@ registry:
 - op: EVT
   verb: POSITION_POLICY_SIDECAR_SUPPRESSED
   owner: execution_position
-  status: experimental
+  status: active
   schema: apps/reference/domains/execution_position/schemas/position_policy_sidecar_suppressed_v1.json
-  since: '2026-04-03'
+  since: '2024-03-01'
+- op: EVT
+  verb: POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE
+  owner: execution_position
+  status: experimental
+  schema: apps/reference/domains/execution_position/schemas/position_policy_sidecar_fee_aware_shadow_arm_state_v1.json
+  since: '2026-05-08'
+  notes: "Observational only. Non-authoritative shadow event for fee-aware state transitions."
 - op: EVT
   verb: POSITION_POLICY_SIDECAR_RECOMMENDED
   owner: execution_position
@@ -313,6 +320,13 @@ registry:
   status: experimental
   schema: null
   since: '2026-01-12'
+- op: EVT
+  verb: NEOCORTEX_DECISION_LOGGED
+  owner: neocortex
+  status: experimental
+  schema: apps/reference/domains/neocortex/schemas/neocortex_decision_logged_v1.json
+  since: '2026-05-07'
+  note: canonical protocol/schema surface for embedded and standalone decision evidence; legacy SHADOW listener delivery remains compatibility-only
 - op: EVT
   verb: NEOCORTEX_SHADOW_INTENT
   owner: neocortex

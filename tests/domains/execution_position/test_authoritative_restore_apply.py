@@ -70,6 +70,36 @@ def _make_record(**kwargs):
     return ExecutionPositionRestoreLifecycleRecord(**defaults)
 
 
+def _sample_close_submission_contour() -> dict:
+    return {
+        "close_cmd_rid": "RID-CLOSE-BTCUSDT",
+        "truth_classification": "POSITION_PRESENT_AND_SUBMITTABLE",
+        "truth_reason": "matched_live_position",
+        "position_amount_at_close_request": "0.25",
+        "bridge_payload": {
+            "symbol": "BTCUSDT",
+            "reason": "MANUAL_CLOSE",
+            "qty": "0.04",
+            "idempotent_key": "IDEM-BTCUSDT",
+            "trigger": "CMD:CLOSE",
+            "command_trigger": "manual_close",
+            "close_guard_prevalidated": False,
+        },
+        "submission_payload": {
+            "symbol": "BTCUSDT",
+            "side": "SELL",
+            "quantity": "0.04",
+            "client_order_id": "CLOSE-BTCUSDT-CLIENT-1",
+            "partial_close": True,
+        },
+        "submit_boundary_result": {
+            "outcome": "submitted",
+            "status": "NEW",
+            "order_id": "close-123",
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Part 1: manage phase apply
 # ---------------------------------------------------------------------------
@@ -162,6 +192,45 @@ def test_apply_record_close_phase_unknown_does_not_write_flow():
 
     fsm._get_or_create_close_flow.assert_not_called()
     assert result.close_phase_restore_status == "unknown"
+
+
+def test_apply_record_restores_close_submission_contour_exact():
+    fsm, _, close_flow = _make_fsm_stub()
+    applier = AuthoritativeRestoreApply(fsm)
+    record = _make_record(
+        close_phase="OPENED",
+        close_submission_contour=_sample_close_submission_contour(),
+    )
+
+    result = applier.apply_record(record)
+
+    assert close_flow.close_submission_restore_truth == _sample_close_submission_contour()
+    assert result.close_submission_truth_classification_restore_status == "exact"
+    assert result.close_submission_truth_classification_value == "POSITION_PRESENT_AND_SUBMITTABLE"
+    assert result.close_submission_client_order_id_restore_status == "exact"
+    assert result.close_submission_client_order_id_value == "CLOSE-BTCUSDT-CLIENT-1"
+    assert result.close_submission_boundary_outcome_restore_status == "exact"
+    assert result.close_submission_boundary_outcome_value == "submitted"
+
+
+def test_apply_record_marks_submit_boundary_unknown_when_absent():
+    fsm, _, close_flow = _make_fsm_stub()
+    applier = AuthoritativeRestoreApply(fsm)
+    contour = _sample_close_submission_contour()
+    contour.pop("submit_boundary_result")
+    record = _make_record(
+        close_phase="OPENED",
+        close_submission_contour=contour,
+    )
+
+    result = applier.apply_record(record)
+
+    assert close_flow.close_submission_restore_truth == contour
+    assert result.close_submission_truth_classification_restore_status == "exact"
+    assert result.close_submission_client_order_id_restore_status == "exact"
+    assert result.close_submission_boundary_outcome_restore_status == "unknown"
+    assert result.close_submission_boundary_outcome_value == RESTORE_PHASE_UNKNOWN
+    assert "close_submit_boundary_outcome_unknown" in result.unresolved_reasons
 
 
 def test_apply_record_unsupported_close_phase_does_not_mutate():

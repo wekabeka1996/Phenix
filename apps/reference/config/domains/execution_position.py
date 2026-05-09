@@ -713,6 +713,90 @@ class PositionPolicySidecarShadowPercentNotionalArmConfig(BaseModel):
         return validated
 
 
+class PositionPolicySidecarShadowFeeAwareArmFeeSource(str, Enum):
+    """Supported fee source labels for shadow fee-aware arming."""
+
+    REALIZED_LIFECYCLE_FEE = "realized_lifecycle_fee"
+    ORDER_LOG_FEE = "order_log_fee"
+    CONFIGURED_FEE_MODEL = "configured_fee_model"
+
+
+class PositionPolicySidecarShadowFeeAwareConfiguredFeeModelConfig(BaseModel):
+    """Explicit fallback fee model used only when enabled in config."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(...)
+    round_trip_fee_bps: Optional[float] = Field(...)
+
+    @model_validator(mode="after")
+    def _validate_round_trip_fee_bps(
+        self,
+    ) -> "PositionPolicySidecarShadowFeeAwareConfiguredFeeModelConfig":
+        if self.enabled and self.round_trip_fee_bps is None:
+            raise ValueError(
+                "shadow_fee_aware_arm.configured_fee_model.round_trip_fee_bps is required when enabled"
+            )
+        if self.round_trip_fee_bps is not None and float(self.round_trip_fee_bps) <= 0.0:
+            raise ValueError(
+                "shadow_fee_aware_arm.configured_fee_model.round_trip_fee_bps must be positive when provided"
+            )
+        return self
+
+
+class PositionPolicySidecarShadowFeeAwareOptionalPctFloorConfig(BaseModel):
+    """Optional percent-of-notional floor candidates (percent units, not ratio)."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(...)
+    candidate_pcts: List[float] = Field(..., min_length=1)
+
+    @field_validator("candidate_pcts")
+    @classmethod
+    def _validate_candidate_pcts(cls, value: List[float]) -> List[float]:
+        validated: List[float] = []
+        for candidate in value:
+            candidate_pct = float(candidate)
+            if candidate_pct <= 0.0:
+                raise ValueError(
+                    "shadow_fee_aware_arm.optional_pct_notional_floor.candidate_pcts must contain only positive percent values"
+                )
+            validated.append(candidate_pct)
+        return validated
+
+
+class PositionPolicySidecarShadowFeeAwareArmConfig(BaseModel):
+    """Shadow-only fee-aware arm telemetry configuration."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(...)
+    fee_source_priority: List[PositionPolicySidecarShadowFeeAwareArmFeeSource] = Field(
+        ..., min_length=1
+    )
+    candidate_fee_multiples: List[float] = Field(..., min_length=1)
+    configured_fee_model: PositionPolicySidecarShadowFeeAwareConfiguredFeeModelConfig = Field(
+        ...
+    )
+    optional_pct_notional_floor: PositionPolicySidecarShadowFeeAwareOptionalPctFloorConfig = Field(
+        ...
+    )
+
+    @field_validator("candidate_fee_multiples")
+    @classmethod
+    def _validate_candidate_fee_multiples(cls, value: List[float]) -> List[float]:
+        validated: List[float] = []
+        for candidate in value:
+            candidate_multiple = float(candidate)
+            if candidate_multiple <= 0.0:
+                raise ValueError(
+                    "shadow_fee_aware_arm.candidate_fee_multiples must contain only positive unitless multipliers"
+                )
+            validated.append(candidate_multiple)
+        return validated
+
+
 class PositionPolicySidecarConfig(BaseModel):
     """Strict configuration contract for the position policy sidecar."""
 
@@ -731,6 +815,8 @@ class PositionPolicySidecarConfig(BaseModel):
     shadow_percent_notional_arm: PositionPolicySidecarShadowPercentNotionalArmConfig = Field(
         ...
     )
+    shadow_fee_aware_arm: PositionPolicySidecarShadowFeeAwareArmConfig = Field(
+        ...)
 
     @model_validator(mode="after")
     def _validate_bounded_action_scope(self) -> "PositionPolicySidecarConfig":
@@ -854,4 +940,8 @@ class ExecutionPositionDomainConfig(BaseModel):
     )
     position_policy_sidecar: PositionPolicySidecarConfig = Field(
         ..., description="Position Policy Sidecar typed config for open-position recommendation logic."
+    )
+    trade_executed_cutover_active: bool = Field(
+        default=False,
+        description="Phase 10: Enable formal authoritative state mutation for TRADE_EXECUTED terminal truth contour."
     )

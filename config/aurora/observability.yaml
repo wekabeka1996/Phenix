@@ -65,6 +65,7 @@ alerts:
   recent_alerts_max_keys: 5000
   entropy_volume_threshold: 3000
   entropy_error_rate_threshold: 0.5
+  check_interval_sec: 60  # Alert monitoring poll cadence (main loop periodic check)
 shadow_journal:
   enabled: true
   path: logs/shadow_critical_event_journal_v1.jsonl

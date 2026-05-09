@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 """Research-only Aurora TREND_UP strategist sweep study."""
 from __future__ import annotations
+from calibrators.strategies.calibrate_aurora_thresholds import _build_shield_cascade
+from apps.reference.shared.decision_primitives.scoring_kernel import (
+    QuadraticScoringKernel,
+    SideBiasState,
+)
+from apps.reference.domains.decision_making.primitives.operational_mode import ModeManager
+from apps.reference.config_models import OperationalMode
+from apps.reference.config_loader import ConfigLoader
 
 import argparse
 import csv
@@ -26,16 +34,6 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
-
-
-from apps.reference.config_loader import ConfigLoader
-from apps.reference.config_models import OperationalMode
-from apps.reference.domains.decision_making.primitives.operational_mode import ModeManager
-from apps.reference.shared.decision_primitives.scoring_kernel import (
-    QuadraticScoringKernel,
-    SideBiasState,
-)
-from tools.calibration.calibrate_aurora_thresholds import _build_shield_cascade
 
 
 TF_SEC = 300
@@ -288,14 +286,22 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Deterministic Aurora TREND_UP strategist sweep study"
     )
-    parser.add_argument("--config-dir", default=str(REPO_ROOT / "config" / "aurora"))
-    parser.add_argument("--strategies-yaml", default=str(REPO_ROOT / "config" / "aurora" / "strategies.yaml"))
-    parser.add_argument("--recorder-dir", default=str(REPO_ROOT / "data" / "recorder"))
-    parser.add_argument("--aurora-core-glob", default=str(REPO_ROOT / "logs" / "aurora_core.log*"))
-    parser.add_argument("--decision-log-glob", default=str(REPO_ROOT / "logs" / "domain_decision_making.log*"))
-    parser.add_argument("--shadow-journal", default=str(REPO_ROOT / "logs" / "shadow_critical_event_journal_v1.jsonl"))
-    parser.add_argument("--trade-lifecycle", default=str(REPO_ROOT / "logs" / "trade_lifecycle.jsonl"))
-    parser.add_argument("--out-dir", default=str(REPO_ROOT / "reports" / "aurora_trend_up_strategist_sweep_2026-04-14"))
+    parser.add_argument(
+        "--config-dir", default=str(REPO_ROOT / "config" / "aurora"))
+    parser.add_argument("--strategies-yaml", default=str(REPO_ROOT /
+                        "config" / "aurora" / "strategies.yaml"))
+    parser.add_argument(
+        "--recorder-dir", default=str(REPO_ROOT / "data" / "recorder"))
+    parser.add_argument("--aurora-core-glob",
+                        default=str(REPO_ROOT / "logs" / "aurora_core.log*"))
+    parser.add_argument("--decision-log-glob",
+                        default=str(REPO_ROOT / "logs" / "domain_decision_making.log*"))
+    parser.add_argument("--shadow-journal", default=str(REPO_ROOT /
+                        "logs" / "shadow_critical_event_journal_v1.jsonl"))
+    parser.add_argument(
+        "--trade-lifecycle", default=str(REPO_ROOT / "logs" / "trade_lifecycle.jsonl"))
+    parser.add_argument("--out-dir", default=str(REPO_ROOT /
+                        "reports" / "aurora_trend_up_strategist_sweep_2026-04-14"))
     parser.add_argument("--timezone", default="Europe/Kiev")
     parser.add_argument("--symbols", nargs="*", default=None)
     parser.add_argument("--tf-sec", type=int, default=TF_SEC)
@@ -413,7 +419,8 @@ def _json_default(obj: Any) -> Any:
 
 def _write_json(path: Path, payload: Any) -> None:
     path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True, default=_json_default),
+        json.dumps(payload, ensure_ascii=False, indent=2,
+                   sort_keys=True, default=_json_default),
         encoding="utf-8",
     )
 
@@ -441,7 +448,8 @@ def _parse_aurora_symbols(strategies_yaml: Path) -> list[str]:
         if isinstance(strategies, list) and "aurora" in [str(item) for item in strategies]:
             out.append(str(symbol))
     if not out:
-        raise StudyError("No Aurora symbols found in strategies.yaml assignments")
+        raise StudyError(
+            "No Aurora symbols found in strategies.yaml assignments")
     return sorted(out)
 
 
@@ -470,10 +478,13 @@ def _load_recorder_points(
     symbols: Sequence[str],
     tf_sec: int,
 ) -> tuple[dict[str, dict[int, RecorderPoint]], dict[str, list[RecorderPoint]], set[Path]]:
-    point_map: dict[str, dict[int, RecorderPoint]] = {symbol: {} for symbol in symbols}
-    point_series: dict[str, list[RecorderPoint]] = {symbol: [] for symbol in symbols}
+    point_map: dict[str, dict[int, RecorderPoint]] = {
+        symbol: {} for symbol in symbols}
+    point_series: dict[str, list[RecorderPoint]] = {
+        symbol: [] for symbol in symbols}
     used_files: set[Path] = set()
-    day_dirs = sorted([p for p in recorder_dir.iterdir() if p.is_dir()], key=lambda p: p.name)
+    day_dirs = sorted([p for p in recorder_dir.iterdir()
+                      if p.is_dir()], key=lambda p: p.name)
     for day_dir in day_dirs:
         for symbol in symbols:
             csv_path = day_dir / f"{symbol}_{tf_sec}.csv"
@@ -483,14 +494,16 @@ def _load_recorder_points(
             with csv_path.open("r", encoding="utf-8", newline="") as handle:
                 reader = csv.DictReader(handle)
                 for row in reader:
-                    raw_ts = _safe_int(row.get("feat_bar_close_ts") or row.get("timestamp"))
+                    raw_ts = _safe_int(
+                        row.get("feat_bar_close_ts") or row.get("timestamp"))
                     close = _safe_float(row.get("close"))
                     open_price = _safe_float(row.get("open"))
                     high = _safe_float(row.get("high"))
                     low = _safe_float(row.get("low"))
                     if raw_ts is None or close is None or open_price is None or high is None or low is None:
                         continue
-                    bar_close_ts_ms = _normalize_recorder_bar_close_ts(raw_ts, tf_sec)
+                    bar_close_ts_ms = _normalize_recorder_bar_close_ts(
+                        raw_ts, tf_sec)
                     point = RecorderPoint(
                         symbol=symbol,
                         bar_close_ts_ms=bar_close_ts_ms,
@@ -499,23 +512,32 @@ def _load_recorder_points(
                         tf_sec=int(_safe_int(row.get("tf_sec")) or tf_sec),
                         source_file=str(csv_path),
                         ready=_safe_bool(row.get("ready")),
-                        not_ready_reasons=str(row.get("not_ready_reasons") or ""),
+                        not_ready_reasons=str(
+                            row.get("not_ready_reasons") or ""),
                         open=open_price,
                         high=high,
                         low=low,
                         close=close,
-                        pillar_tactician=_safe_float(row.get("feat_pillar_tactician")),
-                        pillar_operator=_safe_float(row.get("feat_pillar_operator")),
-                        pillar_strategist=_safe_float(row.get("feat_pillar_strategist")),
+                        pillar_tactician=_safe_float(
+                            row.get("feat_pillar_tactician")),
+                        pillar_operator=_safe_float(
+                            row.get("feat_pillar_operator")),
+                        pillar_strategist=_safe_float(
+                            row.get("feat_pillar_strategist")),
                         pillar_sum=_safe_float(row.get("feat_pillar_sum")),
                         spread_bps=_safe_float(row.get("feat_spread_bps")),
-                        volatility_state=_safe_float(row.get("feat_volatility_state")),
+                        volatility_state=_safe_float(
+                            row.get("feat_volatility_state")),
                         price_motion_norm=_safe_float(row.get("pm_norm")),
                         macro_resid=_safe_float(row.get("feat_macro_resid")),
-                        feat_regime=(str(row.get("feat_regime")) if row.get("feat_regime") else None),
-                        feat_regime_ts_ms=_safe_int(row.get("feat_regime_ts_ms")),
-                        regime_join_status=str(row.get("regime_join_status") or ""),
-                        regime_join_mode=str(row.get("regime_join_mode") or ""),
+                        feat_regime=(str(row.get("feat_regime"))
+                                     if row.get("feat_regime") else None),
+                        feat_regime_ts_ms=_safe_int(
+                            row.get("feat_regime_ts_ms")),
+                        regime_join_status=str(
+                            row.get("regime_join_status") or ""),
+                        regime_join_mode=str(
+                            row.get("regime_join_mode") or ""),
                     )
                     point_map[symbol][bar_close_ts_ms] = point
                     point_series[symbol].append(point)
@@ -706,7 +728,8 @@ def _parse_side_evidence(
                 if match:
                     symbol = match.group("symbol")
                     if symbol in symbols_set:
-                        last_bar_ts_by_symbol[symbol] = int(match.group("bar_ts"))
+                        last_bar_ts_by_symbol[symbol] = int(
+                            match.group("bar_ts"))
                     continue
                 match = gateway_re.search(line)
                 if match:
@@ -714,7 +737,8 @@ def _parse_side_evidence(
                     if symbol not in symbols_set:
                         continue
                     rid = match.group("rid")
-                    acc = by_rid.setdefault(rid, SideAuditAccumulator(symbol=symbol, rid=rid))
+                    acc = by_rid.setdefault(
+                        rid, SideAuditAccumulator(symbol=symbol, rid=rid))
                     acc.emitted_side = match.group("side").lower()
                     if acc.bar_close_ts_ms is None and symbol in last_bar_ts_by_symbol:
                         acc.bar_close_ts_ms = last_bar_ts_by_symbol[symbol]
@@ -725,7 +749,8 @@ def _parse_side_evidence(
                     if symbol not in symbols_set:
                         continue
                     rid = match.group("rid")
-                    acc = by_rid.setdefault(rid, SideAuditAccumulator(symbol=symbol, rid=rid))
+                    acc = by_rid.setdefault(
+                        rid, SideAuditAccumulator(symbol=symbol, rid=rid))
                     acc.bar_close_ts_ms = int(match.group("bar_ts"))
                     acc.decision_outcome = match.group("outcome")
                     acc.decision_regime = match.group("regime")
@@ -745,8 +770,10 @@ def _parse_side_evidence(
                     continue
                 if payload.get("event_name") != "EVT:TRADE_INTENT_PROPOSED":
                     continue
-                acc = by_rid.setdefault(str(rid), SideAuditAccumulator(symbol=str(symbol), rid=str(rid)))
-                acc.shadow_side = (str(payload.get("side")).lower() if payload.get("side") else None)
+                acc = by_rid.setdefault(str(rid), SideAuditAccumulator(
+                    symbol=str(symbol), rid=str(rid)))
+                acc.shadow_side = (str(payload.get("side")).lower()
+                                   if payload.get("side") else None)
                 why = payload.get("payload_fragment", {}).get("why")
                 if isinstance(why, list):
                     acc.shadow_why = " | ".join(str(item) for item in why[:5])
@@ -767,7 +794,8 @@ def _parse_side_evidence(
                     continue
                 if payload.get("strategy_id") != "aurora":
                     continue
-                acc = by_rid.setdefault(str(rid), SideAuditAccumulator(symbol=str(symbol), rid=str(rid)))
+                acc = by_rid.setdefault(str(rid), SideAuditAccumulator(
+                    symbol=str(symbol), rid=str(rid)))
                 side = payload.get("side")
                 if side:
                     acc.trade_side = str(side)
@@ -792,7 +820,8 @@ def _compute_common_recorder_timestamps(
     common: set[int] | None = None
     for symbol in symbols:
         timestamps = set(recorder_points[symbol].keys())
-        common = timestamps if common is None else common.intersection(timestamps)
+        common = timestamps if common is None else common.intersection(
+            timestamps)
     return sorted(common or set())
 
 
@@ -903,7 +932,8 @@ def _choose_latest_failure_segment(
         )
         if has_failure:
             return segment_index, list(segment), failures
-    raise StudyError("No fully reconstructable complete segment with Aurora TREND_UP SELL/SHORT failure was found")
+    raise StudyError(
+        "No fully reconstructable complete segment with Aurora TREND_UP SELL/SHORT failure was found")
 
 
 def _build_good_subsegments(
@@ -942,7 +972,8 @@ def _refine_segment_to_parity_clean_subwindow(
     min_future_bars: int,
 ) -> tuple[list[int], list[dict[str, Any]], str] | None:
     bad_bar_ts = {
-        int(datetime.fromisoformat(str(row["timestamp"])).replace(tzinfo=UTC).timestamp() * 1000)
+        int(datetime.fromisoformat(str(row["timestamp"])).replace(
+            tzinfo=UTC).timestamp() * 1000)
         for row in mismatches
     }
     if not bad_bar_ts:
@@ -952,14 +983,16 @@ def _refine_segment_to_parity_clean_subwindow(
     if not good_subsegments:
         return None
 
-    latest_failure_ts = max(int(row["bar_close_ts_ms"]) for row in failure_rows)
+    latest_failure_ts = max(int(row["bar_close_ts_ms"])
+                            for row in failure_rows)
     for subsegment in reversed(good_subsegments):
         if latest_failure_ts not in subsegment:
             continue
         failure_idx = subsegment.index(latest_failure_ts)
         if len(subsegment) - failure_idx - 1 < min_future_bars:
             continue
-        kept_failures = [row for row in failure_rows if int(row["bar_close_ts_ms"]) in set(subsegment)]
+        kept_failures = [row for row in failure_rows if int(
+            row["bar_close_ts_ms"]) in set(subsegment)]
         if not kept_failures:
             continue
         reason = (
@@ -969,10 +1002,12 @@ def _refine_segment_to_parity_clean_subwindow(
         return list(subsegment), kept_failures, reason
 
     for subsegment in reversed(good_subsegments):
-        sub_failures = [row for row in failure_rows if int(row["bar_close_ts_ms"]) in set(subsegment)]
+        sub_failures = [row for row in failure_rows if int(
+            row["bar_close_ts_ms"]) in set(subsegment)]
         if not sub_failures:
             continue
-        latest_sub_failure_ts = max(int(row["bar_close_ts_ms"]) for row in sub_failures)
+        latest_sub_failure_ts = max(
+            int(row["bar_close_ts_ms"]) for row in sub_failures)
         failure_idx = subsegment.index(latest_sub_failure_ts)
         if len(subsegment) - failure_idx - 1 < min_future_bars:
             continue
@@ -1040,7 +1075,8 @@ def _rebuild_strategist_from_sensitivity(baseline_value: float, sensitivity: flo
 
 
 def _compute_point_biserial(binary_flags: Sequence[bool], values: Sequence[float]) -> float:
-    pairs = [(1.0 if flag else 0.0, float(value)) for flag, value in zip(binary_flags, values, strict=False)]
+    pairs = [(1.0 if flag else 0.0, float(value))
+             for flag, value in zip(binary_flags, values, strict=False)]
     if len(pairs) < 2:
         return 0.0
     xs = [flag for flag, _ in pairs]
@@ -1057,14 +1093,17 @@ def _compute_point_biserial(binary_flags: Sequence[bool], values: Sequence[float
 
 def _fetch_klines(rest_url: str, symbol: str, interval: str, limit: int) -> list[list[Any]]:
     path = "/fapi/v1/klines"
-    query = urllib.parse.urlencode({"symbol": symbol, "interval": interval, "limit": limit})
+    query = urllib.parse.urlencode(
+        {"symbol": symbol, "interval": interval, "limit": limit})
     url = f"{rest_url.rstrip('/')}{path}?{query}"
-    request = urllib.request.Request(url, headers={"User-Agent": "aurora-study/1.0"})
+    request = urllib.request.Request(
+        url, headers={"User-Agent": "aurora-study/1.0"})
     with urllib.request.urlopen(request, timeout=30) as response:
         raw = response.read()
     payload = json.loads(raw)
     if not isinstance(payload, list):
-        raise StudyError(f"Unexpected klines response for {symbol}/{interval}: {type(payload)!r}")
+        raise StudyError(
+            f"Unexpected klines response for {symbol}/{interval}: {type(payload)!r}")
     return payload
 
 
@@ -1187,7 +1226,8 @@ def _choose_d1_inclusion_rule(
                 errors[include_current] += abs(float(recorded) - computed)
                 counts[include_current] += 1
         if counts[False] == 0 and counts[True] == 0:
-            raise StudyError(f"Could not validate D1 inclusion rule for {symbol}")
+            raise StudyError(
+                f"Could not validate D1 inclusion rule for {symbol}")
         error_prev = errors[False] / max(1, counts[False])
         error_curr = errors[True] / max(1, counts[True])
         decision[symbol] = error_curr < error_prev
@@ -1277,10 +1317,13 @@ def _replay_window(
     active_growth_by_bar: dict[int, tuple[bool, bool]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     decision_cfg = typed_config.strategies.aurora.decision
-    threshold, regime_thresholds = _resolve_symbol_thresholds(typed_config, symbol)
-    op_mode = getattr(decision_cfg, "operational_mode", OperationalMode.PARANOID)
+    threshold, regime_thresholds = _resolve_symbol_thresholds(
+        typed_config, symbol)
+    op_mode = getattr(decision_cfg, "operational_mode",
+                      OperationalMode.PARANOID)
     mode_manager = ModeManager(op_mode)
-    shield_fn, _memory_shield = _build_shield_cascade(decision_cfg, mode_manager)
+    shield_fn, _memory_shield = _build_shield_cascade(
+        decision_cfg, mode_manager)
     score_multiplier = float(getattr(decision_cfg, "score_multiplier", 1.0))
     geometry_cfg = getattr(decision_cfg, "decision_geometry", None)
     admission_mode = str(getattr(geometry_cfg, "admission_mode", "quadratic"))
@@ -1295,10 +1338,13 @@ def _replay_window(
         if getattr(geometry_cfg, "sizing_power", None) is not None
         else None
     )
-    admission_shield_floor = float(getattr(geometry_cfg, "admission_shield_floor", 0.0) or 0.0)
-    neutral_threshold = decimal.Decimal(str(getattr(decision_cfg, "neutral_threshold", "0.05")))
+    admission_shield_floor = float(
+        getattr(geometry_cfg, "admission_shield_floor", 0.0) or 0.0)
+    neutral_threshold = decimal.Decimal(
+        str(getattr(decision_cfg, "neutral_threshold", "0.05")))
     delta_price_cap_pct = decimal.Decimal(
-        str(getattr(getattr(decision_cfg, "signals", None), "delta_price_cap_pct", "0.02"))
+        str(getattr(getattr(decision_cfg, "signals", None),
+            "delta_price_cap_pct", "0.02"))
     )
     current_side = ""
     all_rows: list[dict[str, Any]] = []
@@ -1307,8 +1353,10 @@ def _replay_window(
         buy_count=0,
         sell_count=0,
         window_sec=float(getattr(decision_cfg, "side_bias_window_sec", 420.0)),
-        target_ratio=float(getattr(decision_cfg, "side_bias_target_ratio", 0.72)),
-        penalty_factor=float(getattr(decision_cfg, "side_bias_penalty_factor", 0.25)),
+        target_ratio=float(
+            getattr(decision_cfg, "side_bias_target_ratio", 0.72)),
+        penalty_factor=float(
+            getattr(decision_cfg, "side_bias_penalty_factor", 0.25)),
         min_intents=int(getattr(decision_cfg, "side_bias_min_intents", 18)),
     )
 
@@ -1328,10 +1376,12 @@ def _replay_window(
             current_side = ""
             continue
         if scenario.family == "sensitivity":
-            strategist = _rebuild_strategist_from_sensitivity(strategist, scenario.scenario_value)
+            strategist = _rebuild_strategist_from_sensitivity(
+                strategist, scenario.scenario_value)
         elif scenario.family == "sma":
             if d1_series is None or d1_inclusion_rule is None:
-                raise StudyError(f"SMA scenario {scenario.scenario_id} requested without D1 seed")
+                raise StudyError(
+                    f"SMA scenario {scenario.scenario_id} requested without D1 seed")
             rebuilt = _compute_strategist_from_d1(
                 d1_series=d1_series,
                 bar_close_ts_ms=recorder.bar_close_ts_ms,
@@ -1340,7 +1390,8 @@ def _replay_window(
                 include_current_open_day=d1_inclusion_rule,
             )
             if rebuilt is None:
-                raise StudyError(f"SMA scenario {scenario.scenario_id} could not compute strategist for {symbol} @ {recorder.bar_close_ts_ms}")
+                raise StudyError(
+                    f"SMA scenario {scenario.scenario_id} could not compute strategist for {symbol} @ {recorder.bar_close_ts_ms}")
             strategist = rebuilt
 
         pillar_sum = (
@@ -1372,7 +1423,8 @@ def _replay_window(
             delta_price_cap_pct=delta_price_cap_pct,
             neutral_threshold=neutral_threshold,
             current_side=current_side,
-            normalize_mode=str(getattr(getattr(decision_cfg, "signals", None), "normalize_signals_mode", "signed_v2")),
+            normalize_mode=str(getattr(
+                getattr(decision_cfg, "signals", None), "normalize_signals_mode", "signed_v2")),
             shield_fn=shield_fn,
             score_multiplier=score_multiplier,
             linear_score=pillar_sum,
@@ -1383,8 +1435,10 @@ def _replay_window(
             admission_shield_floor=admission_shield_floor,
         )
         current_side = str(result.side)
-        growth_flag, growth_complete = active_growth_by_bar.get(recorder.bar_close_ts_ms, (False, False))
-        final_side_optional = None if logged_final_side_by_bar is None else logged_final_side_by_bar.get(recorder.bar_close_ts_ms)
+        growth_flag, growth_complete = active_growth_by_bar.get(
+            recorder.bar_close_ts_ms, (False, False))
+        final_side_optional = None if logged_final_side_by_bar is None else logged_final_side_by_bar.get(
+            recorder.bar_close_ts_ms)
         row = _build_target_row(
             family=scenario.family,
             scenario_id=scenario.scenario_id,
@@ -1427,7 +1481,8 @@ def _build_joined_series(
         decision = decision_map.get((symbol, bar_ts))
         if recorder is None or regime is None or decision is None:
             continue
-        series.append({"recorder": recorder, "regime": regime, "decision": decision, "baseline_row": None})
+        series.append({"recorder": recorder, "regime": regime,
+                      "decision": decision, "baseline_row": None})
     return series
 
 
@@ -1463,8 +1518,10 @@ def _run_baseline_replay(
             pre_roll_bars=PRE_ROLL_BARS,
         )
         target_bar_ts_set = set(frozen_segment)
-        logged_final_side = {bar_ts: decision_map[(symbol, bar_ts)].final_signal_side for bar_ts in target_bar_ts_set}
-        growth_lookup = {bar_ts: active_growth_flags.get((symbol, bar_ts), (False, False)) for bar_ts in target_bar_ts_set}
+        logged_final_side = {bar_ts: decision_map[(
+            symbol, bar_ts)].final_signal_side for bar_ts in target_bar_ts_set}
+        growth_lookup = {bar_ts: active_growth_flags.get(
+            (symbol, bar_ts), (False, False)) for bar_ts in target_bar_ts_set}
         all_rows, target_rows = _replay_window(
             typed_config=typed_config,
             symbol=symbol,
@@ -1479,7 +1536,8 @@ def _run_baseline_replay(
         per_symbol_series[symbol] = all_rows
         per_symbol_target[symbol] = target_rows
         all_target_rows.extend(target_rows)
-    all_target_rows.sort(key=lambda row: (row["bar_close_ts_ms"], row["symbol"]))
+    all_target_rows.sort(key=lambda row: (
+        row["bar_close_ts_ms"], row["symbol"]))
     baseline_lookup: list[dict[str, Any]] = []
     for row in all_target_rows:
         decision = decision_map[(row["symbol"], row["bar_close_ts_ms"])]
@@ -1521,8 +1579,10 @@ def _run_scenario_replay(
             pre_roll_bars=PRE_ROLL_BARS,
         )
         for item in joined_series:
-            item["baseline_row"] = baseline_lookup.get((symbol, item["recorder"].bar_close_ts_ms))
-        growth_lookup = {bar_ts: growth_flags.get((symbol, bar_ts), (False, False)) for bar_ts in target_bar_ts_set}
+            item["baseline_row"] = baseline_lookup.get(
+                (symbol, item["recorder"].bar_close_ts_ms))
+        growth_lookup = {bar_ts: growth_flags.get(
+            (symbol, bar_ts), (False, False)) for bar_ts in target_bar_ts_set}
         _all_rows, target_rows = _replay_window(
             typed_config=typed_config,
             symbol=symbol,
@@ -1585,8 +1645,10 @@ def _future_feature_payload(
 ) -> dict[str, Any]:
     idx = index_by_ts[point.bar_close_ts_ms]
     close = point.close
-    future3 = series[idx + HORIZON_3] if idx + HORIZON_3 < len(series) else None
-    future6 = series[idx + HORIZON_6] if idx + HORIZON_6 < len(series) else None
+    future3 = series[idx + HORIZON_3] if idx + \
+        HORIZON_3 < len(series) else None
+    future6 = series[idx + HORIZON_6] if idx + \
+        HORIZON_6 < len(series) else None
     bullish_next3 = 0
     for step in range(1, HORIZON_3 + 1):
         if idx + step >= len(series):
@@ -1599,8 +1661,10 @@ def _future_feature_payload(
     long_mfe_6 = None
     short_benefit_6 = None
     if len(future_slice) == HORIZON_6 and close > 0:
-        long_mfe_6 = ((max(item.high for item in future_slice) - close) / close) * 10_000.0
-        short_benefit_6 = ((close - min(item.low for item in future_slice)) / close) * 10_000.0
+        long_mfe_6 = (
+            (max(item.high for item in future_slice) - close) / close) * 10_000.0
+        short_benefit_6 = (
+            (close - min(item.low for item in future_slice)) / close) * 10_000.0
     return {
         "fwd_ret_3_bps": None if future3 is None or close <= 0 else ((future3.close - close) / close) * 10_000.0,
         "fwd_ret_6_bps": None if future6 is None or close <= 0 else ((future6.close - close) / close) * 10_000.0,
@@ -1613,9 +1677,12 @@ def _future_feature_payload(
 def _compute_growth_calibration_thresholds(
     feature_rows: Sequence[dict[str, Any]],
 ) -> dict[str, float]:
-    abs_fwd3 = [abs(float(row["fwd_ret_3_bps"])) for row in feature_rows if row["fwd_ret_3_bps"] is not None]
-    abs_fwd6 = [abs(float(row["fwd_ret_6_bps"])) for row in feature_rows if row["fwd_ret_6_bps"] is not None]
-    long_mfe = [float(row["long_mfe_6_bps"]) for row in feature_rows if row["long_mfe_6_bps"] is not None]
+    abs_fwd3 = [abs(float(row["fwd_ret_3_bps"]))
+                for row in feature_rows if row["fwd_ret_3_bps"] is not None]
+    abs_fwd6 = [abs(float(row["fwd_ret_6_bps"]))
+                for row in feature_rows if row["fwd_ret_6_bps"] is not None]
+    long_mfe = [float(row["long_mfe_6_bps"])
+                for row in feature_rows if row["long_mfe_6_bps"] is not None]
     thr_r3 = max(12.0, _percentile(abs_fwd3, 0.60) or 12.0)
     thr_r6 = max(18.0, _percentile(abs_fwd6, 0.60) or 18.0)
     thr_mfe = max(15.0, _percentile(long_mfe, 0.60) or 15.0)
@@ -1653,7 +1720,8 @@ def _evaluate_growth_candidates(
     frozen_rows: Sequence[dict[str, Any]],
     recorder_series: dict[str, list[RecorderPoint]],
 ) -> tuple[CandidateDefinition, list[CandidateEvaluation], dict[tuple[str, int], tuple[bool, bool]], list[dict[str, Any]], dict[str, float]]:
-    series_index = {symbol: _build_symbol_index(series) for symbol, series in recorder_series.items()}
+    series_index = {symbol: _build_symbol_index(
+        series) for symbol, series in recorder_series.items()}
     point_lookup = {
         (symbol, point.bar_close_ts_ms): point
         for symbol, series in recorder_series.items()
@@ -1662,7 +1730,8 @@ def _evaluate_growth_candidates(
     enriched_rows: list[dict[str, Any]] = []
     for row in frozen_rows:
         symbol = str(row["symbol"])
-        payload = _future_feature_payload(recorder_series[symbol], series_index[symbol], point_lookup[(symbol, row["bar_close_ts_ms"])])
+        payload = _future_feature_payload(
+            recorder_series[symbol], series_index[symbol], point_lookup[(symbol, row["bar_close_ts_ms"])])
         enriched = dict(row)
         enriched.update(payload)
         enriched_rows.append(enriched)
@@ -1677,35 +1746,47 @@ def _evaluate_growth_candidates(
     ]
     thresholds = _compute_growth_calibration_thresholds(label_complete)
     candidates = [
-        CandidateDefinition(name="Candidate A", description="Forward-return reward label on H={3,6} bars", thresholds=dict(thresholds)),
-        CandidateDefinition(name="Candidate B", description="Bullish persistence in next 3 bars + cumulative return", thresholds=dict(thresholds)),
-        CandidateDefinition(name="Candidate C", description="Long-vs-short payoff asymmetry on H=6 bars", thresholds=dict(thresholds)),
+        CandidateDefinition(
+            name="Candidate A", description="Forward-return reward label on H={3,6} bars", thresholds=dict(thresholds)),
+        CandidateDefinition(
+            name="Candidate B", description="Bullish persistence in next 3 bars + cumulative return", thresholds=dict(thresholds)),
+        CandidateDefinition(
+            name="Candidate C", description="Long-vs-short payoff asymmetry on H=6 bars", thresholds=dict(thresholds)),
     ]
     candidate_evals: list[CandidateEvaluation] = []
     for candidate in candidates:
-        flags = [_candidate_flag(candidate.name, row, candidate.thresholds) for row in label_complete]
+        flags = [_candidate_flag(
+            candidate.name, row, candidate.thresholds) for row in label_complete]
         baseline_scores = [float(row["final_score"]) for row in label_complete]
-        long_minus_short = [float(row["long_mfe_6_bps"]) - float(row["short_benefit_6_bps"]) for row in label_complete]
-        true_values = [metric for flag, metric in zip(flags, long_minus_short, strict=False) if flag]
-        false_values = [metric for flag, metric in zip(flags, long_minus_short, strict=False) if not flag]
-        true_fwd6 = [float(row["fwd_ret_6_bps"]) for flag, row in zip(flags, label_complete, strict=False) if flag]
-        separation = (statistics.fmean(true_values) if true_values else 0.0) - (statistics.fmean(false_values) if false_values else 0.0)
+        long_minus_short = [float(
+            row["long_mfe_6_bps"]) - float(row["short_benefit_6_bps"]) for row in label_complete]
+        true_values = [metric for flag, metric in zip(
+            flags, long_minus_short, strict=False) if flag]
+        false_values = [metric for flag, metric in zip(
+            flags, long_minus_short, strict=False) if not flag]
+        true_fwd6 = [float(row["fwd_ret_6_bps"]) for flag, row in zip(
+            flags, label_complete, strict=False) if flag]
+        separation = (statistics.fmean(true_values) if true_values else 0.0) - \
+            (statistics.fmean(false_values) if false_values else 0.0)
         dependency = abs(_compute_point_biserial(flags, baseline_scores))
-        selection_score = separation + 0.25 * (statistics.fmean(true_fwd6) if true_fwd6 else 0.0) - 10.0 * dependency
+        selection_score = separation + 0.25 * \
+            (statistics.fmean(true_fwd6) if true_fwd6 else 0.0) - 10.0 * dependency
         candidate_evals.append(
             CandidateEvaluation(
                 name=candidate.name,
                 true_count=sum(1 for flag in flags if flag),
                 false_count=sum(1 for flag in flags if not flag),
                 separation_score=separation,
-                mean_true_fwd6_bps=statistics.fmean(true_fwd6) if true_fwd6 else 0.0,
+                mean_true_fwd6_bps=statistics.fmean(
+                    true_fwd6) if true_fwd6 else 0.0,
                 baseline_dependency_abs_corr=dependency,
                 selection_score=selection_score,
             )
         )
     candidate_evals.sort(key=lambda item: item.selection_score, reverse=True)
     chosen_name = candidate_evals[0].name
-    chosen_candidate = next(candidate for candidate in candidates if candidate.name == chosen_name)
+    chosen_candidate = next(
+        candidate for candidate in candidates if candidate.name == chosen_name)
     growth_flags: dict[tuple[str, int], tuple[bool, bool]] = {}
     for row in enriched_rows:
         complete = (
@@ -1716,7 +1797,8 @@ def _evaluate_growth_candidates(
             and row["short_benefit_6_bps"] is not None
         )
         growth_flags[(str(row["symbol"]), int(row["bar_close_ts_ms"]))] = (
-            _candidate_flag(chosen_candidate.name, row, chosen_candidate.thresholds) if complete else False,
+            _candidate_flag(chosen_candidate.name, row,
+                            chosen_candidate.thresholds) if complete else False,
             complete,
         )
     return chosen_candidate, candidate_evals, growth_flags, enriched_rows, thresholds
@@ -1758,15 +1840,20 @@ def _compute_metrics(
         buy = sum(1 for row in subset if row["raw_side"] == "buy")
         return sell / total, neutral / total, buy / total
 
-    growth_rows = [row for row in rows if row["active_growth_complete"] and row["active_growth_phase"]]
-    non_growth_rows = [row for row in rows if row["active_growth_complete"] and not row["active_growth_phase"]]
-    label_complete_rows = [row for row in rows if row["active_growth_complete"]]
+    growth_rows = [row for row in rows if row["active_growth_complete"]
+                   and row["active_growth_phase"]]
+    non_growth_rows = [
+        row for row in rows if row["active_growth_complete"] and not row["active_growth_phase"]]
+    label_complete_rows = [
+        row for row in rows if row["active_growth_complete"]]
     full_occ = occupancy(rows)
     growth_occ = occupancy(growth_rows)
     non_growth_occ = occupancy(non_growth_rows)
-    distance_to_buy = [max(0.0, float(row["thr_buy"]) - float(row["final_score"])) for row in rows]
+    distance_to_buy = [max(0.0, float(row["thr_buy"]) -
+                           float(row["final_score"])) for row in rows]
     sell_depth = [
-        max(0.0, (-float(row["thr_sell"])) - float(row["final_score"])) if float(row["final_score"]) <= -float(row["thr_sell"]) else 0.0
+        max(0.0, (-float(row["thr_sell"])) - float(row["final_score"])
+            ) if float(row["final_score"]) <= -float(row["thr_sell"]) else 0.0
         for row in rows
     ]
     moved_sell_to_neutral = 0
@@ -1781,11 +1868,16 @@ def _compute_metrics(
         if baseline["raw_side"] == "" and row["raw_side"] == "buy":
             moved_neutral_to_buy += 1
             baseline_neutral_to_buy_delta += 1
-    complete_buy_rows = [row for row in label_complete_rows if row["raw_side"] == "buy"]
-    buy_during_growth_pct = (sum(1 for row in complete_buy_rows if row["active_growth_phase"]) / len(complete_buy_rows) if complete_buy_rows else None)
-    growth_captured_as_buy_pct = (sum(1 for row in growth_rows if row["raw_side"] == "buy") / len(growth_rows) if growth_rows else None)
-    false_buy_outside_growth_pct = (sum(1 for row in non_growth_rows if row["raw_side"] == "buy") / len(non_growth_rows) if non_growth_rows else None)
-    missed_buy_inside_growth_pct = (sum(1 for row in growth_rows if row["raw_side"] != "buy") / len(growth_rows) if growth_rows else None)
+    complete_buy_rows = [
+        row for row in label_complete_rows if row["raw_side"] == "buy"]
+    buy_during_growth_pct = (sum(1 for row in complete_buy_rows if row["active_growth_phase"]) / len(
+        complete_buy_rows) if complete_buy_rows else None)
+    growth_captured_as_buy_pct = (sum(
+        1 for row in growth_rows if row["raw_side"] == "buy") / len(growth_rows) if growth_rows else None)
+    false_buy_outside_growth_pct = (sum(
+        1 for row in non_growth_rows if row["raw_side"] == "buy") / len(non_growth_rows) if non_growth_rows else None)
+    missed_buy_inside_growth_pct = (sum(
+        1 for row in growth_rows if row["raw_side"] != "buy") / len(growth_rows) if growth_rows else None)
 
     side_flip_count = 0
     oscillation_flag = False
@@ -1815,21 +1907,24 @@ def _compute_metrics(
             and sum(1 for row in growth_rows if baseline_lookup[(row["symbol"], row["bar_close_ts_ms"])]["raw_side"] == "sell") > 0
             and (
                 (
-                    sum(1 for row in growth_rows if baseline_lookup[(row["symbol"], row["bar_close_ts_ms"])]["raw_side"] == "sell")
+                    sum(1 for row in growth_rows if baseline_lookup[(
+                        row["symbol"], row["bar_close_ts_ms"])]["raw_side"] == "sell")
                     - sum(1 for row in growth_rows if row["raw_side"] == "sell")
                 ) / max(1, sum(1 for row in growth_rows if baseline_lookup[(row["symbol"], row["bar_close_ts_ms"])]["raw_side"] == "sell"))
             ) >= PROMISING_SELL_REDUCTION_MIN
             and churn_rate <= CHURN_MULT_MAX
         )
     )
-    dangerous = bool(false_buy_outside_growth_pct is not None and false_buy_outside_growth_pct > PROMISING_FALSE_BUY_MAX) or oscillation_flag
+    dangerous = bool(false_buy_outside_growth_pct is not None and false_buy_outside_growth_pct >
+                     PROMISING_FALSE_BUY_MAX) or oscillation_flag
 
     return ScenarioMetrics(
         family=family, scenario_id=scenario_id, scenario_value=scenario_value, status=status,
         window_points=len(rows), label_complete_points=len(label_complete_rows),
         sell_active_pct_full=full_occ[0], neutral_pct_full=full_occ[1], buy_active_pct_full=full_occ[2],
         sell_active_pct_growth=growth_occ[0], neutral_pct_growth=growth_occ[1], buy_active_pct_growth=growth_occ[2],
-        sell_active_pct_non_growth=non_growth_occ[0], neutral_pct_non_growth=non_growth_occ[1], buy_active_pct_non_growth=non_growth_occ[2],
+        sell_active_pct_non_growth=non_growth_occ[0], neutral_pct_non_growth=non_growth_occ[
+            1], buy_active_pct_non_growth=non_growth_occ[2],
         mean_distance_to_buy=_mean(distance_to_buy), median_distance_to_buy=_median(distance_to_buy), p90_distance_to_buy=_percentile(distance_to_buy, 0.90),
         mean_sell_depth=_mean(sell_depth), median_sell_depth=_median(sell_depth), p90_sell_depth=_percentile(sell_depth, 0.90),
         moved_sell_to_neutral=moved_sell_to_neutral, moved_neutral_to_buy=moved_neutral_to_buy,
@@ -1842,7 +1937,8 @@ def _compute_metrics(
 
 
 def _deterministic_signature(rows: Sequence[dict[str, Any]]) -> str:
-    normalized = json.dumps(rows, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    normalized = json.dumps(rows, ensure_ascii=False,
+                            sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
@@ -1915,7 +2011,8 @@ def _write_window_freeze_report(path: Path, *, window_spec: FrozenWindowSpec, fa
     if window_spec.refinement_reason:
         lines.append(f"- Refinement reason: `{window_spec.refinement_reason}`")
     for row in failure_rows[:10]:
-        lines.append(f"- `{row['timestamp_utc']}` `{row['symbol']}` raw=`{row['raw_side']}` emitted=`{row['final_signal_side']}` trade=`{row['trade_side']}` rid=`{row['rid']}`")
+        lines.append(
+            f"- `{row['timestamp_utc']}` `{row['symbol']}` raw=`{row['raw_side']}` emitted=`{row['final_signal_side']}` trade=`{row['trade_side']}` rid=`{row['rid']}`")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -1962,9 +2059,11 @@ def _write_scenario_report(path: Path, *, scenario: ScenarioSpec, metrics: Scena
         elif metrics.dangerous:
             lines.append("- This scenario is locally misleading or dangerous: it either creates false BUY outside growth, introduces oscillation, or does not improve directional alignment enough to justify the blast radius.")
         else:
-            lines.append("- This scenario mostly neutralizes or shifts scores without creating a convincing selective-BUY profile during active growth.")
+            lines.append(
+                "- This scenario mostly neutralizes or shifts scores without creating a convincing selective-BUY profile during active growth.")
     else:
-        lines.append("- This scenario could not be proven under the frozen-input contract and is therefore treated as blocked/unproven.")
+        lines.append(
+            "- This scenario could not be proven under the frozen-input contract and is therefore treated as blocked/unproven.")
     lines.extend([
         "", "## ASSUMPTIONS",
         "- Primary success metric is `raw_side`; `final_side_optional` is supplemental only.",
@@ -1983,9 +2082,11 @@ def _write_scenario_report(path: Path, *, scenario: ScenarioSpec, metrics: Scena
         f"- Stability: side_flips=`{metrics.side_flip_count}` churn=`{metrics.churn_rate:.4f}` oscillation=`{metrics.oscillation_flag}`",
         "", "## Evidence",
     ])
-    changed_examples = [row for row in rows if baseline_lookup[(row["symbol"], row["bar_close_ts_ms"])]["raw_side"] != row["raw_side"]][:10]
+    changed_examples = [row for row in rows if baseline_lookup[(
+        row["symbol"], row["bar_close_ts_ms"])]["raw_side"] != row["raw_side"]][:10]
     if not changed_examples:
-        lines.append("- No raw-side changes versus baseline in the frozen window.")
+        lines.append(
+            "- No raw-side changes versus baseline in the frozen window.")
     else:
         for row in changed_examples:
             baseline = baseline_lookup[(row["symbol"], row["bar_close_ts_ms"])]
@@ -2000,10 +2101,12 @@ def _write_spillover_report(path: Path, *, spillover_rows: Sequence[dict[str, An
     else:
         for row in spillover_rows:
             lines.append(f"- `{row['scenario_id']}` window=`{row['window_name']}` target_regime=`{row['target_regime']}` sell_to_buy_flip_pct=`{row['sell_to_buy_flip_pct']:.2%}` buy_active_pct=`{row['buy_active_pct']:.2%}` churn_mult=`{row['churn_mult']:.2f}` verdict=`{row['verdict']}`")
-    lines.extend(["", "## INFERENCES", "- Spillover checks are bounded blast-radius probes, not full global validation.", "", "## ASSUMPTIONS", "- Hard reject thresholds follow the experiment contract exactly for TREND_DOWN flips, TREND_DOWN BUY-active occupancy, and churn multiplication.", "", "## UNKNOWNS", "- A clean spillover sanity result does not prove the candidate is safe in all regimes or dates.", "", "## Metrics"])
+    lines.extend(["", "## INFERENCES", "- Spillover checks are bounded blast-radius probes, not full global validation.", "", "## ASSUMPTIONS", "- Hard reject thresholds follow the experiment contract exactly for TREND_DOWN flips, TREND_DOWN BUY-active occupancy, and churn multiplication.",
+                 "", "## UNKNOWNS", "- A clean spillover sanity result does not prove the candidate is safe in all regimes or dates.", "", "## Metrics"])
     for note in notes:
         lines.append(f"- {note}")
-    lines.extend(["", "## Evidence", "- Control windows are frozen from the same reconstructable common-bar segments used by the primary study."])
+    lines.extend(
+        ["", "## Evidence", "- Control windows are frozen from the same reconstructable common-bar segments used by the primary study."])
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -2015,7 +2118,8 @@ def _write_master_report(path: Path, *, metrics_rows: Sequence[ScenarioMetrics],
     for family, items in sorted(family_groups.items()):
         ok_items = [item for item in items if item.status == "ok"]
         if not ok_items:
-            family_rank_rows.append(f"- `{family}`: no proven scenario output under the frozen contract.")
+            family_rank_rows.append(
+                f"- `{family}`: no proven scenario output under the frozen contract.")
             continue
         best = sorted(
             ok_items,
@@ -2043,7 +2147,8 @@ def _write_master_report(path: Path, *, metrics_rows: Sequence[ScenarioMetrics],
         "## INFERENCES",
     ]
     if winner_scenario is None:
-        lines.append("- No scenario produced a convincing selective-BUY improvement with an acceptable local blast radius.")
+        lines.append(
+            "- No scenario produced a convincing selective-BUY improvement with an acceptable local blast radius.")
     else:
         lines.append(f"- `{winner_scenario.scenario_id}` is the current near-winner because it ranks highest on growth capture first, then on false-BUY control, pathological-SELL reduction, churn, and spillover safety.")
     lines.extend([
@@ -2064,7 +2169,8 @@ def _write_master_report(path: Path, *, metrics_rows: Sequence[ScenarioMetrics],
             f"{_render_pct(metrics.false_buy_outside_growth_pct)} | {_render_pct(_growth_sell_reduction(metrics, baseline_growth_sell_pct))} | "
             f"{_render_num(metrics.churn_rate, 4)} | {metrics.spillover_risk or 'not_run'} | {metrics.promising} | {metrics.dangerous} |"
         )
-    lines.extend(["", "## Evidence", "- All 18 main-sweep scenarios are included in the table above.", "", "## Family Ranking"])
+    lines.extend(
+        ["", "## Evidence", "- All 18 main-sweep scenarios are included in the table above.", "", "## Family Ranking"])
     lines.extend(family_rank_rows)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -2085,20 +2191,24 @@ def _write_validation_report(path: Path, *, parity_ok: bool, mismatches: Sequenc
     ]
     for unknown in unknowns:
         lines.append(f"- {unknown}")
-    lines.extend(["", "## Metrics", f"- Mismatch count: `{len(mismatches)}`", "", "## Evidence"])
+    lines.extend(
+        ["", "## Metrics", f"- Mismatch count: `{len(mismatches)}`", "", "## Evidence"])
     if not mismatches:
         lines.append("- No parity mismatches recorded.")
     else:
         for row in mismatches[:20]:
-            lines.append(f"- `{row['timestamp']}` `{row['symbol']}` fields=`{row['mismatch_fields']}` replay_score=`{row['replay_score']}` logged_score=`{row['logged_score']}`")
+            lines.append(
+                f"- `{row['timestamp']}` `{row['symbol']}` fields=`{row['mismatch_fields']}` replay_score=`{row['replay_score']}` logged_score=`{row['logged_score']}`")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _write_final_report(path: Path, *, proven_findings: Sequence[str], most_promising_lever: str, unsafe_levers: Sequence[str], remaining_unknowns: Sequence[str], next_package: str) -> None:
-    lines = ["# AURORA TREND_UP STRATEGIST SWEEP FINAL REPORT", "", "## Proven findings"]
+    lines = ["# AURORA TREND_UP STRATEGIST SWEEP FINAL REPORT",
+             "", "## Proven findings"]
     for item in proven_findings:
         lines.append(f"- {item}")
-    lines.extend(["", "## Most promising lever", f"- {most_promising_lever}", "", "## Unsafe or misleading levers"])
+    lines.extend(["", "## Most promising lever",
+                 f"- {most_promising_lever}", "", "## Unsafe or misleading levers"])
     for item in unsafe_levers:
         lines.append(f"- {item}")
     lines.extend(["", "## Remaining unknowns"])
@@ -2113,27 +2223,37 @@ def main(argv: Sequence[str] | None = None) -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     strategies_yaml = Path(args.strategies_yaml)
-    symbols = list(args.symbols) if args.symbols else _parse_aurora_symbols(strategies_yaml)
+    symbols = list(args.symbols) if args.symbols else _parse_aurora_symbols(
+        strategies_yaml)
     typed_config = _load_typed_config(Path(args.config_dir))
-    recorder_points, recorder_series, recorder_files = _load_recorder_points(Path(args.recorder_dir), symbols, int(args.tf_sec))
+    recorder_points, recorder_series, recorder_files = _load_recorder_points(
+        Path(args.recorder_dir), symbols, int(args.tf_sec))
     aurora_core_paths = _ordered_rotated_paths(args.aurora_core_glob)
     decision_log_paths = _ordered_rotated_paths(args.decision_log_glob)
-    regime_map, decision_map, aurora_log_files = _parse_aurora_core_logs(aurora_core_paths, symbols)
-    side_evidence, side_files = _parse_side_evidence(decision_log_paths + aurora_core_paths, Path(args.shadow_journal), Path(args.trade_lifecycle), symbols)
-    common_recorder_ts = _compute_common_recorder_timestamps(recorder_points, symbols)
+    regime_map, decision_map, aurora_log_files = _parse_aurora_core_logs(
+        aurora_core_paths, symbols)
+    side_evidence, side_files = _parse_side_evidence(
+        decision_log_paths + aurora_core_paths, Path(args.shadow_journal), Path(args.trade_lifecycle), symbols)
+    common_recorder_ts = _compute_common_recorder_timestamps(
+        recorder_points, symbols)
     if not common_recorder_ts:
         raise StudyError("No common recorder timestamps across Aurora symbols")
-    completeness = _build_completeness_map(common_recorder_ts, recorder_points, regime_map, decision_map, symbols)
-    complete_segments = _build_complete_segments(common_recorder_ts, completeness, TF_MS)
+    completeness = _build_completeness_map(
+        common_recorder_ts, recorder_points, regime_map, decision_map, symbols)
+    complete_segments = _build_complete_segments(
+        common_recorder_ts, completeness, TF_MS)
     if not complete_segments:
         raise StudyError("No complete common segments were found")
-    segment_index, parent_segment, parent_failure_rows = _choose_latest_failure_segment(complete_segments, symbols, regime_map, decision_map, side_evidence)
+    segment_index, parent_segment, parent_failure_rows = _choose_latest_failure_segment(
+        complete_segments, symbols, regime_map, decision_map, side_evidence)
     frozen_segment = list(parent_segment)
     failure_rows = list(parent_failure_rows)
     selection_mode = "latest_complete_failure_segment"
     refinement_reason = None
-    control_trend_down = _choose_control_segment("TREND_DOWN_CONTROL", ["TREND_DOWN"], complete_segments, symbols, regime_map)
-    control_other = _choose_control_segment("ALT_REGIME_CONTROL", ["MEAN_REVERSION", "HIGH_VOLATILITY", "UNCERTAIN"], complete_segments, symbols, regime_map)
+    control_trend_down = _choose_control_segment(
+        "TREND_DOWN_CONTROL", ["TREND_DOWN"], complete_segments, symbols, regime_map)
+    control_other = _choose_control_segment("ALT_REGIME_CONTROL", [
+                                            "MEAN_REVERSION", "HIGH_VOLATILITY", "UNCERTAIN"], complete_segments, symbols, regime_map)
 
     baseline_rows, _baseline_all_series, _baseline_target_rows = _run_baseline_replay(
         typed_config=typed_config, symbols=symbols, recorder_points=recorder_points, regime_map=regime_map,
@@ -2158,12 +2278,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                     typed_config=typed_config, symbols=symbols, recorder_points=recorder_points, regime_map=regime_map,
                     decision_map=decision_map, frozen_segment=frozen_segment, active_growth_flags={},
                 )
-                parity_ok, mismatches = _validate_baseline_parity(baseline_rows)
+                parity_ok, mismatches = _validate_baseline_parity(
+                    baseline_rows)
 
     rest_url = str(typed_config.binance_api.live.rest_url)
-    htf_manifest, htf_manifest_path = _freeze_htf_seed(out_dir, rest_url, symbols)
+    htf_manifest, htf_manifest_path = _freeze_htf_seed(
+        out_dir, rest_url, symbols)
     htf_blocked = "blocked_reason" in htf_manifest
-    source_files = sorted(set(recorder_files) | set(aurora_log_files) | set(side_files))
+    source_files = sorted(set(recorder_files) | set(
+        aurora_log_files) | set(side_files))
     frozen_manifest = {
         "sources": [{"path": str(path), "sha256": _sha256_file(path)} for path in source_files],
         "latest_common_recorder_ts_ms": common_recorder_ts[-1],
@@ -2197,12 +2320,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         parent_segment_bar_count=len(parent_segment), latest_failure_ts_ms=max(int(row["bar_close_ts_ms"]) for row in failure_rows),
         selection_mode=selection_mode, refinement_reason=refinement_reason,
     )
-    growth_candidate, candidate_evals, growth_flags, _growth_feature_rows, growth_thresholds = _evaluate_growth_candidates(baseline_rows, recorder_series)
+    growth_candidate, candidate_evals, growth_flags, _growth_feature_rows, growth_thresholds = _evaluate_growth_candidates(
+        baseline_rows, recorder_series)
     for row in baseline_rows:
-        growth_flag, growth_complete = growth_flags.get((row["symbol"], row["bar_close_ts_ms"]), (False, False))
+        growth_flag, growth_complete = growth_flags.get(
+            (row["symbol"], row["bar_close_ts_ms"]), (False, False))
         row["active_growth_phase"] = growth_flag
         row["active_growth_complete"] = growth_complete
-    baseline_lookup = {(row["symbol"], row["bar_close_ts_ms"]): row for row in baseline_rows}
+    baseline_lookup = {
+        (row["symbol"], row["bar_close_ts_ms"]): row for row in baseline_rows}
     baseline_metrics = _compute_metrics(
         rows=baseline_rows,
         baseline_lookup=baseline_lookup,
@@ -2214,31 +2340,41 @@ def main(argv: Sequence[str] | None = None) -> int:
     baseline_growth_sell_pct = baseline_metrics.sell_active_pct_growth
     _write_csv(out_dir / "BASELINE_REPLAY.csv", baseline_rows)
     _write_json(out_dir / "BASELINE_REPLAY.json", baseline_rows)
-    _write_window_freeze_report(out_dir / "AURORA_TREND_UP_WINDOW_FREEZE_REPORT.md", window_spec=window_spec, failure_rows=failure_rows, source_files=source_files)
-    _write_active_growth_report(out_dir / "ACTIVE_GROWTH_PHASE_DEFINITION.md", chosen_candidate=growth_candidate, evaluations=candidate_evals, thresholds=growth_thresholds)
+    _write_window_freeze_report(out_dir / "AURORA_TREND_UP_WINDOW_FREEZE_REPORT.md",
+                                window_spec=window_spec, failure_rows=failure_rows, source_files=source_files)
+    _write_active_growth_report(out_dir / "ACTIVE_GROWTH_PHASE_DEFINITION.md",
+                                chosen_candidate=growth_candidate, evaluations=candidate_evals, thresholds=growth_thresholds)
     if not parity_ok:
-        _write_validation_report(out_dir / "AURORA_TREND_UP_STRATEGIST_SWEEP_VALIDATION_REPORT.md", parity_ok=False, mismatches=mismatches, scenario_count=0, rerun_ok=False, spillover_executed=False, unknowns=["Main sweep blocked because baseline replay parity did not match the frozen live trace.", "No scenario metrics should be treated as proven until parity is restored."])
+        _write_validation_report(out_dir / "AURORA_TREND_UP_STRATEGIST_SWEEP_VALIDATION_REPORT.md", parity_ok=False, mismatches=mismatches, scenario_count=0, rerun_ok=False, spillover_executed=False,
+                                 unknowns=["Main sweep blocked because baseline replay parity did not match the frozen live trace.", "No scenario metrics should be treated as proven until parity is restored."])
         return 1
 
-    d1_series_by_symbol = _load_d1_series_from_manifest(htf_manifest) if not htf_blocked else {}
-    d1_rule_by_symbol = _choose_d1_inclusion_rule(d1_series_by_symbol, baseline_rows) if not htf_blocked else {}
+    d1_series_by_symbol = _load_d1_series_from_manifest(
+        htf_manifest) if not htf_blocked else {}
+    d1_rule_by_symbol = _choose_d1_inclusion_rule(
+        d1_series_by_symbol, baseline_rows) if not htf_blocked else {}
     scenario_specs: list[ScenarioSpec] = []
     for idx, value in enumerate(SENSITIVITY_LADDER, start=1):
-        scenario_specs.append(ScenarioSpec("sensitivity", f"SCENARIO_SENSITIVITY_{idx:02d}", BASELINE_SENSITIVITY, float(value), "none", htf_manifest_path))
+        scenario_specs.append(ScenarioSpec(
+            "sensitivity", f"SCENARIO_SENSITIVITY_{idx:02d}", BASELINE_SENSITIVITY, float(value), "none", htf_manifest_path))
     for idx, value in enumerate(WEIGHT_LADDER, start=1):
-        scenario_specs.append(ScenarioSpec("weight", f"SCENARIO_WEIGHT_{idx:02d}", BASELINE_STRATEGIST_WEIGHT, float(value), "strategist delta redistributed to tactician/operator in baseline ratio 0.60:0.25", htf_manifest_path))
+        scenario_specs.append(ScenarioSpec("weight", f"SCENARIO_WEIGHT_{idx:02d}", BASELINE_STRATEGIST_WEIGHT, float(
+            value), "strategist delta redistributed to tactician/operator in baseline ratio 0.60:0.25", htf_manifest_path))
     for idx, value in enumerate(SMA_LADDER, start=1):
-        scenario_specs.append(ScenarioSpec("sma", f"SCENARIO_SMA_{idx:02d}", BASELINE_STRATEGIST_SMA, float(value), "none", htf_manifest_path))
+        scenario_specs.append(ScenarioSpec(
+            "sma", f"SCENARIO_SMA_{idx:02d}", BASELINE_STRATEGIST_SMA, float(value), "none", htf_manifest_path))
     scenario_output_rows: dict[str, list[dict[str, Any]]] = {}
     metrics_list: list[ScenarioMetrics] = []
-    control_specs = [spec for spec in (control_trend_down, control_other) if spec is not None]
+    control_specs = [spec for spec in (
+        control_trend_down, control_other) if spec is not None]
     for scenario in scenario_specs:
         scenario_rows: list[dict[str, Any]] = []
         status = "ok"
         blocked_reason = None
         try:
             if scenario.family == "sma" and htf_blocked:
-                raise StudyError(str(htf_manifest["blocked_reason"]["message"]))
+                raise StudyError(
+                    str(htf_manifest["blocked_reason"]["message"]))
             scenario_rows = _run_scenario_replay(
                 typed_config=typed_config,
                 symbols=symbols,
@@ -2256,14 +2392,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             status = "blocked"
             blocked_reason = str(exc)
             scenario_rows = []
-        metrics = _compute_metrics(rows=scenario_rows, baseline_lookup=baseline_lookup, family=scenario.family, scenario_id=scenario.scenario_id, scenario_value=scenario.scenario_value, status=status, blocked_reason=blocked_reason)
+        metrics = _compute_metrics(rows=scenario_rows, baseline_lookup=baseline_lookup, family=scenario.family,
+                                   scenario_id=scenario.scenario_id, scenario_value=scenario.scenario_value, status=status, blocked_reason=blocked_reason)
         metrics_list.append(metrics)
         scenario_output_rows[scenario.scenario_id] = scenario_rows
         family_idx = int(scenario.scenario_id.rsplit("_", 1)[1])
         prefix = _scenario_output_prefix(scenario.family, family_idx)
         _write_json(out_dir / f"{prefix}.json", scenario_rows)
         _write_csv(out_dir / f"{prefix}.csv", scenario_rows)
-        _write_scenario_report(out_dir / _scenario_report_name(scenario.family, family_idx), scenario=scenario, metrics=metrics, rows=scenario_rows, baseline_lookup=baseline_lookup)
+        _write_scenario_report(out_dir / _scenario_report_name(scenario.family, family_idx),
+                               scenario=scenario, metrics=metrics, rows=scenario_rows, baseline_lookup=baseline_lookup)
 
     summary_rows = [_metrics_to_row(metrics) for metrics in metrics_list]
     _write_json(out_dir / "SCENARIO_SUMMARY.json", summary_rows)
@@ -2276,7 +2414,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         rerun_status = "ok"
         try:
             if scenario.family == "sma" and htf_blocked:
-                raise StudyError(str(htf_manifest["blocked_reason"]["message"]))
+                raise StudyError(
+                    str(htf_manifest["blocked_reason"]["message"]))
             rerun_rows = _run_scenario_replay(
                 typed_config=typed_config,
                 symbols=symbols,
@@ -2298,10 +2437,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             break
     spillover_rows: list[dict[str, Any]] = []
     spillover_notes: list[str] = []
-    control_baseline_lookup_by_name: dict[str, dict[tuple[str, int], dict[str, Any]]] = {}
+    control_baseline_lookup_by_name: dict[str,
+                                          dict[tuple[str, int], dict[str, Any]]] = {}
     control_baseline_churn_by_name: dict[str, float] = {}
     for control in control_specs:
-        control_segment = list(range(control.start_ts_ms, control.end_ts_ms + TF_MS, TF_MS))
+        control_segment = list(
+            range(control.start_ts_ms, control.end_ts_ms + TF_MS, TF_MS))
         control_baseline_rows, _control_all_series, _control_target_rows = _run_baseline_replay(
             typed_config=typed_config,
             symbols=symbols,
@@ -2314,13 +2455,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         control_baseline_lookup_by_name[control.name] = {
             (row["symbol"], row["bar_close_ts_ms"]): row for row in control_baseline_rows
         }
-        control_baseline_churn_by_name[control.name] = _compute_churn_rate(control_baseline_rows)
-    promising_metrics = [item for item in metrics_list if item.promising and item.status == "ok"]
+        control_baseline_churn_by_name[control.name] = _compute_churn_rate(
+            control_baseline_rows)
+    promising_metrics = [
+        item for item in metrics_list if item.promising and item.status == "ok"]
     for metrics in promising_metrics:
-        scenario = next(spec for spec in scenario_specs if spec.scenario_id == metrics.scenario_id)
+        scenario = next(
+            spec for spec in scenario_specs if spec.scenario_id == metrics.scenario_id)
         for control in control_specs:
-            control_segment = list(range(control.start_ts_ms, control.end_ts_ms + TF_MS, TF_MS))
-            control_baseline_lookup = control_baseline_lookup_by_name.get(control.name, {})
+            control_segment = list(
+                range(control.start_ts_ms, control.end_ts_ms + TF_MS, TF_MS))
+            control_baseline_lookup = control_baseline_lookup_by_name.get(
+                control.name, {})
             control_rows = _run_scenario_replay(
                 typed_config=typed_config,
                 symbols=symbols,
@@ -2339,7 +2485,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             sell_to_buy_flips = 0
             denominator = 0
             for row in control_rows:
-                baseline = control_baseline_lookup.get((row["symbol"], row["bar_close_ts_ms"]))
+                baseline = control_baseline_lookup.get(
+                    (row["symbol"], row["bar_close_ts_ms"]))
                 if baseline is None:
                     continue
                 if baseline["raw_side"] == "sell":
@@ -2347,17 +2494,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if row["raw_side"] == "buy":
                         sell_to_buy_flips += 1
             sell_to_buy_flip_pct = sell_to_buy_flips / max(1, denominator)
-            buy_active_pct = sum(1 for row in control_rows if row["raw_side"] == "buy") / max(1, len(control_rows))
-            control_baseline_churn = control_baseline_churn_by_name.get(control.name, 0.0)
+            buy_active_pct = sum(
+                1 for row in control_rows if row["raw_side"] == "buy") / max(1, len(control_rows))
+            control_baseline_churn = control_baseline_churn_by_name.get(
+                control.name, 0.0)
             scenario_control_churn = _compute_churn_rate(control_rows)
             if control_baseline_churn <= 1e-9:
-                churn_mult = 1.0 if scenario_control_churn <= 1e-9 else float("inf")
+                churn_mult = 1.0 if scenario_control_churn <= 1e-9 else float(
+                    "inf")
             else:
                 churn_mult = scenario_control_churn / control_baseline_churn
-            reject = sell_to_buy_flip_pct > SPILLOVER_TREND_DOWN_FLIP_MAX or (control.target_regime == "TREND_DOWN" and buy_active_pct > SPILLOVER_TREND_DOWN_BUY_MAX) or churn_mult > CHURN_MULT_MAX
+            reject = sell_to_buy_flip_pct > SPILLOVER_TREND_DOWN_FLIP_MAX or (
+                control.target_regime == "TREND_DOWN" and buy_active_pct > SPILLOVER_TREND_DOWN_BUY_MAX) or churn_mult > CHURN_MULT_MAX
             verdict = "reject" if reject else "pass"
-            spillover_rows.append({"scenario_id": scenario.scenario_id, "window_name": control.name, "target_regime": control.target_regime, "sell_to_buy_flip_pct": sell_to_buy_flip_pct, "buy_active_pct": buy_active_pct, "churn_mult": churn_mult, "verdict": verdict})
-            spillover_notes.append(f"{scenario.scenario_id} on {control.name}: sell_to_buy_flip_pct={sell_to_buy_flip_pct:.2%}, buy_active_pct={buy_active_pct:.2%}, churn_mult={churn_mult:.2f}, verdict={verdict}")
+            spillover_rows.append({"scenario_id": scenario.scenario_id, "window_name": control.name, "target_regime": control.target_regime,
+                                  "sell_to_buy_flip_pct": sell_to_buy_flip_pct, "buy_active_pct": buy_active_pct, "churn_mult": churn_mult, "verdict": verdict})
+            spillover_notes.append(
+                f"{scenario.scenario_id} on {control.name}: sell_to_buy_flip_pct={sell_to_buy_flip_pct:.2%}, buy_active_pct={buy_active_pct:.2%}, churn_mult={churn_mult:.2f}, verdict={verdict}")
     spillover_verdicts: dict[str, list[str]] = defaultdict(list)
     for row in spillover_rows:
         spillover_verdicts[str(row["scenario_id"])].append(str(row["verdict"]))
@@ -2375,7 +2528,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     summary_rows = [_metrics_to_row(metrics) for metrics in metrics_list]
     _write_json(out_dir / "SCENARIO_SUMMARY.json", summary_rows)
     _write_csv(out_dir / "SCENARIO_SUMMARY.csv", summary_rows)
-    _write_spillover_report(out_dir / "SPILLOVER_SANITY_CHECK_REPORT.md", spillover_rows=spillover_rows, notes=spillover_notes)
+    _write_spillover_report(out_dir / "SPILLOVER_SANITY_CHECK_REPORT.md",
+                            spillover_rows=spillover_rows, notes=spillover_notes)
     ranked_metrics = [item for item in metrics_list if item.status == "ok"]
     ranked_metrics.sort(
         key=lambda item: (
@@ -2395,23 +2549,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         winner_scenario=winner,
         baseline_growth_sell_pct=baseline_growth_sell_pct,
     )
-    _write_validation_report(out_dir / "AURORA_TREND_UP_STRATEGIST_SWEEP_VALIDATION_REPORT.md", parity_ok=parity_ok, mismatches=mismatches, scenario_count=len(scenario_specs), rerun_ok=rerun_ok, spillover_executed=bool(spillover_rows), unknowns=["Scenario final_side_optional is preserved only where runtime logs independently proved an emitted side; policy rewrites are not re-simulated for hypothetical scenarios.", "SMA family remains blocked/unproven if the frozen HTF seed fetch failed or did not satisfy the replay contract."])
+    _write_validation_report(out_dir / "AURORA_TREND_UP_STRATEGIST_SWEEP_VALIDATION_REPORT.md", parity_ok=parity_ok, mismatches=mismatches, scenario_count=len(scenario_specs), rerun_ok=rerun_ok, spillover_executed=bool(spillover_rows), unknowns=[
+                             "Scenario final_side_optional is preserved only where runtime logs independently proved an emitted side; policy rewrites are not re-simulated for hypothetical scenarios.", "SMA family remains blocked/unproven if the frozen HTF seed fetch failed or did not satisfy the replay contract."])
 
     unsafe_levers = []
     if any(item.family == "sma" and item.status != "ok" for item in metrics_list):
-        unsafe_levers.append("SMA-period sweeps are semantically wider and remain blocked whenever the one-time D1 seed cannot be frozen and validated.")
+        unsafe_levers.append(
+            "SMA-period sweeps are semantically wider and remain blocked whenever the one-time D1 seed cannot be frozen and validated.")
     if any(item.family == "weight" and item.dangerous for item in metrics_list):
-        unsafe_levers.append("Weight reductions can look attractive locally but become misleading when they create false BUY outside active growth or unstable side churn.")
+        unsafe_levers.append(
+            "Weight reductions can look attractive locally but become misleading when they create false BUY outside active growth or unstable side churn.")
     if any(item.family == "sensitivity" and item.dangerous for item in metrics_list):
-        unsafe_levers.append("Sensitivity reductions can neutralize SELL pressure without producing genuine BUY capture during growth.")
+        unsafe_levers.append(
+            "Sensitivity reductions can neutralize SELL pressure without producing genuine BUY capture during growth.")
     proven_findings = [
         f"Frozen window: {_iso_utc(window_spec.start_ts_ms)} .. {_iso_utc(window_spec.end_ts_ms)} with {window_spec.qualifying_failure_count} qualifying TREND_UP SELL/SHORT failures.",
         f"Baseline parity gate passed with {len(mismatches)} mismatches.",
         f"Selected active-growth definition: {growth_candidate.name}.",
     ]
     if winner is not None:
-        proven_findings.append(f"Top local scenario: {winner.scenario_id} ({winner.family}={winner.scenario_value}) growth_capture={_render_pct(winner.growth_captured_as_buy_pct)} false_buy_outside_growth={_render_pct(winner.false_buy_outside_growth_pct)} churn={winner.churn_rate:.4f}.")
-    _write_final_report(out_dir / "AURORA_TREND_UP_STRATEGIST_SWEEP_FINAL_REPORT.md", proven_findings=proven_findings, most_promising_lever=(f"{winner.family} via {winner.scenario_id}" if winner is not None else "No single-factor winner was proven"), unsafe_levers=unsafe_levers or ["No additional unsafe lever was proven beyond the explicit evidence limits."], remaining_unknowns=["This experiment is still local to one frozen TREND_UP episode plus bounded spillover probes.", "Policy-layer final-side behavior for hypothetical scenarios remains supplemental rather than primary truth."], next_package=("local refinement around winner family" if winner is not None else "reject and move to threshold overlay experiments instead"))
+        proven_findings.append(
+            f"Top local scenario: {winner.scenario_id} ({winner.family}={winner.scenario_value}) growth_capture={_render_pct(winner.growth_captured_as_buy_pct)} false_buy_outside_growth={_render_pct(winner.false_buy_outside_growth_pct)} churn={winner.churn_rate:.4f}.")
+    _write_final_report(out_dir / "AURORA_TREND_UP_STRATEGIST_SWEEP_FINAL_REPORT.md", proven_findings=proven_findings, most_promising_lever=(f"{winner.family} via {winner.scenario_id}" if winner is not None else "No single-factor winner was proven"), unsafe_levers=unsafe_levers or ["No additional unsafe lever was proven beyond the explicit evidence limits."], remaining_unknowns=[
+                        "This experiment is still local to one frozen TREND_UP episode plus bounded spillover probes.", "Policy-layer final-side behavior for hypothetical scenarios remains supplemental rather than primary truth."], next_package=("local refinement around winner family" if winner is not None else "reject and move to threshold overlay experiments instead"))
     return 0
 
 

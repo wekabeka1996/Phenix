@@ -10,6 +10,9 @@ from unittest import mock
 import jsonschema
 
 
+DEFAULT_ORDER_LOG_FILE = Path("logs") / "order_log_v1.jsonl"
+
+
 def _to_jsonable(value: Any, *, _seen: set[int] | None = None, _depth: int = 0) -> Any:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
@@ -50,11 +53,22 @@ def _schema_path() -> Path:
     return base_dir / "schemas" / "order_logger_v1.json"
 
 
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def _resolve_log_file(log_file: Optional[Union[str, Path]] = None) -> Path:
+    candidate = DEFAULT_ORDER_LOG_FILE if log_file is None else Path(log_file)
+    if candidate.is_absolute():
+        return candidate
+    return _repo_root() / candidate
+
+
 class OrderLoggerV1:
     """L1 Order Logger - Unified order lifecycle logging with schema validation."""
 
-    def __init__(self, log_file: str = "logs/order_log_v1.jsonl"):
-        self.log_file = Path(log_file)
+    def __init__(self, log_file: Union[str, Path] = DEFAULT_ORDER_LOG_FILE):
+        self.log_file = _resolve_log_file(log_file)
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Load schema
@@ -68,7 +82,7 @@ class OrderLoggerV1:
         """Write a BOOT record to mark session start.
 
         This is a system marker (not an order event), so it bypasses schema validation.
-        Enables observability: if order_log has BOOT but no ORDER_* events, 
+        Enables observability: if order_log has BOOT but no ORDER_* events,
         we know the system ran but no orders were placed.
         """
         boot_record = {
@@ -117,12 +131,12 @@ def get_order_logger(log_file: Optional[Union[str, Path]] = None) -> OrderLogger
     """Return a singleton OrderLoggerV1, initialized lazily."""
     global _order_logger_instance
     if _order_logger_instance is None:
-        if log_file is None:
-            _order_logger_instance = OrderLoggerV1()
-        else:
-            _order_logger_instance = OrderLoggerV1(log_file=str(log_file))
+        _order_logger_instance = OrderLoggerV1(
+            _resolve_log_file(
+                log_file) if log_file is not None else DEFAULT_ORDER_LOG_FILE
+        )
     elif log_file is not None:
-        _order_logger_instance.log_file = Path(log_file)
+        _order_logger_instance.log_file = _resolve_log_file(log_file)
     return _order_logger_instance
 
 
@@ -135,15 +149,15 @@ class _LazyOrderLogger:
     @property
     def log_file(self) -> Path:
         if _order_logger_instance is None:
-            return self._log_file_override or Path("logs/order_log_v1.jsonl")
+            return self._log_file_override or _resolve_log_file()
         return get_order_logger().log_file
 
     @log_file.setter
     def log_file(self, value: Union[str, Path]) -> None:
         if _order_logger_instance is None:
-            self._log_file_override = Path(value)
+            self._log_file_override = _resolve_log_file(value)
             return
-        get_order_logger().log_file = Path(value)
+        get_order_logger().log_file = _resolve_log_file(value)
 
     def write(self, entry: Dict[str, Any]) -> None:
         logger = get_order_logger(log_file=self._log_file_override)

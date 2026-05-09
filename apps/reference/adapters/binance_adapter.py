@@ -338,12 +338,17 @@ class BinanceAdapter(AbstractExchangeAdapter):
         async with self._ledger_lock:
             return await self._check_clientorderid_reuse_unsafe(symbol, client_order_id)
 
-    async def _get_open_orders_cached(self) -> list:
-        """Return all open orders, using a 2-second TTL cache to prevent
-        N repeated REST calls during bulk cancel/retry storms."""
+    async def _get_open_orders_cached(self, *, force_refresh: bool = False) -> list:
+        """Return all open orders with an optional cache bypass.
+
+        The default TTL cache prevents repeated REST calls during bulk
+        cancel/retry storms. Recovery seams that are proving a just-submitted
+        order may request a forced refresh because a stale snapshot can miss a
+        newly accepted order.
+        """
         now_ms = int(time.time() * 1000)
         cached_ts, cached_data = self._open_orders_scan_cache
-        if now_ms - cached_ts < self._open_orders_scan_ttl_ms:
+        if not force_refresh and now_ms - cached_ts < self._open_orders_scan_ttl_ms:
             return cached_data
         try:
             raw = await self._request("GET", "/fapi/v1/openOrders", {}, signed=True)
@@ -957,7 +962,11 @@ class BinanceAdapter(AbstractExchangeAdapter):
                 raise
 
         try:
-            for order in await self._get_open_orders_cached():
+            # Uncertain-submit recovery cannot trust a freshly primed cached
+            # openOrders snapshot here: the cache may have been filled just
+            # before POST /order timed out, which would hide the newly accepted
+            # order across every recovery retry within the 2s TTL.
+            for order in await self._get_open_orders_cached(force_refresh=True):
                 if not isinstance(order, dict):
                     continue
                 if str(order.get("symbol") or "").strip() != str(symbol or "").strip():
