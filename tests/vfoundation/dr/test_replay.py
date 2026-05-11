@@ -247,6 +247,82 @@ class TestReplayW5BoundedStartupSubset:
             "EVT:PENDING_BRACKETS_STORED:missing_identity:entry_order_id"]
         assert summary.symbol_records[0].unresolved_records == 1
 
+    def test_accepts_pending_brackets_stored_from_daily_wal(self, tmp_wal: pathlib.Path) -> None:
+        _write_chained_records(
+            tmp_wal,
+            [
+                {
+                    "rid": "r-stored-1",
+                    "op": "EVT",
+                    "verb": "PENDING_BRACKETS_STORED",
+                    "ts": 1000,
+                    "src": "execution_position",
+                    "dst": "observability",
+                    "pld": {
+                        "ts_ms": 1000,
+                        "entry_order_id": "entry-1",
+                        "symbol": "BTCUSDT",
+                        "side": "BUY",
+                        "sl": 99.5,
+                        "tp": 101.0,
+                        "qty": 1.0,
+                        "rid": "r-stored-1",
+                        "idem_key": "idem-entry-1",
+                        "tick_size": 0.1,
+                    },
+                }
+            ],
+        )
+
+        summary = replay.replay_w5_bounded_startup_subset(
+            symbols_considered=["BTCUSDT"],
+        )
+
+        assert summary.records_seen == 1
+        assert summary.records_accepted == 1
+        assert summary.records_unresolved == 0
+        assert summary.event_counts == {"EVT:PENDING_BRACKETS_STORED": 1}
+        assert summary.restore_boundary_separation == "report_only"
+        assert summary.authoritative_mutation_attempted is False
+        assert summary.symbol_records[0].identity_keys == [
+            "EVT:PENDING_BRACKETS_STORED|BTCUSDT|r-stored-1|entry_order_id|entry-1"
+        ]
+
+    def test_accepts_pending_brackets_cleared_from_daily_wal(self, tmp_wal: pathlib.Path) -> None:
+        _write_chained_records(
+            tmp_wal,
+            [
+                {
+                    "rid": "r-cleared-1",
+                    "op": "EVT",
+                    "verb": "PENDING_BRACKETS_CLEARED",
+                    "ts": 2000,
+                    "src": "execution_position",
+                    "dst": "observability",
+                    "pld": {
+                        "ts_ms": 2000,
+                        "entry_order_id": "entry-1",
+                        "symbol": "BTCUSDT",
+                        "reason": "filled",
+                    },
+                }
+            ],
+        )
+
+        summary = replay.replay_w5_bounded_startup_subset(
+            symbols_considered=["BTCUSDT"],
+        )
+
+        assert summary.records_seen == 1
+        assert summary.records_accepted == 1
+        assert summary.records_unresolved == 0
+        assert summary.event_counts == {"EVT:PENDING_BRACKETS_CLEARED": 1}
+        assert summary.restore_boundary_separation == "report_only"
+        assert summary.authoritative_mutation_attempted is False
+        assert summary.symbol_records[0].identity_keys == [
+            "EVT:PENDING_BRACKETS_CLEARED|BTCUSDT|r-cleared-1|entry_order_id|entry-1"
+        ]
+
 
 # ─── replay_from_wal ────────────────────────────────────────────────
 

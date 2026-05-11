@@ -86,6 +86,7 @@ def test_trade_executed_canonical_fill_ingress_orders_activation_and_observabili
     tmp_path: Path,
 ) -> None:
     fsm, _, _ = fsm_harness
+    fsm.config.domains.execution_position.trade_executed_cutover_active = True
     log_path = tmp_path / "trade_lifecycle.jsonl"
     call_order: list[str] = []
     sidecar_payload: dict[str, object] = {}
@@ -119,7 +120,7 @@ def test_trade_executed_canonical_fill_ingress_orders_activation_and_observabili
 
     fsm._trade_lifecycle_log_path = lambda: str(log_path)
     fsm._get_or_create_flows = _get_or_create
-    fsm._evt_handlers.on_trade_executed = lambda msg: call_order.append(
+    fsm._evt_handlers.on_trade_executed = lambda msg, authoritative=False: call_order.append(
         "event_trade")
     fsm._evt_handlers.on_order_fill = lambda msg: call_order.append(
         "event_fill")
@@ -135,7 +136,6 @@ def test_trade_executed_canonical_fill_ingress_orders_activation_and_observabili
     assert call_order == [
         "get_or_create",
         "event_trade",
-        "event_fill",
         "manage_handle",
         "sidecar",
         "process_result",
@@ -177,7 +177,7 @@ def test_order_fill_missing_activation_fields_skips_lifecycle_activation_fail_cl
 
     fsm._trade_lifecycle_log_path = lambda: str(log_path)
     fsm._get_or_create_flows = _unexpected
-    fsm._evt_handlers.on_trade_executed = lambda msg: call_order.append(
+    fsm._evt_handlers.on_trade_executed = lambda msg, authoritative=False: call_order.append(
         "event_trade")
     fsm._evt_handlers.on_order_fill = lambda msg: call_order.append(
         "event_fill")

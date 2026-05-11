@@ -10,9 +10,27 @@
       "type": "string",
       "description": "Causal request id shared with signal, gateway, and downstream artifacts"
     },
+    "decision_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Canonical decision identifier when the upstream strategy path provides one"
+    },
+    "cycle_key": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Canonical review/replay cycle identity when propagated from upstream"
+    },
     "lifecycle_id": {
       "type": "string",
       "description": "Lifecycle/idempotent key for allowed intents when available"
+    },
+    "intent_id": {
+      "type": "string",
+      "description": "Intent identifier for accepted traces; mirrors lifecycle_id on the hot path"
     },
     "symbol": {
       "type": "string",
@@ -41,6 +59,28 @@
       "type": "integer",
       "description": "Decision timestamp in ms epoch"
     },
+    "event_ts_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Decision event timestamp in ms epoch"
+    },
+    "tf_sec": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Decision timeframe in seconds when available"
+    },
+    "bar_close_ts_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Bar close timestamp in ms epoch when available"
+    },
     "intent_side": {
       "type": "string",
       "enum": [
@@ -55,6 +95,123 @@
         "null"
       ],
       "description": "Signal score if available"
+    },
+    "raw_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Raw strategy score when propagated from upstream strategy trace"
+    },
+    "decision_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Decision-stage score when propagated from upstream strategy trace"
+    },
+    "active_threshold": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Threshold active for the current decision when available"
+    },
+    "score_to_threshold_ratio": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Decision score to threshold ratio when available"
+    },
+    "score_lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "value": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "scale": {
+                "type": "string"
+              },
+              "producer": {
+                "type": "string"
+              },
+              "consumer_stage": {
+                "type": "string"
+              },
+              "threshold_family": {
+                "type": "string"
+              },
+              "live_authority_status": {
+                "type": "string"
+              },
+              "compatibility_alias_for": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "post_objective_override": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "field",
+              "value",
+              "scale",
+              "producer",
+              "consumer_stage",
+              "threshold_family",
+              "live_authority_status",
+              "compatibility_alias_for",
+              "post_objective_override"
+            ]
+          }
+        }
+      },
+      "required": [
+        "path",
+        "records"
+      ]
+    },
+    "decision_surface": {
+      "type": "string",
+      "description": "Logical surface that produced the canonical decision trace row"
+    },
+    "gate_chain_result": {
+      "type": "string",
+      "description": "Top-level gate-chain result for the decision trace"
+    },
+    "accepted_or_rejected": {
+      "type": "string",
+      "enum": [
+        "ACCEPTED",
+        "REJECTED"
+      ],
+      "description": "Canonical accepted/rejected classification for ledger seeding"
+    },
+    "reject_reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Reject reason for denied traces when available"
     },
     "regime": {
       "type": [
@@ -711,6 +868,7 @@
             "vol_pct_10s": {"type": ["string", "null"]},
             "vol_pct_60s": {"type": ["string", "null"]},
             "vol_pct_300s": {"type": ["string", "null"]},
+            "signal_score": {"type": ["string", "null"]},
             "low_vol_cost_floor": {"type": ["string", "null"]}
           }
         },
@@ -767,6 +925,115 @@
           "type": "null"
         }
       ]
+    },
+    "anti_peak_observability": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {"type": "string"},
+        "strategy_id": {"type": ["string", "null"]},
+        "symbol": {"type": ["string", "null"]},
+        "side": {"type": ["string", "null"]},
+        "tf_sec": {"type": ["integer", "null"]},
+        "motion": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "window_sec": {"type": ["integer", "null"]},
+            "motion_norm_sigma": {"type": ["number", "null"]},
+            "anti_fomo_sigma": {"type": ["number", "null"]},
+            "anti_flat_sigma": {"type": ["number", "null"]},
+            "anti_fomo_triggered": {"type": ["boolean", "null"]},
+            "anti_flat_triggered": {"type": ["boolean", "null"]},
+            "motion_available": {"type": ["boolean", "null"]},
+            "missing_reason": {"type": ["string", "null"]}
+          }
+        },
+        "score_path": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "score_before_shields": {"type": ["number", "null"]},
+            "score_after_danger_zone": {"type": ["number", "null"]},
+            "score_after_context_shield": {"type": ["number", "null"]},
+            "score_after_memory_shield": {"type": ["number", "null"]},
+            "score_after_system_stress": {"type": ["number", "null"]},
+            "final_score": {"type": ["number", "null"]},
+            "signal_threshold": {"type": ["number", "null"]},
+            "would_emit_signal_before_shields": {"type": ["boolean", "null"]},
+            "would_emit_signal_after_shields": {"type": ["boolean", "null"]}
+          }
+        },
+        "danger_zone_shield": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {"type": ["boolean", "null"]},
+            "evaluated": {"type": ["boolean", "null"]},
+            "applied": {"type": ["boolean", "null"]},
+            "multiplier": {"type": ["number", "null"]},
+            "inputs": {
+              "type": ["object", "null"],
+              "additionalProperties": false,
+              "properties": {
+                "volatility_state": {"type": ["number", "null"]},
+                "spread_bps": {"type": ["number", "null"]},
+                "motion": {"type": ["number", "null"]}
+              }
+            },
+            "thresholds": {
+              "type": ["object", "null"],
+              "additionalProperties": false,
+              "properties": {
+                "vol_threshold": {"type": ["number", "null"]},
+                "spread_threshold": {"type": ["number", "null"]},
+                "motion_threshold": {"type": ["number", "null"]}
+              }
+            },
+            "missing_reason": {"type": ["string", "null"]}
+          }
+        },
+        "context_shield": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {"type": ["boolean", "null"]},
+            "evaluated": {"type": ["boolean", "null"]},
+            "applied": {"type": ["boolean", "null"]},
+            "multiplier": {"type": ["number", "null"]},
+            "regime": {"type": ["string", "null"]},
+            "regime_confidence": {"type": ["number", "null"]},
+            "regime_multiplier": {"type": ["number", "null"]},
+            "stale_multiplier_applied": {"type": ["boolean", "null"]},
+            "missing_reason": {"type": ["string", "null"]}
+          }
+        },
+        "system_stress": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {"type": ["boolean", "null"]},
+            "state": {"type": ["string", "null"]},
+            "policy": {"type": ["string", "null"]},
+            "evaluated": {"type": ["boolean", "null"]},
+            "applied": {"type": ["boolean", "null"]},
+            "multiplier": {"type": ["number", "null"]},
+            "blocked": {"type": ["boolean", "null"]},
+            "missing_reason": {"type": ["string", "null"]}
+          }
+        },
+        "classification": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "hard_blocked": {"type": ["boolean", "null"]},
+            "attenuated_below_threshold": {"type": ["boolean", "null"]},
+            "passed_after_attenuation": {"type": ["boolean", "null"]},
+            "masked_by_prior_gate": {"type": ["boolean", "null"]},
+            "block_reason": {"type": ["string", "null"]}
+          }
+        }
+      }
     }
   },
   "required": [

@@ -7,8 +7,10 @@ and handles TRADE_INTENT_REJECTED logging.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
+from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from ...contract_layer.trade_intent_reject_contracts import (
@@ -648,6 +650,464 @@ class IntentRouter:
                     "details": details,
                 },
                 f"external_reject:{reason_code}",
+                data_ref,
+            )
+
+    def _emit_external_close_rejection(
+        self,
+        *,
+        reason_code: str,
+        symbol: str,
+        lifecycle_id: Optional[str],
+        action_id: Optional[str],
+        rid: str,
+        reason_text: str,
+        details: Optional[Dict[str, Any]] = None,
+        data_ref: Any = None,
+    ) -> None:
+        if hasattr(self._fsm, "bus"):
+            self._fsm.bus.emit(
+                "EVT:LLM_CLOSE_REJECTED_V1",
+                {
+                    "ts_ms": int(time.time() * 1000),
+                    "rid": rid,
+                    "action_id": action_id,
+                    "lifecycle_id": lifecycle_id,
+                    "symbol": symbol,
+                    "reason_code": reason_code,
+                    "reason_text": str(reason_text)[:240],
+                    "source": "external_llm",
+                    "strategy": "llm_microstructure",
+                    "stage": "EXTERNAL_CLOSE_INTAKE",
+                    "details": details,
+                },
+                f"external_close_reject:{reason_code}",
+                data_ref,
+            )
+
+    def _emit_external_bracket_amend_rejection(
+        self,
+        *,
+        reason_code: str,
+        symbol: str,
+        lifecycle_id: Optional[str],
+        action_id: Optional[str],
+        rid: str,
+        reason_text: str,
+        details: Optional[Dict[str, Any]] = None,
+        data_ref: Any = None,
+    ) -> None:
+        if hasattr(self._fsm, "bus"):
+            self._fsm.bus.emit(
+                "EVT:LLM_BRACKET_AMEND_REJECTED_V1",
+                {
+                    "ts_ms": int(time.time() * 1000),
+                    "rid": rid,
+                    "action_id": action_id,
+                    "lifecycle_id": lifecycle_id,
+                    "symbol": symbol,
+                    "reason_code": reason_code,
+                    "reason_text": str(reason_text)[:240],
+                    "source": "external_llm",
+                    "strategy": "llm_microstructure",
+                    "stage": "EXTERNAL_BRACKET_AMEND_INTAKE",
+                    "details": details,
+                },
+                f"external_bracket_amend_reject:{reason_code}",
+                data_ref,
+            )
+
+    def on_external_position_close_request(self, msg: "Message") -> None:
+        """Validate external close request then map it into bounded CMD:CLOSE."""
+        from vfoundation.core.fsm_emit_compat import Message
+
+        pld = msg.pld or {}
+        symbol = pld.get("symbol") or "unknown"
+        action_id = pld.get("action_id")
+        rid = str(pld.get("rid") or msg.rid or f"ext-close-{int(time.time() * 1000)}")
+        lifecycle_id = str(pld.get("lifecycle_id") or "").strip()
+        try:
+            if not action_id:
+                self._emit_external_close_rejection(
+                    reason_code="NRR-EXT-CLOSE-MISSING-ACTION-ID",
+                    symbol=symbol,
+                    lifecycle_id=lifecycle_id or None,
+                    action_id=None,
+                    rid=rid,
+                    reason_text="action_id absent from external close request",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            if pld.get("source") != "external_llm":
+                self._emit_external_close_rejection(
+                    reason_code="NRR-EXT-CLOSE-SOURCE-INVALID",
+                    symbol=symbol,
+                    lifecycle_id=lifecycle_id or None,
+                    action_id=action_id,
+                    rid=rid,
+                    reason_text=f"source={pld.get('source')!r} != 'external_llm'",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            if not lifecycle_id:
+                self._emit_external_close_rejection(
+                    reason_code="NRR-EXT-CLOSE-MISSING-LIFECYCLE-ID",
+                    symbol=symbol,
+                    lifecycle_id=None,
+                    action_id=action_id,
+                    rid=rid,
+                    reason_text="lifecycle_id absent from external close request",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            manage_flow = self._fsm.manage_flows.get(symbol)
+            if manage_flow is None or not manage_flow.has_active_lifecycle():
+                self._emit_external_close_rejection(
+                    reason_code="NRR-EXT-CLOSE-NO-ACTIVE-LIFECYCLE",
+                    symbol=symbol,
+                    lifecycle_id=lifecycle_id,
+                    action_id=action_id,
+                    rid=rid,
+                    reason_text="no active execution lifecycle for symbol",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            tracked_lifecycle_id = str(
+                (getattr(self._fsm, "_last_lifecycle_ikey_by_symbol", {}) or {}).get(symbol) or ""
+            ).strip()
+            if tracked_lifecycle_id and tracked_lifecycle_id != lifecycle_id:
+                self._emit_external_close_rejection(
+                    reason_code="NRR-EXT-CLOSE-LIFECYCLE-MISMATCH",
+                    symbol=symbol,
+                    lifecycle_id=lifecycle_id,
+                    action_id=action_id,
+                    rid=rid,
+                    reason_text=f"requested lifecycle_id={lifecycle_id!r} != tracked={tracked_lifecycle_id!r}",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            cmd_close = Message(
+                op="CMD",
+                verb="CLOSE",
+                src="execution_position",
+                dst="execution_position",
+                rid=rid,
+                pld={
+                    "symbol": symbol,
+                    "reason": pld.get("reason") or "external_llm_close",
+                    "qty": pld.get("qty") or (str(getattr(manage_flow, "position_qty", None)) if getattr(manage_flow, "position_qty", None) is not None else None),
+                    "idempotent_key": pld.get("idempotent_key"),
+                    "trigger": "EXTERNAL_LLM_CLOSE",
+                    "close_guard_prevalidated": True,
+                    "lifecycle_id": lifecycle_id,
+                    "trace": {
+                        "source": "external_llm",
+                        "action_id": action_id,
+                        "lifecycle_id": lifecycle_id,
+                    },
+                },
+                why=f"external_close_request:{rid}",
+                data_ref=msg.data_ref
+            )
+            result = self._fsm.handle(cmd_close)
+            if result and hasattr(self._fsm, "bus"):
+                self._fsm.bus.emit(
+                    f"{result.op}:{result.verb}",
+                    dict(result.pld or {}),
+                    result.why,
+                    result.data_ref,
+                    rid=result.rid,
+                )
+            if result is None:
+                self._emit_external_close_rejection(
+                    reason_code="NRR-EXT-CLOSE-NO-RESULT",
+                    symbol=symbol,
+                    lifecycle_id=lifecycle_id,
+                    action_id=action_id,
+                    rid=rid,
+                    reason_text="execution close path returned no result",
+                    data_ref=msg.data_ref,
+                )
+        except Exception as exc:
+            LOG.error("Failed to process CMD:EXTERNAL_POSITION_CLOSE_REQUEST_V1: %s", exc, exc_info=True)
+            self._emit_external_close_rejection(
+                reason_code="NRR-EXT-CLOSE-EXCEPTION",
+                symbol=symbol,
+                lifecycle_id=lifecycle_id or None,
+                action_id=action_id,
+                rid=rid,
+                reason_text=f"EXCEPTION: {str(exc)}"[:240],
+                details={"error_type": type(exc).__name__},
+                data_ref=msg.data_ref,
+            )
+
+    def on_external_bracket_amend_request(self, msg: "Message") -> None:
+        """Validate and execute bounded live bracket replacement for an active lifecycle."""
+        pld = msg.pld or {}
+        symbol = pld.get("symbol") or "unknown"
+        action_id = pld.get("action_id")
+        rid = str(pld.get("rid") or msg.rid or f"ext-amend-{int(time.time() * 1000)}")
+        lifecycle_id = str(pld.get("lifecycle_id") or "").strip()
+        try:
+            if not action_id:
+                self._emit_external_bracket_amend_rejection(
+                    reason_code="NRR-EXT-AMEND-MISSING-ACTION-ID",
+                    symbol=symbol,
+                    lifecycle_id=lifecycle_id or None,
+                    action_id=None,
+                    rid=rid,
+                    reason_text="action_id absent from external bracket amend request",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            if pld.get("source") != "external_llm":
+                self._emit_external_bracket_amend_rejection(
+                    reason_code="NRR-EXT-AMEND-SOURCE-INVALID",
+                    symbol=symbol,
+                    lifecycle_id=lifecycle_id or None,
+                    action_id=action_id,
+                    rid=rid,
+                    reason_text=f"source={pld.get('source')!r} != 'external_llm'",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            if not lifecycle_id:
+                self._emit_external_bracket_amend_rejection(
+                    reason_code="NRR-EXT-AMEND-MISSING-LIFECYCLE-ID",
+                    symbol=symbol,
+                    lifecycle_id=None,
+                    action_id=action_id,
+                    rid=rid,
+                    reason_text="lifecycle_id absent from external bracket amend request",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            manage_flow = self._fsm.manage_flows.get(symbol)
+            if manage_flow is None or not manage_flow.has_active_lifecycle():
+                self._emit_external_bracket_amend_rejection(
+                    reason_code="NRR-EXT-AMEND-NO-ACTIVE-LIFECYCLE",
+                    symbol=symbol,
+                    lifecycle_id=lifecycle_id,
+                    action_id=action_id,
+                    rid=rid,
+                    reason_text="no active execution lifecycle for symbol",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            tracked_lifecycle_id = str(
+                (getattr(self._fsm, "_last_lifecycle_ikey_by_symbol", {}) or {}).get(symbol) or ""
+            ).strip()
+            if tracked_lifecycle_id and tracked_lifecycle_id != lifecycle_id:
+                self._emit_external_bracket_amend_rejection(
+                    reason_code="NRR-EXT-AMEND-LIFECYCLE-MISMATCH",
+                    symbol=symbol,
+                    lifecycle_id=lifecycle_id,
+                    action_id=action_id,
+                    rid=rid,
+                    reason_text=f"requested lifecycle_id={lifecycle_id!r} != tracked={tracked_lifecycle_id!r}",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            entry_price_raw = pld.get("entry_price") or getattr(manage_flow, "position_entry_price", None)
+            tp_price_raw = pld.get("tp_price")
+            sl_price_raw = pld.get("sl_price")
+            side = str(pld.get("side") or getattr(manage_flow, "position_side", "")).upper()
+            try:
+                entry_price = Decimal(str(entry_price_raw))
+                tp_price = Decimal(str(tp_price_raw))
+                sl_price = Decimal(str(sl_price_raw))
+            except (InvalidOperation, TypeError, ValueError):
+                self._emit_external_bracket_amend_rejection(
+                    reason_code="NRR-EXT-AMEND-PRICE-INVALID",
+                    symbol=symbol,
+                    lifecycle_id=lifecycle_id,
+                    action_id=action_id,
+                    rid=rid,
+                    reason_text="entry/tp/sl price must be finite positive decimals",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            if entry_price <= 0 or tp_price <= 0 or sl_price <= 0:
+                self._emit_external_bracket_amend_rejection(
+                    reason_code="NRR-EXT-AMEND-PRICE-INVALID",
+                    symbol=symbol,
+                    lifecycle_id=lifecycle_id,
+                    action_id=action_id,
+                    rid=rid,
+                    reason_text="entry/tp/sl price must be > 0",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            if side == "BUY" and not (sl_price < entry_price < tp_price):
+                self._emit_external_bracket_amend_rejection(
+                    reason_code="NRR-EXT-AMEND-GEOMETRY-INVALID",
+                    symbol=symbol,
+                    lifecycle_id=lifecycle_id,
+                    action_id=action_id,
+                    rid=rid,
+                    reason_text="BUY bracket geometry must satisfy sl < entry < tp",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            if side == "SELL" and not (tp_price < entry_price < sl_price):
+                self._emit_external_bracket_amend_rejection(
+                    reason_code="NRR-EXT-AMEND-GEOMETRY-INVALID",
+                    symbol=symbol,
+                    lifecycle_id=lifecycle_id,
+                    action_id=action_id,
+                    rid=rid,
+                    reason_text="SELL bracket geometry must satisfy tp < entry < sl",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            loop = self._fsm._get_async_loop() if hasattr(self._fsm, "_get_async_loop") else None
+            if loop is None:
+                self._emit_external_bracket_amend_rejection(
+                    reason_code="NRR-EXT-AMEND-ASYNC-UNAVAILABLE",
+                    symbol=symbol,
+                    lifecycle_id=lifecycle_id,
+                    action_id=action_id,
+                    rid=rid,
+                    reason_text="execution async loop is unavailable",
+                    data_ref=msg.data_ref,
+                )
+                return
+
+            coroutine = self._execute_external_bracket_amend(
+                rid=rid,
+                action_id=str(action_id),
+                symbol=str(symbol),
+                lifecycle_id=lifecycle_id,
+                side=side,
+                tp_price=tp_price,
+                sl_price=sl_price,
+                data_ref=msg.data_ref,
+            )
+            submit_async = getattr(self._fsm, "_submit_async", None)
+            if callable(submit_async):
+                submit_async(coroutine, loop)
+            else:
+                asyncio.run_coroutine_threadsafe(coroutine, loop)
+        except Exception as exc:
+            LOG.error("Failed to process CMD:EXTERNAL_BRACKET_AMEND_REQUEST_V1: %s", exc, exc_info=True)
+            self._emit_external_bracket_amend_rejection(
+                reason_code="NRR-EXT-AMEND-EXCEPTION",
+                symbol=symbol,
+                lifecycle_id=lifecycle_id or None,
+                action_id=action_id,
+                rid=rid,
+                reason_text=f"EXCEPTION: {str(exc)}"[:240],
+                details={"error_type": type(exc).__name__},
+                data_ref=msg.data_ref,
+            )
+
+    async def _execute_external_bracket_amend(
+        self,
+        *,
+        rid: str,
+        action_id: str,
+        symbol: str,
+        lifecycle_id: str,
+        side: str,
+        tp_price: Decimal,
+        sl_price: Decimal,
+        data_ref: Any,
+    ) -> None:
+        from vfoundation.core.fsm_emit_compat import Message
+
+        manage_flow = self._fsm.manage_flows.get(symbol)
+        if manage_flow is None or not manage_flow.has_active_lifecycle():
+            self._emit_external_bracket_amend_rejection(
+                reason_code="NRR-EXT-AMEND-NO-ACTIVE-LIFECYCLE",
+                symbol=symbol,
+                lifecycle_id=lifecycle_id,
+                action_id=action_id,
+                rid=rid,
+                reason_text="no active execution lifecycle at execution time",
+                data_ref=data_ref,
+            )
+            return
+
+        qty_value = getattr(manage_flow, "position_qty", None)
+        entry_order_id = str(getattr(manage_flow, "entry_order_id", None) or lifecycle_id)
+        entry_client_order_id = str(getattr(manage_flow, "entry_client_order_id", None) or lifecycle_id)
+        tick_size = float(self._fsm.config.instruments[symbol].tick_size)
+
+        if getattr(self._fsm, "order_guardian", None) is not None:
+            await self._fsm.order_guardian.cleanup_orphans(
+                symbol=symbol,
+                hard=True,
+                rid=rid,
+            )
+
+        decision = Message(
+            op="DEC",
+            verb="OPEN",
+            src="execution_position",
+            dst="execution_position",
+            rid=rid,
+            pld={
+                "symbol": symbol,
+                "side": side,
+                "qty": str(qty_value) if qty_value is not None else None,
+                "trigger": "EXTERNAL_LLM_BRACKET_AMEND",
+            },
+            why="external_bracket_amend",
+            data_ref=data_ref,
+        )
+        owner_context = {
+            "strategy_id": "llm_microstructure",
+            "source": "external_llm",
+            "action_id": action_id,
+            "lifecycle_id": lifecycle_id,
+        }
+        await self._fsm._bracket_mgr.place_brackets_parallel(
+            symbol=symbol,
+            side=side,
+            sl=sl_price,
+            tp=tp_price,
+            qty=str(qty_value) if qty_value is not None else "0",
+            tick_size=tick_size,
+            idem_key=action_id,
+            corr_id=rid,
+            oco_group_id=f"external-amend:{lifecycle_id}",
+            entry_resp={
+                "orderId": entry_order_id,
+                "clientOrderId": entry_client_order_id,
+            },
+            decision=decision,
+            owner_context=owner_context,
+        )
+        if hasattr(self._fsm, "bus"):
+            self._fsm.bus.emit(
+                "EVT:LLM_BRACKET_AMEND_COMPLETED_V1",
+                {
+                    "ts_ms": int(time.time() * 1000),
+                    "rid": rid,
+                    "action_id": action_id,
+                    "symbol": symbol,
+                    "lifecycle_id": lifecycle_id,
+                    "tp_price": str(tp_price),
+                    "sl_price": str(sl_price),
+                    "source": "external_llm",
+                    "strategy": "llm_microstructure",
+                    "stage": "EXTERNAL_EXECUTION",
+                },
+                "external_bracket_amend_completed",
                 data_ref,
             )
 

@@ -17,74 +17,8 @@ system:
   validate_instruments_on_startup: true
   warn_only_filters: false
   debug_event_listener_enabled: false
-ops:
-  panic_killswitch: false
-  metrics_url: http://127.0.0.1:8000/metrics
-  reports_dir: reports
-execution:
-  manage:
-    brackets:
-      sl:
-        fixed_bps: 40
-      tp:
-        fixed_bps: 80
-      oco_emulation: true
-      offset_bps: 5
-    emergency:
-      enabled: false
-      wait_mode_bars: 2
-      emergency_sl_bps: 100
-    auto: true
-    orphan_monitor:
-      enabled: true
-      run_on_startup: true
-      periodic_interval_sec: 300
-      min_order_age_sec: 0
-      batch_cancel_limit: 50
-      rate_limit_per_min: 120
-  exposure:
-    max_equity_utilization_pct: 150.0
-    max_portfolio_fraction: 150.0
-    max_directional_ratio: 50.0
-    # T3B-SSOT: post_fill_hold_ttl_sec removed — canonical path is domains.execution_position.exposure_guard.post_fill_ttl_sec
-    leverage_defaults:
-      BTCUSDT: 20
-      ETHUSDT: 20
-      SOLUSDT: 20
-      XRPUSDT: 20
-      DOGEUSDT: 20
-      __default__: 20
-    count_pending_orders: true
-    exclude_reduce_only: true
-  # T5A.1-SSOT: execution.watchdog block removed 2026-05-07.
-  # Canonical source: trading.yaml -> trading.execution.watchdog.*
-  # Do not add execution.watchdog back here; it would create a split-brain duplicate.
-  fallback: null
-  limit_orders: null
-  orders: null
-  fsm_periodic_cleanup_enabled: false
-  cooldown_after_close_ms: 60000
-  anti_race_close_ms: 800
-  order_params:
-    LIMIT:
-      timeInForce: GTC
-    STOP_MARKET:
-      workingType: MARK_PRICE
-    TAKE_PROFIT_MARKET:
-      workingType: MARK_PRICE
-    TRAILING_STOP_MARKET:
-      callbackRate: '0.5'
-  preflight_backoff_ms:
-  - 120
-  - 250
-  - 400
-  - 800
-  - 1200
-  - 1800
-  allow_trade_with_guardian_tidy_only: false
-  order_guardian:
-    unified: true
-    ledger_db_path: data/order_ledger.db
+# T-OPS-SSOT-2026-05-09: ops block removed. Canonical source: trading.yaml -> trading.ops.*
+# EX-REMOVE-ROOT-2026-05-09: execution block removed. Canonical source: trading.yaml -> trading.execution.*
 brackets: null
 trailing:
   activation_pct: 0.003

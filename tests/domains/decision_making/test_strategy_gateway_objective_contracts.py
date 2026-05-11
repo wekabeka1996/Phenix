@@ -166,6 +166,14 @@ def test_mean_reversion_entry_preserves_canonical_objective_trace_through_gatewa
     assert proposal["strategy_trace"]["aurora_raw_score_to_threshold_ratio"] == 3.05
     assert proposal["strategy_trace"]["features_ts_ms"] == 1_700_000_000_000
     assert proposal["strategy_trace"]["detector_event"]["bar_close_ts_ms"] == 1_700_000_000_299
+    assert proposal["strategy_trace"]["score_lineage"]["path"]
+    lineage_fields = {
+        record["field"]
+        for record in proposal["strategy_trace"]["score_lineage"]["records"]
+    }
+    assert {"signal_score", "final_score_raw", "aurora_pillar_confidence_candidate"}.issubset(
+        lineage_fields
+    )
 
 
 def test_mean_reversion_invalid_objective_trace_fails_closed() -> None:

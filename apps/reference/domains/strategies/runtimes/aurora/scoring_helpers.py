@@ -7,6 +7,7 @@ those responsibilities stay in AuroraHandler and AuroraDecisionMixin.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 import decimal
 import logging
 from typing import Any, Dict, List, Optional
@@ -24,6 +25,118 @@ logger = logging.getLogger("aurora_handler")
 class AuroraScoringHelpersMixin:
     """Scoring helper methods shared by AuroraHandler and AuroraDecisionMixin."""
 
+    def _resolve_price_motion_provenance(
+        self,
+        symbol: str,
+        *,
+        cmd: Any,
+        features: Dict[str, Any],
+        current_close_boundary_ts_ms: int | None,
+        current_bar_close_ts_ms: int | None,
+    ) -> Dict[str, Any]:
+        """Resolve canonical Aurora price-motion provenance for one CMD.
+
+        Resolution order is typed top-level CMD transport,
+        features.price_motion, legacy raw top-level CMD transport,
+        same-bar cache fallback, then missing.
+        """
+
+        def _copy_block(value: Any) -> dict[str, Any] | None:
+            if isinstance(value, Mapping):
+                return dict(value)
+            return None
+
+        typed_block = _copy_block(getattr(cmd, "price_motion", None))
+        if typed_block is not None:
+            return {
+                "block": typed_block,
+                "source": "cmd_typed",
+                "age_ms": 0,
+                "ready": True,
+            }
+
+        feature_block = _copy_block(features.get("price_motion"))
+        if feature_block is not None:
+            return {
+                "block": feature_block,
+                "source": "features",
+                "age_ms": 0,
+                "ready": True,
+            }
+
+        raw_payload = getattr(cmd, "raw", None)
+        raw_block = _copy_block(
+            raw_payload.get("price_motion") if isinstance(
+                raw_payload, Mapping) else None
+        )
+        if raw_block is not None:
+            return {
+                "block": raw_block,
+                "source": "cmd_raw_fallback",
+                "age_ms": 0,
+                "ready": True,
+            }
+
+        state = self._symbol_states.get(symbol)
+        cached_block = _copy_block(
+            getattr(state, "cached_price_motion",
+                    None) if state is not None else None
+        )
+        if cached_block is None:
+            return {
+                "block": None,
+                "source": "missing",
+                "age_ms": None,
+                "ready": False,
+            }
+
+        cached_close_boundary_ts_ms = getattr(
+            state, "cached_price_motion_close_boundary_ts_ms", None
+        )
+        cached_bar_close_ts = getattr(
+            state, "cached_price_motion_bar_close_ts", None)
+
+        age_ms: int | None = None
+        same_bar = False
+        if (
+            current_close_boundary_ts_ms is not None
+            and cached_close_boundary_ts_ms is not None
+        ):
+            age_ms = max(
+                0,
+                int(current_close_boundary_ts_ms) -
+                int(cached_close_boundary_ts_ms),
+            )
+            same_bar = int(current_close_boundary_ts_ms) == int(
+                cached_close_boundary_ts_ms)
+        elif current_bar_close_ts_ms is not None and cached_bar_close_ts is not None:
+            age_ms = max(
+                0,
+                int(current_bar_close_ts_ms) - int(cached_bar_close_ts),
+            )
+            same_bar = int(current_bar_close_ts_ms) == int(cached_bar_close_ts)
+
+        return {
+            "block": cached_block,
+            "source": "cache",
+            "age_ms": 0 if same_bar else age_ms,
+            "ready": bool(same_bar),
+        }
+
+    def _build_price_motion_observability_payload(
+        self,
+        resolution: Dict[str, Any],
+        *,
+        consumed_by_vol_gate: bool,
+    ) -> Dict[str, Any]:
+        """Build the shared nested price-motion observability payload."""
+        return {
+            "source": str(resolution.get("source") or "missing"),
+            "age_ms": resolution.get("age_ms"),
+            "ready": bool(resolution.get("ready", False)),
+            "consumed_by_vol_gate": bool(consumed_by_vol_gate),
+        }
+
     # ------------------------------------------------------------------
     # Vol-Adj Gates (Anti-Flat / Anti-FOMO)
     # ------------------------------------------------------------------
@@ -31,20 +144,13 @@ class AuroraScoringHelpersMixin:
     def _get_motion_norm_sigma(self, symbol: str, features: Dict[str, Any]) -> Optional[float]:
         """Return absolute motion sigma for the configured price-motion window.
 
-        The primary source is features["price_motion"]. If CMD input omitted that
-        block, the helper falls back to the cached EVT:FEATURES_CALCULATED copy
-        stored on symbol state.
+        The helper reads only the local mutable ``features`` copy prepared by
+        the Aurora decision path. Same-bar cache or direct CMD transport must
+        already have been resolved into that copy upstream.
         """
         pm = features.get("price_motion")
 
-        # CMD:PROCESS_STRATEGY may omit price_motion; the cached event copy keeps
-        # vol-adj gates on the same FE contract instead of silently disabling them.
-        if not isinstance(pm, dict):
-            state = self._symbol_states.get(symbol)
-            if state and state.cached_price_motion:
-                pm = state.cached_price_motion
-
-        if not isinstance(pm, dict):
+        if not isinstance(pm, Mapping):
             return None
 
         # The exact pm_norm_<window>s bucket is part of the FE payload contract.
@@ -66,21 +172,22 @@ class AuroraScoringHelpersMixin:
         state: Any,
         features: Dict[str, Any],
         *,
+        price_motion_provenance: Dict[str, Any],
         effective_side: str | None = None,
-    ) -> bool:
+    ) -> tuple[bool, bool]:
         """Apply anti-flat and anti-FOMO gates to actionable entry proposals.
 
-        Returns True when this helper already emitted a blocked event. Missing
-        motion data is treated as unavailable evidence and left to readiness or
-        cached-price-motion handling rather than causing a local block.
+        Returns ``(blocked, consumed_by_vol_gate)``. Missing or stale price
+        motion remains observable via provenance and does not cause a local
+        block here.
         """
         if not self.vol_gates_enabled:
-            return False
+            return False, False
 
         # Gate the post-policy actionable side, not just the raw kernel side.
         side = effective_side if effective_side is not None else result.side
         if not side or state.position_side != "":
-            return False  # Not an entry, skip gates
+            return False, False  # Not an entry, skip gates
 
         motion_norm_sigma = self._get_motion_norm_sigma(symbol, features)
 
@@ -88,7 +195,12 @@ class AuroraScoringHelpersMixin:
             # Readiness handles missing data, don't block here
             self.logger.debug(
                 f"[{symbol}] VOL_GATES: motion_norm_sigma=None, skipping")
-            return False
+            return False, False
+
+        price_motion_payload = self._build_price_motion_observability_payload(
+            price_motion_provenance,
+            consumed_by_vol_gate=True,
+        )
 
         # Anti-Flat gate: block entry in dead market
         if motion_norm_sigma < self.anti_flat_sigma:
@@ -105,11 +217,12 @@ class AuroraScoringHelpersMixin:
                     "motion_norm_sigma": motion_norm_sigma,
                     "threshold": self.anti_flat_sigma,
                     "window_sec": self.motion_window_sec,
+                    "price_motion": price_motion_payload,
                 },
                 why_chain=["VOL_GATE", "ANTI_FLAT",
                            f"motion:{motion_norm_sigma:.3f}"],
             )
-            return True
+            return True, True
 
         # Anti-FOMO gate: block entry in extreme impulse
         if motion_norm_sigma > self.anti_fomo_sigma:
@@ -126,17 +239,18 @@ class AuroraScoringHelpersMixin:
                     "motion_norm_sigma": motion_norm_sigma,
                     "threshold": self.anti_fomo_sigma,
                     "window_sec": self.motion_window_sec,
+                    "price_motion": price_motion_payload,
                 },
                 why_chain=["VOL_GATE", "ANTI_FOMO",
                            f"motion:{motion_norm_sigma:.3f}"],
             )
-            return True
+            return True, True
 
         self.logger.debug(
             f"[{symbol}] VOL_GATES: passed (motion={motion_norm_sigma:.3f} in "
             f"[{self.anti_flat_sigma}, {self.anti_fomo_sigma}])"
         )
-        return False
+        return False, True
 
     # ------------------------------------------------------------------
     # Signal Weights / Thresholds / Config Helpers

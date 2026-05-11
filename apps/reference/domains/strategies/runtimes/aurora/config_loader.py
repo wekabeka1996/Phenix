@@ -376,23 +376,144 @@ class AuroraConfigLoaderMixin:
 
             # === Vol-Adj Gates Config (Anti-Flat / Anti-FOMO) ===
             gates_cfg = getattr(decision, "gates", None)
-            if gates_cfg and getattr(gates_cfg, "enabled", True):
-                self.vol_gates_enabled = True
-                self.anti_flat_sigma = float(
-                    getattr(gates_cfg, "anti_flat_sigma", 0.5))
-                self.anti_fomo_sigma = float(
-                    getattr(gates_cfg, "anti_fomo_sigma", 4.0))
-                self.motion_window_sec = int(
-                    getattr(gates_cfg, "motion_window_sec", 900))
-                self.logger.info(
-                    f"Vol-Adj Gates enabled: anti_flat_sigma={self.anti_flat_sigma}, "
-                    f"anti_fomo_sigma={self.anti_fomo_sigma}, motion_window={self.motion_window_sec}s"
+            self.vol_gates_enabled = False
+            self.anti_flat_sigma = None
+            self.anti_fomo_sigma = None
+            self.motion_window_sec = None
+            self.vol_gates_config_state = {
+                "enabled": False,
+                "anti_flat_sigma": None,
+                "anti_fomo_sigma": None,
+                "motion_window_sec": None,
+                "anti_flat_sigma_value_source": None,
+                "anti_fomo_sigma_value_source": None,
+                "motion_window_sec_value_source": None,
+                "missing_reason": "gate_config_missing",
+            }
+
+            def _coerce_gate_float(value: Any) -> float | None:
+                if value is None:
+                    return None
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    return None
+
+            def _coerce_gate_int(value: Any) -> int | None:
+                if value is None:
+                    return None
+                try:
+                    return int(value)
+                except (TypeError, ValueError):
+                    return None
+
+            if gates_cfg is not None:
+                gates_enabled_raw = getattr(gates_cfg, "enabled", None)
+                anti_flat_snapshot = _coerce_gate_float(
+                    getattr(gates_cfg, "anti_flat_sigma", None)
                 )
-            else:
-                self.vol_gates_enabled = False
-                self.anti_flat_sigma = 0.5
-                self.anti_fomo_sigma = 4.0
-                self.motion_window_sec = 900
+                anti_fomo_snapshot = _coerce_gate_float(
+                    getattr(gates_cfg, "anti_fomo_sigma", None)
+                )
+                motion_window_snapshot = _coerce_gate_int(
+                    getattr(gates_cfg, "motion_window_sec", None)
+                )
+
+                if gates_enabled_raw is None:
+                    self.vol_gates_config_state = {
+                        "enabled": False,
+                        "anti_flat_sigma": anti_flat_snapshot,
+                        "anti_fomo_sigma": anti_fomo_snapshot,
+                        "motion_window_sec": motion_window_snapshot,
+                        "anti_flat_sigma_value_source": (
+                            "disabled_config_snapshot"
+                            if anti_flat_snapshot is not None
+                            else None
+                        ),
+                        "anti_fomo_sigma_value_source": (
+                            "disabled_config_snapshot"
+                            if anti_fomo_snapshot is not None
+                            else None
+                        ),
+                        "motion_window_sec_value_source": (
+                            "disabled_config_snapshot"
+                            if motion_window_snapshot is not None
+                            else None
+                        ),
+                        "missing_reason": "gates_enabled_missing",
+                    }
+                    self.logger.warning(
+                        "Vol-Adj Gates config present but gates.enabled is missing; failing closed without active thresholds"
+                    )
+                elif bool(gates_enabled_raw):
+                    missing_fields: list[str] = []
+                    if anti_flat_snapshot is None:
+                        missing_fields.append("anti_flat_sigma")
+                    if anti_fomo_snapshot is None:
+                        missing_fields.append("anti_fomo_sigma")
+                    if motion_window_snapshot is None:
+                        missing_fields.append("motion_window_sec")
+
+                    if missing_fields:
+                        from apps.reference.config_contract import ConfigContractError
+
+                        path = (
+                            f"strategies.aurora.decision.gates.{missing_fields[0]}"
+                            if len(missing_fields) == 1
+                            else "strategies.aurora.decision.gates"
+                        )
+                        raise ConfigContractError(
+                            path=path,
+                            why=(
+                                "Vol-adjusted gates are enabled but required threshold fields "
+                                f"are missing or invalid: {', '.join(missing_fields)}"
+                            ),
+                        )
+
+                    self.vol_gates_enabled = True
+                    self.anti_flat_sigma = anti_flat_snapshot
+                    self.anti_fomo_sigma = anti_fomo_snapshot
+                    self.motion_window_sec = motion_window_snapshot
+                    self.vol_gates_config_state = {
+                        "enabled": True,
+                        "anti_flat_sigma": anti_flat_snapshot,
+                        "anti_fomo_sigma": anti_fomo_snapshot,
+                        "motion_window_sec": motion_window_snapshot,
+                        "anti_flat_sigma_value_source": "active_config",
+                        "anti_fomo_sigma_value_source": "active_config",
+                        "motion_window_sec_value_source": "active_config",
+                        "missing_reason": None,
+                    }
+                    self.logger.info(
+                        f"Vol-Adj Gates enabled: anti_flat_sigma={self.anti_flat_sigma}, "
+                        f"anti_fomo_sigma={self.anti_fomo_sigma}, motion_window={self.motion_window_sec}s"
+                    )
+                else:
+                    self.vol_gates_config_state = {
+                        "enabled": False,
+                        "anti_flat_sigma": anti_flat_snapshot,
+                        "anti_fomo_sigma": anti_fomo_snapshot,
+                        "motion_window_sec": motion_window_snapshot,
+                        "anti_flat_sigma_value_source": (
+                            "disabled_config_snapshot"
+                            if anti_flat_snapshot is not None
+                            else None
+                        ),
+                        "anti_fomo_sigma_value_source": (
+                            "disabled_config_snapshot"
+                            if anti_fomo_snapshot is not None
+                            else None
+                        ),
+                        "motion_window_sec_value_source": (
+                            "disabled_config_snapshot"
+                            if motion_window_snapshot is not None
+                            else None
+                        ),
+                        "missing_reason": "gate_disabled",
+                    }
+                    self.logger.info(
+                        "Vol-Adj Gates disabled: thresholds retained only as disabled config snapshot"
+                    )
 
             # Phase 5: Execution Protocols
             execution_cfg = getattr(decision, "execution", None)

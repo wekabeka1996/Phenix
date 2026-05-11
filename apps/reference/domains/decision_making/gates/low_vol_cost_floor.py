@@ -4,6 +4,14 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
+from apps.reference.shared.decision_primitives.score_lineage import (
+    LOW_VOL_DIRECTION_CONFIDENCE_THRESHOLD_FAMILY,
+    find_score_lineage_record,
+    get_score_field_contract,
+    is_normalized_confidence_scale,
+    is_signed_score_scale,
+)
+
 
 _SIGNED_DIRECTION_CONFIDENCE_SOURCES = frozenset(
     {"signal_score", "final_score"})
@@ -15,6 +23,9 @@ _DIRECTION_CONFIDENCE_FAILURE_REASONS = frozenset(
         "non_side_aware_direction_confidence",
         "invalid_direction_confidence_value",
         "direction_confidence_below_threshold",
+        "judge_confidence_no_live_producer",
+        "direction_confidence_scale_unknown",
+        "signed_score_not_allowed_as_direction_confidence",
     }
 )
 
@@ -38,6 +49,13 @@ class DirectionConfidenceResolution:
     is_side_aware: bool
     side_scope: str | None
     failure_reason: str | None
+    scale: str | None = None
+    selected_stage: str | None = None
+    authority_status: str | None = None
+    compatibility_alias_used: bool = False
+    raw_value: float | None = None
+    normalized_value_if_any: float | None = None
+    lineage_backed: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,8 +150,54 @@ def _normalize_side_scope(value: Any) -> str | None:
     return None
 
 
+def _resolve_source_lineage_record(*, trace: Mapping[str, Any], source: str) -> Mapping[str, Any] | None:
+    return find_score_lineage_record(trace, source)
+
+
+def _resolve_source_contract(source: str):
+    return get_score_field_contract(source)
+
+
+def _resolve_source_scale(*, trace: Mapping[str, Any], source: str) -> str | None:
+    lineage_record = _resolve_source_lineage_record(trace=trace, source=source)
+    if lineage_record is not None and lineage_record.get("scale") is not None:
+        return str(lineage_record.get("scale"))
+    contract = _resolve_source_contract(source)
+    if contract is not None:
+        return contract.scale
+    return None
+
+
+def _resolve_source_authority_status(*, trace: Mapping[str, Any], source: str) -> str | None:
+    lineage_record = _resolve_source_lineage_record(trace=trace, source=source)
+    if lineage_record is not None and lineage_record.get("live_authority_status") is not None:
+        return str(lineage_record.get("live_authority_status"))
+    contract = _resolve_source_contract(source)
+    if contract is not None:
+        return contract.live_authority_status
+    return None
+
+
+def _resolve_source_stage(*, trace: Mapping[str, Any], source: str) -> str | None:
+    lineage_record = _resolve_source_lineage_record(trace=trace, source=source)
+    if lineage_record is not None and lineage_record.get("consumer_stage") is not None:
+        return str(lineage_record.get("consumer_stage"))
+    return None
+
+
+def _resolve_source_compatibility_alias_used(*, trace: Mapping[str, Any], source: str) -> bool:
+    lineage_record = _resolve_source_lineage_record(trace=trace, source=source)
+    return bool(lineage_record is not None and lineage_record.get("compatibility_alias_for"))
+
+
+def _resolve_source_lineage_backed(*, trace: Mapping[str, Any], source: str) -> bool:
+    return _resolve_source_lineage_record(trace=trace, source=source) is not None
+
+
 def _resolve_source_value(*, trace: Mapping[str, Any], source: str) -> Any:
-    raw_value = trace.get(source)
+    lineage_record = _resolve_source_lineage_record(trace=trace, source=source)
+    raw_value = lineage_record.get(
+        "value") if lineage_record is not None else trace.get(source)
     objective = trace.get("objective")
     if raw_value is None and source == "final_score" and isinstance(objective, Mapping):
         raw_value = objective.get("final_score", objective.get("score"))
@@ -174,6 +238,11 @@ def _resolve_signed_direction_confidence(
     raw_value: Any,
     source: str,
     proposed_side: str,
+    scale: str | None,
+    selected_stage: str | None,
+    authority_status: str | None,
+    compatibility_alias_used: bool,
+    lineage_backed: bool,
 ) -> DirectionConfidenceResolution:
     numeric = _coerce_decimal(raw_value)
     if numeric is None:
@@ -185,6 +254,11 @@ def _resolve_signed_direction_confidence(
             is_side_aware=True,
             side_scope=None,
             failure_reason="invalid_direction_confidence_value",
+            scale=scale,
+            selected_stage=selected_stage,
+            authority_status=authority_status,
+            compatibility_alias_used=compatibility_alias_used,
+            lineage_backed=lineage_backed,
         )
     signed_value = float(numeric)
     magnitude = abs(signed_value)
@@ -197,17 +271,29 @@ def _resolve_signed_direction_confidence(
             is_side_aware=True,
             side_scope=None,
             failure_reason="invalid_direction_confidence_value",
+            scale=scale,
+            selected_stage=selected_stage,
+            authority_status=authority_status,
+            compatibility_alias_used=compatibility_alias_used,
+            raw_value=signed_value,
+            lineage_backed=lineage_backed,
         )
     side_scope = "BUY" if signed_value > 0 else "SELL"
     if side_scope != proposed_side:
         return DirectionConfidenceResolution(
-            value=magnitude,
+            value=None,
             source=source,
             is_present=True,
             is_supported_source=True,
             is_side_aware=True,
             side_scope=side_scope,
             failure_reason="invalid_direction_confidence_value",
+            scale=scale,
+            selected_stage=selected_stage,
+            authority_status=authority_status,
+            compatibility_alias_used=compatibility_alias_used,
+            raw_value=signed_value,
+            lineage_backed=lineage_backed,
         )
     return DirectionConfidenceResolution(
         value=magnitude,
@@ -217,6 +303,12 @@ def _resolve_signed_direction_confidence(
         is_side_aware=True,
         side_scope=side_scope,
         failure_reason=None,
+        scale=scale,
+        selected_stage=selected_stage,
+        authority_status=authority_status,
+        compatibility_alias_used=compatibility_alias_used,
+        raw_value=signed_value,
+        lineage_backed=lineage_backed,
     )
 
 
@@ -226,6 +318,11 @@ def _resolve_unsigned_direction_confidence(
     source: str,
     proposed_side: str,
     raw_side_scope: Any,
+    scale: str | None,
+    selected_stage: str | None,
+    authority_status: str | None,
+    compatibility_alias_used: bool,
+    lineage_backed: bool,
 ) -> DirectionConfidenceResolution:
     side_scope = _normalize_side_scope(raw_side_scope)
     numeric = _coerce_decimal(raw_value)
@@ -238,6 +335,11 @@ def _resolve_unsigned_direction_confidence(
             is_side_aware=side_scope is not None,
             side_scope=side_scope,
             failure_reason="invalid_direction_confidence_value",
+            scale=scale,
+            selected_stage=selected_stage,
+            authority_status=authority_status,
+            compatibility_alias_used=compatibility_alias_used,
+            lineage_backed=lineage_backed,
         )
     value = float(numeric)
     if value < 0.0 or value > 1.0:
@@ -249,6 +351,12 @@ def _resolve_unsigned_direction_confidence(
             is_side_aware=side_scope is not None,
             side_scope=side_scope,
             failure_reason="invalid_direction_confidence_value",
+            scale=scale,
+            selected_stage=selected_stage,
+            authority_status=authority_status,
+            compatibility_alias_used=compatibility_alias_used,
+            raw_value=value,
+            lineage_backed=lineage_backed,
         )
     if side_scope is None:
         return DirectionConfidenceResolution(
@@ -259,6 +367,13 @@ def _resolve_unsigned_direction_confidence(
             is_side_aware=False,
             side_scope=None,
             failure_reason="non_side_aware_direction_confidence",
+            scale=scale,
+            selected_stage=selected_stage,
+            authority_status=authority_status,
+            compatibility_alias_used=compatibility_alias_used,
+            raw_value=value,
+            normalized_value_if_any=value,
+            lineage_backed=lineage_backed,
         )
     if side_scope != proposed_side:
         return DirectionConfidenceResolution(
@@ -269,6 +384,13 @@ def _resolve_unsigned_direction_confidence(
             is_side_aware=True,
             side_scope=side_scope,
             failure_reason="invalid_direction_confidence_value",
+            scale=scale,
+            selected_stage=selected_stage,
+            authority_status=authority_status,
+            compatibility_alias_used=compatibility_alias_used,
+            raw_value=value,
+            normalized_value_if_any=value,
+            lineage_backed=lineage_backed,
         )
     return DirectionConfidenceResolution(
         value=value,
@@ -278,6 +400,13 @@ def _resolve_unsigned_direction_confidence(
         is_side_aware=True,
         side_scope=side_scope,
         failure_reason=None,
+        scale=scale,
+        selected_stage=selected_stage,
+        authority_status=authority_status,
+        compatibility_alias_used=compatibility_alias_used,
+        raw_value=value,
+        normalized_value_if_any=value,
+        lineage_backed=lineage_backed,
     )
 
 
@@ -287,6 +416,7 @@ def _resolve_direction_confidence(
     allowed_sources: list[str],
     side: str,
     signal_score: float | None,
+    judge_confidence_live_producer_required: bool = False,
 ) -> DirectionConfidenceResolution:
     trace = strategy_trace if isinstance(strategy_trace, Mapping) else {}
     proposed_side = _normalize_side_scope(side)
@@ -299,6 +429,60 @@ def _resolve_direction_confidence(
             is_side_aware=False,
             side_scope=None,
             failure_reason="invalid_direction_confidence_value",
+        )
+
+    def _build_resolution_for_source(
+        *,
+        source_name: str,
+        raw_value: Any,
+        raw_side_scope: Any,
+    ) -> DirectionConfidenceResolution:
+        source_scale = _resolve_source_scale(trace=trace, source=source_name)
+        selected_stage = _resolve_source_stage(trace=trace, source=source_name)
+        authority_status = _resolve_source_authority_status(
+            trace=trace, source=source_name
+        )
+        compatibility_alias_used = _resolve_source_compatibility_alias_used(
+            trace=trace, source=source_name
+        )
+        lineage_backed = _resolve_source_lineage_backed(
+            trace=trace, source=source_name)
+        if is_signed_score_scale(source_scale):
+            return _resolve_signed_direction_confidence(
+                raw_value=raw_value,
+                source=source_name,
+                proposed_side=proposed_side,
+                scale=source_scale,
+                selected_stage=selected_stage,
+                authority_status=authority_status,
+                compatibility_alias_used=compatibility_alias_used,
+                lineage_backed=lineage_backed,
+            )
+        if is_normalized_confidence_scale(source_scale):
+            return _resolve_unsigned_direction_confidence(
+                raw_value=raw_value,
+                source=source_name,
+                proposed_side=proposed_side,
+                raw_side_scope=raw_side_scope,
+                scale=source_scale,
+                selected_stage=selected_stage,
+                authority_status=authority_status,
+                compatibility_alias_used=compatibility_alias_used,
+                lineage_backed=lineage_backed,
+            )
+        return DirectionConfidenceResolution(
+            value=None,
+            source=source_name,
+            is_present=raw_value is not None,
+            is_supported_source=True,
+            is_side_aware=False,
+            side_scope=_normalize_side_scope(raw_side_scope),
+            failure_reason="direction_confidence_scale_unknown",
+            scale=source_scale,
+            selected_stage=selected_stage,
+            authority_status=authority_status,
+            compatibility_alias_used=compatibility_alias_used,
+            lineage_backed=lineage_backed,
         )
 
     explicit_source = trace.get("direction_confidence_source")
@@ -342,39 +526,45 @@ def _resolve_direction_confidence(
                 side_scope=_normalize_side_scope(explicit_side_scope),
                 failure_reason="direction_confidence_missing",
             )
-        if source_name in _SIGNED_DIRECTION_CONFIDENCE_SOURCES:
-            return _resolve_signed_direction_confidence(
-                raw_value=explicit_value,
-                source=source_name,
-                proposed_side=proposed_side,
-            )
-        return _resolve_unsigned_direction_confidence(
+        return _build_resolution_for_source(
             raw_value=explicit_value,
-            source=source_name,
-            proposed_side=proposed_side,
+            source_name=source_name,
             raw_side_scope=explicit_side_scope,
         )
 
     for source in allowed_sources:
         if source == "signal_score" and signal_score is not None:
-            return _resolve_signed_direction_confidence(
+            return _build_resolution_for_source(
                 raw_value=signal_score,
-                source=source,
-                proposed_side=proposed_side,
+                source_name=source,
+                raw_side_scope=None,
             )
         raw_value = _resolve_source_value(trace=trace, source=source)
         if raw_value is None:
             continue
-        if source in _SIGNED_DIRECTION_CONFIDENCE_SOURCES:
-            return _resolve_signed_direction_confidence(
-                raw_value=raw_value,
-                source=source,
-                proposed_side=proposed_side,
-            )
-        return _resolve_unsigned_direction_confidence(
+        if source == "judge_confidence" and judge_confidence_live_producer_required:
+            if trace.get("judge_confidence_live_producer_proof") is not True:
+                return DirectionConfidenceResolution(
+                    value=None,
+                    source=source,
+                    is_present=True,
+                    is_supported_source=True,
+                    is_side_aware=False,
+                    side_scope=None,
+                    failure_reason="judge_confidence_no_live_producer",
+                    scale=_resolve_source_scale(trace=trace, source=source),
+                    selected_stage=_resolve_source_stage(
+                        trace=trace, source=source),
+                    authority_status=_resolve_source_authority_status(
+                        trace=trace, source=source),
+                    compatibility_alias_used=_resolve_source_compatibility_alias_used(
+                        trace=trace, source=source),
+                    lineage_backed=_resolve_source_lineage_backed(
+                        trace=trace, source=source),
+                )
+        return _build_resolution_for_source(
             raw_value=raw_value,
-            source=source,
-            proposed_side=proposed_side,
+            source_name=source,
             raw_side_scope=_resolve_source_side_scope(
                 trace=trace, source=source),
         )
@@ -394,6 +584,11 @@ def _resolve_direction_confidence_reason(
     direction_failure_reason: str | None,
     violations: list[str],
 ) -> tuple[str | None, str | None]:
+    if direction_failure_reason == "signed_score_not_allowed_as_direction_confidence":
+        return (
+            "LOW_VOL_DIRECTION_CONFIDENCE_CONTRACT_BLOCKED",
+            direction_failure_reason,
+        )
     if direction_failure_reason in _DIRECTION_CONFIDENCE_FAILURE_REASONS:
         return "LOW_VOL_DIRECTION_CONFIDENCE_BLOCKED", direction_failure_reason
     if "direction_confidence_below_threshold" in violations:
@@ -404,10 +599,10 @@ def _resolve_direction_confidence_reason(
     return None, None
 
 
-def _resolve_direction_confidence_scale(source: str) -> str:
-    if source in _SIGNED_DIRECTION_CONFIDENCE_SOURCES:
+def _resolve_direction_confidence_scale(resolution: DirectionConfidenceResolution) -> str:
+    if resolution.source in _SIGNED_DIRECTION_CONFIDENCE_SOURCES:
         return "raw_signed_score"
-    if source in {"strategy_confidence", "judge_confidence"}:
+    if resolution.source in {"strategy_confidence", "judge_confidence"}:
         return "normalized_confidence"
     return "unknown"
 
@@ -431,6 +626,8 @@ def _resolve_direction_confidence_status(
         return "invalid_range"
     if failure_reason == "non_side_aware_direction_confidence":
         return "wrong_side"
+    if failure_reason == "signed_score_not_allowed_as_direction_confidence":
+        return "contract_mismatch"
     if direction_passed:
         return "present_passed"
     return "present_below_threshold"
@@ -504,10 +701,17 @@ def _build_low_vol_observation_blocks(
     threshold_failed: bool,
     violations: list[str],
     warnings: list[str],
+    threshold_family: str = "unknown",
 ) -> dict[str, Any]:
     trace = strategy_trace if isinstance(strategy_trace, Mapping) else {}
     objective = _mapping_get_path(trace, ("objective",))
     objective_present = isinstance(objective, Mapping)
+    observed_signal_score = _to_optional_float(
+        _coerce_decimal(_resolve_source_value(
+            trace=trace, source="signal_score"))
+    )
+    if observed_signal_score is None and signal_score is not None:
+        observed_signal_score = signal_score
 
     final_score = _extract_observation_float(
         trace,
@@ -642,6 +846,7 @@ def _build_low_vol_observation_blocks(
     ret_60s = _extract_observation_float(
         trace,
         ("ret_60s",),
+        ("price_motion", "ret_60s"),
         ("analysis_payload", "ret_60s"),
         ("features", "ret_60s"),
         ("objective", "ret_60s"),
@@ -649,6 +854,7 @@ def _build_low_vol_observation_blocks(
     ret_300s = _extract_observation_float(
         trace,
         ("ret_300s",),
+        ("price_motion", "ret_300s"),
         ("analysis_payload", "ret_300s"),
         ("features", "ret_300s"),
         ("objective", "ret_300s"),
@@ -691,9 +897,13 @@ def _build_low_vol_observation_blocks(
     )
     proposed_side = _normalize_side_scope(side)
     direction_confidence_selected_scale = _resolve_direction_confidence_scale(
-        direction_resolution.source
+        direction_resolution
     )
-    direction_confidence_selected_value = direction_confidence
+    direction_confidence_selected_value = (
+        direction_resolution.normalized_value_if_any
+        if direction_resolution.normalized_value_if_any is not None
+        else direction_resolution.raw_value
+    )
     direction_confidence_selected_source = direction_resolution.source
     direction_confidence_side_match = (
         None
@@ -703,13 +913,16 @@ def _build_low_vol_observation_blocks(
     direction_confidence_required_threshold = resolved_direction_threshold.value
     direction_confidence_threshold_source = resolved_direction_threshold.source
     direction_confidence_margin = None
-    if direction_confidence_selected_value is not None:
-        if direction_confidence_selected_scale == "raw_signed_score":
-            direction_confidence_margin = abs(
-                direction_confidence_selected_value) - direction_confidence_required_threshold
-        else:
-            direction_confidence_margin = direction_confidence_selected_value - \
-                direction_confidence_required_threshold
+    _effective_dc_value = (
+        direction_resolution.normalized_value_if_any
+        if direction_resolution.normalized_value_if_any is not None
+        else direction_resolution.value
+    )
+    if _effective_dc_value is not None:
+        direction_confidence_margin = (
+            _effective_dc_value
+            - direction_confidence_required_threshold
+        )
     confidence_resolution_status = _resolve_direction_confidence_status(
         direction_resolution=direction_resolution,
         direction_passed=direction_passed,
@@ -724,7 +937,7 @@ def _build_low_vol_observation_blocks(
         str(gate_cfg.thresholds.min_rr))
 
     score_context = {
-        "signal_score": signal_score,
+        "signal_score": observed_signal_score,
         "final_score": final_score,
         "objective_score": objective_score,
         "score_threshold": score_threshold,
@@ -734,7 +947,7 @@ def _build_low_vol_observation_blocks(
         "model_confidence": model_confidence,
         "active_threshold": active_threshold,
         "missing": {
-            "signal_score": signal_score is None,
+            "signal_score": observed_signal_score is None,
             "final_score": final_score is None,
             "objective_score": objective_score is None,
             "score_threshold": score_threshold is None,
@@ -833,7 +1046,7 @@ def _build_low_vol_observation_blocks(
         "stop_price": stop_decimal is None,
         "regime_confidence": regime_confidence is None,
         "direction_confidence": direction_confidence is None,
-        "signal_score": signal_score is None,
+        "signal_score": observed_signal_score is None,
         "pm_norm_60s": price_motion_context["missing"]["pm_norm_60s"],
         "pm_norm_300s": price_motion_context["missing"]["pm_norm_300s"],
         "ret_60s": price_motion_context["missing"]["ret_60s"],
@@ -852,7 +1065,7 @@ def _build_low_vol_observation_blocks(
     }
     missing_allowed_sources: list[str] = []
     for source in gate_cfg.direction_confidence.allowed_sources:
-        if source == "signal_score" and signal_score is None:
+        if source == "signal_score" and observed_signal_score is None:
             missing_allowed_sources.append(source)
         elif source == "final_score" and final_score is None:
             missing_allowed_sources.append(source)
@@ -898,7 +1111,22 @@ def _build_low_vol_observation_blocks(
             "required": bool(gate_cfg.direction_confidence.required),
             "missing_policy": str(gate_cfg.direction_confidence.missing_policy),
             "threshold": resolved_direction_threshold.value,
+            "threshold_family": threshold_family,
+            "normalization_applied": threshold_family == "raw_signed_score",
             "passed": direction_passed,
+        },
+        "direction_confidence_selection": {
+            "selected_source": direction_confidence_selected_source,
+            "selected_scale": direction_confidence_selected_scale,
+            "raw_value": direction_resolution.raw_value,
+            "normalized_value_if_any": direction_resolution.normalized_value_if_any,
+            "threshold_family": threshold_family,
+            "threshold_value": direction_confidence_required_threshold,
+            "threshold_source": direction_confidence_threshold_source,
+            "selected_stage": direction_resolution.selected_stage,
+            "authority_status": direction_resolution.authority_status,
+            "side_scope": direction_resolution.side_scope,
+            "compatibility_alias_used": direction_resolution.compatibility_alias_used,
         },
         "direction_confidence_selected_value": direction_confidence_selected_value,
         "direction_confidence_selected_source": direction_confidence_selected_source,
@@ -908,14 +1136,15 @@ def _build_low_vol_observation_blocks(
         "direction_confidence_margin": direction_confidence_margin,
         "direction_confidence_side_match": direction_confidence_side_match,
         "proposed_side": proposed_side,
-        "signal_score_raw": signal_score,
-        "signal_score_abs": None if signal_score is None else abs(signal_score),
+        "signal_score_raw": observed_signal_score,
+        "signal_score_abs": None if observed_signal_score is None else abs(observed_signal_score),
         "strategy_confidence_candidate": strategy_confidence_candidate,
         "strategy_confidence_side_scope": strategy_confidence_side_scope,
         "final_score_raw": final_score_raw,
         "judge_confidence_candidate": judge_confidence_candidate,
         "active_allowed_sources": list(gate_cfg.direction_confidence.allowed_sources),
         "missing_allowed_sources": missing_allowed_sources,
+        "missing_source_list": missing_allowed_sources,
         "confidence_resolution_status": confidence_resolution_status,
         "aurora_pillar_confidence_candidate": aurora_pillar_confidence_candidate,
         "aurora_threshold_factor": aurora_threshold_factor,
@@ -1003,26 +1232,64 @@ def evaluate_low_vol_cost_floor_gate(
         regime=regime,
     )
     resolved_min_regime_confidence = resolved_regime_threshold.value
-    resolved_direction_threshold = _resolve_low_vol_threshold(
-        mapping=gate_cfg.thresholds.min_direction_confidence_by_regime,
-        overrides_by_strategy_symbol=getattr(
-            gate_cfg.thresholds,
-            "min_direction_confidence_overrides_by_strategy_symbol",
-            None,
-        ),
-        strategy_id=strategy_id,
-        symbol=symbol,
-        regime=regime,
-    )
-    resolved_min_direction_confidence = resolved_direction_threshold.value
     direction_resolution = _resolve_direction_confidence(
         strategy_trace=strategy_trace,
-        allowed_sources=list(gate_cfg.direction_confidence.allowed_sources),
+        allowed_sources=(
+            list(gate_cfg.direction_confidence.raw_signed_score_sources)
+            + list(gate_cfg.direction_confidence.normalized_confidence_sources)
+        ),
         side=side,
         signal_score=signal_score,
+        judge_confidence_live_producer_required=bool(
+            gate_cfg.direction_confidence.judge_confidence_live_producer_required
+        ),
     )
     direction_confidence = direction_resolution.value
     direction_confidence_source = direction_resolution.source
+    direction_confidence_scale = _resolve_direction_confidence_scale(
+        direction_resolution)
+    _raw_resolution_scale = str(direction_resolution.scale or "unknown")
+
+    # Route threshold resolution by source scale family.
+    if is_signed_score_scale(_raw_resolution_scale):
+        _raw_map = getattr(gate_cfg.thresholds, "min_raw_score_by_regime", None) \
+            or gate_cfg.thresholds.min_direction_confidence_by_regime
+        _raw_overrides = getattr(
+            gate_cfg.thresholds, "min_raw_score_overrides_by_strategy_symbol", None)
+        resolved_direction_threshold = _resolve_low_vol_threshold(
+            mapping=_raw_map,
+            overrides_by_strategy_symbol=_raw_overrides,
+            strategy_id=strategy_id,
+            symbol=symbol,
+            regime=regime,
+        )
+        threshold_family = "raw_signed_score"
+    elif is_normalized_confidence_scale(_raw_resolution_scale):
+        _norm_map = getattr(gate_cfg.thresholds, "min_normalized_confidence_by_regime", None) \
+            or gate_cfg.thresholds.min_direction_confidence_by_regime
+        _norm_overrides = getattr(
+            gate_cfg.thresholds, "min_normalized_confidence_overrides_by_strategy_symbol", None)
+        resolved_direction_threshold = _resolve_low_vol_threshold(
+            mapping=_norm_map,
+            overrides_by_strategy_symbol=_norm_overrides,
+            strategy_id=strategy_id,
+            symbol=symbol,
+            regime=regime,
+        )
+        threshold_family = "normalized_confidence"
+    else:
+        # Unknown scale — fall back to legacy mapping; gate will append violation below.
+        resolved_direction_threshold = _resolve_low_vol_threshold(
+            mapping=gate_cfg.thresholds.min_direction_confidence_by_regime,
+            overrides_by_strategy_symbol=getattr(
+                gate_cfg.thresholds, "min_direction_confidence_overrides_by_strategy_symbol", None
+            ),
+            strategy_id=strategy_id,
+            symbol=symbol,
+            regime=regime,
+        )
+        threshold_family = "unknown"
+    resolved_min_direction_confidence = resolved_direction_threshold.value
 
     actual_tp_bps: Decimal | None = None
     actual_sl_bps: Decimal | None = None
@@ -1080,6 +1347,8 @@ def evaluate_low_vol_cost_floor_gate(
                 elif direction_policy == "warn_and_allow":
                     warnings.append(
                         f"LOW_VOL_COST_FLOOR_UNSCORABLE:{direction_resolution.failure_reason}")
+            elif threshold_family == "unknown":
+                violations.append("direction_confidence_scale_unknown")
             elif float(direction_confidence) < resolved_min_direction_confidence:
                 violations.append("direction_confidence_below_threshold")
             if actual_tp_bps < required_gross_tp_bps:
@@ -1130,6 +1399,7 @@ def evaluate_low_vol_cost_floor_gate(
         threshold_failed=threshold_failed,
         violations=violations,
         warnings=warnings,
+        threshold_family=threshold_family,
     )
     return LowVolCostFloorEvaluation(
         active=True,
@@ -1157,6 +1427,7 @@ def evaluate_low_vol_cost_floor_gate(
             "direction_confidence_missing_policy": str(gate_cfg.direction_confidence.missing_policy),
             "direction_confidence_failure_reason": direction_confidence_failure_reason,
             "direction_confidence_reason": direction_confidence_reason,
+            "direction_confidence_threshold_family": threshold_family,
             "resolved_min_direction_confidence": resolved_min_direction_confidence,
             "resolved_min_direction_confidence_source": resolved_direction_threshold.source,
             "resolved_min_direction_confidence_strategy_id": resolved_direction_threshold.strategy_id,

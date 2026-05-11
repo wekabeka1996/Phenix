@@ -3,12 +3,33 @@
 from __future__ import annotations
 
 import json
+import multiprocessing as mp
 import pathlib
 import threading
 
 import pytest
 
 from vfoundation.dr import wal
+
+
+def _multiprocess_append_worker(wal_dir: str, worker_id: int, count: int) -> None:
+    wal.set_wal_dir(pathlib.Path(wal_dir))
+    wal.reset()
+    for index in range(count):
+        record_hash = wal.append(
+            {
+                "op": "EVT",
+                "verb": "MP_APPEND",
+                "rid": f"worker-{worker_id}",
+                "worker_id": worker_id,
+                "seq": index,
+            },
+            lock_timeout_s=10.0,
+        )
+        if record_hash is None:
+            raise RuntimeError(
+                f"append returned None for worker={worker_id} seq={index}"
+            )
 
 
 @pytest.fixture(autouse=True)
@@ -46,6 +67,15 @@ class TestAppend:
         records = wal.read_all()
         assert records[1]["_prev"] == h1
         assert records[1]["_hash"] == h2
+
+    def test_malformed_tail_returns_none(self) -> None:
+        path = wal._get_wal_file_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("NOT JSON\n", encoding="utf-8")
+
+        result = wal.append({"op": "EVT", "verb": "AFTER_BAD_TAIL"})
+
+        assert result is None
 
 
 # ── read_all ──────────────────────────────────────────────────────────────
@@ -117,6 +147,16 @@ class TestAppendCas:
         ok, h = wal.append_cas({"first": True}, expected_prev_hash="0" * 64)
         assert ok is True
         assert h is not None
+
+    def test_cas_malformed_tail_fails(self) -> None:
+        path = wal._get_wal_file_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("NOT JSON\n", encoding="utf-8")
+
+        ok, h = wal.append_cas({"x": 1}, expected_prev_hash="0" * 64)
+
+        assert ok is False
+        assert h is None
 
 
 # ── verify_chain ──────────────────────────────────────────────────────────
@@ -245,6 +285,38 @@ class TestLockMetrics:
         m = wal.get_lock_metrics()
         assert m["lock_contention"] == 2
         assert m["lock_wait_ms"] == 3.0
+
+
+class TestMultiProcessAppend:
+    def test_multi_process_append_preserves_chain_integrity(self, tmp_path: pathlib.Path) -> None:
+        wal_dir = tmp_path / "wal_mp"
+        wal_dir.mkdir()
+        wal.set_wal_dir(wal_dir)
+        wal.reset()
+
+        ctx = mp.get_context("spawn")
+        process_count = 3
+        records_per_process = 20
+        processes = [
+            ctx.Process(
+                target=_multiprocess_append_worker,
+                args=(str(wal_dir), worker_id, records_per_process),
+            )
+            for worker_id in range(process_count)
+        ]
+
+        for process in processes:
+            process.start()
+        for process in processes:
+            process.join()
+
+        exit_codes = [process.exitcode for process in processes]
+        assert exit_codes == [0, 0, 0]
+
+        records = wal.read_all()
+        assert len(records) == process_count * records_per_process
+        assert all("_prev" in record and "_hash" in record for record in records)
+        assert wal.verify_chain(records) is True
 
 
 # ── _calculate_record_hash ────────────────────────────────────────────────

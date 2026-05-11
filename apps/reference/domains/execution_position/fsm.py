@@ -561,6 +561,10 @@ class ExecPosFSM(
         # LLM external intent path: wire CMD:EXTERNAL_OPEN_REQUEST_V1
         self.bus.listen("CMD:EXTERNAL_OPEN_REQUEST_V1",
                         self._on_external_open_request)
+        self.bus.listen("CMD:EXTERNAL_POSITION_CLOSE_REQUEST_V1",
+                        self._on_external_position_close_request)
+        self.bus.listen("CMD:EXTERNAL_BRACKET_AMEND_REQUEST_V1",
+                        self._on_external_bracket_amend_request)
         self.bus.listen(
             CLOSE_REQUEST_COMMAND_TOPIC,
             self._position_policy_mediator.on_position_policy_close_request,
@@ -918,6 +922,14 @@ class ExecPosFSM(
     def _on_external_open_request(self, msg: Message) -> None:
         """Phase 14A: Delegated to IntentRouter (LLM external intent path)."""
         self._intent_router.on_external_open_request(msg)
+
+    def _on_external_position_close_request(self, msg: Message) -> None:
+        """Phase 14A: Delegated to IntentRouter (LLM external close path)."""
+        self._intent_router.on_external_position_close_request(msg)
+
+    def _on_external_bracket_amend_request(self, msg: Message) -> None:
+        """Phase 14A: Delegated to IntentRouter (LLM external bracket amend path)."""
+        self._intent_router.on_external_bracket_amend_request(msg)
 
     def _on_portfolio_state_updated(self, event: Message) -> None:
         """Phase 14A: Delegated to EPEventHandlers."""
@@ -1692,6 +1704,20 @@ class ExecPosFSM(
         symbol = str(payload.get("symbol") or "").strip().upper()
 
         self._position_policy_mediator.on_execution_close_reconciled(event)
+
+        if symbol and self._evt_handlers is not None:
+            try:
+                close_ts_ms = int(payload.get("ts_ms") or get_clock().now_ms())
+            except (TypeError, ValueError):
+                close_ts_ms = get_clock().now_ms()
+            self._evt_handlers.emit_position_closed_observability(
+                symbol,
+                close_ts_ms=close_ts_ms,
+                open_regime=getattr(
+                    self, "_open_regime_by_symbol", {}).get(symbol),
+                bus_why="execution_close_reconciled",
+                require_close_truth=True,
+            )
 
         self._apply_authoritative_local_close_reset(
             symbol,
@@ -2911,7 +2937,10 @@ class ExecPosFSM(
         """
         PHASE C: Emit structured observability events.
 
-        Events are logged as JSON for dashboards and alerting.
+        Events are logged as structured logger records for dashboards and alerting.
+        This helper does not emit onto the FSM bus and does not write to the
+        shadow critical journal; callers must promote data onto those surfaces
+        explicitly when the name is part of the canonical runtime event contract.
 
         Args:
             event_type: Event identifier (e.g., 'TP_SL_RETRY_ATTEMPT', 'RECONCILE_CANCELLED')

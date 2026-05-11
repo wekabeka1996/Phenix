@@ -36,7 +36,7 @@ class TestAuroraVolAdjGatesFixed:
         """
         handler = mock_handler_state
         window_key = f"pm_norm_{handler.motion_window_sec}s"
-        
+
         assert window_key == "pm_norm_300s", f"Expected pm_norm_300s, got {window_key}"
         assert window_key != "pm_norm_900s", "Should NOT use 900s window"
 
@@ -47,7 +47,7 @@ class TestAuroraVolAdjGatesFixed:
         Then: Returns 0.8 (not None)
         """
         handler = mock_handler_state
-        
+
         features = {
             "price_motion": {
                 "pm_norm_10s": 0.1,
@@ -55,7 +55,7 @@ class TestAuroraVolAdjGatesFixed:
                 "pm_norm_300s": 0.8,  # Valid window
             }
         }
-        
+
         # Simulate _get_motion_norm_sigma logic
         pm = features.get("price_motion")
         if pm:
@@ -67,7 +67,7 @@ class TestAuroraVolAdjGatesFixed:
                 result = None
         else:
             result = None
-        
+
         assert result == 0.8, f"Expected 0.8, got {result}"
 
     def test_get_motion_norm_sigma_returns_none_for_900s(self, mock_handler_state):
@@ -80,7 +80,7 @@ class TestAuroraVolAdjGatesFixed:
         # Legacy broken config
         handler = MagicMock()
         handler.motion_window_sec = 900  # BROKEN: doesn't exist in schema
-        
+
         features = {
             "price_motion": {
                 "pm_norm_10s": 0.1,
@@ -89,11 +89,11 @@ class TestAuroraVolAdjGatesFixed:
                 # NO pm_norm_900s!
             }
         }
-        
+
         pm = features.get("price_motion")
         window_key = f"pm_norm_{handler.motion_window_sec}s"
         result = pm.get(window_key) if pm else None
-        
+
         assert result is None, "900s window should not exist in schema-compliant payload"
 
     def test_vol_gates_not_silent_skip_with_valid_window(self, mock_handler_state):
@@ -105,7 +105,7 @@ class TestAuroraVolAdjGatesFixed:
         """
         handler = mock_handler_state
         motion_norm_sigma = 0.8  # > 0.5 (anti_flat), < 4.0 (anti_fomo)
-        
+
         # Simulate gate logic
         if motion_norm_sigma is None:
             # Silent skip (BAD - old behavior)
@@ -116,7 +116,7 @@ class TestAuroraVolAdjGatesFixed:
             gate_result = "BLOCK_ANTI_FOMO"
         else:
             gate_result = "PASS"
-        
+
         assert gate_result == "PASS", f"Expected PASS, got {gate_result}"
 
     def test_anti_flat_gate_blocks_low_motion(self, mock_handler_state):
@@ -127,12 +127,12 @@ class TestAuroraVolAdjGatesFixed:
         """
         handler = mock_handler_state
         motion_norm_sigma = 0.2  # < 0.5 = dead market
-        
+
         if motion_norm_sigma < handler.anti_flat_sigma:
             gate_result = "BLOCK_ANTI_FLAT"
         else:
             gate_result = "PASS"
-        
+
         assert gate_result == "BLOCK_ANTI_FLAT"
 
     def test_anti_fomo_gate_blocks_extreme_motion(self, mock_handler_state):
@@ -143,12 +143,12 @@ class TestAuroraVolAdjGatesFixed:
         """
         handler = mock_handler_state
         motion_norm_sigma = 5.0  # > 4.0 = extreme impulse
-        
+
         if motion_norm_sigma > handler.anti_fomo_sigma:
             gate_result = "BLOCK_ANTI_FOMO"
         else:
             gate_result = "PASS"
-        
+
         assert gate_result == "BLOCK_ANTI_FOMO"
 
     def test_gates_skip_when_motion_is_none(self, mock_handler_state):
@@ -156,18 +156,18 @@ class TestAuroraVolAdjGatesFixed:
         Given: motion_norm_sigma is None (missing data)
         When: _apply_vol_adj_gates is called
         Then: Gate skips (returns False = no block)
-        
+
         This is the legacy behavior that P0-3 aims to fix by caching price_motion.
         """
         handler = mock_handler_state
         motion_norm_sigma = None  # Missing
-        
+
         if motion_norm_sigma is None:
             # Don't block on missing data (readiness handles this)
             gate_result = "SKIP"
         else:
             gate_result = "EVALUATE"
-        
+
         assert gate_result == "SKIP"
 
 
@@ -199,20 +199,24 @@ class TestPriceMotionCaching:
                 "pm_norm_300s": 0.667,
             },
         }
-        
+
         pm = features_calculated_payload.get("price_motion")
         assert pm is not None, "EVT:FEATURES_CALCULATED must contain price_motion"
         assert "pm_norm_300s" in pm
 
-    def test_price_motion_not_in_cmd_process_strategy_features(self):
+    def test_cmd_process_strategy_keeps_price_motion_top_level_not_nested_features(self):
         """
-        CMD:PROCESS_STRATEGY features block does NOT contain price_motion.
-        This is the root cause of phantom gates.
+        CMD:PROCESS_STRATEGY keeps price_motion as a top-level transport field.
+        The nested features block still does not own it by design.
         """
         cmd_payload = {
             "symbol": "BTCUSDT",
             "tf_sec": 300,
             "bar_close_ts": 1704067200000,
+            "price_motion": {
+                "pm_norm_300s": 0.67,
+                "ret_300s": 0.002,
+            },
             "bar": {
                 "open": "43000",
                 "high": "43100",
@@ -229,24 +233,25 @@ class TestPriceMotionCaching:
             "warmup": {"full_ready": True},
             "regime": {"overall_regime": "FLAT_NORMAL"},
         }
-        
+
         features = cmd_payload.get("features", {})
         pm = features.get("price_motion")
-        
-        # This is the current broken state
-        assert pm is None, "CMD.features should NOT contain price_motion (current behavior)"
+
+        assert cmd_payload["price_motion"]["pm_norm_300s"] == 0.67
+        assert pm is None, "CMD.features must remain free of nested price_motion by design"
 
     def test_aurora_should_cache_price_motion_from_evt(self):
         """
-        P0-3 Fix: Aurora handler should cache price_motion from EVT:FEATURES_CALCULATED.
+        Aurora keeps a FEATURES snapshot only as a same-bar fallback when the
+        direct CMD transport does not provide price_motion.
         """
         # Simulated symbol state with cached price_motion
         class MockSymbolState:
             def __init__(self):
                 self._cached_price_motion = None
-        
+
         state = MockSymbolState()
-        
+
         # On EVT:FEATURES_CALCULATED
         evt_payload = {
             "symbol": "BTCUSDT",
@@ -255,10 +260,10 @@ class TestPriceMotionCaching:
             },
         }
         state._cached_price_motion = evt_payload.get("price_motion")
-        
+
         # Later, in CMD handler, retrieve from cache
         pm_from_cache = state._cached_price_motion
-        
+
         assert pm_from_cache is not None
         assert pm_from_cache.get("pm_norm_300s") == 0.75
 
@@ -273,7 +278,7 @@ class TestSchemaCompliance:
         """
         valid_windows = ["pm_norm_10s", "pm_norm_60s", "pm_norm_300s"]
         invalid_windows = ["pm_norm_900s", "pm_norm_600s", "pm_norm_1800s"]
-        
+
         # Schema-compliant payload
         price_motion = {
             "ret_10s": 0.0001,
@@ -286,10 +291,10 @@ class TestSchemaCompliance:
             "pm_norm_60s": 0.6,
             "pm_norm_300s": 0.7,
         }
-        
+
         for valid_key in valid_windows:
             assert valid_key in price_motion, f"{valid_key} must be in schema"
-        
+
         for invalid_key in invalid_windows:
             assert invalid_key not in price_motion, f"{invalid_key} should NOT be in schema"
 
@@ -298,12 +303,12 @@ class TestSchemaCompliance:
         Config motion_window_sec must be one of: 10, 60, 300.
         """
         valid_windows = [10, 60, 300]
-        
+
         # After P0-2 fix
         config_value = 300
-        
+
         assert config_value in valid_windows, f"motion_window_sec={config_value} not in valid windows"
-        
+
         # Old broken value
         broken_value = 900
         assert broken_value not in valid_windows, "900 should NOT be a valid window"

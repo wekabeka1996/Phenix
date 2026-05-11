@@ -4,6 +4,10 @@ import decimal
 import uuid
 from typing import Any, Optional
 
+from apps.reference.shared.decision_primitives.score_lineage import (
+    find_score_lineage_record,
+)
+
 
 def _normalize_intent_side(value: Any) -> str:
     side_u = str(value).upper()
@@ -72,8 +76,50 @@ def _build_price_motion_context(sg: Any) -> dict[str, Any]:
     return context
 
 
-def _build_missing_inputs(sg: Any) -> dict[str, str | None]:
+def _resolve_score_lineage_payload(
+    sg: Any,
+    strategy_trace: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if isinstance(strategy_trace, dict):
+        score_lineage = strategy_trace.get("score_lineage")
+        if isinstance(score_lineage, dict):
+            return dict(score_lineage)
+    score_lineage = getattr(sg, "score_lineage", None)
+    if isinstance(score_lineage, dict):
+        return dict(score_lineage)
+    return None
+
+
+def _resolve_lineage_value(
+    score_lineage: dict[str, Any] | None,
+    field: str,
+) -> Any:
+    record = find_score_lineage_record(score_lineage, field)
+    if record is None:
+        return None
+    return record.get("value")
+
+
+def _build_missing_inputs(
+    sg: Any,
+    strategy_trace: dict[str, Any] | None,
+) -> dict[str, str | None]:
     price_motion_context = _build_price_motion_context(sg)
+    score_lineage = _resolve_score_lineage_payload(sg, strategy_trace)
+    low_vol_details = getattr(sg, "low_vol_cost_floor_details", None)
+    low_vol_score_context = (
+        low_vol_details.get("score_context")
+        if isinstance(low_vol_details, dict) and isinstance(low_vol_details.get("score_context"), dict)
+        else {}
+    )
+    signal_score_present = any(
+        candidate is not None
+        for candidate in (
+            _resolve_lineage_value(score_lineage, "signal_score"),
+            strategy_trace.get("signal_score") if isinstance(strategy_trace, dict) else None,
+            low_vol_score_context.get("signal_score") if isinstance(low_vol_score_context, dict) else None,
+        )
+    )
     return {
         "regime_confidence": (
             "absent_from_safety_gate_result"
@@ -101,6 +147,7 @@ def _build_missing_inputs(sg: Any) -> dict[str, str | None]:
         "vol_pct_10s": price_motion_context["missing_reason"]["vol_pct_10s"],
         "vol_pct_60s": price_motion_context["missing_reason"]["vol_pct_60s"],
         "vol_pct_300s": price_motion_context["missing_reason"]["vol_pct_300s"],
+        "signal_score": None if signal_score_present else "absent_from_attached_score_lineage",
         "low_vol_cost_floor": (
             None
             if isinstance(getattr(sg, "low_vol_cost_floor_details", None), dict)
@@ -238,21 +285,67 @@ def build_decision_trace_payload(
     order_side: Optional[str],
     lifecycle_id: Optional[str],
     sg: Any,
+    strategy_trace: Optional[dict[str, Any]],
     regime_provenance: Optional[dict],
     tpsl_owner_ctx: Optional[dict],
+    tf_sec: Optional[int] = None,
     gate_outcome: str = "ALLOW",
     deny_reason: Optional[str] = None,
     why: Optional[str] = None,
 ) -> dict[str, Any]:
     """Build the side-channel decision trace payload emitted before the trade intent."""
+    trace_context = dict(strategy_trace) if isinstance(
+        strategy_trace, dict) else {}
+    score_lineage = _resolve_score_lineage_payload(sg, trace_context)
+    detector_event = trace_context.get("detector_event")
+    if not isinstance(detector_event, dict) and isinstance(regime_provenance, dict):
+        candidate_detector_event = regime_provenance.get("detector_event")
+        detector_event = candidate_detector_event if isinstance(
+            candidate_detector_event, dict) else {}
+    if not isinstance(detector_event, dict):
+        detector_event = {}
+
+    decision_surface = trace_context.get("decision_surface")
+    if not isinstance(decision_surface, str) or not decision_surface.strip():
+        decision_surface = "decision_trace"
+
+    accepted_or_rejected = "ACCEPTED" if gate_outcome == "ALLOW" else "REJECTED"
+    signal_score_value = (
+        trace_context.get("signal_score")
+        if trace_context.get("signal_score") is not None
+        else _resolve_lineage_value(score_lineage, "signal_score")
+    )
+    decision_score_value = (
+        trace_context.get("decision_score")
+        if trace_context.get("decision_score") is not None
+        else _resolve_lineage_value(score_lineage, "decision_score")
+    )
+    raw_score_value = (
+        trace_context.get("final_score_raw")
+        if trace_context.get("final_score_raw") is not None
+        else _resolve_lineage_value(score_lineage, "final_score_raw")
+    )
     trace_payload = {
         "rid": rid,
+        "decision_id": trace_context.get("decision_id"),
+        "cycle_key": trace_context.get("cycle_key"),
         "symbol": symbol,
         "side": _normalize_order_side(order_side),
         "strategy_id": strategy_id,
         "ts": trace_ts_ms,
+        "event_ts_ms": trace_ts_ms,
+        "tf_sec": tf_sec,
+        "bar_close_ts_ms": detector_event.get("bar_close_ts_ms") or detector_event.get("bar_close_ts"),
         "intent_side": _normalize_intent_side(intent_side),
-        "signal_score": sg.signal_score,
+        "signal_score": signal_score_value if signal_score_value is not None else getattr(sg, "signal_score", None),
+        "raw_score": raw_score_value,
+        "decision_score": decision_score_value if decision_score_value is not None else signal_score_value,
+        "active_threshold": trace_context.get("active_threshold"),
+        "score_to_threshold_ratio": trace_context.get("aurora_raw_score_to_threshold_ratio"),
+        "decision_surface": decision_surface,
+        "gate_chain_result": gate_outcome,
+        "accepted_or_rejected": accepted_or_rejected,
+        "reject_reason": deny_reason,
         "regime": sg.regime,
         "regime_confidence": sg.regime_confidence,
         "resolved_regime_confidence_strategy_id": getattr(sg, "resolved_regime_confidence_strategy_id", None),
@@ -284,11 +377,14 @@ def build_decision_trace_payload(
         "deny_reason": deny_reason,
         "why": (str(why if why is not None else getattr(sg, "why_short", ""))[:80]),
         "price_motion_context": _build_price_motion_context(sg),
-        "missing_inputs": _build_missing_inputs(sg),
+        "missing_inputs": _build_missing_inputs(sg, trace_context),
         "safety_gate_snapshot": _build_safety_gate_snapshot(sg),
     }
+    if score_lineage is not None:
+        trace_payload["score_lineage"] = score_lineage
     if lifecycle_id is not None:
         trace_payload["lifecycle_id"] = lifecycle_id
+        trace_payload["intent_id"] = lifecycle_id
     if isinstance(regime_provenance, dict) and regime_provenance:
         trace_payload["regime_provenance"] = regime_provenance
     if tpsl_owner_ctx is not None:
@@ -296,6 +392,9 @@ def build_decision_trace_payload(
     low_vol_cost_floor = getattr(sg, "low_vol_cost_floor_details", None)
     if isinstance(low_vol_cost_floor, dict) and low_vol_cost_floor:
         trace_payload["low_vol_cost_floor"] = dict(low_vol_cost_floor)
+    anti_peak_obs = trace_context.get("anti_peak_observability")
+    if isinstance(anti_peak_obs, dict):
+        trace_payload["anti_peak_observability"] = dict(anti_peak_obs)
     return trace_payload
 
 

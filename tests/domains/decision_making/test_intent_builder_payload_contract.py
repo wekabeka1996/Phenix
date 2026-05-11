@@ -1,8 +1,16 @@
+import json
 import decimal
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from apps.reference.domains.decision_making.intent.builder import IntentBuilder
+from apps.reference.shared.decision_primitives.score_lineage import (
+    build_score_lineage_payload,
+    build_score_lineage_record,
+)
 
 
 REGIME_PROVENANCE = {
@@ -11,9 +19,15 @@ REGIME_PROVENANCE = {
         "event_name": "EVT:REGIME_DETECTED",
         "rid": "regime-rid-001",
         "ts_ms": 1700000000000,
+        "last_update_ts_ms": 1700000001111,
+        "structural_regime_ref": "structural:BTCUSDT:1700000000000",
+        "basis_tf_sec": 300,
         "bar_close_ts_ms": 1700000000000,
+        "changed": False,
         "regime": "TREND_UP",
         "confidence": "0.82",
+        "raw_regime": "TREND_UP",
+        "raw_confidence": "0.82",
     },
     "cache_snapshot": {
         "cache_write_ts_ms": 1700000001111,
@@ -27,6 +41,43 @@ OWNER_CTX = {
     "final_owner": "entry_plan",
     "owner_loss_reason": "TPSL_GUARDRAIL_TP_MIN_DIST_BPS",
 }
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DECISION_TRACE_SCHEMA_PATH = REPO_ROOT / \
+    "schemas" / "decision_trace_emitted_v1.json"
+
+
+def _validate_decision_trace_payload(payload: dict) -> None:
+    jsonschema = pytest.importorskip("jsonschema")
+    schema = json.loads(DECISION_TRACE_SCHEMA_PATH.read_text(encoding="utf-8"))
+    jsonschema.validate(payload, schema)
+
+
+def _expected_score_lineage() -> dict:
+    return build_score_lineage_payload(
+        [
+            build_score_lineage_record(
+                field="decision_score",
+                value=0.91,
+                producer="QuadraticScoringKernel.compute",
+                consumer_stage="strategy_gateway.strategy_trace",
+            ),
+            build_score_lineage_record(
+                field="signal_score",
+                value=0.91,
+                producer="StrategyGateway strategy_trace assembly",
+                consumer_stage="strategy_gateway.strategy_trace",
+                compatibility_alias_for="decision_score",
+            ),
+            build_score_lineage_record(
+                field="final_score_raw",
+                value=0.88,
+                producer="StrategyGateway strategy_trace assembly",
+                consumer_stage="strategy_gateway.strategy_trace",
+                compatibility_alias_for="decision_score",
+            ),
+        ]
+    )
 
 
 class _FakeSG:
@@ -200,7 +251,20 @@ def _build_kwargs() -> dict:
         "max_latency_ms": None,
         "risk_score": 0.33,
         "tpsl_owner_ctx": OWNER_CTX,
-        "strategy_trace": {"objective": {"score": 0.9}, "model": "aurora"},
+        "strategy_trace": {
+            "objective": {"score": 0.9},
+            "model": "aurora",
+            "decision_id": "decision-accepted-1",
+            "cycle_key": "ENTRY:BTCUSDT:300:1700000000000",
+            "decision_surface": "aurora_quadratic",
+            "signal_score": 0.91,
+            "final_score_raw": 0.88,
+            "decision_score": 0.91,
+            "active_threshold": 0.45,
+            "aurora_raw_score_to_threshold_ratio": 2.022222222222222,
+            "detector_event": {"bar_close_ts_ms": 1700000000000},
+            "score_lineage": _expected_score_lineage(),
+        },
         "normalize_mode": "signed_v2",
         "sg": _FakeSG(),
     }
@@ -309,6 +373,16 @@ def test_build_and_emit_preserves_trade_intent_payload_contract() -> None:
         "trace": {
             "objective": {"score": 0.9},
             "model": "aurora",
+            "decision_id": "decision-accepted-1",
+            "cycle_key": "ENTRY:BTCUSDT:300:1700000000000",
+            "decision_surface": "aurora_quadratic",
+            "signal_score": 0.91,
+            "final_score_raw": 0.88,
+            "decision_score": 0.91,
+            "active_threshold": 0.45,
+            "aurora_raw_score_to_threshold_ratio": 2.022222222222222,
+            "detector_event": {"bar_close_ts_ms": 1700000000000},
+            "score_lineage": _expected_score_lineage(),
             "kelly_provenance": _expected_kelly_provenance(),
         },
     }
@@ -335,18 +409,35 @@ def test_build_and_emit_preserves_decision_trace_payload_contract() -> None:
     ]
 
     normalized_trace = dict(decision_trace_calls[0])
+    _validate_decision_trace_payload(decision_trace_calls[0])
     normalized_trace["lifecycle_id"] = "<uuid>"
+    normalized_trace["intent_id"] = "<uuid>"
 
     assert [normalized_trace] == [
         {
             "rid": "rid-payload-001",
+            "decision_id": "decision-accepted-1",
+            "cycle_key": "ENTRY:BTCUSDT:300:1700000000000",
             "symbol": "BTCUSDT",
             "side": "BUY",
             "strategy_id": "aurora",
             "ts": 1700000001234,
+            "event_ts_ms": 1700000001234,
+            "tf_sec": 300,
+            "bar_close_ts_ms": 1700000000000,
             "intent_side": "LONG",
             "lifecycle_id": "<uuid>",
+            "intent_id": "<uuid>",
             "signal_score": 0.91,
+            "raw_score": 0.88,
+            "decision_score": 0.91,
+            "active_threshold": 0.45,
+            "score_to_threshold_ratio": 2.022222222222222,
+            "score_lineage": _expected_score_lineage(),
+            "decision_surface": "aurora_quadratic",
+            "gate_chain_result": "ALLOW",
+            "accepted_or_rejected": "ACCEPTED",
+            "reject_reason": None,
             "regime": "TREND_UP",
             "regime_confidence": 0.82,
             "resolved_regime_confidence_strategy_id": "aurora",
@@ -412,6 +503,7 @@ def test_build_and_emit_preserves_decision_trace_payload_contract() -> None:
                 "vol_pct_10s": None,
                 "vol_pct_60s": None,
                 "vol_pct_300s": None,
+                "signal_score": None,
                 "low_vol_cost_floor": None,
             },
             "safety_gate_snapshot": {
@@ -489,12 +581,15 @@ def test_build_and_emit_persists_explicit_missing_reasons_for_absent_inputs() ->
         if call.args[0] == "EVT:DECISION_TRACE_EMITTED"
     )
 
+    _validate_decision_trace_payload(decision_trace_payload)
+
     assert decision_trace_payload["price_motion_context"]["pm_norm_60s"] is None
     assert decision_trace_payload["price_motion_context"]["pm_norm_300s"] is None
     assert decision_trace_payload["price_motion_context"]["missing"]["pm_norm_60s"] is True
     assert decision_trace_payload["price_motion_context"]["missing_reason"]["pm_norm_60s"] == "absent_from_safety_gate_result"
     assert decision_trace_payload["missing_inputs"]["regime_confidence"] == "absent_from_safety_gate_result"
     assert decision_trace_payload["missing_inputs"]["trend_confidence"] == "absent_from_safety_gate_result"
+    assert decision_trace_payload["missing_inputs"]["signal_score"] is None
     assert decision_trace_payload["missing_inputs"]["low_vol_cost_floor"] == "not_evaluated_or_not_attached"
 
 

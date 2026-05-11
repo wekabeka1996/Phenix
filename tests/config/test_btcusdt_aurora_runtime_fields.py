@@ -43,12 +43,8 @@ def _mutate_btc_aurora_fields(cfg_dir: Path) -> None:
     system_data["trading_mode"] = "live"
     _write_yaml(system_path, system_data)
 
-    trading_path = cfg_dir / "trading.yaml"
-    trading_data = yaml.safe_load(trading_path.read_text(encoding="utf-8"))
-    assert isinstance(trading_data, dict)
-    if isinstance(trading_data.get("trading"), dict):
-        trading_data["trading"]["mode"] = "live"
-    _write_yaml(trading_path, trading_data)
+    # T-TMODE-SSOT-2026-05-09: trading.mode must not be set in trading.yaml.
+    # system.yaml:trading_mode is the canonical source; loader injects trading.mode.
 
     # ── Instruments SSOT leverage (used by ExecPos bootstrap) ──
     instruments_path = cfg_dir / "instruments.yaml"
@@ -64,9 +60,8 @@ def _mutate_btc_aurora_fields(cfg_dir: Path) -> None:
     aurora = data["aurora"]
     btc = aurora["assets"]["BTCUSDT"]
 
-    # Leverage (stale copy in aurora.yaml, kept for legacy audit)
-    btc["leverage"]["target"] = 21
-    btc["leverage"]["mode"] = "ISOLATED"
+    # Leverage (aurora.leverage.target and .mode removed — LEV-TARGET-MODE-REMOVE-2026-05-10)
+    # instruments SSOT leverage is set below; aurora.leverage only retains max_notional_value.
 
     # Weights (unique pattern)
     btc["weights"] = {
@@ -147,7 +142,8 @@ class TestBtcusdtAuroraRuntimeFields:
         config = loader.load_config()
 
         btc_cfg = config.strategies.aurora.assets["BTCUSDT"]
-        assert btc_cfg.leverage.target == 21
+        # leverage.target removed (LEV-TARGET-MODE-REMOVE-2026-05-10); only max_notional_value remains.
+        assert btc_cfg.leverage.max_notional_value is None
         assert btc_cfg.reentry_cooldown_sec == 77
         assert btc_cfg.holding_period.min_duration_sec == 21
         assert btc_cfg.cooldown_sec == 99

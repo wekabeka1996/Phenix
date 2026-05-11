@@ -280,32 +280,35 @@ class JsonlTcpServer:
             except Exception:
                 return
             with stream:
-                for line in stream:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        payload = json.loads(line)
-                    except (TypeError, ValueError) as exc:
-                        self.logger.warning(
-                            "%s failed to parse line: %s", self.name, exc)
-                        continue
+                try:
+                    for line in stream:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            payload = json.loads(line)
+                        except (TypeError, ValueError) as exc:
+                            self.logger.warning(
+                                "%s failed to parse line: %s", self.name, exc)
+                            continue
 
-                    if not isinstance(payload, dict):
-                        continue
+                        if not isinstance(payload, dict):
+                            continue
 
-                    try:
-                        self.handler(payload)
-                    except Exception as exc:
-                        record_failure_outcome(
-                            FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
-                            FailureReasonCode.HANDLER_FAILURE,
-                            location="domains/shadow_telemetry/ipc.py:JsonlTcpServer._handle_conn",
-                            message="JSONL TCP server handler raised",
-                            detail=type(exc).__name__,
-                        )
-                        self.logger.exception(
-                            "%s handler raised", self.name, exc_info=exc)
+                        try:
+                            self.handler(payload)
+                        except Exception as exc:
+                            record_failure_outcome(
+                                FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+                                FailureReasonCode.HANDLER_FAILURE,
+                                location="domains/shadow_telemetry/ipc.py:JsonlTcpServer._handle_conn",
+                                message="JSONL TCP server handler raised",
+                                detail=type(exc).__name__,
+                            )
+                            self.logger.exception(
+                                "%s handler raised", self.name, exc_info=exc)
+                except (ConnectionResetError, ConnectionAbortedError, OSError) as e:
+                    self.logger.debug("%s connection closed by remote host: %s", self.name, e)
 
 
 class JsonlTcpQueueClient:

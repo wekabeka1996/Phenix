@@ -52,6 +52,15 @@ from apps.reference.shared.decision_primitives.scoring_kernel import (
     ScoringResult,
     QuadraticScoringKernel,
 )
+from apps.reference.shared.decision_primitives.score_lineage import (
+    AURORA_ADMISSION_THRESHOLD_FAMILY,
+    LIVE_SCORE_LINEAGE_PATH,
+    OBJECTIVE_GATE_THRESHOLD_FAMILY,
+    SIGNED_DECISION_SCORE,
+    SIGNED_OBJECTIVE_SCORE,
+    build_score_lineage_payload,
+    build_score_lineage_record,
+)
 from apps.reference.domains.decision_making.core.runtime_readiness import (
     RestoreScopeSpec,
     RuntimeReadinessBuildRequest,
@@ -80,6 +89,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger("aurora_handler")
 
 
+def _lineage_float(value: Any) -> float | None:
+    try:
+        dec = decimal.Decimal(str(value))
+    except Exception:
+        return None
+    if not dec.is_finite():
+        return None
+    return float(dec)
+
+
 class AuroraDecisionMixin:
     """
     Mixin: core decision processing and signal emission for AuroraHandler.
@@ -97,6 +116,205 @@ class AuroraDecisionMixin:
       - Various helper methods from other mixins
     """
 
+    def _build_anti_peak_observability(
+        self,
+        symbol: str,
+        features: Dict[str, Any],
+        result: ScoringResult,
+        state: Any,
+        pillar_sum: float,
+        raw_exposure: float,
+    ) -> Dict[str, Any]:
+        """Build a provenance-first anti-peak payload without re-running gate logic."""
+        cfg = getattr(self, "_scoring_engine_cfg", None)
+        dz_cfg = getattr(cfg, "danger_zone_shield", None) if cfg else None
+        ctx_cfg = getattr(cfg, "context_shield", None) if cfg else None
+
+        vol_gates_enabled = bool(getattr(self, "vol_gates_enabled", False))
+        vol_gates_config_state = getattr(
+            self, "vol_gates_config_state", {}) or {}
+        anti_fomo_sigma_value_source = vol_gates_config_state.get(
+            "anti_fomo_sigma_value_source"
+        )
+        anti_flat_sigma_value_source = vol_gates_config_state.get(
+            "anti_flat_sigma_value_source"
+        )
+        window_sec_value_source = vol_gates_config_state.get(
+            "motion_window_sec_value_source"
+        )
+
+        if vol_gates_enabled:
+            anti_fomo_sigma = _lineage_float(
+                getattr(self, "anti_fomo_sigma", None))
+            anti_flat_sigma = _lineage_float(
+                getattr(self, "anti_flat_sigma", None))
+            window_sec = int(getattr(self, "motion_window_sec", 0) or 0)
+            anti_fomo_sigma_value_source = (
+                anti_fomo_sigma_value_source or "active_config"
+            )
+            anti_flat_sigma_value_source = (
+                anti_flat_sigma_value_source or "active_config"
+            )
+            window_sec_value_source = window_sec_value_source or "active_config"
+        else:
+            anti_fomo_sigma = _lineage_float(
+                vol_gates_config_state.get("anti_fomo_sigma")
+            )
+            anti_flat_sigma = _lineage_float(
+                vol_gates_config_state.get("anti_flat_sigma")
+            )
+            window_raw = vol_gates_config_state.get("motion_window_sec")
+            window_sec = int(window_raw) if window_raw is not None else None
+
+        motion_norm_sigma = None
+        price_motion = features.get("price_motion")
+        if isinstance(price_motion, dict) and window_sec is not None:
+            motion_norm_sigma = _lineage_float(
+                price_motion.get(f"pm_norm_{window_sec}s")
+            )
+
+        psi = result.psi_vector or {}
+        result_side = str(getattr(result, "side", "") or "").lower()
+        score_before = _lineage_float(psi.get("admission_pre_shield"))
+        final_score = _lineage_float(getattr(result, "score", None))
+
+        if result_side == "sell":
+            active_threshold = _lineage_float(
+                getattr(result, "thr_sell", None))
+        else:
+            active_threshold = _lineage_float(getattr(result, "thr_buy", None))
+        if active_threshold is None:
+            active_threshold = _lineage_float(
+                getattr(result, "thr_sell", None))
+
+        shield_breakdown = getattr(result, "shield_breakdown", {}) or {}
+        shield_reasons = (
+            shield_breakdown.get("reasons", [])
+            if isinstance(shield_breakdown, dict)
+            else []
+        )
+        danger_zone_applied = any(
+            str(reason).startswith("DANGER_ZONE:") for reason in shield_reasons
+        )
+        dz_enabled = bool(getattr(dz_cfg, "enabled", False)
+                          ) if dz_cfg else False
+        ctx_enabled = bool(getattr(ctx_cfg, "enabled", False)
+                           ) if ctx_cfg else False
+
+        motion_missing_reason = None
+        if not vol_gates_enabled:
+            motion_missing_reason = (
+                vol_gates_config_state.get("missing_reason") or "gate_disabled"
+            )
+        elif motion_norm_sigma is None:
+            motion_missing_reason = "missing_from_features"
+        elif (
+            anti_fomo_sigma is None
+            or anti_flat_sigma is None
+            or window_sec is None
+        ):
+            motion_missing_reason = "active_threshold_missing"
+
+        return {
+            "schema_version": "1.0.0",
+            "strategy_id": getattr(self, "strategy_id", "aurora"),
+            "symbol": symbol,
+            "side": result.side or None,
+            "tf_sec": int(getattr(self, "timeframe_sec", 300) or 0),
+            "motion": {
+                "enabled": vol_gates_enabled,
+                "window_sec": window_sec,
+                "window_sec_value_source": window_sec_value_source,
+                "motion_norm_sigma": (
+                    float(motion_norm_sigma) if motion_norm_sigma is not None else None
+                ),
+                "anti_fomo_sigma": anti_fomo_sigma,
+                "anti_flat_sigma": anti_flat_sigma,
+                "anti_fomo_sigma_value_source": anti_fomo_sigma_value_source,
+                "anti_flat_sigma_value_source": anti_flat_sigma_value_source,
+                "anti_fomo_triggered": (
+                    motion_norm_sigma > anti_fomo_sigma
+                    if vol_gates_enabled
+                    and motion_norm_sigma is not None
+                    and anti_fomo_sigma is not None
+                    else None
+                ),
+                "anti_flat_triggered": (
+                    motion_norm_sigma < anti_flat_sigma
+                    if vol_gates_enabled
+                    and motion_norm_sigma is not None
+                    and anti_flat_sigma is not None
+                    else None
+                ),
+                "motion_available": motion_norm_sigma is not None,
+                "missing_reason": motion_missing_reason,
+            },
+            "score_path": {
+                "score_before_shields": score_before,
+                "score_after_danger_zone": None,
+                "score_after_context_shield": None,
+                "score_after_memory_shield": None,
+                "score_after_system_stress": None,
+                "final_score": final_score,
+                "signal_threshold": active_threshold,
+                "would_emit_signal_before_shields": None,
+                "would_emit_signal_after_shields": None,
+            },
+            "danger_zone_shield": {
+                "enabled": dz_enabled,
+                "evaluated": None if dz_enabled else False,
+                "applied": danger_zone_applied,
+                "multiplier": 0.0 if danger_zone_applied else None,
+                "inputs": {
+                    "volatility_state": _lineage_float(features.get("volatility_state")),
+                    "spread_bps": _lineage_float(features.get("spread_bps")),
+                    "motion": _lineage_float(features.get("price_motion_norm")),
+                },
+                "thresholds": {
+                    "vol_threshold": _lineage_float(getattr(dz_cfg, "vol_threshold", None)) if dz_enabled else None,
+                    "spread_threshold": _lineage_float(getattr(dz_cfg, "spread_threshold", None)) if dz_enabled else None,
+                    "motion_threshold": _lineage_float(getattr(dz_cfg, "motion_threshold", None)) if dz_enabled else None,
+                },
+                "missing_reason": (
+                    "disabled_in_config"
+                    if not dz_enabled
+                    else (None if danger_zone_applied else "not_observed_in_result")
+                ),
+            },
+            "context_shield": {
+                "enabled": ctx_enabled,
+                "evaluated": None,
+                "applied": None,
+                "multiplier": None,
+                "regime": str(features.get("regime")) if features.get("regime") is not None else None,
+                "regime_confidence": _lineage_float(features.get("regime_confidence")),
+                "regime_multiplier": None,
+                "stale_multiplier_applied": None,
+                "missing_reason": (
+                    "disabled_in_config"
+                    if not ctx_enabled
+                    else "not_authoritatively_available"
+                ),
+            },
+            "system_stress": {
+                "enabled": None,
+                "state": getattr(state, "system_stress_state", None),
+                "policy": None,
+                "evaluated": None,
+                "applied": None,
+                "multiplier": None,
+                "blocked": None,
+                "missing_reason": "not_part_of_quadratic_score_path",
+            },
+            "classification": {
+                "hard_blocked": danger_zone_applied,
+                "attenuated_below_threshold": None,
+                "passed_after_attenuation": None,
+                "masked_by_prior_gate": None,
+                "block_reason": "DANGER_ZONE_HARD_BLOCK" if danger_zone_applied else None,
+            },
+        }
+
     def _build_quadratic_decision_trace(
         self,
         *,
@@ -104,6 +322,7 @@ class AuroraDecisionMixin:
         cmd: "ProcessStrategyCmd",
         state: "SymbolState",
         features: Dict[str, Any],
+        price_motion_provenance: Dict[str, Any],
         result: ScoringResult,
         effective_neutral: decimal.Decimal,
     ) -> Dict[str, Any]:
@@ -124,6 +343,12 @@ class AuroraDecisionMixin:
         shield_reasons = []
         if isinstance(psi.get("shield_reasons"), list):
             shield_reasons = list(psi.get("shield_reasons") or [])
+        score_lineage = self._build_aurora_score_lineage(
+            features=features,
+            result=result,
+            consumer_stage="aurora.quadratic_decision_trace",
+            include_objective_override=False,
+        )
         return {
             "symbol": symbol,
             "tf_sec": int(cmd.tf_sec or self.timeframe_sec or 0),
@@ -162,7 +387,124 @@ class AuroraDecisionMixin:
             "deferred": bool(getattr(result, "deferred", False)),
             "defer_reason": getattr(result, "defer_reason", None),
             "side_why": psi.get("side_why"),
+            "price_motion_source": str(price_motion_provenance.get("source") or "missing"),
+            "price_motion_age_ms": price_motion_provenance.get("age_ms"),
+            "price_motion_ready": bool(price_motion_provenance.get("ready", False)),
+            "score_lineage": score_lineage,
+            "anti_peak_observability": self._build_anti_peak_observability(
+                symbol=symbol,
+                features=features,
+                result=result,
+                state=state,
+                pillar_sum=float(
+                    psi.get("s_linear", features.get("pillar_sum", 0.0)) or 0.0),
+                raw_exposure=float(psi.get("raw_exposure", 0.0) or 0.0)
+            ),
         }
+
+    def _build_aurora_score_lineage(
+        self,
+        *,
+        features: Dict[str, Any],
+        result: ScoringResult,
+        consumer_stage: str,
+        include_objective_override: bool,
+    ) -> dict[str, Any]:
+        psi = result.psi_vector or {}
+        objective_trace = psi.get("objective")
+        objective_payload = objective_trace if isinstance(
+            objective_trace, dict) else {}
+
+        pillar_sum = _lineage_float(
+            psi.get("s_linear", features.get("pillar_sum")))
+        raw_score = _lineage_float(
+            psi.get("s_linear", getattr(result, "raw_score", None)))
+        decision_score = _lineage_float(
+            getattr(result, "decision_score", getattr(result, "score", None)))
+        final_score = _lineage_float(getattr(result, "score", None))
+        objective_score = _lineage_float(
+            objective_payload.get(
+                "objective_score", objective_payload.get("score"))
+        )
+        objective_override = bool(
+            include_objective_override
+            and objective_score is not None
+            and final_score is not None
+            and final_score == objective_score
+        )
+
+        records: list[dict[str, Any]] = []
+        if pillar_sum is not None:
+            records.append(
+                build_score_lineage_record(
+                    field="pillar_sum",
+                    value=pillar_sum,
+                    producer="Aurora feature assembly",
+                    consumer_stage="QuadraticScoringKernel.compute",
+                )
+            )
+        if raw_score is not None:
+            records.append(
+                build_score_lineage_record(
+                    field="raw_score",
+                    value=raw_score,
+                    producer="QuadraticScoringKernel.compute",
+                    consumer_stage=consumer_stage,
+                )
+            )
+        if decision_score is not None:
+            records.append(
+                build_score_lineage_record(
+                    field="decision_score",
+                    value=decision_score,
+                    producer="QuadraticScoringKernel.compute",
+                    consumer_stage=consumer_stage,
+                )
+            )
+        if objective_score is not None and include_objective_override:
+            records.append(
+                build_score_lineage_record(
+                    field="objective_score",
+                    value=objective_score,
+                    producer="objective_gate_evaluator",
+                    consumer_stage=consumer_stage,
+                    threshold_family=OBJECTIVE_GATE_THRESHOLD_FAMILY,
+                )
+            )
+        if final_score is not None:
+            final_scale = SIGNED_OBJECTIVE_SCORE if objective_override else SIGNED_DECISION_SCORE
+            final_producer = "objective_gate_evaluator" if objective_override else "QuadraticScoringKernel.compute"
+            final_threshold_family = (
+                OBJECTIVE_GATE_THRESHOLD_FAMILY
+                if objective_override
+                else AURORA_ADMISSION_THRESHOLD_FAMILY
+            )
+            final_alias_for = "objective_score" if objective_override else "decision_score"
+            records.append(
+                build_score_lineage_record(
+                    field="score",
+                    value=final_score,
+                    producer=final_producer,
+                    consumer_stage=consumer_stage,
+                    scale=final_scale,
+                    threshold_family=final_threshold_family,
+                    compatibility_alias_for=final_alias_for,
+                    post_objective_override=objective_override,
+                )
+            )
+            records.append(
+                build_score_lineage_record(
+                    field="final_score",
+                    value=final_score,
+                    producer=final_producer,
+                    consumer_stage=consumer_stage,
+                    scale=final_scale,
+                    threshold_family=final_threshold_family,
+                    compatibility_alias_for=final_alias_for,
+                    post_objective_override=objective_override,
+                )
+            )
+        return build_score_lineage_payload(records, path=LIVE_SCORE_LINEAGE_PATH)
 
     def _compact_quadratic_decision_trace(
         self,
@@ -463,6 +805,11 @@ class AuroraDecisionMixin:
             if bar_identity is not None
             else cmd.bar_close_ts
         )
+        close_boundary_ts_ms_raw = (
+            int(bar_identity.close_boundary_ts_ms)
+            if bar_identity is not None
+            else int(cmd.raw.get("close_boundary_ts_ms") or 0) or None
+        )
         # Some downstream contracts expect these fields inside ``features`` even
         # when upstream omitted them. Only fill missing keys so upstream values
         # remain the source of truth when present.
@@ -488,6 +835,25 @@ class AuroraDecisionMixin:
         for key, value in regime_provenance.items():
             if key not in features:
                 features[key] = value
+
+        price_motion_provenance = self._resolve_price_motion_provenance(
+            symbol,
+            cmd=cmd,
+            features=features,
+            current_close_boundary_ts_ms=close_boundary_ts_ms_raw,
+            current_bar_close_ts_ms=(
+                int(bar_close_ts_raw)
+                if bar_close_ts_raw is not None
+                else None
+            ),
+        )
+        if (
+            price_motion_provenance.get("ready")
+            and price_motion_provenance.get("block") is not None
+        ):
+            features["price_motion"] = dict(price_motion_provenance["block"])
+        else:
+            features.pop("price_motion", None)
 
         _compute_kwargs = dict(
             symbol=symbol,
@@ -572,6 +938,7 @@ class AuroraDecisionMixin:
             cmd=cmd,
             state=state,
             features=features,
+            price_motion_provenance=price_motion_provenance,
             result=result,
             effective_neutral=effective_neutral,
         )
@@ -579,6 +946,7 @@ class AuroraDecisionMixin:
         # Emit a compact trace both to logs and as an event so blocked/deferred
         # investigations can correlate the same scoring snapshot.
         compact_trace = self._compact_quadratic_decision_trace(decision_trace)
+        quadratic_score_lineage = decision_trace.get("score_lineage")
         decision_rid = f"aurora_{symbol}_{int(self.wall_time_fn() * 1000)}"
         shield_multiplier = float(
             getattr(result, "shield_multiplier", 1.0) or 1.0
@@ -624,7 +992,12 @@ class AuroraDecisionMixin:
                 "admission_mode": str(getattr(self, "decision_admission_mode", "quadratic")),
                 "sizing_mode": str(getattr(self, "decision_sizing_mode", "quadratic")),
                 "quadratic_path_reached": True,
+                "price_motion_source": str(price_motion_provenance.get("source") or "missing"),
+                "price_motion_age_ms": price_motion_provenance.get("age_ms"),
+                "price_motion_ready": bool(price_motion_provenance.get("ready", False)),
                 "compact_trace": compact_trace,
+                "score_lineage": quadratic_score_lineage,
+                "anti_peak_observability": decision_trace.get("anti_peak_observability"),
                 "ts_ms": int(self.wall_time_fn() * 1000),
             })
         except Exception:
@@ -938,8 +1311,39 @@ class AuroraDecisionMixin:
                     return
 
         # Volatility-adjusted gates own their own blocked-event emission.
-        if self._apply_vol_adj_gates(symbol, result, state, features, effective_side=effective_side):
+        vol_gate_result = self._apply_vol_adj_gates(
+            symbol,
+            result,
+            state,
+            features,
+            price_motion_provenance=price_motion_provenance,
+            effective_side=effective_side,
+        )
+        if isinstance(vol_gate_result, tuple):
+            vol_gate_blocked, price_motion_consumed_by_vol_gate = vol_gate_result
+        else:
+            vol_gate_blocked = bool(vol_gate_result)
+            price_motion_consumed_by_vol_gate = False
+        if vol_gate_blocked:
             return
+
+        def _blocked_details_with_price_motion(details: Dict[str, Any] | None = None) -> Dict[str, Any]:
+            merged = dict(details or {})
+            merged["price_motion"] = self._build_price_motion_observability_payload(
+                price_motion_provenance,
+                consumed_by_vol_gate=price_motion_consumed_by_vol_gate,
+            )
+            merged["anti_peak_observability"] = self._build_anti_peak_observability(
+                symbol=symbol,
+                features=features,
+                result=result,
+                state=state,
+                pillar_sum=float((result.psi_vector or {}).get(
+                    "s_linear", features.get("pillar_sum", 0.0)) or 0.0),
+                raw_exposure=float((result.psi_vector or {}).get(
+                    "raw_exposure", 0.0) or 0.0)
+            )
+            return merged
 
         # The anchor veto is intentionally asymmetric: it only blocks long risk
         # when the configured macro residual breaches the downside threshold.
@@ -961,12 +1365,12 @@ class AuroraDecisionMixin:
                 reason_code="ANCHOR_SHOCK_VETO",
                 reason="MACRO_VETO",
                 context="aurora_handler:anchor_shock_veto",
-                details={
+                details=_blocked_details_with_price_motion({
                     "macro_resid": veto_macro_resid,
                     "threshold": veto_threshold,
                     "side": effective_side,
                     "anchor_symbol": veto_anchor_symbol,
-                },
+                }),
                 why_chain=["MACRO_VETO", "ANCHOR_SHOCK_VETO"],
             )
             return
@@ -974,6 +1378,27 @@ class AuroraDecisionMixin:
         # Downstream planners and gates must consume the post-policy side that
         # will actually be emitted, while result.side remains the raw kernel output.
         canonical_side = str(effective_side).lower()
+
+        # SEMANTIC ADMISSION GUARD (P0-A): only enter:* and flip:* are executable
+        # entry signals.  hold:*, exit:*, neutral:*, and any other explicit non-entry
+        # side_why must fail closed.  When side_why is absent the guard falls through
+        # so that pre-guard test stubs are unaffected — in production the kernel
+        # always populates psi_vector["side_why"] before this point.
+        _side_why = str((result.psi_vector or {}).get("side_why") or "")
+        if _side_why and not (_side_why.startswith("enter:") or _side_why.startswith("flip:")):
+            self._emit_strategy_blocked(
+                symbol=symbol,
+                reason_code="HOLD_SIGNAL_NOT_ENTRY",
+                reason=f"SEMANTIC_GUARD:side_why={_side_why[:80] or 'MISSING'}",
+                context="aurora_handler:semantic_admission_guard",
+                details=_blocked_details_with_price_motion({
+                    "side_why": _side_why or None,
+                    "canonical_side": canonical_side,
+                }),
+                why_chain=["SEMANTIC_GUARD",
+                           "NON_ENTRY_SIGNAL", "FAIL_CLOSED"],
+            )
+            return
 
         # Entry planning and execution gating only run when the handler was
         # wired with an execution gate; otherwise the raw strategy signal is
@@ -993,10 +1418,10 @@ class AuroraDecisionMixin:
                     reason_code="ENTRY_PLAN_MISSING",
                     reason="HARD_VETO:EntryPlanMissing",
                     context="aurora_handler:entry_plan",
-                    details={
+                    details=_blocked_details_with_price_motion({
                         "config_path": "domains.decision_making.entry_plan",
                         "entry_plan_calculator_is_none": entry_plan_calc is None,
-                    },
+                    }),
                     why_chain=["ENTRY_PLAN", "MISSING", "FAIL_CLOSED"],
                 )
                 return
@@ -1023,7 +1448,8 @@ class AuroraDecisionMixin:
                     reason_code="ENTRY_PLAN_COMPUTE_FAILED",
                     reason="HARD_VETO:EntryPlanComputeFailed",
                     context="aurora_handler:entry_plan",
-                    details={"error": str(e)},
+                    details=_blocked_details_with_price_motion(
+                        {"error": str(e)}),
                     why_chain=["ENTRY_PLAN", "COMPUTE_FAILED", "FAIL_CLOSED"],
                 )
                 return
@@ -1061,8 +1487,8 @@ class AuroraDecisionMixin:
                         reason_code="OBJECTIVE_PRECONDITION_NOT_MET",
                         reason="DECISION",
                         context="aurora_handler:objective_engine",
-                        details={
-                            "precondition": "OBJECTIVE_REGIME_CONFIDENCE_MISSING"},
+                        details=_blocked_details_with_price_motion({
+                            "precondition": "OBJECTIVE_REGIME_CONFIDENCE_MISSING"}),
                         why_chain=["OBJECTIVE_ENGINE",
                                    "PRECONDITION_NOT_MET",
                                    "OBJECTIVE_REGIME_CONFIDENCE_MISSING"],
@@ -1119,8 +1545,8 @@ class AuroraDecisionMixin:
                         reason_code="OBJECTIVE_PRECONDITION_NOT_MET",
                         reason="DECISION",
                         context="aurora_handler:objective_engine",
-                        details={
-                            "precondition": obj_gate_result.precondition_code},
+                        details=_blocked_details_with_price_motion({
+                            "precondition": obj_gate_result.precondition_code}),
                         why_chain=["OBJECTIVE_ENGINE",
                                    "PRECONDITION_NOT_MET",
                                    str(obj_gate_result.precondition_code)],
@@ -1134,13 +1560,13 @@ class AuroraDecisionMixin:
                         reason_code="OBJECTIVE_GATE_BLOCKED",
                         reason="DECISION",
                         context="aurora_handler:objective_engine",
-                        details={
+                        details=_blocked_details_with_price_motion({
                             "objective_score": obj_score.objective_score,
                             "objective_multiplier": obj_score.multiplier,
                             "objective_components": obj_score.components,
                             "objective_raw_metrics": obj_score.raw_metrics,
                             "block_reason": obj_score.block_reason,
-                        },
+                        }),
                         why_chain=["OBJECTIVE_ENGINE", str(
                             obj_score.block_reason or "GATE_BLOCKED")],
                     )
@@ -1152,7 +1578,8 @@ class AuroraDecisionMixin:
                         reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED",
                         reason="DECISION",
                         context="aurora_handler:objective_engine",
-                        details={"error": str(obj_gate_result.error)},
+                        details=_blocked_details_with_price_motion(
+                            {"error": str(obj_gate_result.error)}),
                         why_chain=["OBJECTIVE_ENGINE",
                                    "FAIL_CLOSED", str(obj_gate_result.error)],
                     )
@@ -1184,7 +1611,7 @@ class AuroraDecisionMixin:
                     reason_code="EXECUTION_GATE_BLOCKED",
                     reason=str(gate_reason),
                     context="aurora_handler:execution_gate",
-                    details={
+                    details=_blocked_details_with_price_motion({
                         "gate_reason": gate_reason,
                         "score": float(result.score),
                         "shield_mult": shield_mult,
@@ -1192,7 +1619,7 @@ class AuroraDecisionMixin:
                         "decision_trace": self._compact_quadratic_decision_trace(
                             decision_trace
                         ),
-                    },
+                    }),
                     why_chain=["EXECUTION_GATE", str(gate_reason)],
                 )
                 return
@@ -1207,6 +1634,8 @@ class AuroraDecisionMixin:
                 stop_loss_override=stop_loss_override,
                 micro_fraction=micro_fraction,
                 event_rid=decision_rid,
+                price_motion_provenance=price_motion_provenance,
+                price_motion_consumed_by_vol_gate=price_motion_consumed_by_vol_gate,
                 quadratic_shadow_evaluation=quadratic_shadow_evaluation,
             )
         else:
@@ -1218,6 +1647,8 @@ class AuroraDecisionMixin:
                 effective_side=canonical_side,
                 micro_fraction=micro_fraction,
                 event_rid=decision_rid,
+                price_motion_provenance=price_motion_provenance,
+                price_motion_consumed_by_vol_gate=price_motion_consumed_by_vol_gate,
                 quadratic_shadow_evaluation=quadratic_shadow_evaluation,
             )
 
@@ -1236,6 +1667,8 @@ class AuroraDecisionMixin:
         stop_loss_override: Optional[decimal.Decimal] = None,
         micro_fraction: float = 1.0,
         event_rid: str | None = None,
+        price_motion_provenance: Dict[str, Any] | None = None,
+        price_motion_consumed_by_vol_gate: bool = False,
         quadratic_shadow_evaluation: Any | None = None,
     ) -> None:
         """Emit EVT:STRATEGY_SIGNAL_PRODUCED with runtime readiness metadata.
@@ -1267,6 +1700,19 @@ class AuroraDecisionMixin:
             default_source="market_data:payload_bridge",
             default_source_mode=RuntimeBarSourceMode.LIVE,
         )
+        price_motion_payload = self._build_price_motion_observability_payload(
+            price_motion_provenance or {
+                "source": "missing",
+                "age_ms": None,
+                "ready": False,
+            },
+            consumed_by_vol_gate=price_motion_consumed_by_vol_gate,
+        )
+
+        def _signal_block_details(details: Dict[str, Any] | None = None) -> Dict[str, Any]:
+            merged = dict(details or {})
+            merged["price_motion"] = dict(price_motion_payload)
+            return merged
 
         # Entry price starts from the bar price and is refined either by the
         # entry-plan result or by the legacy volatility/regime TPSL helpers.
@@ -1310,7 +1756,8 @@ class AuroraDecisionMixin:
                         reason_code="ATR_MISSING_FAIL_CLOSED",
                         reason="DATA_NOT_READY",
                         context="aurora_handler:volatility_entry",
-                        details={"required_feature": "atr"},
+                        details=_signal_block_details(
+                            {"required_feature": "atr"}),
                         why_chain=["VOLATILITY_ENTRY",
                                    "ATR_MISSING", "FAIL_CLOSED"],
                     )
@@ -1325,10 +1772,10 @@ class AuroraDecisionMixin:
                         reason_code="VOLATILITY_ENTRY_MULTIPLIER_MISSING",
                         reason="CONFIG",
                         context="aurora_handler:volatility_entry",
-                        details={
+                        details=_signal_block_details({
                             "regime": regime,
                             "configured_regimes": sorted(str(key) for key in multipliers.keys()),
-                        },
+                        }),
                         why_chain=[
                             "VOLATILITY_ENTRY",
                             "REGIME_MULTIPLIER_MISSING",
@@ -1520,6 +1967,12 @@ class AuroraDecisionMixin:
                     shield_multiplier_total)
             or shield_multiplier_total
         )
+        scoring_lineage = self._build_aurora_score_lineage(
+            features=features,
+            result=result,
+            consumer_stage="aurora.strategy_signal_payload",
+            include_objective_override=True,
+        )
         payload = {
             "strategy_id": self.strategy_id,
             "symbol": symbol,
@@ -1556,6 +2009,18 @@ class AuroraDecisionMixin:
                 "shield_multiplier_total": shield_multiplier_total,
                 "admission_shield_multiplier": admission_shield_multiplier,
                 "admission_result": "side" if side else "neutral",
+                "price_motion": price_motion_payload,
+                "score_lineage": scoring_lineage,
+                "anti_peak_observability": self._build_anti_peak_observability(
+                    symbol=symbol,
+                    features=features,
+                    result=result,
+                    state=state,
+                    pillar_sum=float((result.psi_vector or {}).get(
+                        "s_linear", features.get("pillar_sum", 0.0)) or 0.0),
+                    raw_exposure=float((result.psi_vector or {}).get(
+                        "raw_exposure", 0.0) or 0.0)
+                ),
             },
             "sizing": {
                 "margin_pct_mult": float(micro_fraction),
@@ -1618,7 +2083,17 @@ class AuroraDecisionMixin:
 
                 instr_cfg = self._get_instrument_config(symbol)
                 leverage_cfg = getattr(instr_cfg, "leverage", None)
-                target_leverage = getattr(leverage_cfg, "target", 20)
+                # LEV-REPOINT-QUANTIZER-2026-05-09: Read leverage from instruments SSOT (fail-closed).
+                # aurora.assets.leverage.target is no longer used for margin estimation.
+                instr_exec = getattr(precision, "execution", None)
+                target_leverage = getattr(
+                    instr_exec, "target_leverage", None) if instr_exec is not None else None
+                if target_leverage is None:
+                    raise ValueError(
+                        f"instruments.{symbol}.execution.target_leverage is required "
+                        "(LEV-REPOINT-QUANTIZER-2026-05-09)"
+                    )
+                target_leverage = int(target_leverage)
                 max_notional_cap = getattr(
                     leverage_cfg, "max_notional_value", None) or decimal.Decimal("1000000")
 
@@ -1640,13 +2115,13 @@ class AuroraDecisionMixin:
                         reason_code="QUANTIZER_REJECT",
                         reason=q_pos.reject_reason,
                         context="aurora_handler:quantizer",
-                        details={
+                        details=_signal_block_details({
                             "decision_score": float(result.score),
                             "sizing_score": float(getattr(result, "sizing_score", result.score)),
                             "price": str(entry_price),
                             "max_notional_cap": str(max_notional_cap),
                             "min_notional_policy": "floor",
-                        },
+                        }),
                         why_chain=result.why_chain +
                         [f"QUANTIZER:{q_pos.reject_reason}"],
                     )
@@ -1666,7 +2141,7 @@ class AuroraDecisionMixin:
                     reason_code="QUANTIZER_ERROR",
                     reason=str(e),
                     context="aurora_handler:quantizer_crash",
-                    details={"error": str(e)},
+                    details=_signal_block_details({"error": str(e)}),
                     why_chain=result.why_chain + ["QUANTIZER_CRASH"],
                 )
                 return

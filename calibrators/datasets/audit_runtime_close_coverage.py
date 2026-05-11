@@ -355,6 +355,12 @@ def _format_counter(counter: Counter[str]) -> dict[str, int]:
     return {key: counter[key] for key in sorted(counter)}
 
 
+def _coverage_pct(count: int, total: int) -> Optional[float]:
+    if total <= 0:
+        return None
+    return round((count / total) * 100.0, 4)
+
+
 def _extract_decision_side(decision_row: dict[str, Any]) -> Optional[str]:
     candidate = decision_row.get("causal_state_snapshot", {}).get(
         "candidate_intent_summary", {})
@@ -613,7 +619,19 @@ def _classify_unmatched(
     authority_order_log_exists: bool,
 ) -> tuple[str, str]:
     terminal_status = (decision.get("terminal_status") or "").upper()
-    if terminal_status in REJECT_TERMINAL_STATUSES or order_summary["has_alternative_terminal_event"] or lifecycle_summary["has_rejected_terminal"]:
+    has_execution_evidence = bool(
+        order_summary["has_entry_fill"]
+        or lifecycle_summary["has_fill_ingress"]
+        or order_summary["has_position_closed"]
+        or order_summary["has_close_fill"]
+        or order_summary["has_close_submitted"]
+        or lifecycle_summary["has_terminal_close"]
+    )
+    if (
+        terminal_status in REJECT_TERMINAL_STATUSES
+        or order_summary["has_alternative_terminal_event"]
+        or lifecycle_summary["has_rejected_terminal"]
+    ) and not has_execution_evidence:
         return (
             "NOT_EXECUTED_OR_REJECTED",
             "terminal status or runtime terminal evidence indicates rejection / non-execution",
@@ -875,6 +893,42 @@ def _render_unmatched_classification_markdown(payload: dict[str, Any]) -> str:
     )
 
 
+def _render_denominator_audit_markdown(payload: dict[str, Any]) -> str:
+    rows = [
+        ["total_decision_rows", payload.get("total_decision_rows")],
+        ["rejected_or_not_executed_rows", payload.get(
+            "rejected_or_not_executed_rows")],
+        ["execution_eligible_rows", payload.get("execution_eligible_rows")],
+        ["entry_filled_rows", payload.get("entry_filled_rows")],
+        ["close_expected_rows", payload.get("close_expected_rows")],
+        ["close_matched_rows", payload.get("close_matched_rows")],
+        ["exact_roundtrip_rows", payload.get("exact_roundtrip_rows")],
+        ["decision_to_execution_rate", payload.get(
+            "decision_to_execution_rate")],
+        ["execution_to_close_coverage_pct", payload.get(
+            "execution_to_close_coverage_pct")],
+        ["close_to_exact_roundtrip_pct", payload.get(
+            "close_to_exact_roundtrip_pct")],
+        ["total_decision_to_exact_roundtrip_pct", payload.get(
+            "total_decision_to_exact_roundtrip_pct")],
+        ["legacy_total_decision_close_coverage_pct", payload.get(
+            "legacy_total_decision_close_coverage_pct")],
+    ]
+    return "\n".join(
+        [
+            "# DENOMINATOR_AUDIT",
+            "",
+            f"Generated at UTC: {payload.get('generated_at_utc')}",
+            f"Audit source kind: {payload.get('audit_source_kind')}",
+            f"Coverage denominator kind: {payload.get('coverage_denominator_kind')}",
+            f"Source snapshot manifest: {payload.get('source_snapshot_manifest_path') or 'none'}",
+            "",
+            _markdown_table(["metric", "value"], rows),
+            "",
+        ]
+    )
+
+
 def analyze_runtime_close_coverage(
     repo_root: str | Path,
     *,
@@ -1009,6 +1063,13 @@ def analyze_runtime_close_coverage(
     lifecycle_counts: Counter[str] = Counter()
     classification_counts: Counter[str] = Counter()
     alias_suffix_counts: Counter[str] = Counter()
+    total_decision_rows = 0
+    rejected_or_not_executed_rows = 0
+    execution_eligible_rows = 0
+    entry_filled_rows = 0
+    close_expected_rows = 0
+    close_matched_rows = 0
+    exact_roundtrip_rows = 0
 
     for decision_row in cohort_rows:
         rid = _normalize_text(decision_row.get("rid"))
@@ -1057,6 +1118,44 @@ def analyze_runtime_close_coverage(
         for suffix in order_summary["alias_suffixes"]:
             alias_suffix_counts[suffix] += 1
 
+        has_entry_fill = bool(
+            order_summary["has_entry_fill"]
+            or lifecycle_summary["has_fill_ingress"]
+        )
+        has_execution_evidence = bool(
+            has_entry_fill
+            or decision["emitted_realized_row"]
+            or order_summary["has_close_fill"]
+            or order_summary["has_close_submitted"]
+            or order_summary["has_position_closed"]
+            or lifecycle_summary["has_terminal_close"]
+        )
+        rejected_or_not_executed = bool(
+            (
+                (decision["terminal_status"] or "").upper(
+                ) in REJECT_TERMINAL_STATUSES
+                or order_summary["has_alternative_terminal_event"]
+                or lifecycle_summary["has_rejected_terminal"]
+            )
+            and not has_execution_evidence
+        )
+        close_expected = bool(
+            not rejected_or_not_executed and (
+                has_execution_evidence
+            )
+        )
+        exact_roundtrip = bool(
+            matched_row is not None and matched_row.get("exact_roundtrip")
+        )
+
+        total_decision_rows += 1
+        rejected_or_not_executed_rows += int(rejected_or_not_executed)
+        execution_eligible_rows += int(not rejected_or_not_executed)
+        entry_filled_rows += int(has_entry_fill)
+        close_expected_rows += int(close_expected)
+        close_matched_rows += int(decision["emitted_realized_row"])
+        exact_roundtrip_rows += int(exact_roundtrip)
+
         ledger_entry = {
             "decision_id": decision["decision_id"],
             "rid": decision["rid"],
@@ -1075,6 +1174,11 @@ def analyze_runtime_close_coverage(
             "emitted_realized_row": decision["emitted_realized_row"],
             "rejected_reason": decision["rejected_reason"],
             "proposed_action": decision["proposed_action"],
+            "rejected_or_not_executed": rejected_or_not_executed,
+            "execution_eligible": not rejected_or_not_executed,
+            "has_entry_fill": has_entry_fill,
+            "close_expected": close_expected,
+            "exact_roundtrip": exact_roundtrip,
         }
         taxonomy_entry = {
             "decision_id": decision["decision_id"],
@@ -1116,10 +1220,43 @@ def analyze_runtime_close_coverage(
         "generated_at_utc": _utc_now(),
         "summary": {
             "eligible_decisions": len(ledger_rows),
-            "emitted_realized_rows": sum(1 for row in ledger_rows if row["emitted_realized_row"]),
+            "emitted_realized_rows": close_matched_rows,
             "unmatched_decisions": sum(1 for row in ledger_rows if not row["emitted_realized_row"]),
+            "total_decision_rows": total_decision_rows,
+            "rejected_or_not_executed_rows": rejected_or_not_executed_rows,
+            "execution_eligible_rows": execution_eligible_rows,
+            "entry_filled_rows": entry_filled_rows,
+            "close_expected_rows": close_expected_rows,
+            "close_matched_rows": close_matched_rows,
+            "exact_roundtrip_rows": exact_roundtrip_rows,
+            "decision_to_execution_rate": _coverage_pct(entry_filled_rows, total_decision_rows),
+            "execution_to_close_coverage_pct": _coverage_pct(close_matched_rows, close_expected_rows),
+            "close_to_exact_roundtrip_pct": _coverage_pct(exact_roundtrip_rows, close_matched_rows),
+            "total_decision_to_exact_roundtrip_pct": _coverage_pct(exact_roundtrip_rows, total_decision_rows),
         },
         "rows": ledger_rows,
+    }
+    denominator_audit_payload = {
+        "generated_at_utc": _utc_now(),
+        "audit_source_kind": audit_source_kind,
+        "coverage_denominator_kind": "close_expected_rows",
+        "source_snapshot_manifest_path": (
+            _relative_path(repo_root, source_snapshot_manifest_path)
+            if source_snapshot_manifest_path.exists()
+            else None
+        ),
+        "total_decision_rows": total_decision_rows,
+        "rejected_or_not_executed_rows": rejected_or_not_executed_rows,
+        "execution_eligible_rows": execution_eligible_rows,
+        "entry_filled_rows": entry_filled_rows,
+        "close_expected_rows": close_expected_rows,
+        "close_matched_rows": close_matched_rows,
+        "exact_roundtrip_rows": exact_roundtrip_rows,
+        "decision_to_execution_rate": _coverage_pct(entry_filled_rows, total_decision_rows),
+        "execution_to_close_coverage_pct": _coverage_pct(close_matched_rows, close_expected_rows),
+        "close_to_exact_roundtrip_pct": _coverage_pct(exact_roundtrip_rows, close_matched_rows),
+        "total_decision_to_exact_roundtrip_pct": _coverage_pct(exact_roundtrip_rows, total_decision_rows),
+        "legacy_total_decision_close_coverage_pct": _coverage_pct(close_matched_rows, total_decision_rows),
     }
     order_taxonomy_payload = {
         "generated_at_utc": _utc_now(),
@@ -1212,6 +1349,7 @@ def analyze_runtime_close_coverage(
         "order_log_event_taxonomy": order_taxonomy_payload,
         "lifecycle_bridge_audit": lifecycle_payload,
         "unmatched_classification": unmatched_classification_payload,
+        "denominator_audit": denominator_audit_payload,
     }
 
 
@@ -1221,6 +1359,7 @@ def write_runtime_close_coverage_artifacts(result: dict[str, Any], out_dir: str 
     order_taxonomy = result["order_log_event_taxonomy"]
     lifecycle_audit = result["lifecycle_bridge_audit"]
     unmatched_classification = result["unmatched_classification"]
+    denominator_audit = result["denominator_audit"]
 
     _write_csv(out_dir / "unmatched_decision_ledger.csv",
                unmatched_ledger["rows"])
@@ -1247,6 +1386,12 @@ def write_runtime_close_coverage_artifacts(result: dict[str, Any], out_dir: str 
     _write_text(
         out_dir / "UNMATCHED_CLASSIFICATION.md",
         _render_unmatched_classification_markdown(unmatched_classification),
+    )
+
+    _write_json(out_dir / "denominator_audit.json", denominator_audit)
+    _write_text(
+        out_dir / "DENOMINATOR_AUDIT.md",
+        _render_denominator_audit_markdown(denominator_audit),
     )
 
 

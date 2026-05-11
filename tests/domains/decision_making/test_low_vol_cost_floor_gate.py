@@ -17,6 +17,11 @@ from apps.reference.domains.decision_making.gates.low_vol_cost_floor import (
     evaluate_low_vol_cost_floor_gate,
 )
 from apps.reference.domains.decision_making.gates.safety_gates import SafetyGateResult
+from apps.reference.shared.decision_primitives.score_lineage import (
+    SIGNED_DECISION_SCORE,
+    build_score_lineage_payload,
+    build_score_lineage_record,
+)
 
 
 CONFIG_DIR = Path("config/aurora")
@@ -32,6 +37,14 @@ def _thresholds_payload(**overrides):
             "LOW_VOLATILITY": 0.39,
         },
         "min_direction_confidence_by_regime": {
+            "DEFAULT": 0.55,
+            "LOW_VOLATILITY": 0.51,
+        },
+        "min_raw_score_by_regime": {
+            "DEFAULT": 0.55,
+            "LOW_VOLATILITY": 0.51,
+        },
+        "min_normalized_confidence_by_regime": {
             "DEFAULT": 0.55,
             "LOW_VOLATILITY": 0.51,
         },
@@ -58,12 +71,9 @@ def _gate_config(**overrides):
         "thresholds": _thresholds_payload(),
         "direction_confidence": {
             "required": True,
-            "allowed_sources": [
-                "strategy_confidence",
-                "signal_score",
-                "final_score",
-                "judge_confidence",
-            ],
+            "raw_signed_score_sources": ["signal_score", "final_score"],
+            "normalized_confidence_sources": ["strategy_confidence", "judge_confidence"],
+            "judge_confidence_live_producer_required": False,
             "missing_policy": "fail_closed",
         },
         "geometry": {
@@ -222,8 +232,9 @@ def test_gate_allows_in_testnet_when_fee_floor_rr_and_confidence_pass() -> None:
         entry_price=100.0,
         target_price=100.30,
         stop_price=99.75,
-        strategy_trace=None,
-        signal_score=0.9,
+        strategy_trace={"strategy_confidence": 0.9,
+                        "strategy_confidence_side_scope": "BUY"},
+        signal_score=None,
         reduce_only=False,
     )
 
@@ -255,7 +266,13 @@ def test_regime_confidence_threshold_resolved_by_regime_map() -> None:
 
 def test_direction_confidence_threshold_resolved_by_regime_map() -> None:
     evaluation = evaluate_low_vol_cost_floor_gate(
-        gate_cfg=_gate_config(),
+        gate_cfg=_gate_config(direction_confidence={
+            "required": True,
+            "raw_signed_score_sources": [],
+            "normalized_confidence_sources": ["strategy_confidence"],
+            "judge_confidence_live_producer_required": False,
+            "missing_policy": "fail_closed",
+        }),
         trading_mode="testnet",
         regime="LOW_VOLATILITY",
         regime_confidence=0.8,
@@ -263,13 +280,14 @@ def test_direction_confidence_threshold_resolved_by_regime_map() -> None:
         entry_price=100.0,
         target_price=100.30,
         stop_price=99.75,
-        strategy_trace=None,
-        signal_score=0.50,
+        strategy_trace={"strategy_confidence": 0.50,
+                        "strategy_confidence_side_scope": "BUY"},
+        signal_score=None,
         reduce_only=False,
     )
 
     assert evaluation.block is True
-    assert evaluation.details["direction_confidence_source"] == "signal_score"
+    assert evaluation.details["direction_confidence_source"] == "strategy_confidence"
     assert evaluation.details["resolved_min_direction_confidence"] == 0.51
     assert "direction_confidence_below_threshold" in evaluation.details["violations"]
 
@@ -278,7 +296,9 @@ def test_missing_direction_confidence_follows_configured_policy() -> None:
     cfg = _gate_config(
         direction_confidence={
             "required": True,
-            "allowed_sources": ["signal_score"],
+            "raw_signed_score_sources": ["signal_score"],
+            "normalized_confidence_sources": [],
+            "judge_confidence_live_producer_required": False,
             "missing_policy": "warn_and_allow",
         }
     )
@@ -324,7 +344,13 @@ def test_missing_geometry_follows_configured_policy() -> None:
 
 def test_metadata_includes_required_economic_fields() -> None:
     evaluation = evaluate_low_vol_cost_floor_gate(
-        gate_cfg=_gate_config(),
+        gate_cfg=_gate_config(direction_confidence={
+            "required": True,
+            "raw_signed_score_sources": [],
+            "normalized_confidence_sources": ["strategy_confidence"],
+            "judge_confidence_live_producer_required": False,
+            "missing_policy": "fail_closed",
+        }),
         trading_mode="testnet",
         regime="LOW_VOLATILITY",
         regime_confidence=0.8,
@@ -332,7 +358,11 @@ def test_metadata_includes_required_economic_fields() -> None:
         entry_price=100.0,
         target_price=99.70,
         stop_price=100.25,
-        strategy_trace={"objective": {"final_score": -0.8, "side": "SELL"}},
+        strategy_trace={
+            "objective": {"final_score": -0.8, "side": "SELL"},
+            "strategy_confidence": 0.8,
+            "strategy_confidence_side_scope": "SELL",
+        },
         signal_score=None,
         reduce_only=False,
     )
@@ -408,14 +438,14 @@ def test_metadata_includes_required_economic_fields() -> None:
     }
 
     assert expected_keys.issubset(evaluation.details.keys())
-    assert evaluation.details["direction_confidence_source"] == "final_score"
+    assert evaluation.details["direction_confidence_source"] == "strategy_confidence"
     assert evaluation.details["direction_confidence_side_scope"] == "SELL"
     assert evaluation.details["evaluated"] is True
     assert evaluation.details["price_motion_context"]["missing"]["pm_norm_60s"] is True
     assert evaluation.details["score_context"]["final_score"] == -0.8
     assert evaluation.details["direction_confidence_context"]["passed"] is True
     assert evaluation.details["subcondition_verdicts"]["rr_passed"] is True
-    assert evaluation.details["direction_confidence_selected_scale"] == "raw_signed_score"
+    assert evaluation.details["direction_confidence_selected_scale"] == "normalized_confidence"
     assert evaluation.details["confidence_resolution_status"] == "present_passed"
 
 
@@ -478,11 +508,88 @@ def test_observability_details_capture_explicit_missing_flags() -> None:
     assert evaluation.details["aurora_raw_score_to_threshold_ratio"] == 0.95
 
 
+def test_observability_details_extract_ret_fields_from_nested_price_motion() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace={
+            "strategy_confidence": 0.77,
+            "strategy_confidence_side_scope": "BUY",
+            "price_motion": {
+                "pm_norm_60s": 0.62,
+                "pm_norm_300s": 0.91,
+                "vol_pct_300s": 0.004,
+                "ret_60s": 0.0012,
+                "ret_300s": 0.0034,
+            },
+            "market": {
+                "spread_bps": 0.04,
+                "liquidity_kappa": 0.998,
+                "absorption": -0.12,
+            },
+        },
+        signal_score=None,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is False
+    assert evaluation.details["price_motion_context"]["ret_60s"] == 0.0012
+    assert evaluation.details["price_motion_context"]["ret_300s"] == 0.0034
+    assert evaluation.details["price_motion_context"]["missing"]["ret_60s"] is False
+    assert evaluation.details["price_motion_context"]["missing"]["ret_300s"] is False
+    assert evaluation.details["price_motion_context"]["pm_norm_60s"] == 0.62
+    assert evaluation.details["price_motion_context"]["pm_norm_300s"] == 0.91
+    assert evaluation.details["price_motion_context"]["vol_pct_300s"] == 0.004
+    assert evaluation.details["liquidity_context"]["spread_bps"] == 0.04
+    assert evaluation.details["liquidity_context"]["liquidity_kappa"] == 0.998
+    assert evaluation.details["liquidity_context"]["absorption"] == -0.12
+
+
+def test_observability_details_keep_missing_ret_fields_explicit_without_fallbacks() -> None:
+    evaluation = evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config(),
+        trading_mode="testnet",
+        regime="LOW_VOLATILITY",
+        regime_confidence=0.8,
+        side="BUY",
+        entry_price=100.0,
+        target_price=100.30,
+        stop_price=99.75,
+        strategy_trace={
+            "strategy_confidence": 0.77,
+            "strategy_confidence_side_scope": "BUY",
+            "price_motion": {
+                "pm_norm_60s": 0.62,
+                "pm_norm_300s": 0.91,
+                "vol_pct_300s": 0.004,
+            },
+        },
+        signal_score=None,
+        reduce_only=False,
+    )
+
+    assert evaluation.block is False
+    assert evaluation.details["price_motion_context"]["ret_60s"] is None
+    assert evaluation.details["price_motion_context"]["ret_300s"] is None
+    assert evaluation.details["price_motion_context"]["missing"]["ret_60s"] is True
+    assert evaluation.details["price_motion_context"]["missing"]["ret_300s"] is True
+    assert evaluation.details["missing_inputs"]["ret_60s"] is True
+    assert evaluation.details["missing_inputs"]["ret_300s"] is True
+
+
 def test_signal_score_observability_fields_capture_raw_scale_and_margin_without_changing_block() -> None:
     evaluation = evaluate_low_vol_cost_floor_gate(
         gate_cfg=_gate_config(direction_confidence={
             "required": True,
-            "allowed_sources": ["signal_score"],
+            "raw_signed_score_sources": ["signal_score"],
+            "normalized_confidence_sources": [],
+            "judge_confidence_live_producer_required": False,
             "missing_policy": "fail_closed",
         }),
         trading_mode="testnet",
@@ -518,7 +625,9 @@ def test_strategy_confidence_candidate_is_logged_without_being_selected() -> Non
     evaluation = evaluate_low_vol_cost_floor_gate(
         gate_cfg=_gate_config(direction_confidence={
             "required": True,
-            "allowed_sources": ["signal_score", "strategy_confidence"],
+            "raw_signed_score_sources": ["signal_score"],
+            "normalized_confidence_sources": ["strategy_confidence"],
+            "judge_confidence_live_producer_required": False,
             "missing_policy": "fail_closed",
         }),
         trading_mode="testnet",
@@ -546,7 +655,9 @@ def test_missing_direction_confidence_logs_missing_allowed_sources_and_missing_s
     evaluation = evaluate_low_vol_cost_floor_gate(
         gate_cfg=_gate_config(direction_confidence={
             "required": True,
-            "allowed_sources": ["strategy_confidence", "signal_score", "final_score", "judge_confidence"],
+            "raw_signed_score_sources": ["signal_score", "final_score"],
+            "normalized_confidence_sources": ["strategy_confidence", "judge_confidence"],
+            "judge_confidence_live_producer_required": False,
             "missing_policy": "fail_closed",
         }),
         trading_mode="testnet",
@@ -564,9 +675,9 @@ def test_missing_direction_confidence_logs_missing_allowed_sources_and_missing_s
     assert evaluation.block is True
     assert evaluation.details["confidence_resolution_status"] == "missing"
     assert evaluation.details["missing_allowed_sources"] == [
-        "strategy_confidence",
         "signal_score",
         "final_score",
+        "strategy_confidence",
         "judge_confidence",
     ]
 
@@ -575,7 +686,9 @@ def test_wrong_side_signed_score_logs_side_mismatch_without_relaxing_gate() -> N
     evaluation = evaluate_low_vol_cost_floor_gate(
         gate_cfg=_gate_config(direction_confidence={
             "required": True,
-            "allowed_sources": ["signal_score"],
+            "raw_signed_score_sources": ["signal_score"],
+            "normalized_confidence_sources": [],
+            "judge_confidence_live_producer_required": False,
             "missing_policy": "fail_closed",
         }),
         trading_mode="testnet",
@@ -585,7 +698,21 @@ def test_wrong_side_signed_score_logs_side_mismatch_without_relaxing_gate() -> N
         entry_price=100.0,
         target_price=100.30,
         stop_price=99.75,
-        strategy_trace=None,
+        strategy_trace={
+            "signal_score": -0.9,
+            "score_lineage": build_score_lineage_payload(
+                [
+                    build_score_lineage_record(
+                        field="signal_score",
+                        value=-0.9,
+                        producer="StrategyGateway strategy_trace assembly",
+                        consumer_stage="strategy_gateway.strategy_trace",
+                        scale=SIGNED_DECISION_SCORE,
+                        compatibility_alias_for="decision_score",
+                    )
+                ]
+            ),
+        },
         signal_score=-0.9,
         reduce_only=False,
     )
@@ -600,7 +727,9 @@ def test_high_signal_score_logs_present_passed_status() -> None:
     evaluation = evaluate_low_vol_cost_floor_gate(
         gate_cfg=_gate_config(direction_confidence={
             "required": True,
-            "allowed_sources": ["signal_score"],
+            "raw_signed_score_sources": [],
+            "normalized_confidence_sources": ["strategy_confidence"],
+            "judge_confidence_live_producer_required": False,
             "missing_policy": "fail_closed",
         }),
         trading_mode="testnet",
@@ -610,8 +739,9 @@ def test_high_signal_score_logs_present_passed_status() -> None:
         entry_price=100.0,
         target_price=100.30,
         stop_price=99.75,
-        strategy_trace=None,
-        signal_score=0.85,
+        strategy_trace={"strategy_confidence": 0.85,
+                        "strategy_confidence_side_scope": "BUY"},
+        signal_score=None,
         reduce_only=False,
     )
 
@@ -628,7 +758,7 @@ def test_strategy_symbol_threshold_override_applies_only_to_matching_symbol() ->
                     "XRPUSDT": {"DEFAULT": 0.46, "LOW_VOLATILITY": 0.45},
                 },
             },
-            min_direction_confidence_overrides_by_strategy_symbol={
+            min_normalized_confidence_overrides_by_strategy_symbol={
                 "aurora": {
                     "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.59},
                 },
@@ -647,8 +777,9 @@ def test_strategy_symbol_threshold_override_applies_only_to_matching_symbol() ->
         entry_price=100.0,
         target_price=100.30,
         stop_price=99.75,
-        strategy_trace=None,
-        signal_score=0.58,
+        strategy_trace={"strategy_confidence": 0.58,
+                        "strategy_confidence_side_scope": "BUY"},
+        signal_score=None,
         reduce_only=False,
     )
     btc_evaluation = evaluate_low_vol_cost_floor_gate(
@@ -662,8 +793,9 @@ def test_strategy_symbol_threshold_override_applies_only_to_matching_symbol() ->
         entry_price=100.0,
         target_price=100.30,
         stop_price=99.75,
-        strategy_trace=None,
-        signal_score=0.58,
+        strategy_trace={"strategy_confidence": 0.58,
+                        "strategy_confidence_side_scope": "BUY"},
+        signal_score=None,
         reduce_only=False,
     )
 
@@ -710,7 +842,7 @@ def test_strategy_symbol_threshold_override_supports_each_strategy(
                     "XRPUSDT": {"DEFAULT": 0.45, "LOW_VOLATILITY": 0.78},
                 },
             },
-            min_direction_confidence_overrides_by_strategy_symbol={
+            min_normalized_confidence_overrides_by_strategy_symbol={
                 "aurora": {
                     "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.59},
                 },
@@ -738,8 +870,9 @@ def test_strategy_symbol_threshold_override_supports_each_strategy(
         entry_price=100.0,
         target_price=100.30,
         stop_price=99.75,
-        strategy_trace=None,
-        signal_score=1.0,
+        strategy_trace={"strategy_confidence": 1.0,
+                        "strategy_confidence_side_scope": "BUY"},
+        signal_score=None,
         reduce_only=False,
     )
 
@@ -784,7 +917,7 @@ def test_strategy_symbol_override_uses_default_map_without_leaking_low_vol_thres
     assert direction_resolution.regime_key == "DEFAULT"
 
 
-def test_current_config_applies_moderate_xrp_low_vol_confidence_thresholds_for_assigned_strategies() -> None:
+def test_current_config_requires_explicit_live_normalized_confidence_for_aurora() -> None:
     cfg = ConfigLoader(CONFIG_DIR).load_config()
     gate_cfg = cfg.domains.decision_making.low_vol_cost_floor_gate
 
@@ -814,8 +947,10 @@ def test_current_config_applies_moderate_xrp_low_vol_confidence_thresholds_for_a
         entry_price=100.0,
         target_price=100.30,
         stop_price=99.75,
-        strategy_trace=None,
-        signal_score=0.69,
+        # md_amr uses normalized confidence — pass strategy_confidence with side scope
+        strategy_trace={"strategy_confidence": 0.69,
+                        "strategy_confidence_side_scope": "BUY"},
+        signal_score=None,
         reduce_only=False,
     )
     aurora_btc = evaluate_low_vol_cost_floor_gate(
@@ -834,12 +969,18 @@ def test_current_config_applies_moderate_xrp_low_vol_confidence_thresholds_for_a
         reduce_only=False,
     )
 
-    expected_regime_conf = gate_cfg.thresholds.min_regime_confidence_overrides_by_strategy_symbol["aurora"]["XRPUSDT"]["LOW_VOLATILITY"]
-    expected_direction_conf = gate_cfg.thresholds.min_direction_confidence_overrides_by_strategy_symbol["aurora"]["XRPUSDT"]["LOW_VOLATILITY"]
-    expected_md_regime_conf = gate_cfg.thresholds.min_regime_confidence_overrides_by_strategy_symbol["md_amr"]["XRPUSDT"]["LOW_VOLATILITY"]
-    expected_md_direction_conf = gate_cfg.thresholds.min_direction_confidence_overrides_by_strategy_symbol["md_amr"]["XRPUSDT"]["LOW_VOLATILITY"]
-    expected_btc_regime_conf = gate_cfg.thresholds.min_regime_confidence_by_regime["LOW_VOLATILITY"]
-    expected_btc_direction_conf = gate_cfg.thresholds.min_direction_confidence_by_regime["LOW_VOLATILITY"]
+    expected_regime_conf = gate_cfg.thresholds.min_regime_confidence_overrides_by_strategy_symbol[
+        "aurora"]["XRPUSDT"]["LOW_VOLATILITY"]
+    expected_direction_conf = gate_cfg.thresholds.min_raw_score_overrides_by_strategy_symbol[
+        "aurora"]["XRPUSDT"]["LOW_VOLATILITY"]
+    expected_md_regime_conf = gate_cfg.thresholds.min_regime_confidence_overrides_by_strategy_symbol[
+        "md_amr"]["XRPUSDT"]["LOW_VOLATILITY"]
+    expected_md_direction_conf = gate_cfg.thresholds.min_normalized_confidence_overrides_by_strategy_symbol[
+        "md_amr"]["XRPUSDT"]["LOW_VOLATILITY"]
+    expected_btc_regime_conf = gate_cfg.thresholds.min_regime_confidence_by_regime[
+        "LOW_VOLATILITY"]
+    expected_btc_direction_conf = gate_cfg.thresholds.min_raw_score_by_regime[
+        "LOW_VOLATILITY"]
 
     assert aurora_xrp.block is False
     assert aurora_xrp.details["resolved_min_regime_confidence"] == expected_regime_conf
@@ -858,7 +999,9 @@ def test_missing_direction_confidence_blocks_fail_closed_even_with_high_regime_c
     evaluation = evaluate_low_vol_cost_floor_gate(
         gate_cfg=_gate_config(direction_confidence={
             "required": True,
-            "allowed_sources": ["signal_score"],
+            "raw_signed_score_sources": ["signal_score"],
+            "normalized_confidence_sources": [],
+            "judge_confidence_live_producer_required": False,
             "missing_policy": "fail_closed",
         }),
         trading_mode="testnet",
@@ -882,7 +1025,9 @@ def test_legacy_strategy_confidence_without_side_scope_blocks_fail_closed() -> N
     evaluation = evaluate_low_vol_cost_floor_gate(
         gate_cfg=_gate_config(direction_confidence={
             "required": True,
-            "allowed_sources": ["strategy_confidence", "signal_score"],
+            "raw_signed_score_sources": ["signal_score"],
+            "normalized_confidence_sources": ["strategy_confidence"],
+            "judge_confidence_live_producer_required": False,
             "missing_policy": "fail_closed",
         }),
         trading_mode="testnet",
@@ -907,7 +1052,9 @@ def test_explicit_direction_confidence_without_source_blocks_fail_closed() -> No
     evaluation = evaluate_low_vol_cost_floor_gate(
         gate_cfg=_gate_config(direction_confidence={
             "required": True,
-            "allowed_sources": ["strategy_confidence"],
+            "raw_signed_score_sources": [],
+            "normalized_confidence_sources": ["strategy_confidence"],
+            "judge_confidence_live_producer_required": False,
             "missing_policy": "fail_closed",
         }),
         trading_mode="testnet",
@@ -932,7 +1079,9 @@ def test_explicit_direction_confidence_unsupported_source_blocks_fail_closed() -
     evaluation = evaluate_low_vol_cost_floor_gate(
         gate_cfg=_gate_config(direction_confidence={
             "required": True,
-            "allowed_sources": ["strategy_confidence"],
+            "raw_signed_score_sources": [],
+            "normalized_confidence_sources": ["strategy_confidence"],
+            "judge_confidence_live_producer_required": False,
             "missing_policy": "fail_closed",
         }),
         trading_mode="testnet",
@@ -960,7 +1109,9 @@ def test_explicit_direction_confidence_malformed_value_blocks_fail_closed() -> N
     evaluation = evaluate_low_vol_cost_floor_gate(
         gate_cfg=_gate_config(direction_confidence={
             "required": True,
-            "allowed_sources": ["strategy_confidence"],
+            "raw_signed_score_sources": [],
+            "normalized_confidence_sources": ["strategy_confidence"],
+            "judge_confidence_live_producer_required": False,
             "missing_policy": "fail_closed",
         }),
         trading_mode="testnet",
@@ -987,7 +1138,9 @@ def test_explicit_side_aware_strategy_confidence_allows() -> None:
     evaluation = evaluate_low_vol_cost_floor_gate(
         gate_cfg=_gate_config(direction_confidence={
             "required": True,
-            "allowed_sources": ["strategy_confidence"],
+            "raw_signed_score_sources": [],
+            "normalized_confidence_sources": ["strategy_confidence"],
+            "judge_confidence_live_producer_required": False,
             "missing_policy": "fail_closed",
         }),
         trading_mode="testnet",
@@ -1016,7 +1169,9 @@ def test_observe_only_direction_confidence_failure_sets_would_block_metadata() -
     evaluation = evaluate_low_vol_cost_floor_gate(
         gate_cfg=_gate_config(direction_confidence={
             "required": True,
-            "allowed_sources": ["signal_score"],
+            "raw_signed_score_sources": ["signal_score"],
+            "normalized_confidence_sources": [],
+            "judge_confidence_live_producer_required": False,
             "missing_policy": "fail_closed",
         }),
         trading_mode="live",
@@ -1042,7 +1197,9 @@ def test_sell_side_resolves_signed_final_score_confidence() -> None:
     evaluation = evaluate_low_vol_cost_floor_gate(
         gate_cfg=_gate_config(direction_confidence={
             "required": True,
-            "allowed_sources": ["final_score"],
+            "raw_signed_score_sources": ["final_score"],
+            "normalized_confidence_sources": [],
+            "judge_confidence_live_producer_required": False,
             "missing_policy": "fail_closed",
         }),
         trading_mode="testnet",
@@ -1069,6 +1226,8 @@ def test_propose_trade_intent_blocks_low_vol_cost_floor_in_testnet() -> None:
     sg.pm_norm_60s = 0.21
     sg.pm_norm_300s = 0.34
     sg.vol_pct_300s = 0.004
+    sg.ret_60s = 0.0015
+    sg.ret_300s = 0.0045
 
     with patch(
         "apps.reference.domains.decision_making.core.facade.order_logger.write"
@@ -1111,10 +1270,18 @@ def test_propose_trade_intent_blocks_low_vol_cost_floor_in_testnet() -> None:
     assert decision_trace_calls[0]["low_vol_cost_floor"]["price_motion_context"]["pm_norm_60s"] == 0.21
     assert decision_trace_calls[0]["low_vol_cost_floor"]["price_motion_context"]["pm_norm_300s"] == 0.34
     assert decision_trace_calls[0]["low_vol_cost_floor"]["price_motion_context"]["vol_pct_300s"] == 0.004
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["price_motion_context"]["ret_60s"] == 0.0015
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["price_motion_context"]["ret_300s"] == 0.0045
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["missing_inputs"]["ret_60s"] is False
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["missing_inputs"]["ret_300s"] is False
 
     metadata = mock_order_write.call_args.args[0]["metadata"]
     assert metadata["reject_reason"] == "LOW_VOL_COST_FLOOR_DENY"
+    assert metadata["low_vol_cost_floor"]["evaluation_stage"] == "post_safety_gate"
+    assert metadata["low_vol_cost_floor"]["evaluated"] is True
     assert metadata["low_vol_cost_floor"]["threshold_failed"] is True
+    assert metadata["low_vol_cost_floor"]["price_motion_context"]["ret_60s"] == 0.0015
+    assert metadata["low_vol_cost_floor"]["price_motion_context"]["ret_300s"] == 0.0045
     assert metadata["low_vol_cost_floor"]["persistence_context"]["order_logger_event"] == "DECISION_INTENT_REJECTED"
 
 
@@ -1129,13 +1296,15 @@ def test_propose_trade_intent_prior_safety_deny_attaches_low_vol_geometry_metada
         "apps.reference.domains.decision_making.core.facade.order_logger.write"
     ) as mock_order_write, patch(
         "apps.reference.domains.decision_making.core.facade.emit_regime_decision_audit"
-    ):
+    ), patch(
+        "apps.reference.domains.decision_making.core.facade.evaluate_low_vol_cost_floor_gate"
+    ) as mock_low_vol_evaluator:
         dm._propose_trade_intent(
             symbol="BTCUSDT",
             side="BUY",
             qty=1,
             price=100.0,
-            why_chain=["signal_score=0.9"],
+            why_chain=["geometry_source=why_chain", "signal_score=0.9"],
             rid="rid-prior-gate-low-vol-1",
             reduce_only=False,
             strategy_id="aurora",
@@ -1148,6 +1317,7 @@ def test_propose_trade_intent_prior_safety_deny_attaches_low_vol_geometry_metada
 
     dm._builder.build_and_emit.assert_not_called()
     dm._emitter.emit_trade_intent_rejected.assert_not_called()
+    mock_low_vol_evaluator.assert_not_called()
 
     decision_trace_calls = [
         call.kwargs["payload"]
@@ -1159,11 +1329,17 @@ def test_propose_trade_intent_prior_safety_deny_attaches_low_vol_geometry_metada
     assert decision_trace_calls[0]["low_vol_cost_floor"]["evaluation_stage"] == "prior_safety_gate"
     assert decision_trace_calls[0]["low_vol_cost_floor"]["evaluated"] is False
     assert decision_trace_calls[0]["low_vol_cost_floor"]["geometry_available"] is True
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["geometry_source"] == "facade_inputs"
     assert decision_trace_calls[0]["low_vol_cost_floor"]["entry_price"] == 100.0
     assert decision_trace_calls[0]["low_vol_cost_floor"]["target_price"] == 100.3
     assert decision_trace_calls[0]["low_vol_cost_floor"]["stop_price"] == 99.75
     assert decision_trace_calls[0]["low_vol_cost_floor"]["actual_tp_bps"] == 30.0
     assert decision_trace_calls[0]["low_vol_cost_floor"]["actual_sl_bps"] == 25.0
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["side"] == "BUY"
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["regime"] == "LOW_VOLATILITY"
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["regime_confidence"] == 0.8
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["strategy_id"] == "aurora"
+    assert decision_trace_calls[0]["low_vol_cost_floor"]["symbol"] == "BTCUSDT"
     assert decision_trace_calls[0]["low_vol_cost_floor"]["persistence_context"]["decision_outcome"] == "DENY"
 
     metadata = mock_order_write.call_args.args[0]["metadata"]
@@ -1171,9 +1347,64 @@ def test_propose_trade_intent_prior_safety_deny_attaches_low_vol_geometry_metada
     assert metadata["low_vol_cost_floor"]["evaluation_stage"] == "prior_safety_gate"
     assert metadata["low_vol_cost_floor"]["evaluated"] is False
     assert metadata["low_vol_cost_floor"]["geometry_available"] is True
+    assert metadata["low_vol_cost_floor"]["geometry_source"] == "facade_inputs"
     assert metadata["low_vol_cost_floor"]["actual_tp_bps"] == 30.0
     assert metadata["low_vol_cost_floor"]["actual_sl_bps"] == 25.0
+    assert metadata["low_vol_cost_floor"]["side"] == "BUY"
+    assert metadata["low_vol_cost_floor"]["regime"] == "LOW_VOLATILITY"
+    assert metadata["low_vol_cost_floor"]["regime_confidence"] == 0.8
+    assert metadata["low_vol_cost_floor"]["strategy_id"] == "aurora"
+    assert metadata["low_vol_cost_floor"]["symbol"] == "BTCUSDT"
+    assert metadata["low_vol_cost_floor"]["geometry_source"] != "geometry_source=why_chain"
     assert metadata["low_vol_cost_floor"]["persistence_context"]["rid"] == "rid-prior-gate-low-vol-1"
+
+
+def test_propose_trade_intent_prior_safety_deny_non_low_vol_does_not_emit_low_vol_metadata() -> None:
+    dm = _make_dm(trading_mode="testnet")
+    sg = _allow_sg(regime="TRENDING")
+    sg.outcome = "DENY"
+    sg.deny_reason = "NRR-026"
+    sg.why_short = "trend confirmation failed"
+
+    with patch(
+        "apps.reference.domains.decision_making.core.facade.order_logger.write"
+    ) as mock_order_write, patch(
+        "apps.reference.domains.decision_making.core.facade.emit_regime_decision_audit"
+    ), patch(
+        "apps.reference.domains.decision_making.core.facade.evaluate_low_vol_cost_floor_gate"
+    ) as mock_low_vol_evaluator:
+        dm._propose_trade_intent(
+            symbol="BTCUSDT",
+            side="BUY",
+            qty=1,
+            price=100.0,
+            why_chain=["geometry_source=why_chain"],
+            rid="rid-prior-gate-non-low-vol-1",
+            reduce_only=False,
+            strategy_id="aurora",
+            decision_ts_ms=1_700_000_000_999,
+            stop_price=99.75,
+            target_price=100.30,
+            strategy_trace=None,
+            safety_gate_result=sg,
+        )
+
+    dm._builder.build_and_emit.assert_not_called()
+    dm._emitter.emit_trade_intent_rejected.assert_not_called()
+    mock_low_vol_evaluator.assert_not_called()
+
+    decision_trace_calls = [
+        call.kwargs["payload"]
+        for call in dm.fsm.emit.call_args_list
+        if call.args and call.args[0] == "EVT:DECISION_TRACE_EMITTED"
+    ]
+    assert len(decision_trace_calls) == 1
+    assert decision_trace_calls[0]["deny_reason"] == "NRR-026"
+    assert "low_vol_cost_floor" not in decision_trace_calls[0]
+
+    metadata = mock_order_write.call_args.args[0]["metadata"]
+    assert metadata["reject_reason"] == "SAFETY_GATES_DENY"
+    assert metadata["low_vol_cost_floor"] is None
 
 
 def test_propose_trade_intent_observes_in_live_without_blocking() -> None:
@@ -1181,6 +1412,8 @@ def test_propose_trade_intent_observes_in_live_without_blocking() -> None:
     sg = _allow_sg()
     sg.pm_norm_60s = 0.11
     sg.vol_pct_300s = 0.002
+    sg.ret_60s = 0.0007
+    sg.ret_300s = 0.0021
 
     dm._propose_trade_intent(
         symbol="BTCUSDT",
@@ -1208,8 +1441,49 @@ def test_propose_trade_intent_observes_in_live_without_blocking() -> None:
     assert kwargs["strategy_trace"]["low_vol_cost_floor"]["confidence_resolution_status"] == "present_passed"
     assert kwargs["strategy_trace"]["low_vol_cost_floor"]["price_motion_context"]["pm_norm_60s"] == 0.11
     assert kwargs["strategy_trace"]["low_vol_cost_floor"]["price_motion_context"]["vol_pct_300s"] == 0.002
+    assert kwargs["strategy_trace"]["low_vol_cost_floor"]["price_motion_context"]["ret_60s"] == 0.0007
+    assert kwargs["strategy_trace"]["low_vol_cost_floor"]["price_motion_context"]["ret_300s"] == 0.0021
+    assert kwargs["strategy_trace"]["low_vol_cost_floor"]["missing_inputs"]["ret_60s"] is False
+    assert kwargs["strategy_trace"]["low_vol_cost_floor"]["missing_inputs"]["ret_300s"] is False
     assert kwargs["sg"].low_vol_cost_floor_details["gate_mode"] == "observe_only"
     assert kwargs["sg"].low_vol_cost_floor_details["persistence_context"]["order_logger_event"] == "ORDER_INTENT"
+
+
+def test_propose_trade_intent_keeps_ret_missing_explicit_when_safety_gate_lacks_returns() -> None:
+    dm = _make_dm(trading_mode="live")
+    sg = _allow_sg()
+    sg.pm_norm_60s = 0.11
+    sg.pm_norm_300s = 0.44
+    sg.vol_pct_300s = 0.002
+
+    dm._propose_trade_intent(
+        symbol="BTCUSDT",
+        side="BUY",
+        qty=1,
+        price=100.0,
+        why_chain=["signal_score=0.9"],
+        rid="rid-low-vol-ret-missing-1",
+        reduce_only=False,
+        strategy_id="aurora",
+        decision_ts_ms=1_700_000_000_999,
+        stop_price=99.0,
+        target_price=100.1,
+        strategy_trace=None,
+        safety_gate_result=sg,
+    )
+
+    dm._emitter.emit_trade_intent_rejected.assert_not_called()
+    dm._builder.build_and_emit.assert_called_once()
+    kwargs = dm._builder.build_and_emit.call_args.kwargs
+    price_motion_context = kwargs["strategy_trace"]["low_vol_cost_floor"]["price_motion_context"]
+
+    assert kwargs["strategy_trace"]["low_vol_cost_floor"]["gate_mode"] == "observe_only"
+    assert price_motion_context["ret_60s"] is None
+    assert price_motion_context["ret_300s"] is None
+    assert price_motion_context["missing"]["ret_60s"] is True
+    assert price_motion_context["missing"]["ret_300s"] is True
+    assert kwargs["strategy_trace"]["low_vol_cost_floor"]["missing_inputs"]["ret_60s"] is True
+    assert kwargs["strategy_trace"]["low_vol_cost_floor"]["missing_inputs"]["ret_300s"] is True
 
 
 def test_propose_trade_intent_reject_metadata_includes_direction_confidence_details() -> None:

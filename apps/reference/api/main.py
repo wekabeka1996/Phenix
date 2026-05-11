@@ -1,11 +1,92 @@
 # PATH: apps/reference/api/main.py
 from __future__ import annotations
+from functools import lru_cache
+import logging
 import os
 from fastapi import FastAPI
 import asyncio
 import json
 from datetime import datetime
-from typing import Dict, Any
+from pathlib import Path
+from typing import Dict, Any, Optional
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+
+from apps.reference.domains.shadow_telemetry.trading_read_models import (
+    TradingReadModelService,
+    TradingReadModelUnavailableError,
+)
+
+
+LOG = logging.getLogger(__name__)
+
+
+class _ShadowTelemetryHttpSnapshotStore:
+    source_name = "shadow_telemetry_api"
+
+    def __init__(self, *, base_url: str, timeout_sec: float = 1.0) -> None:
+        self.base_url = str(base_url).rstrip("/")
+        self.timeout_sec = float(timeout_sec)
+
+    def latest(self, symbol: Optional[str], tf_sec: Optional[int]) -> Optional[Dict[str, Any]]:
+        payload = self._request_json(
+            "/snapshots/latest", symbol=symbol, tf_sec=tf_sec)
+        return payload if isinstance(payload, dict) else None
+
+    def tail(self, symbol: Optional[str], limit: int) -> list[Dict[str, Any]]:
+        payload = self._request_json(
+            "/snapshots/tail", symbol=symbol, limit=limit)
+        if not isinstance(payload, dict):
+            return []
+        items = payload.get("items")
+        if not isinstance(items, list):
+            return []
+        return [item for item in items if isinstance(item, dict)]
+
+    def _request_json(self, path: str, **query: Any) -> Optional[Any]:
+        params = {key: value for key,
+                  value in query.items() if value is not None}
+        url = f"{self.base_url}{path}"
+        if params:
+            url = f"{url}?{urlencode(params)}"
+        request = Request(url, headers={"accept": "application/json"})
+        try:
+            with urlopen(request, timeout=self.timeout_sec) as response:
+                status = int(getattr(response, "status", 200))
+                if status != 200:
+                    return None
+                payload = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            if exc.code != 404:
+                LOG.debug("Shadow telemetry request failed for %s: %s", url, exc)
+            return None
+        except (URLError, OSError, TimeoutError, ValueError) as exc:
+            LOG.debug("Shadow telemetry request failed for %s: %s", url, exc)
+            return None
+        return payload
+
+
+@lru_cache(maxsize=1)
+def _shadow_telemetry_snapshot_store() -> object | None:
+    project_root = Path(__file__).resolve().parents[3]
+    try:
+        from apps.reference.config_loader import ConfigLoader
+
+        config = ConfigLoader(config_dir=project_root /
+                              "config" / "aurora").load_config()
+        shadow_api = config.domains.shadow_telemetry.api
+    except Exception:
+        LOG.debug("Failed to resolve shadow telemetry API config", exc_info=True)
+        return None
+
+    if not bool(shadow_api.enabled):
+        return None
+
+    scheme = "https" if bool(shadow_api.tls) else "http"
+    base_url = f"{scheme}://{shadow_api.host}:{shadow_api.port}"
+    return _ShadowTelemetryHttpSnapshotStore(base_url=base_url)
+
 
 # FSMP-REFACTOR-T03-B: Separate debug and production APIs
 # Debug endpoints only available when TRADING_ENV != 'production'
@@ -58,7 +139,8 @@ else:
                     except Exception as e:
                         # Fail-open for observability
                         import logging
-                        logging.getLogger(__name__).warning(f"Failed to update hybrid coherence metrics: {e}")
+                        logging.getLogger(__name__).warning(
+                            f"Failed to update hybrid coherence metrics: {e}")
 
                     txt = generate_latest().decode("utf-8", "replace")
 
@@ -142,7 +224,8 @@ else:
         except Exception as e:
             # Fail-open for observability: log but don't crash
             import logging
-            logging.getLogger(__name__).warning(f"Failed to update hybrid coherence metrics: {e}")
+            logging.getLogger(__name__).warning(
+                f"Failed to update hybrid coherence metrics: {e}")
         data = generate_latest()  # default REGISTRY
         from fastapi import Response
 
@@ -234,7 +317,8 @@ else:
                             "emit_tidy_event": True,
                         }
                     else:
-                        data["guardian"] = {"note": "guardian metrics not available"}
+                        data["guardian"] = {
+                            "note": "guardian metrics not available"}
                 except Exception:
                     data["guardian"] = {"note": "guardian metrics error"}
         except Exception:
@@ -245,3 +329,92 @@ else:
         return JSONResponse(data)
 
     print("INFO: Debug API endpoints are DISABLED (production mode)")
+
+
+def _trading_read_models() -> TradingReadModelService:
+    project_root = Path(__file__).resolve().parents[3]
+    execution_position = None
+    try:
+        from apps.reference.main import execution_position as runtime_execution_position  # type: ignore
+        execution_position = runtime_execution_position
+    except Exception:
+        execution_position = None
+    return TradingReadModelService(
+        project_root=project_root,
+        snapshot_store=_shadow_telemetry_snapshot_store(),
+        execution_position=execution_position,
+    )
+
+
+def _register_trading_read_model_routes() -> None:
+    existing_paths = {getattr(route, "path", None)
+                      for route in getattr(app, "routes", [])}
+    if "/api/trading/positions/active" in existing_paths:
+        return
+
+    @app.get("/api/trading/context/latest")
+    def trading_context_latest(symbol: str, tf_sec: int = 300):
+        try:
+            return _trading_read_models().get_context_latest(symbol=symbol, tf_sec=tf_sec)
+        except TradingReadModelUnavailableError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=503, detail=str(exc))
+
+    @app.get("/api/trading/context/history")
+    def trading_context_history(symbol: str, tf_sec: int = 300, limit: int = 50):
+        return _trading_read_models().get_context_history(symbol=symbol, tf_sec=tf_sec, limit=limit)
+
+    @app.get("/api/trading/positions/active")
+    def trading_positions_active():
+        try:
+            return {"items": _trading_read_models().get_active_positions(allow_degraded=True)}
+        except TradingReadModelUnavailableError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=503, detail=str(exc))
+
+    @app.get("/api/trading/positions/{lifecycle_id}")
+    def trading_position_detail(lifecycle_id: str):
+        item = _trading_read_models().get_position(lifecycle_id)
+        if item is None:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=404, detail="lifecycle_id not found")
+        return item
+
+    @app.get("/api/trading/positions/{lifecycle_id}/brackets")
+    def trading_position_brackets(lifecycle_id: str):
+        item = _trading_read_models().get_bracket_state(lifecycle_id)
+        if item is None:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=404, detail="lifecycle_id not found")
+        return item
+
+    @app.get("/api/trading/rejections/recent")
+    def trading_recent_rejections(limit: int = 20):
+        try:
+            return {"items": _trading_read_models().get_recent_rejections(limit=limit)}
+        except TradingReadModelUnavailableError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=503, detail=str(exc))
+
+    @app.get("/api/trading/decisions/recent")
+    def trading_recent_decisions(limit: int = 20):
+        return {"items": _trading_read_models().get_recent_decisions(limit=limit)}
+
+    @app.get("/api/trading/market/overview")
+    def trading_market_overview(symbols: Optional[str] = None, tf_sec: int = 300):
+        symbol_list = [part.strip().upper() for part in str(
+            symbols or "").split(",") if part.strip()]
+        try:
+            return _trading_read_models().get_market_overview(
+                symbols=symbol_list,
+                tf_sec=tf_sec,
+                allow_degraded=True,
+            )
+        except TradingReadModelUnavailableError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=503, detail=str(exc))
+
+
+_register_trading_read_model_routes()

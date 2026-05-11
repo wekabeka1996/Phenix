@@ -115,13 +115,30 @@ decision_making:
           XRPUSDT:
             DEFAULT: 0.55
             LOW_VOLATILITY: 0.59
+      min_raw_score_by_regime:
+        DEFAULT: 0.55
+        LOW_VOLATILITY: 0.25
+      min_normalized_confidence_by_regime:
+        DEFAULT: 0.55
+        LOW_VOLATILITY: 0.25
+      min_raw_score_overrides_by_strategy_symbol:
+        aurora:
+          XRPUSDT:
+            DEFAULT: 0.55
+            LOW_VOLATILITY: 0.25
+      min_normalized_confidence_overrides_by_strategy_symbol:
+        md_amr:
+          XRPUSDT:
+            DEFAULT: 0.55
+            LOW_VOLATILITY: 0.59
     direction_confidence:
       required: true
-      allowed_sources:
-      - strategy_confidence
+      raw_signed_score_sources:
       - signal_score
       - final_score
-      - judge_confidence
+      normalized_confidence_sources:
+      - strategy_confidence
+      judge_confidence_live_producer_required: false
       missing_policy: fail_closed
     geometry:
       require_tpsl: true
@@ -624,7 +641,7 @@ shadow_telemetry:
     host: 127.0.0.1
     port: 8443
     tls: false
-    auth_mode: bearer
+    auth_mode: loopback_optional_bearer
     write:
       enabled: true
       intents_endpoint: /intents/llm/v1

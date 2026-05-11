@@ -3,9 +3,11 @@ from __future__ import annotations
 import pytest
 
 from apps.reference.domains.neocortex.contracts.decision_outcome_ledger import (
+    DecisionOutcomeStatus,
     DecisionOutcomeLedgerRow,
     DecisionOutcomeTerminalStatus,
     ExecutionOutcome,
+    LedgerRevisionStatus,
 )
 
 
@@ -35,6 +37,8 @@ def test_contract_normalizes_enforce_mode_and_deny_action() -> None:
     assert row.authority_mode == "gated"
     assert row.neocortex_action == "BLOCK"
     assert row.counterfactual_support == "supported"
+    assert row.revision_status is LedgerRevisionStatus.DECISION_TERMINAL
+    assert row.outcome_status is DecisionOutcomeStatus.NOT_APPLICABLE
 
 
 def test_contract_rejects_response_before_request() -> None:
@@ -76,6 +80,23 @@ def test_contract_accepts_explicit_matching_execution_outcome() -> None:
         )
     )
     assert row.execution_outcome is ExecutionOutcome.EXCHANGE_REJECTED
+
+
+def test_contract_derives_explicit_revision_and_outcome_status_for_unresolved_seed() -> None:
+    row = DecisionOutcomeLedgerRow(
+        **_row_kwargs(
+            terminal_status=DecisionOutcomeTerminalStatus.INVALID_FOR_DATASET,
+            dataset_visibility="diagnostics_only",
+            invalid_reason_code="OUTCOME_UNRESOLVED",
+            accepted_or_rejected="ACCEPTED",
+        )
+    )
+
+    assert row.revision_status is LedgerRevisionStatus.SEED_PENDING_OUTCOME
+    assert row.outcome_status is DecisionOutcomeStatus.UNRESOLVED_ACCEPTED
+    dumped = row.model_dump(mode="json")
+    assert dumped["revision_status"] == "SEED_PENDING_OUTCOME"
+    assert dumped["outcome_status"] == "UNRESOLVED_ACCEPTED"
 
 
 def test_contract_rejects_mismatched_execution_outcome() -> None:

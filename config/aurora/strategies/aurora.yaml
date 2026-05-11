@@ -380,8 +380,6 @@ aurora:
         target_ratio: 0.6
       position_mode: STRICT
       leverage:
-        target: 20
-        mode: ISOLATED
         max_notional_value: null
       regime_thresholds:
         TREND_UP: 0.603259
@@ -465,8 +463,6 @@ aurora:
         target_ratio: 0.5
       position_mode: STRICT
       leverage:
-        target: 20
-        mode: ISOLATED
         max_notional_value: null
       regime_thresholds:
         HIGH_VOLATILITY: 1.15
@@ -575,8 +571,6 @@ aurora:
         target_ratio: 0.6
       position_mode: STRICT
       leverage:
-        target: 35
-        mode: ISOLATED
         max_notional_value: null
       regime_thresholds:
         HIGH_VOLATILITY: 0.351595
@@ -681,8 +675,6 @@ aurora:
         target_ratio: 0.6
       position_mode: STRICT
       leverage:
-        target: 20
-        mode: ISOLATED
         max_notional_value: null
       regime_thresholds:
         HIGH_VOLATILITY: 0.18
@@ -786,8 +778,6 @@ aurora:
         target_ratio: 0.5
       position_mode: STRICT
       leverage:
-        target: 20
-        mode: ISOLATED
         max_notional_value: null
       regime_thresholds:
         HIGH_VOLATILITY: 1.35
@@ -896,8 +886,6 @@ aurora:
         target_ratio: 0.6
       position_mode: STRICT
       leverage:
-        target: 20
-        mode: ISOLATED
         max_notional_value: null
       regime_thresholds:
         HIGH_VOLATILITY: 0.18
@@ -1000,8 +988,6 @@ aurora:
         target_ratio: 0.6
       position_mode: STRICT
       leverage:
-        target: 20
-        mode: ISOLATED
         max_notional_value: null
       regime_thresholds:
         HIGH_VOLATILITY: 0.18

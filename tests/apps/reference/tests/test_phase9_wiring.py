@@ -1,4 +1,10 @@
 
+from apps.reference.config_models import (
+    AuroraConfig, DecisionConfig, ExitManagerConfig
+)
+from apps.reference.shared.decision_primitives.shields.memory_shield import MemoryShield
+from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler, ScoringResult
+import decimal
 import os
 import sys
 import unittest
@@ -14,33 +20,31 @@ sys.modules["vfoundation.obs"] = MagicMock()
 sys.modules["vfoundation.obs.domain_bridge"] = MagicMock()
 
 # Add project root to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
+sys.path.append(os.path.dirname(os.path.dirname(
+    os.path.dirname(os.path.dirname(__file__)))))
 
-from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler, ScoringResult
-from apps.reference.shared.decision_primitives.shields.memory_shield import MemoryShield
-from apps.reference.config_models import (
-    AuroraConfig, DecisionConfig, ExitManagerConfig
-)
 
 class TestPhase9Wiring(unittest.TestCase):
     def setUp(self):
         # Mock Config
         self.mock_config = MagicMock()
 
-        # Mock Instruments Config
+        # Mock Instruments Config (execution.target_leverage is the SSOT — LEV-REPOINT-QUANTIZER-2026-05-09)
+        btcusdt_mock = MagicMock(
+            step_size="0.001",
+            min_qty="0.001",
+            min_notional="5.0",
+            tick_size="0.01",
+        )
+        btcusdt_mock.execution.target_leverage = 10
         self.mock_config.instruments = {
-            "BTCUSDT": MagicMock(
-                step_size="0.001",
-                min_qty="0.001",
-                min_notional="5.0",
-                tick_size="0.01",
-            )
+            "BTCUSDT": btcusdt_mock,
         }
 
         # Mock Strategy Config
         aurora_cfg = MagicMock()
         decision_cfg = MagicMock()
-        decision_cfg.exit = ExitManagerConfig() # Valid Exit Config
+        decision_cfg.exit = ExitManagerConfig()  # Valid Exit Config
         decision_cfg.scoring_version = "quadratic"
 
         # Phase 9: Memory Shield Config
@@ -65,8 +69,8 @@ class TestPhase9Wiring(unittest.TestCase):
 
         # Instantiate Handler (with patched methods to avoid heavy init)
         with patch("apps.reference.domains.strategies.runtimes.aurora.handler.UnifiedFeatureExtractor"), \
-             patch("apps.reference.domains.strategies.runtimes.aurora.handler.ExecutionGate"), \
-             patch("apps.reference.domains.strategies.runtimes.aurora.handler.DomainConfigResolver"):
+                patch("apps.reference.domains.strategies.runtimes.aurora.handler.ExecutionGate"), \
+                patch("apps.reference.domains.strategies.runtimes.aurora.handler.DomainConfigResolver"):
             self.handler = AuroraHandler(
                 config=self.mock_config,
                 emit_fn=self.emit_fn,
@@ -77,7 +81,7 @@ class TestPhase9Wiring(unittest.TestCase):
         """Verify BUG-5: Quantizer is wired and injects payload."""
         # Setup Result
         result = ScoringResult(
-            score=0.8, # High conviction
+            score=0.8,  # High conviction
             thr_buy=0.5,
             thr_sell=-0.5,
             regime="TREND_UP",
@@ -97,7 +101,7 @@ class TestPhase9Wiring(unittest.TestCase):
         # Mock Instrument Config helper
         with patch.object(self.handler, "_get_instrument_config") as mock_get_instr:
             instr_cfg = MagicMock()
-            instr_cfg.leverage.target = 10
+            # max_notional_value still read from aurora.assets.leverage (separate surface, not this seam)
             instr_cfg.leverage.max_notional_value = decimal.Decimal("1000000")
             mock_get_instr.return_value = instr_cfg
 
@@ -125,11 +129,12 @@ class TestPhase9Wiring(unittest.TestCase):
         # Score 0.8 -> Exposure 0.8
         # Max Notional 1,000,000 -> Notional 800,000 (approx)
         # Price 50,000 -> Qty 16 (approx)
-        # Leverage 10 -> Margin 80,000
+        # Leverage 10 from instruments SSOT (execution.target_leverage) -> Margin 80,000
 
         qty = decimal.Decimal(q["qty"])
         self.assertTrue(qty > 0)
-        self.assertEqual(q["qty"], "15.984") # 800k * 0.999 (fee buffer) / 50000 = 15.984
+        # 800k * 0.999 (fee buffer) / 50000 = 15.984
+        self.assertEqual(q["qty"], "15.984")
 
     def test_memory_shield_recording(self):
         """Verify BUG-2: MemoryShield.record_visit is called idempotently."""
@@ -158,6 +163,7 @@ class TestPhase9Wiring(unittest.TestCase):
         call_args = self.handler._memory_shield.record_visit.call_args
         self.assertEqual(call_args.kwargs["state_hash"], "hash_xyz_789")
         self.assertEqual(call_args.kwargs["now_ts"], 1700000000)
+
 
 if __name__ == "__main__":
     unittest.main()

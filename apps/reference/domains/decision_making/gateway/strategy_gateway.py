@@ -26,6 +26,15 @@ from apps.reference.domains.decision_making.contracts.schemas_decision_blocked i
 from apps.reference.domains.decision_making.core.context import create_decision_context
 from apps.reference.domains.decision_making.intent.truth_artifacts import write_decision_blocked
 from apps.reference.shared.decision_primitives.entry_plan import resolve_strategy_entry_prices
+from apps.reference.shared.decision_primitives.score_lineage import (
+    LIVE_SCORE_LINEAGE_PATH,
+    LOW_VOL_DIRECTION_CONFIDENCE_THRESHOLD_FAMILY,
+    SHADOW_ONLY,
+    build_score_lineage_payload,
+    build_score_lineage_record,
+    extract_score_lineage_records,
+    find_score_lineage_record,
+)
 from apps.reference.shared.decision_primitives.tpsl_owner import resolve_gateway_tpsl_owner_ctx
 from apps.reference.domains.decision_making.gateway.protocol import GateContext, GateOutcome
 from apps.reference.domains.decision_making.gateway.chain import GateChain
@@ -1379,9 +1388,11 @@ class StrategyGateway:
                     return float(dec)
 
                 raw_signal_score = _obs_float(scoring.get("score"))
+                decision_score_value = _obs_float(scoring.get("decision_score"))
                 final_score_raw = _obs_float(
                     scoring.get("decision_score", scoring.get("score"))
                 )
+                final_score_value = raw_signal_score
                 active_threshold = _obs_float(
                     scoring.get("thr_buy") if side == "BUY" else scoring.get(
                         "thr_sell")
@@ -1425,6 +1436,10 @@ class StrategyGateway:
                     strategy_trace_payload["signal_score"] = raw_signal_score
                     strategy_trace_payload["signal_score_abs"] = abs(
                         raw_signal_score)
+                if decision_score_value is not None:
+                    strategy_trace_payload["decision_score"] = decision_score_value
+                if final_score_value is not None:
+                    strategy_trace_payload["final_score"] = final_score_value
                 if final_score_raw is not None:
                     strategy_trace_payload["final_score_raw"] = final_score_raw
                 if active_threshold is not None:
@@ -1445,6 +1460,64 @@ class StrategyGateway:
                 if pld.get("cycle_key") is not None:
                     strategy_trace_payload["cycle_key"] = pld.get("cycle_key")
 
+                upstream_score_lineage = extract_score_lineage_records(scoring)
+                strategy_lineage_records = [dict(record)
+                                            for record in upstream_score_lineage]
+                upstream_score_record = find_score_lineage_record(scoring, "score")
+                upstream_decision_score_record = find_score_lineage_record(
+                    scoring, "decision_score")
+                score_scale = str(upstream_score_record.get("scale")) if upstream_score_record is not None else None
+                score_alias_for = (
+                    str(upstream_score_record.get("compatibility_alias_for"))
+                    if upstream_score_record is not None and upstream_score_record.get("compatibility_alias_for") is not None
+                    else "score"
+                )
+                if raw_signal_score is not None:
+                    strategy_lineage_records.append(
+                        build_score_lineage_record(
+                            field="signal_score",
+                            value=raw_signal_score,
+                            producer="StrategyGateway strategy_trace assembly",
+                            consumer_stage="strategy_gateway.strategy_trace",
+                            scale=score_scale,
+                            compatibility_alias_for=score_alias_for,
+                            post_objective_override=bool(
+                                upstream_score_record.get("post_objective_override")
+                            ) if upstream_score_record is not None else False,
+                        )
+                    )
+                if final_score_raw is not None:
+                    decision_scale = (
+                        str(upstream_decision_score_record.get("scale"))
+                        if upstream_decision_score_record is not None
+                        else None
+                    )
+                    strategy_lineage_records.append(
+                        build_score_lineage_record(
+                            field="final_score_raw",
+                            value=final_score_raw,
+                            producer="StrategyGateway strategy_trace assembly",
+                            consumer_stage="strategy_gateway.strategy_trace",
+                            scale=decision_scale,
+                            compatibility_alias_for="decision_score",
+                        )
+                    )
+                if aurora_pillar_confidence_candidate is not None:
+                    strategy_lineage_records.append(
+                        build_score_lineage_record(
+                            field="aurora_pillar_confidence_candidate",
+                            value=aurora_pillar_confidence_candidate,
+                            producer="StrategyGateway strategy_trace assembly",
+                            consumer_stage="low_vol_cost_floor",
+                            threshold_family=LOW_VOL_DIRECTION_CONFIDENCE_THRESHOLD_FAMILY,
+                            live_authority_status=SHADOW_ONLY,
+                        )
+                    )
+                strategy_trace_payload["score_lineage"] = build_score_lineage_payload(
+                    strategy_lineage_records,
+                    path=LIVE_SCORE_LINEAGE_PATH,
+                )
+
                 # Additive observability only: propagate existing feature fields
                 # into strategy_trace so low_vol_cost_floor can surface causal context.
                 features_payload = pld.get("features")
@@ -1454,6 +1527,12 @@ class StrategyGateway:
                             strategy_trace_payload[obs_key] = _obs_float(
                                 features_payload.get(obs_key)
                             )
+
+                # Propagate anti_peak_observability so EVT:DECISION_TRACE_EMITTED
+                # carries the block even when vol gates are disabled.
+                _anti_peak_obs = scoring.get("anti_peak_observability")
+                if isinstance(_anti_peak_obs, dict):
+                    strategy_trace_payload["anti_peak_observability"] = dict(_anti_peak_obs)
 
             # Dispatch through facade (safety gates already ran in chain)
             dm._propose_trade_intent(

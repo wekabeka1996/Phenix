@@ -41,7 +41,7 @@ class ShadowTelemetryApiConfig(BaseModel):
     host: str = Field(...)
     port: int = Field(..., ge=1, le=65535)
     tls: bool = Field(...)
-    auth_mode: Literal["bearer"] = Field(...)
+    auth_mode: Literal["bearer", "loopback_optional_bearer"] = Field(...)
     write: ShadowTelemetryApiWriteConfig = Field(
         ...)
 

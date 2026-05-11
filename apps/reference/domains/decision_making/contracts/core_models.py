@@ -86,6 +86,10 @@ class ProcessStrategyCmd:
     # This is NOT part of the typed contract — treat as opaque provenance.
     raw: Mapping[str, Any]
 
+    # Canonical direct CMD transport for price-motion provenance.
+    # This stays shallow-read-only like the other mapped blobs.
+    price_motion: Mapping[str, Any] | None = None
+
 
 @dataclass(frozen=True, slots=True)
 class RegimeEvent:

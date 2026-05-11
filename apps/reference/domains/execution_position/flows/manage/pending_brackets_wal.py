@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from vfoundation.core.protocol import Message, truncate_why
+from vfoundation.dr import wal
 from apps.reference.core.time.clock import get_clock
 
 LOG = logging.getLogger(
@@ -69,7 +70,8 @@ class MalformedWalForensicSummary:
     malformed_count: int
     first_malformed_line: Optional[int]
     last_malformed_line: Optional[int]
-    malformed_rows: list[MalformedWalRowForensicRecord] = field(default_factory=list)
+    malformed_rows: list[MalformedWalRowForensicRecord] = field(
+        default_factory=list)
     truncated: bool = False
     max_rows_retained: int = 0
 
@@ -134,6 +136,62 @@ def _append_pending_brackets_record(record: Dict[str, Any]) -> None:
             os.fsync(handle.fileno())
 
 
+def _append_daily_wal_record(record: Dict[str, Any]) -> None:
+    entry_order_id = ""
+    payload = record.get("pld") if isinstance(record.get("pld"), dict) else {}
+    if isinstance(payload, dict):
+        entry_order_id = str(payload.get("entry_order_id") or "").strip()
+
+    daily_record = dict(record)
+    daily_record["dst"] = "observability"
+
+    try:
+        appended_hash = wal.append(daily_record)
+    except Exception as exc:
+        LOG.warning(
+            "[WAL] secondary daily append failed verb=%s entry_order_id=%s error=%s",
+            daily_record.get("verb"),
+            entry_order_id,
+            exc,
+        )
+        return
+
+    if not appended_hash:
+        LOG.warning(
+            "[WAL] secondary daily append returned no hash verb=%s entry_order_id=%s",
+            daily_record.get("verb"),
+            entry_order_id,
+        )
+
+
+def _pending_brackets_replay_key(record: Dict[str, Any]) -> Optional[tuple[Any, ...]]:
+    verb = str(record.get("verb") or "").strip()
+    payload = record.get("pld") if isinstance(record.get("pld"), dict) else {}
+
+    if verb == VERB_STORED:
+        return (
+            verb,
+            str(payload.get("entry_order_id") or "").strip(),
+            str(payload.get("symbol") or "").strip().upper(),
+            str(payload.get("side") or "").strip().upper(),
+            str(record.get("rid") or payload.get("rid") or "").strip(),
+            str(payload.get("idem_key") or "").strip(),
+            payload.get("ts_ms"),
+        )
+
+    if verb == VERB_CLEARED:
+        return (
+            verb,
+            str(payload.get("entry_order_id") or "").strip(),
+            str(payload.get("symbol") or "").strip().upper(),
+            str(payload.get("reason") or "").strip(),
+            str(record.get("rid") or payload.get("rid") or "").strip(),
+            payload.get("ts_ms"),
+        )
+
+    return None
+
+
 def scan_malformed_wal_rows(
     file_path: Path,
     *,
@@ -159,7 +217,8 @@ def scan_malformed_wal_rows(
             try:
                 text = raw_line.decode("utf-8").rstrip("\r\n")
             except UnicodeDecodeError as exc:
-                preview = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
+                preview = raw_line.decode(
+                    "utf-8", errors="replace").rstrip("\r\n")
                 malformed_count += 1
                 if first_malformed_line is None:
                     first_malformed_line = line_number
@@ -297,6 +356,7 @@ def _replay_pending_brackets_file(
     file_path: Path,
     pending: Dict[str, Dict[str, Any]],
     fail_closed_on_any_corrupt_line: bool,
+    seen_record_keys: set[tuple[Any, ...]],
 ) -> None:
     candidate_tokens = (VERB_STORED, VERB_CLEARED)
 
@@ -322,6 +382,13 @@ def _replay_pending_brackets_file(
 
             if not isinstance(record, dict):
                 continue
+
+            replay_key = _pending_brackets_replay_key(record)
+            if replay_key is not None:
+                if replay_key in seen_record_keys:
+                    continue
+                seen_record_keys.add(replay_key)
+
             _apply_pending_brackets_record(record, pending)
 
 
@@ -399,6 +466,7 @@ def write_pending_brackets_stored(
     )
 
     _append_pending_brackets_record(msg.model_dump())
+    _append_daily_wal_record(msg.model_dump())
     LOG.debug(f"[WAL] {VERB_STORED}: {entry_order_id} for {symbol}")
 
 
@@ -438,6 +506,7 @@ def write_pending_brackets_cleared(
     )
 
     _append_pending_brackets_record(msg.model_dump())
+    _append_daily_wal_record(msg.model_dump())
     LOG.debug(f"[WAL] {VERB_CLEARED}: {entry_order_id} reason={reason}")
 
 
@@ -454,6 +523,7 @@ def read_pending_brackets_from_wal() -> Dict[str, Dict[str, Any]]:
     from vfoundation.config import config
 
     pending: Dict[str, Dict[str, Any]] = {}
+    seen_record_keys: set[tuple[Any, ...]] = set()
     wal_dir = config.wal_dir
     dedicated_wal = _pending_brackets_wal_path()
 
@@ -462,6 +532,7 @@ def read_pending_brackets_from_wal() -> Dict[str, Dict[str, Any]]:
             file_path=dedicated_wal,
             pending=pending,
             fail_closed_on_any_corrupt_line=True,
+            seen_record_keys=seen_record_keys,
         )
 
     wal_pattern = str(wal_dir / "*.jsonl")
@@ -477,6 +548,7 @@ def read_pending_brackets_from_wal() -> Dict[str, Dict[str, Any]]:
                 file_path=wal_file,
                 pending=pending,
                 fail_closed_on_any_corrupt_line=False,
+                seen_record_keys=seen_record_keys,
             )
         except CriticalStartupError:
             raise

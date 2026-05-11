@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import hmac
+import ipaddress
 import logging
 import os
 import socket
@@ -27,10 +28,17 @@ from apps.reference.domains.neocortex.contracts.failure_taxonomy import (
     record_failure_outcome,
 )
 from apps.reference.domains.shadow_telemetry.contracts import (
+    CmdLlmBracketAmendV1,
     CmdLlmIntentSubmitV1,
+    CmdLlmPositionCloseV1,
     IntentAcceptedResponseV1,
+    LLMBracketAmendRequestV1,
+    LLMCloseRequestV1,
     LLMIntentRequestV1,
+    PositionActionAcceptedResponseV1,
     canonical_payload_hash,
+    compute_bracket_amend_idempotency_key,
+    compute_close_idempotency_key,
     compute_idempotency_key,
 )
 from apps.reference.domains.shadow_telemetry.ipc import (
@@ -147,9 +155,26 @@ def _reject_with_event(
 def _authorize_or_reject(
     app: FastAPI,
     request_id: str,
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials],
 ) -> str:
+    auth_mode = str(getattr(app.state, "auth_mode", "bearer") or "bearer").strip().lower()
+    source_host = request.client.host if request.client is not None else ""
+
+    def _is_loopback_host(host: str) -> bool:
+        host_s = str(host or "").strip().lower()
+        if host_s in {"127.0.0.1", "::1", "localhost"}:
+            return True
+        try:
+            return ipaddress.ip_address(host_s).is_loopback
+        except ValueError:
+            return False
+
+    allow_loopback_noauth = auth_mode == "loopback_optional_bearer" and _is_loopback_host(source_host)
+
     if credentials is None:
+        if allow_loopback_noauth:
+            return "loopback:noauth"
         _reject_with_event(
             app,
             request_id,
@@ -289,6 +314,7 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
     app.state.state_lock = threading.Lock()
     app.state.idempotency_records = {}  # key -> {payload_hash, response, ts_ms}
     app.state.intent_status = {}  # intent_id -> status payload
+    app.state.position_action_status = {}  # action_id -> status payload
     app.state.rate_buckets = defaultdict(deque)  # subject -> deque[float(sec)]
     app.state.last_accept_ts_ms = {}  # symbol -> ts_ms
     # symbol -> deque[(ts_ms, intent_id)]
@@ -317,6 +343,7 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
     app.state.rate_limit_per_min = int(write_cfg.rate_limit_per_min)
     app.state.require_snapshot_ref = bool(write_cfg.require_snapshot_ref)
     app.state.max_body_kb = int(write_cfg.max_body_kb)
+    app.state.auth_mode = str(shadow_cfg.api.auth_mode or "bearer")
     app.state.auth_tokens = _load_bearer_tokens()
 
     @app.on_event("startup")
@@ -355,7 +382,7 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
         )
         app.state.command_client.start()
 
-        if bool(write_cfg.enabled) and not app.state.auth_tokens:
+        if bool(write_cfg.enabled) and app.state.auth_mode == "bearer" and not app.state.auth_tokens:
             raise RuntimeError(
                 "shadow_telemetry.api.write.enabled=true, but no bearer tokens configured "
                 "(set SHADOW_TELEMETRY_BEARER_TOKEN or SHADOW_TELEMETRY_BEARER_TOKENS)"
@@ -488,7 +515,7 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
 
         request_id = str(request.headers.get(
             "x-request-id") or f"req-{uuid.uuid4()}")
-        auth_subject = _authorize_or_reject(app, request_id, credentials)
+        auth_subject = _authorize_or_reject(app, request_id, request, credentials)
         now_ms = _now_ms()
 
         content_len_raw = request.headers.get("content-length")
@@ -869,6 +896,276 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
             429: {"description": "Rate limit / policy throttle"},
             503: {"description": "IPC unavailable or fail-closed"},
         },
+        tags=["shadow-telemetry"],
+    )
+
+    async def post_position_close(
+        lifecycle_id: str,
+        payload: LLMCloseRequestV1,
+        request: Request,
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
+    ) -> JSONResponse:
+        request_id = str(request.headers.get("x-request-id") or f"req-{uuid.uuid4()}")
+        now_ms = _now_ms()
+        _cleanup_runtime_state(app, now_ms)
+        auth_subject = _authorize_or_reject(app, request_id, request, credentials)
+
+        if str(lifecycle_id).strip() != str(payload.lifecycle_id).strip():
+            _reject_with_event(
+                app,
+                request_id,
+                http_status=status.HTTP_400_BAD_REQUEST,
+                reason_code="LIFECYCLE_ID_MISMATCH",
+                reason="path lifecycle_id must match payload lifecycle_id",
+                symbol=payload.symbol,
+            )
+
+        symbol = str(payload.symbol).upper()
+        llm_symbols = set(str(s).upper() for s in (app.state.symbols_llm or []) if str(s).strip())
+        if llm_symbols and symbol not in llm_symbols:
+            _reject_with_event(
+                app,
+                request_id,
+                http_status=status.HTTP_403_FORBIDDEN,
+                reason_code="SYMBOL_NOT_OWNED_BY_LLM",
+                reason="symbol not owned by llm_microstructure",
+                symbol=symbol,
+                idempotency_key=payload.idempotency_key,
+            )
+
+        allowed_symbols = _effective_symbol_allowlist(app)
+        if allowed_symbols and symbol not in allowed_symbols:
+            _reject_with_event(
+                app,
+                request_id,
+                http_status=status.HTTP_403_FORBIDDEN,
+                reason_code="SYMBOL_NOT_ALLOWED",
+                reason="symbol not in allowlist",
+                symbol=symbol,
+                idempotency_key=payload.idempotency_key,
+            )
+
+        idempotency_key = payload.idempotency_key or compute_close_idempotency_key(payload)
+        payload_hash = canonical_payload_hash(payload.model_dump(mode="json"))
+        with app.state.state_lock:
+            rec = app.state.idempotency_records.get(idempotency_key)
+            if rec is not None:
+                if rec["payload_hash"] == payload_hash:
+                    return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=dict(rec["response"]))
+                _reject_with_event(
+                    app,
+                    request_id,
+                    http_status=status.HTTP_409_CONFLICT,
+                    reason_code="IDEMPOTENCY_CONFLICT",
+                    reason="same idempotency_key used with different payload",
+                    symbol=symbol,
+                    idempotency_key=idempotency_key,
+                )
+
+        cmd = CmdLlmPositionCloseV1.model_validate(
+            {
+                **payload.model_dump(mode="json"),
+                "request_id": request_id,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        _emit_audit_event(
+            app,
+            "EVT:LLM_CLOSE_RECEIVED_V1",
+            {
+                "action_id": cmd.action_id,
+                "request_id": request_id,
+                "auth_subject": auth_subject,
+                "source_ip": request.client.host if request.client is not None else None,
+                "ts_ms": now_ms,
+                "symbol": cmd.symbol,
+                "lifecycle_id": cmd.lifecycle_id,
+                "reason": truncate_why(str(cmd.reason), 80),
+            },
+            "llm_close_received",
+        )
+
+        ipc_endpoint = str(app.state.shadow_cfg.egress_to_main.ipc_commands_endpoint)
+        if not _probe_ipc_endpoint(ipc_endpoint):
+            _reject_with_event(
+                app,
+                request_id,
+                http_status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                reason_code="IPC_UNAVAILABLE",
+                reason=f"main ingress endpoint is unavailable: {ipc_endpoint}",
+                symbol=cmd.symbol,
+                idempotency_key=cmd.idempotency_key,
+            )
+        ok = bool(app.state.command_client.enqueue(cmd.model_dump(mode="json")))
+        if not ok:
+            _reject_with_event(
+                app,
+                request_id,
+                http_status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                reason_code="IPC_QUEUE_FULL",
+                reason="failed to enqueue close command to main ingress",
+                symbol=cmd.symbol,
+                idempotency_key=cmd.idempotency_key,
+            )
+
+        response_obj = PositionActionAcceptedResponseV1(
+            action_id=cmd.action_id,
+            request_id=request_id,
+            lifecycle_id=cmd.lifecycle_id,
+            action="close_position",
+            state="queued",
+        )
+        response_payload = response_obj.model_dump(mode="json")
+        with app.state.state_lock:
+            app.state.idempotency_records[idempotency_key] = {
+                "payload_hash": payload_hash,
+                "response": response_payload,
+                "ts_ms": now_ms,
+            }
+            app.state.position_action_status[str(cmd.action_id)] = response_payload
+        return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=response_payload)
+
+    async def patch_position_brackets(
+        lifecycle_id: str,
+        payload: LLMBracketAmendRequestV1,
+        request: Request,
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
+    ) -> JSONResponse:
+        request_id = str(request.headers.get("x-request-id") or f"req-{uuid.uuid4()}")
+        now_ms = _now_ms()
+        _cleanup_runtime_state(app, now_ms)
+        auth_subject = _authorize_or_reject(app, request_id, request, credentials)
+
+        if str(lifecycle_id).strip() != str(payload.lifecycle_id).strip():
+            _reject_with_event(
+                app,
+                request_id,
+                http_status=status.HTTP_400_BAD_REQUEST,
+                reason_code="LIFECYCLE_ID_MISMATCH",
+                reason="path lifecycle_id must match payload lifecycle_id",
+                symbol=payload.symbol,
+            )
+
+        symbol = str(payload.symbol).upper()
+        llm_symbols = set(str(s).upper() for s in (app.state.symbols_llm or []) if str(s).strip())
+        if llm_symbols and symbol not in llm_symbols:
+            _reject_with_event(
+                app,
+                request_id,
+                http_status=status.HTTP_403_FORBIDDEN,
+                reason_code="SYMBOL_NOT_OWNED_BY_LLM",
+                reason="symbol not owned by llm_microstructure",
+                symbol=symbol,
+                idempotency_key=payload.idempotency_key,
+            )
+
+        allowed_symbols = _effective_symbol_allowlist(app)
+        if allowed_symbols and symbol not in allowed_symbols:
+            _reject_with_event(
+                app,
+                request_id,
+                http_status=status.HTTP_403_FORBIDDEN,
+                reason_code="SYMBOL_NOT_ALLOWED",
+                reason="symbol not in allowlist",
+                symbol=symbol,
+                idempotency_key=payload.idempotency_key,
+            )
+
+        idempotency_key = payload.idempotency_key or compute_bracket_amend_idempotency_key(payload)
+        payload_hash = canonical_payload_hash(payload.model_dump(mode="json"))
+        with app.state.state_lock:
+            rec = app.state.idempotency_records.get(idempotency_key)
+            if rec is not None:
+                if rec["payload_hash"] == payload_hash:
+                    return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=dict(rec["response"]))
+                _reject_with_event(
+                    app,
+                    request_id,
+                    http_status=status.HTTP_409_CONFLICT,
+                    reason_code="IDEMPOTENCY_CONFLICT",
+                    reason="same idempotency_key used with different payload",
+                    symbol=symbol,
+                    idempotency_key=idempotency_key,
+                )
+
+        cmd = CmdLlmBracketAmendV1.model_validate(
+            {
+                **payload.model_dump(mode="json"),
+                "request_id": request_id,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        _emit_audit_event(
+            app,
+            "EVT:LLM_BRACKET_AMEND_RECEIVED_V1",
+            {
+                "action_id": cmd.action_id,
+                "request_id": request_id,
+                "auth_subject": auth_subject,
+                "source_ip": request.client.host if request.client is not None else None,
+                "ts_ms": now_ms,
+                "symbol": cmd.symbol,
+                "lifecycle_id": cmd.lifecycle_id,
+                "tp_price": cmd.brackets.tp_price,
+                "sl_price": cmd.brackets.sl_price,
+            },
+            "llm_bracket_amend_received",
+        )
+
+        ipc_endpoint = str(app.state.shadow_cfg.egress_to_main.ipc_commands_endpoint)
+        if not _probe_ipc_endpoint(ipc_endpoint):
+            _reject_with_event(
+                app,
+                request_id,
+                http_status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                reason_code="IPC_UNAVAILABLE",
+                reason=f"main ingress endpoint is unavailable: {ipc_endpoint}",
+                symbol=cmd.symbol,
+                idempotency_key=cmd.idempotency_key,
+            )
+        ok = bool(app.state.command_client.enqueue(cmd.model_dump(mode="json")))
+        if not ok:
+            _reject_with_event(
+                app,
+                request_id,
+                http_status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                reason_code="IPC_QUEUE_FULL",
+                reason="failed to enqueue bracket amend command to main ingress",
+                symbol=cmd.symbol,
+                idempotency_key=cmd.idempotency_key,
+            )
+
+        response_obj = PositionActionAcceptedResponseV1(
+            action_id=cmd.action_id,
+            request_id=request_id,
+            lifecycle_id=cmd.lifecycle_id,
+            action="amend_brackets",
+            state="queued",
+        )
+        response_payload = response_obj.model_dump(mode="json")
+        with app.state.state_lock:
+            app.state.idempotency_records[idempotency_key] = {
+                "payload_hash": payload_hash,
+                "response": response_payload,
+                "ts_ms": now_ms,
+            }
+            app.state.position_action_status[str(cmd.action_id)] = response_payload
+        return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=response_payload)
+
+    app.add_api_route(
+        path="/positions/{lifecycle_id}/close",
+        endpoint=post_position_close,
+        methods=["POST"],
+        response_model=PositionActionAcceptedResponseV1,
+        status_code=status.HTTP_202_ACCEPTED,
+        tags=["shadow-telemetry"],
+    )
+    app.add_api_route(
+        path="/positions/{lifecycle_id}/brackets",
+        endpoint=patch_position_brackets,
+        methods=["PATCH"],
+        response_model=PositionActionAcceptedResponseV1,
+        status_code=status.HTTP_202_ACCEPTED,
         tags=["shadow-telemetry"],
     )
 

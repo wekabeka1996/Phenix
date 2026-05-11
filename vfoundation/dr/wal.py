@@ -1,11 +1,13 @@
 from __future__ import annotations
 import json
+import logging
 import os
 import time
 import hashlib
 import pathlib
 import sys
 import threading
+from dataclasses import dataclass
 from typing import Dict, Any, Optional
 from contextlib import contextmanager
 
@@ -13,27 +15,40 @@ from ..config import config
 
 # Cross-platform file locking
 if sys.platform == "win32":
+    import msvcrt
+
     LOCK_AVAILABLE = True
-    # On Windows, use a global lock instead of file-level locks
-    # due to msvcrt.locking() limitations with concurrent access
-    _GLOBAL_WAL_LOCK = threading.Lock()
     fcntl = None
 else:
     try:
         import fcntl
 
         LOCK_AVAILABLE = True
-        _GLOBAL_WAL_LOCK = None  # Not needed on Unix
     except ImportError:
         LOCK_AVAILABLE = False
-        _GLOBAL_WAL_LOCK = None
         fcntl = None  # type: ignore
 
+    msvcrt = None  # type: ignore
+
+_GLOBAL_WAL_LOCK = threading.Lock()
+
 WAL_DIR = config.wal_dir
+LOG = logging.getLogger("vfoundation.dr.wal")
 
 # Global state for performance optimization
 _last_hash: Optional[str] = None
 _last_hash_lock = threading.Lock()
+
+
+@dataclass
+class WalChainIntegrityResult:
+    """Result of daily WAL hash-chain integrity scan. Observational only."""
+
+    file_path: str
+    chain_ok: bool
+    record_count: int
+    first_bad_index: Optional[int]
+    checked_at_ms: int
 
 
 def set_wal_dir(path: pathlib.Path) -> None:
@@ -175,7 +190,8 @@ def read_by_rid(rid: str) -> tuple[list[Dict[str, Any]], list[str], bool]:
         before_len = len(why_chain)
 
         pld = record.get("pld") if isinstance(record.get("pld"), dict) else {}
-        _extend_chain(pld.get("why"))        # DecisionMaking trade_intent payloads
+        # DecisionMaking trade_intent payloads
+        _extend_chain(pld.get("why"))
         _extend_chain(pld.get("why_chain"))  # explicit why_chain payloads
         _extend_chain(record.get("data_ref"))  # message-level audit chain
 
@@ -239,13 +255,54 @@ def _record_lock_timeout() -> None:
         _lock_metrics["lock_timeout_count"] += 1
 
 
+def _wal_append_lock_path() -> pathlib.Path:
+    WAL_DIR.mkdir(parents=True, exist_ok=True)
+    return WAL_DIR / ".wal_append.lock"
+
+
+def _ensure_lock_file_initialized(lock_handle: Any) -> None:
+    lock_handle.seek(0, os.SEEK_END)
+    if lock_handle.tell() == 0:
+        lock_handle.write(b"0")
+        lock_handle.flush()
+        os.fsync(lock_handle.fileno())
+    lock_handle.seek(0)
+
+
+def _read_tail_hash_locked(file_handle: Any) -> str:
+    file_handle.seek(0, os.SEEK_END)
+    file_size = file_handle.tell()
+    if file_size == 0:
+        return "0" * 64
+
+    file_handle.seek(0)
+    last_non_empty_line: Optional[str] = None
+    for raw_line in file_handle:
+        if raw_line.strip():
+            last_non_empty_line = raw_line
+
+    if last_non_empty_line is None:
+        raise ValueError(
+            "WAL tail is non-empty but contains no valid JSON line")
+
+    try:
+        prev_record = json.loads(last_non_empty_line)
+    except Exception as exc:
+        raise ValueError("WAL tail is malformed JSON") from exc
+
+    prev_hash = prev_record.get("_hash")
+    if not isinstance(prev_hash, str) or len(prev_hash) != 64:
+        raise ValueError("WAL tail record has missing or invalid _hash")
+
+    return prev_hash
+
+
 @contextmanager
-def _file_lock(file_handle: Any, timeout_s: float = 5.0) -> Any:
+def _append_operation_lock(timeout_s: float = 5.0) -> Any:
     """
-    Cross-platform exclusive file lock context manager.
+    Cross-platform exclusive lock for WAL append critical sections.
 
     Args:
-        file_handle: Open file handle
         timeout_s: Maximum time to wait for lock (seconds)
 
     Raises:
@@ -256,65 +313,72 @@ def _file_lock(file_handle: Any, timeout_s: float = 5.0) -> Any:
         yield
         return
 
-    # On Windows, use global threading lock instead of msvcrt.locking
-    # due to Permission denied issues with concurrent file access
-    if sys.platform == "win32" and _GLOBAL_WAL_LOCK:
-        start_time = time.time()
-        locked = _GLOBAL_WAL_LOCK.acquire(timeout=timeout_s)
+    start_time = time.time()
+    deadline = start_time + timeout_s
+    thread_locked = False
+    process_locked = False
+    lock_path = _wal_append_lock_path()
 
-        if not locked:
+    try:
+        remaining = max(0.0, deadline - time.time())
+        thread_locked = _GLOBAL_WAL_LOCK.acquire(timeout=remaining)
+        if not thread_locked:
             _record_lock_timeout()
             raise TimeoutError(
-                "Could not acquire WAL global lock within timeout")
+                "Could not acquire WAL append thread lock within timeout")
 
-        try:
+        with lock_path.open("a+b") as lock_handle:
+            _ensure_lock_file_initialized(lock_handle)
+
+            while time.time() < deadline:
+                try:
+                    if sys.platform == "win32":
+                        if msvcrt is None:
+                            raise TimeoutError(
+                                "msvcrt unavailable for WAL append lock")
+                        lock_handle.seek(0)
+                        msvcrt.locking(lock_handle.fileno(),
+                                       msvcrt.LK_NBLCK, 1)
+                    else:
+                        if not fcntl:
+                            raise TimeoutError(
+                                "fcntl unavailable for WAL append lock")
+                        # type: ignore[arg-type]
+                        fcntl.flock(lock_handle.fileno(),
+                                    fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+                    process_locked = True
+                    break
+                except (IOError, OSError):
+                    time.sleep(0.001)
+
+            if not process_locked:
+                _record_lock_timeout()
+                raise TimeoutError(
+                    "Could not acquire WAL append process lock within timeout")
+
             wait_ms = (time.time() - start_time) * 1000
             if wait_ms > 0.1:
                 _record_lock_wait(wait_ms)
-            yield
-        finally:
-            _GLOBAL_WAL_LOCK.release()
-        return
 
-    # Unix: fcntl.flock with LOCK_EX | LOCK_NB
-    if not fcntl:
-        # fcntl not available, just proceed without locking
-        yield
-        return
-
-    start_time = time.time()
-    locked = False
-
-    try:
-        end_time = start_time + timeout_s
-        while time.time() < end_time:
             try:
-                fcntl.flock(file_handle.fileno(), fcntl.LOCK_EX |
-                            fcntl.LOCK_NB)  # type: ignore
-                locked = True
-                break
-            except (IOError, OSError):
-                time.sleep(0.001)  # 1ms retry interval
-
-        if not locked:
-            _record_lock_timeout()
-            raise TimeoutError(
-                "Could not acquire WAL file lock within timeout")
-
-        # Record lock wait time
-        wait_ms = (time.time() - start_time) * 1000
-        if wait_ms > 0.1:  # Only record if we actually waited
-            _record_lock_wait(wait_ms)
-
-        yield
+                yield
+            finally:
+                try:
+                    if process_locked:
+                        if sys.platform == "win32":
+                            lock_handle.seek(0)
+                            msvcrt.locking(lock_handle.fileno(),
+                                           msvcrt.LK_UNLCK, 1)
+                        elif fcntl:
+                            # type: ignore[arg-type]
+                            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+                except Exception:
+                    pass
 
     finally:
-        if locked:
-            try:
-                fcntl.flock(file_handle.fileno(),
-                            fcntl.LOCK_UN)  # type: ignore
-            except Exception:
-                pass  # Best effort unlock
+        if thread_locked:
+            _GLOBAL_WAL_LOCK.release()
 
 
 def _wal_file_for_today() -> pathlib.Path:
@@ -325,14 +389,15 @@ def _wal_file_for_today() -> pathlib.Path:
 
 def append(record: Dict[str, Any], lock_timeout_s: Optional[float] = None) -> Optional[str]:
     """
-    Atomically append a record to WAL with file locking.
+    Atomically append a record to WAL with thread + process-level locking.
 
     Args:
         record: Record to append
         lock_timeout_s: Maximum time to wait for file lock (uses config default if None)
 
     Returns:
-        Hash of the appended record, or None if lock timeout occurred
+        Hash of the appended record, or None if the append lock times out or
+        the current WAL tail is malformed.
     """
     if lock_timeout_s is None:
         lock_timeout_s = config.wal_lock_timeout_sec
@@ -341,39 +406,17 @@ def append(record: Dict[str, Any], lock_timeout_s: Optional[float] = None) -> Op
     path = _wal_file_for_today()
 
     try:
-        # Open file with append mode (O_APPEND for atomic writes)
-        with path.open("a+", encoding="utf-8") as f:
-            with _file_lock(f, timeout_s=lock_timeout_s):
-                # Under lock: get actual previous hash from file
-                f.seek(0, 2)  # Seek to end
-                if f.tell() == 0:
-                    # File is empty
-                    prev_hash = "0" * 64
-                else:
-                    # File has content, read last line
-                    f.seek(0)
-                    last_line = None
-                    for line in f:
-                        last_line = line
+        with _append_operation_lock(timeout_s=lock_timeout_s):
+            with path.open("a+", encoding="utf-8") as f:
+                prev_hash = _read_tail_hash_locked(f)
 
-                    if last_line:
-                        try:
-                            prev_record = json.loads(last_line)
-                            prev_hash = prev_record.get("_hash", "0" * 64)
-                        except Exception:
-                            prev_hash = "0" * 64
-                    else:
-                        prev_hash = "0" * 64
-
-                # Build new record with correct hash chain (AURORA_HARDENING_V1)
                 payload = {**record, "_prev": prev_hash}
                 record_hash = _calculate_record_hash(payload)
                 payload["_hash"] = record_hash
 
-                # Atomic append (file opened with 'a+' mode)
                 f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-                f.flush()  # Ensure data is written
-                os.fsync(f.fileno())  # Force OS to write to disk
+                f.flush()
+                os.fsync(f.fileno())
 
         # Update cache with new hash (outside lock for performance)
         with _last_hash_lock:
@@ -381,7 +424,10 @@ def append(record: Dict[str, Any], lock_timeout_s: Optional[float] = None) -> Op
 
         return record_hash
     except TimeoutError:
-        # Lock timeout - return None to indicate failure
+        return None
+    except ValueError as exc:
+        LOG.warning(
+            "[WAL] append aborted due to malformed tail path=%s error=%s", path, exc)
         return None
 
 
@@ -412,46 +458,31 @@ def append_cas(
     if expected_prev_hash is None:
         # No CAS check, just normal append
         h = append(record, lock_timeout_s=lock_timeout_s)
-        return (True, h)
+        return (h is not None, h)
 
     path = _wal_file_for_today()
 
-    with path.open("a+", encoding="utf-8") as f:
-        with _file_lock(f, timeout_s=lock_timeout_s):
-            # Read actual current tail under lock
-            f.seek(0, 2)  # Seek to end
-            if f.tell() == 0:
-                # File is empty
-                actual_prev_hash = "0" * 64
-            else:
-                # File has content, read last line
-                f.seek(0)
-                last_line = None
-                for line in f:
-                    last_line = line
+    try:
+        with _append_operation_lock(timeout_s=lock_timeout_s):
+            with path.open("a+", encoding="utf-8") as f:
+                actual_prev_hash = _read_tail_hash_locked(f)
 
-                if last_line:
-                    try:
-                        prev_record = json.loads(last_line)
-                        actual_prev_hash = prev_record.get("_hash", "0" * 64)
-                    except Exception:
-                        actual_prev_hash = "0" * 64
-                else:
-                    actual_prev_hash = "0" * 64
+                if actual_prev_hash != expected_prev_hash:
+                    return (False, None)
 
-            # CAS check
-            if actual_prev_hash != expected_prev_hash:
-                # Conflict: expected hash doesn't match actual
-                return (False, None)
+                payload = {**record, "_prev": actual_prev_hash}
+                record_hash = _calculate_record_hash(payload)
+                payload["_hash"] = record_hash
 
-            # CAS succeeded, proceed with append
-            payload = {**record, "_prev": actual_prev_hash}
-            record_hash = _calculate_record_hash(payload)
-            payload["_hash"] = record_hash
-
-            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-            f.flush()
-            os.fsync(f.fileno())
+                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+    except TimeoutError as exc:
+        raise exc
+    except ValueError as exc:
+        LOG.warning(
+            "[WAL] append_cas aborted due to malformed tail path=%s error=%s", path, exc)
+        return (False, None)
 
     # Update cache with new hash
     global _last_hash
@@ -497,6 +528,63 @@ def verify_chain(records: list[Dict[str, Any]]) -> bool:
         prev_hash = record.get("_hash", "")
 
     return True
+
+
+def check_daily_wal_integrity() -> WalChainIntegrityResult:
+    """Scan today's WAL file for hash-chain breaks. Observational only — never raises.
+
+    Returns a typed result with the first bad record index when chain_ok=False.
+    Historical chain breaks may still exist from pre-hardening multi-process
+    append races and should be logged but never block startup.
+    """
+    checked_at_ms = int(time.time() * 1000)
+    path = _wal_file_for_today()
+
+    if not path.exists():
+        return WalChainIntegrityResult(
+            file_path=str(path),
+            chain_ok=True,
+            record_count=0,
+            first_bad_index=None,
+            checked_at_ms=checked_at_ms,
+        )
+
+    records = read_all()
+
+    if not records:
+        return WalChainIntegrityResult(
+            file_path=str(path),
+            chain_ok=True,
+            record_count=0,
+            first_bad_index=None,
+            checked_at_ms=checked_at_ms,
+        )
+
+    prev_hash = "0" * 64
+    first_bad_index: Optional[int] = None
+
+    for idx, record in enumerate(records):
+        expected_prev = record.get("_prev", "")
+        if expected_prev != prev_hash:
+            first_bad_index = idx
+            break
+
+        record_for_hash = {k: v for k, v in record.items() if k != "_hash"}
+        expected_hash = _calculate_record_hash(record_for_hash)
+
+        if record.get("_hash") != expected_hash:
+            first_bad_index = idx
+            break
+
+        prev_hash = record.get("_hash", "")
+
+    return WalChainIntegrityResult(
+        file_path=str(path),
+        chain_ok=(first_bad_index is None),
+        record_count=len(records),
+        first_bad_index=first_bad_index,
+        checked_at_ms=checked_at_ms,
+    )
 
 
 def calculate_merkle_root(hashes: list[str]) -> str:

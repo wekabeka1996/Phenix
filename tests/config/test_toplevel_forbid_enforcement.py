@@ -84,7 +84,7 @@ def _valid_exposure_kwargs():
         # Removed: pending_reservation_ttl_sec (TASK-ZOMBIE-FIX)
         "post_fill_hold_ttl_sec": 5,
         # Removed: positions_stale_ttl_sec (duplicate, SSOT is domains.position_tracking)
-        "leverage_defaults": {"long": 1, "short": 1},
+        # LEV-REMOVE-DEFAULTS-2026-05-09: leverage_defaults removed (dead schema, SSOT is instruments.yaml)
         "count_pending_orders": True,
         "exclude_reduce_only": True,
     }
@@ -233,7 +233,7 @@ class TestExplicitFieldsPresent:
         assert hasattr(config, 'max_directional_ratio')
         assert hasattr(config, 'pending_ttl_sec')
         assert hasattr(config, 'post_fill_hold_ttl_sec')
-        assert hasattr(config, 'leverage_defaults')
+        # LEV-REMOVE-DEFAULTS-2026-05-09: leverage_defaults removed — was dead schema, no runtime consumers
         assert hasattr(config, 'count_pending_orders')
         assert hasattr(config, 'exclude_reduce_only')
 

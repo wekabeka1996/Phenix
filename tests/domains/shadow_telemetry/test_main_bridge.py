@@ -181,6 +181,39 @@ def _llm_cmd_payload() -> Dict[str, Any]:
     }
 
 
+def _llm_close_payload() -> Dict[str, Any]:
+    return {
+        "request_kind": "close_position",
+        "request_id": "req-close-1",
+        "action_id": "close-1",
+        "ts_ms": 1_700_000_000_100,
+        "lifecycle_id": "life-1",
+        "symbol": "BNBUSDT",
+        "reason": "guardian close",
+        "qty": "0.5",
+        "idempotency_key": "idem-close-1234",
+    }
+
+
+def _llm_bracket_amend_payload() -> Dict[str, Any]:
+    return {
+        "request_kind": "amend_brackets",
+        "request_id": "req-amend-1",
+        "action_id": "amend-1",
+        "ts_ms": 1_700_000_000_200,
+        "lifecycle_id": "life-1",
+        "symbol": "BNBUSDT",
+        "side": "BUY",
+        "entry_price": "100.0",
+        "brackets": {
+            "tp_price": "101.5",
+            "sl_price": "99.2",
+        },
+        "reason": "guardian amend",
+        "idempotency_key": "idem-amend-1234",
+    }
+
+
 def test_llm_ingress_bridge_rejects_baseline_mode(tmp_path: Path) -> None:
     cfg_dir = _copy_config_to_tmp(tmp_path)
     _configure_shadow_llm(cfg_dir, mode="baseline")
@@ -240,6 +273,60 @@ def test_llm_direct_external_open_carries_idempotency_key(tmp_path: Path) -> Non
     ext_event = next(
         event for event in fsm.emitted if event["event"] == "CMD:EXTERNAL_OPEN_REQUEST_V1")
     assert ext_event["payload"]["idempotent_key"] == "idem-key-1234"
+
+
+def test_llm_ingress_bridge_maps_close_request_to_external_close_request(tmp_path: Path) -> None:
+    cfg_dir = _copy_config_to_tmp(tmp_path)
+    _configure_shadow_llm(cfg_dir, mode="hybrid_advisory")
+    config = ConfigLoader(config_dir=cfg_dir).load_config()
+    fsm = _StubFSM()
+    register_llm_command_mapper(fsm)
+    bridge = LLMIntentIngressBridge(fsm=fsm, config=config)
+
+    bridge._on_command(_llm_close_payload())
+
+    event_names = [event["event"] for event in fsm.emitted]
+    assert "EVT:LLM_CLOSE_ACCEPTED_V1" in event_names
+    assert "CMD:LLM_POSITION_CLOSE_V1" in event_names
+    assert "CMD:EXTERNAL_POSITION_CLOSE_REQUEST_V1" in event_names
+
+    ext_event = next(
+        event for event in fsm.emitted if event["event"] == "CMD:EXTERNAL_POSITION_CLOSE_REQUEST_V1"
+    )
+    payload = ext_event["payload"]
+    assert payload["action_id"] == "close-1"
+    assert payload["lifecycle_id"] == "life-1"
+    assert payload["symbol"] == "BNBUSDT"
+    assert payload["source"] == "external_llm"
+    assert payload["idempotent_key"] == "idem-close-1234"
+
+
+def test_llm_ingress_bridge_maps_amend_request_to_external_bracket_amend_request(tmp_path: Path) -> None:
+    cfg_dir = _copy_config_to_tmp(tmp_path)
+    _configure_shadow_llm(cfg_dir, mode="hybrid_advisory")
+    config = ConfigLoader(config_dir=cfg_dir).load_config()
+    fsm = _StubFSM()
+    register_llm_command_mapper(fsm)
+    bridge = LLMIntentIngressBridge(fsm=fsm, config=config)
+
+    bridge._on_command(_llm_bracket_amend_payload())
+
+    event_names = [event["event"] for event in fsm.emitted]
+    assert "EVT:LLM_BRACKET_AMEND_ACCEPTED_V1" in event_names
+    assert "CMD:LLM_BRACKET_AMEND_V1" in event_names
+    assert "CMD:EXTERNAL_BRACKET_AMEND_REQUEST_V1" in event_names
+
+    ext_event = next(
+        event for event in fsm.emitted if event["event"] == "CMD:EXTERNAL_BRACKET_AMEND_REQUEST_V1"
+    )
+    payload = ext_event["payload"]
+    assert payload["action_id"] == "amend-1"
+    assert payload["lifecycle_id"] == "life-1"
+    assert payload["symbol"] == "BNBUSDT"
+    assert payload["side"] == "BUY"
+    assert payload["tp_price"] == "101.5"
+    assert payload["sl_price"] == "99.2"
+    assert payload["source"] == "external_llm"
 
 
 def test_queue_client_stop_accounts_for_undrained_payloads() -> None:

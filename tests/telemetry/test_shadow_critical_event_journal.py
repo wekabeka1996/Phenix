@@ -310,6 +310,20 @@ def test_loaded_runtime_config_retains_regime_detected_in_shadow_journal():
     assert "EVT:DECISION_TRACE_EMITTED" in config.observability.shadow_journal.critical_events
 
 
+def test_shadow_journal_strictly_admits_fee_aware_shadow_event_name(tmp_path):
+    config = ConfigLoader().load_config()
+    journal = ShadowCriticalEventJournal(
+        path=str(tmp_path / "journal.jsonl"),
+        critical_events=config.observability.shadow_journal.critical_events,
+    )
+
+    assert "EVT:POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE" in config.observability.shadow_journal.critical_events
+    assert journal.should_capture(
+        "EVT:POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE") is True
+    assert journal.should_capture(
+        "POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE") is False
+
+
 def test_shadow_journal_captures_low_vol_trace_events_with_decision_source_context(tmp_path):
     path = tmp_path / "journal.jsonl"
     fsm = FSMCore()

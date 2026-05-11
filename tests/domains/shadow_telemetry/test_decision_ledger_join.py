@@ -75,6 +75,42 @@ def _causal_snapshot(
     }
 
 
+def _decision_trace_payload(
+    *,
+    decision_id: str,
+    rid: str,
+    symbol: str,
+    accepted_or_rejected: str,
+    gate_chain_result: str,
+    reject_reason: str | None = None,
+) -> dict[str, object]:
+    return {
+        "rid": rid,
+        "decision_id": decision_id,
+        "cycle_key": f"ENTRY:{symbol}:300:1700000000000",
+        "symbol": symbol,
+        "side": "BUY",
+        "strategy_id": "aurora",
+        "ts": 1_700_000_001_234,
+        "event_ts_ms": 1_700_000_001_234,
+        "tf_sec": 300,
+        "bar_close_ts_ms": 1_700_000_000_000,
+        "intent_side": "LONG",
+        "lifecycle_id": f"LIFE:{decision_id}",
+        "intent_id": f"LIFE:{decision_id}",
+        "raw_score": 0.88,
+        "decision_score": 0.91,
+        "active_threshold": 0.45,
+        "score_to_threshold_ratio": 2.022222222222222,
+        "decision_surface": "aurora_quadratic",
+        "gate_chain_result": gate_chain_result,
+        "accepted_or_rejected": accepted_or_rejected,
+        "reject_reason": reject_reason,
+        "regime": "TREND_UP",
+        "regime_confidence": 0.82,
+    }
+
+
 def _make_sink(path: Path, **kwargs: Any) -> ShadowTelemetrySink:
     sink_kwargs = {
         "queue_maxsize": 8,
@@ -510,6 +546,138 @@ def test_upstream_reject_becomes_rejected_upstream(tmp_path: Path) -> None:
     assert row["terminal_status"] == "REJECTED_UPSTREAM"
     assert row["execution_outcome"] == "EXCHANGE_REJECTED"
     assert row["dataset_visibility"] == "trainable"
+
+
+def test_decision_trace_accept_seed_emits_unresolved_row_before_terminal_event(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "decision_ledger_v1.jsonl"
+    fsm = _StubFSM()
+    sink = _make_sink(
+        ledger_path,
+        pending_ttl_ms=10_000,
+        clock_ms_fn=lambda: 1_700_000_000_000,
+    )
+    sink.start()
+    sink.register(fsm)
+
+    fsm.emit(
+        "SHADOW:NEOCORTEX_DECISION_LOGGED",
+        payload={
+            "decision_id": "decision-seed-accept-1",
+            "rid": "RID-SEED-ACCEPT-1",
+            "symbol": "BTCUSDT",
+            "authority_mode": "gated",
+            "request_ts_ms": 1_700_000_000_000,
+            "response_ts_ms": 1_700_000_000_010,
+            "apply_result": "GATED_ALLOW",
+            "action": "ALLOW",
+            "fallback_reason": None,
+            "causal_state_snapshot": _causal_snapshot([0.2, 0.3]),
+            "data_quality_flags": {
+                "snapshot_missing": False,
+                "supports_counterfactual_join": True,
+                "has_nan": False,
+                "is_stale": False,
+            },
+        },
+        why="decision_logged",
+    )
+    fsm.emit(
+        "EVT:DECISION_TRACE_EMITTED",
+        payload=_decision_trace_payload(
+            decision_id="decision-seed-accept-1",
+            rid="RID-SEED-ACCEPT-1",
+            symbol="BTCUSDT",
+            accepted_or_rejected="ACCEPTED",
+            gate_chain_result="ALLOW",
+        ),
+        why="decision_trace",
+    )
+
+    assert sink.wait_until_idle(2.0)
+    sink.stop()
+
+    rows = _read_rows(ledger_path)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["terminal_status"] == "INVALID_FOR_DATASET"
+    assert row["invalid_reason_code"] == "OUTCOME_UNRESOLVED"
+    assert row["revision_status"] == "SEED_PENDING_OUTCOME"
+    assert row["outcome_status"] == "UNRESOLVED_ACCEPTED"
+    assert row["execution_outcome"] == "PENDING_TIMEOUT"
+    assert row["dataset_visibility"] == "diagnostics_only"
+    assert row["accepted_or_rejected"] == "ACCEPTED"
+    assert row["cycle_key"] == "ENTRY:BTCUSDT:300:1700000000000"
+    assert row["intent_id"] == "LIFE:decision-seed-accept-1"
+    assert row["decision_surface"] == "aurora_quadratic"
+    assert row["realized_pnl_net"] is None
+    assert row["realized_pnl_gross"] is None
+    assert row["fees"] is None
+    assert row["close_reason"] is None
+    assert row["close_ts_ms"] is None
+    assert row["close_actor"] is None
+
+
+def test_decision_trace_reject_seed_emits_vetoed_row_without_terminal_event(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "decision_ledger_v1.jsonl"
+    fsm = _StubFSM()
+    sink = _make_sink(
+        ledger_path,
+        pending_ttl_ms=10_000,
+        clock_ms_fn=lambda: 1_700_000_000_000,
+    )
+    sink.start()
+    sink.register(fsm)
+
+    fsm.emit(
+        "SHADOW:NEOCORTEX_DECISION_LOGGED",
+        payload={
+            "decision_id": "decision-seed-reject-1",
+            "rid": "RID-SEED-REJECT-1",
+            "symbol": "BTCUSDT",
+            "authority_mode": "gated",
+            "request_ts_ms": 1_700_000_000_000,
+            "response_ts_ms": 1_700_000_000_010,
+            "apply_result": "GATED_DENY",
+            "action": "BLOCK",
+            "fallback_reason": None,
+            "causal_state_snapshot": _causal_snapshot([0.2, 0.3]),
+            "data_quality_flags": {
+                "snapshot_missing": False,
+                "supports_counterfactual_join": True,
+                "has_nan": False,
+                "is_stale": False,
+            },
+        },
+        why="decision_logged",
+    )
+    fsm.emit(
+        "EVT:DECISION_TRACE_EMITTED",
+        payload=_decision_trace_payload(
+            decision_id="decision-seed-reject-1",
+            rid="RID-SEED-REJECT-1",
+            symbol="BTCUSDT",
+            accepted_or_rejected="REJECTED",
+            gate_chain_result="BLOCK",
+            reject_reason="SAFETY_GATE_DENY",
+        ),
+        why="decision_trace",
+    )
+
+    assert sink.wait_until_idle(2.0)
+    sink.stop()
+
+    rows = _read_rows(ledger_path)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["terminal_status"] == "VETOED"
+    assert row["revision_status"] == "DECISION_TERMINAL"
+    assert row["outcome_status"] == "NOT_APPLICABLE"
+    assert row["execution_outcome"] == "FSM_BLOCKED"
+    assert row["dataset_visibility"] == "trainable"
+    assert row["accepted_or_rejected"] == "REJECTED"
+    assert row["reject_reason"] == "SAFETY_GATE_DENY"
+    assert row["realized_pnl_net"] is None
+    assert row["fees"] is None
 
 
 def test_first_terminal_event_wins_and_emits_single_row(tmp_path: Path) -> None:

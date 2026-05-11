@@ -4,15 +4,25 @@ import pytest
 
 from apps.reference.adapters.binance_ws_client import BinanceWebSocketClient
 from apps.reference.domains.execution_position.state.order_index import OrderIndex
+from apps.reference.domains.execution_position.state.truth_hardening import ExecutionTruthHardening
 
 
 class _DummyFSMCore:
-    def __init__(self, order_index=None, order_guardian=None):
+    def __init__(self, order_index=None, order_guardian=None, hardening=None):
         self.order_index = order_index
         self.order_guardian = order_guardian
+        self._execution_truth_hardening = hardening
         self.emitted: list[tuple[str, dict, str]] = []
 
     def emit(self, event_name: str, payload: dict, rid: str) -> None:
+        hardening = getattr(self, "_execution_truth_hardening", None)
+        if hardening is not None and event_name == "EVT:TRADE_EXECUTED":
+            decision = hardening.evaluate_trade_executed(
+                payload,
+                order_index=self.order_index,
+            )
+            if decision.suppress:
+                return
         self.emitted.append((event_name, payload, rid))
 
 
@@ -213,3 +223,86 @@ class TestBinanceWSOrderIndexCorrelation:
         assert rows[-1]["record_kind"] == "execution_ws_terminal"
         assert rows[-1]["event_type"] == "EXECUTION_WS_BRACKET_CHILD_ORDERINDEX_MISS"
         assert rows[-1]["client_order_id"] == "unknown-algo-id"
+
+    def test_ws_duplicate_close_terminal_after_cleanup_uses_identity_cache_bridge(self, tmp_path, monkeypatch) -> None:
+        """Late duplicate CLOSE terminal updates bridge via exact fill identity after OrderIndex cleanup."""
+        monkeypatch.chdir(tmp_path)
+
+        idx = OrderIndex(ttl_sec=600)
+        idx.upsert_from_open(
+            rid="close-rid-1",
+            idempotent_key="close-idem-1",
+            clientOrderId="CLOSE-btc-1",
+            symbol="BTCUSDT",
+            side="SELL",
+            order_type="MARKET",
+            order_kind="CLOSE",
+        )
+        idx.attach_exchange_id(
+            clientOrderId="CLOSE-btc-1",
+            exchangeOrderId="9997771",
+        )
+        hardening = ExecutionTruthHardening(
+            fill_dedup_max_size=32,
+            fill_dedup_ttl_ms=60_000,
+            close_guard_ttl_ms=60_000,
+            warm_state_enabled=False,
+            warm_state_storage_path=None,
+            warm_state_max_entries=32,
+        )
+
+        fsm_core = _DummyFSMCore(order_index=idx, hardening=hardening)
+        client = BinanceWebSocketClient(
+            api_key="k",
+            base_url="http://example.invalid",
+            use_testnet=True,
+            fsm_core=fsm_core,
+        )
+
+        msg = {
+            "e": "ORDER_TRADE_UPDATE",
+            "T": 1710000124567,
+            "o": {
+                "c": "CLOSE-btc-1",
+                "i": "9997771",
+                "X": "FILLED",
+                "s": "BTCUSDT",
+                "z": "0.095",
+                "l": "0.095",
+                "S": "SELL",
+                "o": "MARKET",
+                "q": "0.095",
+                "ap": "79705.2",
+                "p": "0.0",
+                "n": "1.23",
+                "N": "USDT",
+                "rp": "-21.39",
+                "t": "trade-close-1",
+                "R": True,
+            },
+        }
+
+        client._handle_ws_message(msg)
+        assert len(fsm_core.emitted) == 1
+
+        removed = idx.expire()
+        assert removed == 1
+        assert idx.get(clientOrderId="CLOSE-btc-1") is None
+
+        client._handle_ws_message(msg)
+
+        assert len(fsm_core.emitted) == 1
+        rows = [
+            json.loads(line)
+            for line in (tmp_path / "logs" / "trade_lifecycle.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        assert rows[-1]["record_kind"] == "execution_ws_terminal"
+        assert rows[-1]["event_type"] == "EXECUTION_WS_TERMINAL_DUPLICATE_IDENTITY_CACHE_HIT"
+        assert rows[-1]["client_order_id"] == "CLOSE-btc-1"
+        assert rows[-1]["exchange_order_id"] == "9997771"
+        assert rows[-1]["terminal_correlation_source"] == "execution_truth_hardening_exact_identity"
+        assert not any(
+            row.get("event_type") == "EXECUTION_WS_BRACKET_CHILD_ORDERINDEX_MISS"
+            for row in rows
+        )

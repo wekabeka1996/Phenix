@@ -29,6 +29,9 @@ def _ensure_project_root_import_precedence() -> None:
     if PROJECT_ROOT in sys.path:
         sys.path.remove(PROJECT_ROOT)
     sys.path.insert(0, PROJECT_ROOT)
+    sema_atom_path = str(Path(PROJECT_ROOT) / "Sema_Atom")
+    if sema_atom_path not in sys.path:
+        sys.path.insert(1, sema_atom_path)
 
     tools_mod = sys.modules.get("tools")
     if tools_mod is None:

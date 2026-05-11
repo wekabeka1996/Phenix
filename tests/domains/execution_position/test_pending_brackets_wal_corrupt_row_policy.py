@@ -192,17 +192,21 @@ class TestPartialFillKeepsPendingEntryMeta:
         )
 
     def test_event_handlers_partial_fill_guards_meta_pop(self):
-        """DEF-E17: event_handlers.py must have PARTIALLY_FILLED guard before meta pop."""
+        """DEF-E17: fill bookkeeping must keep the PARTIALLY_FILLED guard before meta pop."""
         import inspect
         from apps.reference.domains.execution_position.orchestration.event_handlers import EPEventHandlers
 
-        source = inspect.getsource(EPEventHandlers.on_order_fill)
+        delegate_source = inspect.getsource(EPEventHandlers.on_order_fill)
+        source = inspect.getsource(EPEventHandlers._apply_fill_bookkeeping)
         # The guard must appear before the pop
         partial_fill_guard_pos = source.find("PARTIALLY_FILLED")
         pop_pos = source.find("_pending_entry_meta.pop")
 
+        assert "_apply_fill_bookkeeping" in delegate_source, (
+            "DEF-E17: on_order_fill must delegate to the shared fill bookkeeping path"
+        )
         assert partial_fill_guard_pos != -1, (
-            "DEF-E17: on_order_fill must contain PARTIALLY_FILLED check"
+            "DEF-E17: fill bookkeeping must contain PARTIALLY_FILLED check"
         )
         if pop_pos != -1:
             assert partial_fill_guard_pos < pop_pos, (

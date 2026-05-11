@@ -128,7 +128,6 @@
       "fields": [
         "count_pending_orders",
         "exclude_reduce_only",
-        "leverage_defaults",
         "max_directional_ratio",
         "max_equity_utilization_pct",
         "max_portfolio_fraction",
@@ -838,7 +837,6 @@
       "fields": [
         "count_pending_orders",
         "exclude_reduce_only",
-        "leverage_defaults",
         "max_directional_ratio",
         "max_equity_utilization_pct",
         "max_portfolio_fraction",

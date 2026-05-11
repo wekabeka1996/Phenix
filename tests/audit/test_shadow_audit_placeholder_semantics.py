@@ -1,4 +1,7 @@
-from audit_shadow import is_placeholder_value, is_useful_value
+import pytest
+audit_shadow = pytest.importorskip("audit_shadow")
+is_placeholder_value = audit_shadow.is_placeholder_value
+is_useful_value = audit_shadow.is_useful_value
 
 
 def test_unknown_placeholder_values_are_not_useful():

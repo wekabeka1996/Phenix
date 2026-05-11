@@ -15,21 +15,19 @@ def test_hybrid_mode_config_contract_mapping_and_credentials_present(tmp_path: P
     system_path = cfg_dir / "system.yaml"
     system = yaml.safe_load(system_path.read_text(encoding="utf-8"))
     system["trading_mode"] = "hybrid_live_data_testnet_exec"
-    system_path.write_text(yaml.safe_dump(system, sort_keys=False), encoding="utf-8")
+    system_path.write_text(yaml.safe_dump(
+        system, sort_keys=False), encoding="utf-8")
 
-    # Hybrid = live data + testnet execution, but trading.mode remains the global
-    # hybrid SSOT. Domain configuration controls the per-domain live/testnet split.
-    trading_path = cfg_dir / "trading.yaml"
-    trading = yaml.safe_load(trading_path.read_text(encoding="utf-8"))
-    trading["trading"]["mode"] = "hybrid_live_data_testnet_exec"
-    trading_path.write_text(yaml.safe_dump(trading, sort_keys=False), encoding="utf-8")
+    # T-TMODE-SSOT-2026-05-09: trading.mode must NOT be set in trading.yaml.
+    # system.yaml:trading_mode is the canonical source; loader injects trading.mode.
 
     # Ensure env placeholders resolve (tests must not rely on the user's environment).
     monkeypatch.setenv("BINANCE_TESTNET_API_KEY", "testnet_key")
     monkeypatch.setenv("BINANCE_TESTNET_API_SECRET", "testnet_secret")
     monkeypatch.setenv("BINANCE_FUTURES_API_KEY_LIVE", "live_key")
     monkeypatch.setenv("BINANCE_FUTURES_API_SECRET_LIVE", "live_secret")
-    monkeypatch.setenv("BINANCE_FUTURES_BASE_URL_LIVE", "https://fapi.binance.com")
+    monkeypatch.setenv("BINANCE_FUTURES_BASE_URL_LIVE",
+                       "https://fapi.binance.com")
 
     cfg = ConfigLoader(config_dir=cfg_dir).load_config()
 

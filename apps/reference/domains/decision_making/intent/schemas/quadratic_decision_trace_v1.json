@@ -86,6 +86,26 @@
       "type": "boolean",
       "const": true
     },
+    "price_motion_source": {
+      "type": "string",
+      "enum": [
+        "cmd_typed",
+        "cmd_raw_fallback",
+        "features",
+        "cache",
+        "missing"
+      ]
+    },
+    "price_motion_age_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "price_motion_ready": {
+      "type": "boolean"
+    },
     "compact_trace": {
       "type": "object",
       "additionalProperties": false,
@@ -194,9 +214,188 @@
         "side_why"
       ]
     },
+    "score_lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "value": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "scale": {
+                "type": "string"
+              },
+              "producer": {
+                "type": "string"
+              },
+              "consumer_stage": {
+                "type": "string"
+              },
+              "threshold_family": {
+                "type": "string"
+              },
+              "live_authority_status": {
+                "type": "string"
+              },
+              "compatibility_alias_for": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "post_objective_override": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "field",
+              "value",
+              "scale",
+              "producer",
+              "consumer_stage",
+              "threshold_family",
+              "live_authority_status",
+              "compatibility_alias_for",
+              "post_objective_override"
+            ]
+          }
+        }
+      },
+      "required": [
+        "path",
+        "records"
+      ]
+    },
     "ts_ms": {
       "type": "integer",
       "minimum": 0
+    },
+    "anti_peak_observability": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {"type": "string"},
+        "strategy_id": {"type": ["string", "null"]},
+        "symbol": {"type": ["string", "null"]},
+        "side": {"type": ["string", "null"]},
+        "tf_sec": {"type": ["integer", "null"]},
+        "motion": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {"type": ["boolean", "null"]},
+            "window_sec": {"type": ["integer", "null"]},
+            "window_sec_value_source": {"type": ["string", "null"]},
+            "motion_norm_sigma": {"type": ["number", "null"]},
+            "anti_fomo_sigma": {"type": ["number", "null"]},
+            "anti_flat_sigma": {"type": ["number", "null"]},
+            "anti_fomo_sigma_value_source": {"type": ["string", "null"]},
+            "anti_flat_sigma_value_source": {"type": ["string", "null"]},
+            "anti_fomo_triggered": {"type": ["boolean", "null"]},
+            "anti_flat_triggered": {"type": ["boolean", "null"]},
+            "motion_available": {"type": ["boolean", "null"]},
+            "missing_reason": {"type": ["string", "null"]}
+          }
+        },
+        "score_path": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "score_before_shields": {"type": ["number", "null"]},
+            "score_after_danger_zone": {"type": ["number", "null"]},
+            "score_after_context_shield": {"type": ["number", "null"]},
+            "score_after_memory_shield": {"type": ["number", "null"]},
+            "score_after_system_stress": {"type": ["number", "null"]},
+            "final_score": {"type": ["number", "null"]},
+            "signal_threshold": {"type": ["number", "null"]},
+            "would_emit_signal_before_shields": {"type": ["boolean", "null"]},
+            "would_emit_signal_after_shields": {"type": ["boolean", "null"]}
+          }
+        },
+        "danger_zone_shield": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {"type": ["boolean", "null"]},
+            "evaluated": {"type": ["boolean", "null"]},
+            "applied": {"type": ["boolean", "null"]},
+            "multiplier": {"type": ["number", "null"]},
+            "inputs": {
+              "type": ["object", "null"],
+              "additionalProperties": false,
+              "properties": {
+                "volatility_state": {"type": ["number", "null"]},
+                "spread_bps": {"type": ["number", "null"]},
+                "motion": {"type": ["number", "null"]}
+              }
+            },
+            "thresholds": {
+              "type": ["object", "null"],
+              "additionalProperties": false,
+              "properties": {
+                "vol_threshold": {"type": ["number", "null"]},
+                "spread_threshold": {"type": ["number", "null"]},
+                "motion_threshold": {"type": ["number", "null"]}
+              }
+            },
+            "missing_reason": {"type": ["string", "null"]}
+          }
+        },
+        "context_shield": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {"type": ["boolean", "null"]},
+            "evaluated": {"type": ["boolean", "null"]},
+            "applied": {"type": ["boolean", "null"]},
+            "multiplier": {"type": ["number", "null"]},
+            "regime": {"type": ["string", "null"]},
+            "regime_confidence": {"type": ["number", "null"]},
+            "regime_multiplier": {"type": ["number", "null"]},
+            "stale_multiplier_applied": {"type": ["boolean", "null"]},
+            "missing_reason": {"type": ["string", "null"]}
+          }
+        },
+        "system_stress": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {"type": ["boolean", "null"]},
+            "state": {"type": ["string", "null"]},
+            "policy": {"type": ["string", "null"]},
+            "evaluated": {"type": ["boolean", "null"]},
+            "applied": {"type": ["boolean", "null"]},
+            "multiplier": {"type": ["number", "null"]},
+            "blocked": {"type": ["boolean", "null"]},
+            "missing_reason": {"type": ["string", "null"]}
+          }
+        },
+        "classification": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "hard_blocked": {"type": ["boolean", "null"]},
+            "attenuated_below_threshold": {"type": ["boolean", "null"]},
+            "passed_after_attenuation": {"type": ["boolean", "null"]},
+            "masked_by_prior_gate": {"type": ["boolean", "null"]},
+            "block_reason": {"type": ["string", "null"]}
+          }
+        }
+      }
     }
   },
   "required": [
@@ -219,7 +418,11 @@
     "admission_mode",
     "sizing_mode",
     "quadratic_path_reached",
+    "price_motion_source",
+    "price_motion_age_ms",
+    "price_motion_ready",
     "compact_trace",
+    "score_lineage",
     "ts_ms"
   ]
 }

@@ -8,7 +8,7 @@ binance_api:
     api_secret: ${BINANCE_TESTNET_API_SECRET}
     rest_url: https://testnet.binancefuture.com
 trading:
-  mode: hybrid_live_data_testnet_exec
+  # T-TMODE-SSOT-2026-05-09: mode removed. Canonical source: system.yaml:trading_mode
   tca_prefs:
     max_slippage_pct: 0.5
     max_slippage_bps: 25
@@ -119,13 +119,7 @@ trading:
       count_pending_orders: true
       exclude_reduce_only: true
       # T3B-SSOT: post_fill_hold_ttl_sec removed — canonical path is domains.execution_position.exposure_guard.post_fill_ttl_sec
-      leverage_defaults:
-        BTCUSDT: 20
-        ETHUSDT: 20
-        SOLUSDT: 20
-        XRPUSDT: 20
-        DOGEUSDT: 20
-        __default__: 20
+      # LEV-REMOVE-DEFAULTS-2026-05-09: leverage_defaults removed. SSOT: instruments.yaml -> instruments.<SYM>.execution.target_leverage
     order_params:
       LIMIT:
         timeInForce: GTC
@@ -167,13 +161,26 @@ trading:
       portfolio_state: testnet
       market_data: live
   llm_orchestration:
-    mode: hybrid_advisory
-    llm_role: advisory
+    mode: llm_primary
+    llm_role: primary
+    authority_mode: full_auto
     require_telemetry: true
     symbols_llm:
     - 1000PEPEUSDT
     allowlist_symbols:
     - 1000PEPEUSDT
+    context_symbols:
+    - BTCUSDT
+    - ETHUSDT
+    - SOLUSDT
+    - 1000PEPEUSDT
+    fast_cycle_sec: 300
+    deep_cycle_sec: 900
+    guardian_cycle_sec: 60
+    execution_permissions:
+      allow_open: true
+      allow_close: true
+      allow_bracket_amend: true
     intent_policy:
       max_open_intents: 3
       cooldown_sec: 30

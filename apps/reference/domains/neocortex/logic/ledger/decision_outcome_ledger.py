@@ -144,6 +144,13 @@ def _normalize_authority_mode(value: object) -> str:
     return "unknown"
 
 
+def _normalize_decision_acceptance(value: object) -> Literal["ACCEPTED", "REJECTED"] | None:
+    normalized = str(value or "").strip().upper()
+    if normalized in {"ACCEPTED", "REJECTED"}:
+        return normalized
+    return None
+
+
 def _string_alias(payload: Mapping[str, object], *aliases: str) -> str | None:
     for alias in aliases:
         if alias not in payload:
@@ -219,6 +226,23 @@ def _observation_time_support(snapshot: Mapping[str, object]) -> JsonObject:
     }
 
 
+def _ensure_snapshot_observation_ts(
+    snapshot: JsonObject,
+    fallback_ts_ms: int | None,
+) -> None:
+    if fallback_ts_ms is None or fallback_ts_ms < 1:
+        return
+    for key in (
+        "event_ts_ms",
+        "decision_basis_ts_ms",
+        "decision_basis_ts",
+        "feature_event_ts_ms",
+    ):
+        if _safe_int(snapshot.get(key)) is not None:
+            return
+    snapshot["decision_basis_ts_ms"] = fallback_ts_ms
+
+
 @dataclass(slots=True)
 class _PendingDecision:
     decision_id: str
@@ -238,6 +262,28 @@ class _PendingDecision:
     downstream_rid: str | None = None
     lifecycle_id: str | None = None
     trade_id: str | None = None
+    cycle_key: str | None = None
+    event_ts_ms: int | None = None
+    tf_sec: int | None = None
+    bar_close_ts_ms: int | None = None
+    strategy_id: str | None = None
+    side: str | None = None
+    intent_id: str | None = None
+    accepted_or_rejected: Literal["ACCEPTED", "REJECTED"] | None = None
+    reject_reason: str | None = None
+    regime: str | None = None
+    regime_confidence: float | None = None
+    decision_surface: str | None = None
+    raw_score: float | None = None
+    decision_score: float | None = None
+    active_threshold: float | None = None
+    score_to_threshold_ratio: float | None = None
+    gate_chain_result: str | None = None
+    close_reason: str | None = None
+    close_ts_ms: int | None = None
+    close_actor: str | None = None
+    realized_pnl_gross: float | None = None
+    seed_written: bool = False
     rid_aliases: set[str] = field(default_factory=set)
     lifecycle_aliases: set[str] = field(default_factory=set)
     trade_aliases: set[str] = field(default_factory=set)
@@ -401,6 +447,8 @@ class DecisionOutcomeLedgerSink:
             "SHADOW:NEOCORTEX_DECISION_LOGGED",
             self._on_shadow_decision_logged,
         )
+        fsm.listen("EVT:DECISION_TRACE_EMITTED",
+                   self._on_decision_trace_emitted)
         fsm.listen("EVT:TRADE_INTENT_PROPOSED", self._on_trade_intent_proposed)
         fsm.listen("EVT:TRADE_EXECUTED",
                    self._make_execution_handler("EVT:TRADE_EXECUTED"))
@@ -589,6 +637,7 @@ class DecisionOutcomeLedgerSink:
         response_ts_ms = self._coerce_response_ts_ms(payload, request_ts_ms)
         raw_snapshot = payload.get("causal_state_snapshot")
         snapshot = _json_object(raw_snapshot)
+        _ensure_snapshot_observation_ts(snapshot, request_ts_ms)
         support_quality = self._build_support_quality(flags, payload, snapshot)
         stress_metrics = _json_object(snapshot.get("stress_metrics"))
 
@@ -615,6 +664,48 @@ class DecisionOutcomeLedgerSink:
         with self._lock:
             self._pending_by_decision_id[decision_id] = entry
             self._register_alias_locked(entry, rid=rid)
+
+    def _on_decision_trace_emitted(self, event: Mapping[str, object] | _EventLike | object) -> None:
+        payload = _payload_view(event)
+        decision_id = _string_alias(payload, "decision_id")
+        rid = _string_alias(payload, "rid", "corr_id")
+        symbol = _string_alias(payload, "symbol")
+        if decision_id is None or rid is None or symbol is None:
+            return
+
+        seed_row: DecisionOutcomeLedgerRow | None = None
+        with self._lock:
+            entry = self._pending_by_decision_id.get(decision_id)
+            if entry is None:
+                entry = self._create_pending_from_trace_payload(payload)
+                self._pending_by_decision_id[decision_id] = entry
+                self._register_alias_locked(entry, rid=rid)
+
+            self._update_entry_from_trace_locked(entry, payload)
+
+            if entry.seed_written:
+                return
+
+            seed_terminal = self._classify_decision_trace_seed(entry)
+            if seed_terminal is None:
+                return
+
+            terminal_status, invalid_reason_code, finalize_pending = seed_terminal
+            entry.seed_written = True
+            if finalize_pending:
+                self._remove_entry_locked(entry.decision_id)
+
+            seed_row = self._build_row(
+                entry,
+                terminal_status=terminal_status,
+                invalid_reason_code=invalid_reason_code,
+                realized_pnl_net=None,
+                fees=None,
+                joined_by=None,
+            )
+
+        if seed_row is not None:
+            self._enqueue_row(seed_row)
 
     def _on_trade_intent_proposed(self, event: Mapping[str, object] | _EventLike | object) -> None:
         payload = _payload_view(event)
@@ -722,7 +813,7 @@ class DecisionOutcomeLedgerSink:
         self._enqueue_row(row)
 
     def _coerce_request_ts_ms(self, payload: Mapping[str, object]) -> int:
-        for key in ("request_ts_ms", "decision_ts_ms", "response_ts_ms"):
+        for key in ("request_ts_ms", "decision_ts_ms", "event_ts_ms", "ts", "response_ts_ms"):
             numeric_value = _safe_int(payload.get(key))
             if numeric_value is not None:
                 return numeric_value
@@ -733,11 +824,153 @@ class DecisionOutcomeLedgerSink:
         payload: Mapping[str, object],
         request_ts_ms: int,
     ) -> int:
-        for key in ("response_ts_ms", "decision_ts_ms", "request_ts_ms"):
+        for key in ("response_ts_ms", "decision_ts_ms", "event_ts_ms", "ts", "request_ts_ms"):
             numeric_value = _safe_int(payload.get(key))
             if numeric_value is not None:
                 return max(numeric_value, request_ts_ms)
         return request_ts_ms
+
+    def _create_pending_from_trace_payload(
+        self,
+        payload: Mapping[str, object],
+    ) -> _PendingDecision:
+        decision_id = _string_alias(payload, "decision_id") or ""
+        rid = _string_alias(payload, "rid", "corr_id") or ""
+        symbol = (_string_alias(payload, "symbol") or "").upper()
+        raw_flags = payload.get("data_quality_flags")
+        flags = _json_object(raw_flags)
+        request_ts_ms = self._coerce_request_ts_ms(payload)
+        response_ts_ms = self._coerce_response_ts_ms(payload, request_ts_ms)
+        raw_snapshot = payload.get("causal_state_snapshot")
+        snapshot = _json_object(raw_snapshot)
+        _ensure_snapshot_observation_ts(snapshot, request_ts_ms)
+        support_quality = self._build_support_quality(flags, payload, snapshot)
+        stress_metrics = _json_object(snapshot.get("stress_metrics"))
+
+        gate_result = _string_alias(
+            payload, "gate_chain_result", "gate_outcome", "action")
+        acceptance = _normalize_decision_acceptance(
+            payload.get("accepted_or_rejected"))
+        if gate_result is None and acceptance == "ACCEPTED":
+            gate_result = "ALLOW"
+        elif gate_result is None and acceptance == "REJECTED":
+            gate_result = "BLOCK"
+
+        return _PendingDecision(
+            decision_id=decision_id,
+            rid=rid,
+            symbol=symbol,
+            authority_mode=self._resolve_authority_mode(payload, flags),
+            request_ts_ms=request_ts_ms,
+            response_ts_ms=response_ts_ms,
+            apply_result=_string_alias(payload, "apply_result"),
+            fallback_reason=_string_alias(payload, "fallback_reason"),
+            causal_state_snapshot=snapshot,
+            neocortex_action=_normalize_action(gate_result),
+            data_quality_flags=flags,
+            stress_metrics=stress_metrics,
+            support_quality=support_quality,
+            expires_at_ms=response_ts_ms + self._pending_ttl_ms,
+        )
+
+    def _update_entry_from_trace_locked(
+        self,
+        entry: _PendingDecision,
+        payload: Mapping[str, object],
+    ) -> None:
+        lifecycle_id = _string_alias(
+            payload,
+            "lifecycle_id",
+            "intent_id",
+            "idempotent_key",
+            "reservation_id",
+        )
+        self._register_alias_locked(
+            entry,
+            rid=_string_alias(payload, "rid", "corr_id"),
+            lifecycle_id=lifecycle_id,
+            trade_id=_string_alias(payload, "trade_id", "tradeId"),
+        )
+
+        event_ts_ms = _safe_int(payload.get(
+            "event_ts_ms") or payload.get("ts"))
+        if event_ts_ms is not None:
+            entry.event_ts_ms = event_ts_ms
+            entry.response_ts_ms = max(entry.response_ts_ms, event_ts_ms)
+            entry.expires_at_ms = entry.response_ts_ms + self._pending_ttl_ms
+            if _safe_int(entry.causal_state_snapshot.get("decision_basis_ts_ms")) is None:
+                entry.causal_state_snapshot["decision_basis_ts_ms"] = event_ts_ms
+            entry.support_quality.update(
+                _observation_time_support(entry.causal_state_snapshot)
+            )
+
+        entry.cycle_key = _string_alias(
+            payload, "cycle_key") or entry.cycle_key
+        entry.tf_sec = _safe_int(payload.get("tf_sec")) or entry.tf_sec
+        entry.bar_close_ts_ms = _safe_int(payload.get(
+            "bar_close_ts_ms")) or entry.bar_close_ts_ms
+        entry.strategy_id = _string_alias(
+            payload, "strategy_id") or entry.strategy_id
+        entry.side = _string_alias(
+            payload, "side", "intent_side") or entry.side
+        entry.intent_id = _string_alias(
+            payload, "intent_id", "lifecycle_id", "idempotent_key") or entry.intent_id
+        entry.regime = _string_alias(payload, "regime") or entry.regime
+        entry.decision_surface = _string_alias(
+            payload, "decision_surface") or entry.decision_surface
+        entry.gate_chain_result = _string_alias(
+            payload, "gate_chain_result", "gate_outcome") or entry.gate_chain_result
+        entry.reject_reason = _string_alias(
+            payload, "reject_reason", "deny_reason") or entry.reject_reason
+
+        accepted_or_rejected = _normalize_decision_acceptance(
+            payload.get("accepted_or_rejected"))
+        if accepted_or_rejected is None:
+            gate_result = _string_alias(
+                payload, "gate_chain_result", "gate_outcome")
+            if gate_result == "ALLOW":
+                accepted_or_rejected = "ACCEPTED"
+            elif gate_result:
+                accepted_or_rejected = "REJECTED"
+        if accepted_or_rejected is not None:
+            entry.accepted_or_rejected = accepted_or_rejected
+            if accepted_or_rejected == "ACCEPTED":
+                entry.neocortex_action = "ALLOW"
+            elif accepted_or_rejected == "REJECTED":
+                entry.neocortex_action = "BLOCK"
+
+        regime_confidence = _safe_float(payload.get("regime_confidence"))
+        if regime_confidence is not None:
+            entry.regime_confidence = regime_confidence
+
+        raw_score = _safe_float(payload.get("raw_score"))
+        if raw_score is not None:
+            entry.raw_score = raw_score
+        decision_score = _safe_float(payload.get("decision_score"))
+        if decision_score is not None:
+            entry.decision_score = decision_score
+        active_threshold = _safe_float(payload.get("active_threshold"))
+        if active_threshold is not None:
+            entry.active_threshold = active_threshold
+        ratio = _safe_float(payload.get("score_to_threshold_ratio"))
+        if ratio is not None:
+            entry.score_to_threshold_ratio = ratio
+
+        entry.data_quality_flags["seeded_from_decision_trace"] = True
+
+    def _classify_decision_trace_seed(
+        self,
+        entry: _PendingDecision,
+    ) -> tuple[DecisionOutcomeTerminalStatus, str | None, bool] | None:
+        if entry.accepted_or_rejected == "REJECTED":
+            return DecisionOutcomeTerminalStatus.VETOED, None, True
+        if entry.accepted_or_rejected == "ACCEPTED":
+            return (
+                DecisionOutcomeTerminalStatus.INVALID_FOR_DATASET,
+                "OUTCOME_UNRESOLVED",
+                False,
+            )
+        return None
 
     def _resolve_authority_mode(
         self,
@@ -882,6 +1115,35 @@ class DecisionOutcomeLedgerSink:
             normalized_trade_id = trade_id.strip()
             if normalized_trade_id and entry.trade_id is None:
                 entry.trade_id = normalized_trade_id
+
+        metadata = payload.get("metadata")
+        metadata_payload = dict(metadata) if isinstance(
+            metadata, Mapping) else {}
+        if event_name == "EVT:POSITION_CLOSED":
+            close_reason = _string_alias(payload, "close_reason", "why") or _string_alias(
+                metadata_payload, "close_reason"
+            )
+            if close_reason is not None:
+                entry.close_reason = close_reason
+            close_ts_ms = _safe_int(
+                payload.get("close_ts_ms")
+                or payload.get("timestamp")
+                or payload.get("ts_ms")
+                or payload.get("ts")
+            )
+            if close_ts_ms is not None:
+                entry.close_ts_ms = close_ts_ms
+            close_actor = _string_alias(
+                payload, "close_actor", "actor", "source")
+            if close_actor is not None:
+                entry.close_actor = close_actor
+            realized_pnl_gross = _safe_float(
+                payload.get("realized_pnl")
+                or payload.get("gross_pnl")
+                or metadata_payload.get("realized_pnl")
+            )
+            if realized_pnl_gross is not None:
+                entry.realized_pnl_gross = realized_pnl_gross
 
         if event_name != "EVT:POSITION_CLOSED":
             return None, None
@@ -1029,6 +1291,7 @@ class DecisionOutcomeLedgerSink:
         support_quality = dict(entry.support_quality)
         support_quality["joined_by"] = joined_by
         support_quality["terminal_status"] = terminal_status.value
+        support_quality["decision_acceptance"] = entry.accepted_or_rejected
         effective_invalid_reason_code = self._resolve_trainable_invalid_reason(
             entry,
             invalid_reason_code,
@@ -1054,7 +1317,28 @@ class DecisionOutcomeLedgerSink:
             downstream_rid=entry.downstream_rid,
             lifecycle_id=entry.lifecycle_id,
             trade_id=entry.trade_id,
+            cycle_key=entry.cycle_key,
+            event_ts_ms=entry.event_ts_ms,
+            tf_sec=entry.tf_sec,
+            bar_close_ts_ms=entry.bar_close_ts_ms,
+            strategy_id=entry.strategy_id,
+            side=entry.side,
+            intent_id=entry.intent_id,
+            accepted_or_rejected=entry.accepted_or_rejected,
+            reject_reason=entry.reject_reason,
+            regime=entry.regime,
+            regime_confidence=entry.regime_confidence,
+            decision_surface=entry.decision_surface,
+            raw_score=entry.raw_score,
+            decision_score=entry.decision_score,
+            active_threshold=entry.active_threshold,
+            score_to_threshold_ratio=entry.score_to_threshold_ratio,
+            gate_chain_result=entry.gate_chain_result,
             terminal_status=terminal_status,
+            close_reason=entry.close_reason,
+            close_ts_ms=entry.close_ts_ms,
+            close_actor=entry.close_actor,
+            realized_pnl_gross=entry.realized_pnl_gross,
             realized_pnl_net=realized_pnl_net,
             fees=fees,
             stress_metrics=dict(entry.stress_metrics),

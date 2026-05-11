@@ -179,6 +179,41 @@ class BinanceWebSocketClient:
             {key: value for key, value in record.items() if value is not None}
         )
 
+    def _recent_exact_terminal_fill_seen(
+        self,
+        *,
+        symbol: str,
+        client_order_id: str,
+        exchange_order_id: str,
+        trade_id: str,
+    ) -> Optional[tuple[str, str]]:
+        if self.fsm_core is None:
+            return None
+        try:
+            from apps.reference.domains.execution_position.state.truth_hardening import get_execution_truth_hardening
+
+            hardening = get_execution_truth_hardening(self.fsm_core)
+            if hardening is None:
+                return None
+            decision = hardening.peek_trade_executed(
+                {
+                    "symbol": symbol,
+                    "orderId": exchange_order_id,
+                    "exchangeOrderId": exchange_order_id,
+                    "clientOrderId": client_order_id,
+                    "client_order_id": client_order_id,
+                    "tradeId": trade_id,
+                    "trade_id": trade_id,
+                },
+                order_index=getattr(self.fsm_core, "order_index", None),
+            )
+        except Exception:
+            return None
+
+        if decision.suppress and decision.exact_identity:
+            return str(decision.key or ""), str(decision.identity_quality or "")
+        return None
+
     @staticmethod
     def _is_close_bearing_terminal_update(
         *,
@@ -418,6 +453,36 @@ class BinanceWebSocketClient:
                     order_type=order_type,
                     order_data=order_data,
                 ):
+                    duplicate_identity = self._recent_exact_terminal_fill_seen(
+                        symbol=symbol,
+                        client_order_id=client_order_id,
+                        exchange_order_id=exchange_order_id,
+                        trade_id=str(order_data.get("t", "")),
+                    )
+                    if duplicate_identity is not None:
+                        fill_key, identity_quality = duplicate_identity
+                        self._append_terminal_ws_record(
+                            event_type="EXECUTION_WS_TERMINAL_DUPLICATE_IDENTITY_CACHE_HIT",
+                            symbol=symbol,
+                            client_order_id=client_order_id,
+                            exchange_order_id=exchange_order_id,
+                            order_status=order_status,
+                            order_type=order_type,
+                            event_ts_ms=msg.get("T", int(time.time() * 1000)),
+                            context={
+                                "correlation_source": "execution_truth_hardening_exact_identity",
+                            },
+                        )
+                        logger.warning(
+                            "[BinanceWS] Late duplicate close-bearing terminal update %s/%s for %s "
+                            "matched exact prior fill identity %s (%s); dropping without OrderIndex breach.",
+                            client_order_id,
+                            exchange_order_id,
+                            symbol,
+                            fill_key,
+                            identity_quality,
+                        )
+                        return
                     self._append_terminal_ws_record(
                         event_type="EXECUTION_WS_BRACKET_CHILD_ORDERINDEX_MISS",
                         symbol=symbol,

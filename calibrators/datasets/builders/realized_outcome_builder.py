@@ -33,6 +33,17 @@ ORDER_LOG_ENTRY_KIND = "ENTRY"
 EXPECTED_DECISION_LEDGER = "logs/shadow_telemetry/decision_ledger_v1.jsonl"
 EXPECTED_ORDER_LOG = "logs/order_log_v1.jsonl"
 EXPECTED_TRADE_LIFECYCLE = "logs/trade_lifecycle.jsonl"
+REJECT_TERMINAL_STATUSES = {
+    "REJECTED",
+    "REJECTED_UPSTREAM",
+    "INVALID_REJECTED",
+}
+ALTERNATIVE_TERMINAL_EVENTS = {
+    "DECISION_INTENT_REJECTED",
+    "ORDER_CANCELLED",
+    "ORDER_REJECTED",
+    "ORDER_TIMEOUT",
+}
 
 
 @dataclass(frozen=True)
@@ -50,7 +61,27 @@ class BuilderResult:
     warnings: list[str]
     manifest: dict[str, Any]
     rejected_rows: list[dict[str, Any]]
+    accepted_unresolved_rows: list[dict[str, Any]]
     canonicalization_report: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class DenominatorCoverageStats:
+    total_decision_rows: int
+    rejected_or_not_executed_rows: int
+    execution_eligible_rows: int
+    entry_filled_rows: int
+    close_expected_rows: int
+
+
+@dataclass(frozen=True)
+class DecisionRuntimeEvidence:
+    rejected_or_not_executed: bool
+    has_entry_fill: bool
+    has_close_candidate: bool
+    has_close_fill: bool
+    has_close_submission: bool
+    has_terminal_close: bool
 
 
 def _relative_to_repo(repo_root: Path, path: Path) -> str:
@@ -192,6 +223,71 @@ def _decision_filter_ts_ms(decision: dict[str, Any]) -> Optional[int]:
     return _decision_intent_ts_ms(decision)
 
 
+def _decision_outcome_status(decision: dict[str, Any]) -> Optional[str]:
+    explicit_status = _as_text(decision.get("outcome_status"))
+    if explicit_status:
+        return explicit_status
+    invalid_reason_code = _as_text(decision.get("invalid_reason_code"))
+    terminal_status = _as_text(decision.get("terminal_status"))
+    accepted_or_rejected = _as_text(decision.get("accepted_or_rejected"))
+    if invalid_reason_code == "OUTCOME_UNRESOLVED":
+        return "UNRESOLVED_ACCEPTED"
+    if invalid_reason_code == "TERMINAL_EVENT_MISSING":
+        return "UNRESOLVED_TIMEOUT"
+    if terminal_status in {"EXECUTED_AND_CLOSED", "BASELINE_FALLBACK_EXECUTED"}:
+        return "REALIZED"
+    if terminal_status == "INVALID_FOR_DATASET" and accepted_or_rejected == "ACCEPTED":
+        return "UNRESOLVED_ACCEPTED"
+    if terminal_status:
+        return "NOT_APPLICABLE"
+    return None
+
+
+def _decision_revision_status(decision: dict[str, Any]) -> Optional[str]:
+    explicit_status = _as_text(decision.get("revision_status"))
+    if explicit_status:
+        return explicit_status
+    outcome_status = _decision_outcome_status(decision)
+    invalid_reason_code = _as_text(decision.get("invalid_reason_code"))
+    if outcome_status == "UNRESOLVED_ACCEPTED":
+        return "SEED_PENDING_OUTCOME"
+    if invalid_reason_code == "TERMINAL_EVENT_MISSING":
+        return "TIMEOUT_FINAL"
+    if outcome_status == "REALIZED":
+        return "OUTCOME_FINAL"
+    if outcome_status == "NOT_APPLICABLE":
+        return "DECISION_TERMINAL"
+    return None
+
+
+def _is_accepted_unresolved_decision(decision: dict[str, Any]) -> bool:
+    return _decision_outcome_status(decision) == "UNRESOLVED_ACCEPTED"
+
+
+def _build_accepted_unresolved_record(
+    decision_record: SourceRecord,
+) -> dict[str, Any]:
+    decision = decision_record.data
+    return {
+        "reason": "ACCEPTED_UNRESOLVED",
+        "decision_id": _as_text(decision.get("decision_id")),
+        "rid": _as_text(decision.get("rid")),
+        "lifecycle_id": _as_text(decision.get("lifecycle_id")),
+        "terminal_status": _as_text(decision.get("terminal_status")),
+        "outcome_status": _decision_outcome_status(decision),
+        "revision_status": _decision_revision_status(decision),
+        "accepted_or_rejected": _as_text(decision.get("accepted_or_rejected")),
+        "dataset_visibility": _as_text(decision.get("dataset_visibility")),
+        "invalid_reason_code": _as_text(decision.get("invalid_reason_code")),
+        "realized_pnl_net": decision.get("realized_pnl_net"),
+        "fees": decision.get("fees"),
+        "close_reason": decision.get("close_reason"),
+        "close_ts_ms": decision.get("close_ts_ms"),
+        "source_path": decision_record.source_path,
+        "line_number": decision_record.line_number,
+    }
+
+
 def _derive_outcome(close_row: dict[str, Any], gross_pnl: Optional[float], realized_pnl_net: Optional[float]) -> str:
     metric = realized_pnl_net if realized_pnl_net is not None else gross_pnl
     if metric is not None:
@@ -259,6 +355,186 @@ def _sum_floats(values: list[Optional[float]]) -> Optional[float]:
     return float(sum(parsed))
 
 
+def _coverage_pct(count: int, total: int) -> Optional[float]:
+    if total <= 0:
+        return None
+    return round((count / total) * 100.0, 4)
+
+
+def _event_type(row: dict[str, Any]) -> str:
+    return (
+        _as_text(row.get("event_type"))
+        or _as_text(row.get("status"))
+        or _as_text(row.get("event"))
+        or "UNKNOWN"
+    )
+
+
+def _order_log_is_close_fill(row: dict[str, Any]) -> bool:
+    if _event_type(row) != ORDER_LOG_FILL_EVENT:
+        return False
+    order_kind = (_as_text(row.get("order_kind")) or "").upper()
+    close_reason = _as_text(row.get("close_reason"))
+    return order_kind in {"CLOSE", "EXIT", "TP", "SL"} or close_reason is not None
+
+
+def _order_log_is_close_submitted(row: dict[str, Any]) -> bool:
+    event_type = _event_type(row)
+    if event_type not in {"ORDER_INTENT", "ORDER_PLACED"}:
+        return False
+    order_kind = (_as_text(row.get("order_kind")) or "").upper()
+    close_reason = _as_text(row.get("close_reason"))
+    rid = _as_text(row.get("rid")) or ""
+    return order_kind in {"CLOSE", "EXIT", "TP", "SL"} or close_reason is not None or rid.startswith("ppsreq:")
+
+
+def _trade_lifecycle_is_fill(row: dict[str, Any]) -> bool:
+    event_type = _event_type(row)
+    trigger_event = (_as_text(row.get("trigger_event")) or "").upper()
+    return event_type in {"EXECUTION_FILL_INGRESS", "TRADE_EXECUTED"} or trigger_event == "TRADE_EXECUTED"
+
+
+def _trade_lifecycle_is_close(row: dict[str, Any]) -> bool:
+    event_type = _event_type(row)
+    status = (_as_text(row.get("status")) or "").upper()
+    close_reason = _as_text(row.get("close_reason"))
+    return bool(
+        event_type == ORDER_LOG_CLOSE_EVENT
+        or "CLOSE" in event_type
+        or status in {"CLOSED", "EXECUTED_AND_CLOSED", "COMPLETED"}
+        or row.get("close_ts_ms") not in (None, "")
+        or (close_reason is not None and status not in REJECT_TERMINAL_STATUSES)
+    )
+
+
+def _dedupe_source_records(records: list[SourceRecord]) -> list[SourceRecord]:
+    deduped: list[SourceRecord] = []
+    seen: set[tuple[str, int]] = set()
+    for record in records:
+        key = (record.source_path, record.line_number)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(record)
+    return deduped
+
+
+def _index_record(
+    index: dict[str, list[SourceRecord]],
+    key: Optional[str],
+    record: SourceRecord,
+) -> None:
+    if key:
+        index.setdefault(key, []).append(record)
+
+
+def _collect_runtime_evidence_for_decision(
+    decision_record: SourceRecord,
+    *,
+    order_records_by_rid: dict[str, list[SourceRecord]],
+    order_records_by_lifecycle: dict[str, list[SourceRecord]],
+    order_records_by_trade: dict[str, list[SourceRecord]],
+    trade_records_by_rid: dict[str, list[SourceRecord]],
+    trade_records_by_lifecycle: dict[str, list[SourceRecord]],
+    trade_records_by_trade: dict[str, list[SourceRecord]],
+    entry_fills_by_key: dict[str, list[SourceRecord]],
+    close_candidates: list[dict[str, Any]],
+) -> DecisionRuntimeEvidence:
+    decision = decision_record.data
+    rid = _as_text(decision.get("rid")) or ""
+    lifecycle_id = _as_text(decision.get("lifecycle_id"))
+    trade_id = _as_text(decision.get("trade_id"))
+
+    order_rows = list(order_records_by_rid.get(rid, []))
+    if lifecycle_id:
+        order_rows.extend(order_records_by_lifecycle.get(lifecycle_id, []))
+    if trade_id:
+        order_rows.extend(order_records_by_trade.get(trade_id, []))
+    order_rows = _dedupe_source_records(order_rows)
+
+    trade_rows = list(trade_records_by_rid.get(rid, []))
+    if lifecycle_id:
+        trade_rows.extend(trade_records_by_lifecycle.get(lifecycle_id, []))
+    if trade_id:
+        trade_rows.extend(trade_records_by_trade.get(trade_id, []))
+    trade_rows = _dedupe_source_records(trade_rows)
+
+    entry_candidates = entry_fills_by_key.get(rid, [])
+    if not entry_candidates and lifecycle_id:
+        entry_candidates = entry_fills_by_key.get(lifecycle_id, [])
+
+    has_entry_fill = bool(entry_candidates) or any(
+        _trade_lifecycle_is_fill(record.data) for record in trade_rows
+    )
+    has_close_candidate = bool(close_candidates)
+    has_close_fill = any(_order_log_is_close_fill(record.data)
+                         for record in order_rows)
+    has_close_submission = any(
+        _order_log_is_close_submitted(record.data) for record in order_rows
+    )
+    has_terminal_close = any(
+        _trade_lifecycle_is_close(record.data) for record in trade_rows
+    )
+    has_execution_evidence = bool(
+        has_entry_fill
+        or has_close_candidate
+        or has_close_fill
+        or has_close_submission
+        or has_terminal_close
+    )
+
+    terminal_status = (_as_text(decision.get("terminal_status")) or "").upper()
+    has_reject_signal = bool(
+        terminal_status in REJECT_TERMINAL_STATUSES
+        or any(_event_type(record.data) in ALTERNATIVE_TERMINAL_EVENTS for record in order_rows)
+        or any(((_as_text(record.data.get("status")) or "").upper() in REJECT_TERMINAL_STATUSES) for record in trade_rows)
+    )
+
+    return DecisionRuntimeEvidence(
+        rejected_or_not_executed=bool(
+            has_reject_signal and not has_execution_evidence),
+        has_entry_fill=has_entry_fill,
+        has_close_candidate=has_close_candidate,
+        has_close_fill=has_close_fill,
+        has_close_submission=has_close_submission,
+        has_terminal_close=has_terminal_close,
+    )
+
+
+def _build_denominator_coverage_stats(
+    runtime_evidence_by_rid: dict[str, DecisionRuntimeEvidence],
+) -> DenominatorCoverageStats:
+    total_decision_rows = len(runtime_evidence_by_rid)
+    rejected_or_not_executed_rows = 0
+    execution_eligible_rows = 0
+    entry_filled_rows = 0
+    close_expected_rows = 0
+
+    for evidence in runtime_evidence_by_rid.values():
+        if evidence.rejected_or_not_executed:
+            rejected_or_not_executed_rows += 1
+        else:
+            execution_eligible_rows += 1
+        if evidence.has_entry_fill:
+            entry_filled_rows += 1
+        if not evidence.rejected_or_not_executed and (
+            evidence.has_entry_fill
+            or evidence.has_close_candidate
+            or evidence.has_close_fill
+            or evidence.has_close_submission
+            or evidence.has_terminal_close
+        ):
+            close_expected_rows += 1
+
+    return DenominatorCoverageStats(
+        total_decision_rows=total_decision_rows,
+        rejected_or_not_executed_rows=rejected_or_not_executed_rows,
+        execution_eligible_rows=execution_eligible_rows,
+        entry_filled_rows=entry_filled_rows,
+        close_expected_rows=close_expected_rows,
+    )
+
+
 def _aggregate_entry_fills(candidates: list[SourceRecord]) -> Optional[dict[str, Any]]:
     if not candidates:
         return None
@@ -297,7 +573,8 @@ def _build_data_quality_summary(
     *,
     valid_rows: int,
     invalid_rows: int,
-    eligible_decision_rows: int,
+    denominator_stats: DenominatorCoverageStats,
+    accepted_unresolved_rows_count: int,
     exact_identity_join_count: int,
     duplicate_close_candidates: int,
     blocker_duplicate_ambiguity_count: int,
@@ -336,17 +613,45 @@ def _build_data_quality_summary(
         has_realized_outcomes=has_realized_outcomes,
         exact_roundtrip_count=exact_roundtrip_count,
         empty_dataset_blocker="EMPTY_REALIZED_OUTCOME_DATASET",
-        eligible_input_rows=eligible_decision_rows,
+        eligible_input_rows=denominator_stats.close_expected_rows,
         matched_rows=len(rows),
-        unmatched_rows=max(eligible_decision_rows - len(rows), 0),
+        unmatched_rows=max(
+            denominator_stats.close_expected_rows - len(rows), 0),
         min_required_rows=DEFAULT_PROMOTION_MIN_REQUIRED_ROWS,
         min_required_coverage_pct=DEFAULT_PROMOTION_MIN_REQUIRED_COVERAGE_PCT,
         coverage_row_blocker="INSUFFICIENT_REALIZED_ROWS",
         coverage_pct_blocker="INSUFFICIENT_REALIZED_COVERAGE",
     )
+    close_matched_rows = len(rows)
     summary.update(
         {
             "rows_emitted": len(rows),
+            "coverage_denominator_kind": "close_expected_rows",
+            "coverage_denominator_rows": denominator_stats.close_expected_rows,
+            "total_decision_rows": denominator_stats.total_decision_rows,
+            "rejected_or_not_executed_rows": denominator_stats.rejected_or_not_executed_rows,
+            "execution_eligible_rows": denominator_stats.execution_eligible_rows,
+            "entry_filled_rows": denominator_stats.entry_filled_rows,
+            "close_expected_rows": denominator_stats.close_expected_rows,
+            "close_matched_rows": close_matched_rows,
+            "exact_roundtrip_rows": exact_roundtrip_count,
+            "decision_to_execution_rate": _coverage_pct(
+                denominator_stats.entry_filled_rows,
+                denominator_stats.total_decision_rows,
+            ),
+            "execution_to_close_coverage_pct": _coverage_pct(
+                close_matched_rows,
+                denominator_stats.close_expected_rows,
+            ),
+            "close_to_exact_roundtrip_pct": _coverage_pct(
+                exact_roundtrip_count,
+                close_matched_rows,
+            ),
+            "total_decision_to_exact_roundtrip_pct": _coverage_pct(
+                exact_roundtrip_count,
+                denominator_stats.total_decision_rows,
+            ),
+            "accepted_unresolved_rows": accepted_unresolved_rows_count,
             "has_realized_outcomes": has_realized_outcomes,
             "exact_identity_join_count": exact_identity_join_count,
             "duplicate_close_candidates": duplicate_close_candidates,
@@ -387,9 +692,23 @@ def _generate_quality_report(
         f"- rows_emitted: {summary.get('rows_emitted')}",
         f"- rows_valid: {summary.get('rows_valid')}",
         f"- rows_invalid: {summary.get('rows_invalid')}",
+        f"- coverage_denominator_kind: {summary.get('coverage_denominator_kind')}",
+        f"- coverage_denominator_rows: {summary.get('coverage_denominator_rows')}",
+        f"- total_decision_rows: {summary.get('total_decision_rows')}",
+        f"- rejected_or_not_executed_rows: {summary.get('rejected_or_not_executed_rows')}",
+        f"- execution_eligible_rows: {summary.get('execution_eligible_rows')}",
+        f"- entry_filled_rows: {summary.get('entry_filled_rows')}",
+        f"- close_expected_rows: {summary.get('close_expected_rows')}",
+        f"- close_matched_rows: {summary.get('close_matched_rows')}",
+        f"- exact_roundtrip_rows: {summary.get('exact_roundtrip_rows')}",
+        f"- decision_to_execution_rate: {summary.get('decision_to_execution_rate')}",
+        f"- execution_to_close_coverage_pct: {summary.get('execution_to_close_coverage_pct')}",
+        f"- close_to_exact_roundtrip_pct: {summary.get('close_to_exact_roundtrip_pct')}",
+        f"- total_decision_to_exact_roundtrip_pct: {summary.get('total_decision_to_exact_roundtrip_pct')}",
         f"- eligible_input_rows: {summary.get('eligible_input_rows')}",
         f"- matched_rows: {summary.get('matched_rows')}",
         f"- unmatched_rows: {summary.get('unmatched_rows')}",
+        f"- accepted_unresolved_rows: {summary.get('accepted_unresolved_rows')}",
         f"- match_coverage_pct: {summary.get('match_coverage_pct')}",
         f"- has_realized_outcomes: {summary.get('has_realized_outcomes')}",
         f"- exact_roundtrip_count: {summary.get('exact_roundtrip_count')}",
@@ -455,6 +774,50 @@ def _generate_canonicalization_report_md(report: dict[str, Any]) -> str:
                 f"- rid={group['rid']} candidate_count={group['candidate_count']} selected_join_kind={group['selected_join_kind']} ambiguous={group['ambiguous']}"
             )
     return "\n".join(lines)
+
+
+def _markdown_table(headers: list[str], rows: list[list[Any]]) -> str:
+    lines = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] * len(headers)) + " |",
+    ]
+    for row in rows:
+        lines.append("| " + " | ".join(str(value) for value in row) + " |")
+    return "\n".join(lines)
+
+
+def _generate_denominator_audit_report_md(payload: dict[str, Any]) -> str:
+    rows = [
+        ["total_decision_rows", payload.get("total_decision_rows")],
+        ["rejected_or_not_executed_rows", payload.get(
+            "rejected_or_not_executed_rows")],
+        ["execution_eligible_rows", payload.get("execution_eligible_rows")],
+        ["entry_filled_rows", payload.get("entry_filled_rows")],
+        ["close_expected_rows", payload.get("close_expected_rows")],
+        ["close_matched_rows", payload.get("close_matched_rows")],
+        ["exact_roundtrip_rows", payload.get("exact_roundtrip_rows")],
+        ["decision_to_execution_rate", payload.get(
+            "decision_to_execution_rate")],
+        ["execution_to_close_coverage_pct", payload.get(
+            "execution_to_close_coverage_pct")],
+        ["close_to_exact_roundtrip_pct", payload.get(
+            "close_to_exact_roundtrip_pct")],
+        ["total_decision_to_exact_roundtrip_pct", payload.get(
+            "total_decision_to_exact_roundtrip_pct")],
+        ["legacy_total_decision_close_coverage_pct", payload.get(
+            "legacy_total_decision_close_coverage_pct")],
+    ]
+    return "\n".join(
+        [
+            "# DENOMINATOR_AUDIT",
+            "",
+            f"Generated at UTC: {payload.get('generated_at_utc')}",
+            f"Coverage denominator kind: {payload.get('coverage_denominator_kind')}",
+            "",
+            _markdown_table(["metric", "value"], rows),
+            "",
+        ]
+    )
 
 
 def build_realized_outcome_dataset(
@@ -523,6 +886,7 @@ def build_realized_outcome_dataset(
     blockers: list[str] = []
     warnings: list[str] = []
     rejected_rows: list[dict[str, Any]] = []
+    accepted_unresolved_rows: list[dict[str, Any]] = []
     realized_rows: list[dict[str, Any]] = []
 
     date_start_value = _parse_date(date_start)
@@ -593,21 +957,33 @@ def build_realized_outcome_dataset(
             warnings.append(f"Duplicate decision rid encountered: {rid}")
             existing_ts = _decision_filter_ts_ms(existing.data) or -1
             current_ts = decision_ts_ms or -1
-            if current_ts <= existing_ts:
+            if current_ts < existing_ts:
+                continue
+            if current_ts == existing_ts and record.line_number <= existing.line_number:
                 continue
         decisions_by_rid[rid] = record
 
     if max_rows is not None and max_rows >= 0:
         decisions_by_rid = dict(list(decisions_by_rid.items())[:max_rows])
 
+    eligible_decision_rows = len(decisions_by_rid)
+
     entry_fills_by_key: dict[str, list[SourceRecord]] = {}
     close_candidates_by_rid: dict[str, list[dict[str, Any]]] = {}
+    order_records_by_rid: dict[str, list[SourceRecord]] = {}
+    order_records_by_lifecycle: dict[str, list[SourceRecord]] = {}
+    order_records_by_trade: dict[str, list[SourceRecord]] = {}
     close_rows_total = 0
     exact_rid_matches = 0
     suffix_trim_matches = 0
     eligible_close_rows = 0
     for record in order_log_records:
         row = record.data
+        _index_record(order_records_by_rid, _as_text(row.get("rid")), record)
+        _index_record(order_records_by_lifecycle, _as_text(
+            row.get("lifecycle_id")), record)
+        _index_record(order_records_by_trade, _as_text(
+            row.get("trade_id")), record)
         event_type = _as_text(row.get("event_type"))
         if event_type == ORDER_LOG_FILL_EVENT and _as_text(row.get("order_kind")) == ORDER_LOG_ENTRY_KIND:
             for key in (_as_text(row.get("lifecycle_id")), _as_text(row.get("rid"))):
@@ -642,6 +1018,34 @@ def build_realized_outcome_dataset(
             }
         )
 
+    trade_records_by_rid: dict[str, list[SourceRecord]] = {}
+    trade_records_by_lifecycle: dict[str, list[SourceRecord]] = {}
+    trade_records_by_trade: dict[str, list[SourceRecord]] = {}
+    for record in trade_lifecycle_records:
+        row = record.data
+        _index_record(trade_records_by_rid, _as_text(row.get("rid")), record)
+        _index_record(trade_records_by_lifecycle, _as_text(
+            row.get("lifecycle_id")), record)
+        _index_record(trade_records_by_trade, _as_text(
+            row.get("trade_id")), record)
+
+    runtime_evidence_by_rid = {
+        rid: _collect_runtime_evidence_for_decision(
+            decision_record,
+            order_records_by_rid=order_records_by_rid,
+            order_records_by_lifecycle=order_records_by_lifecycle,
+            order_records_by_trade=order_records_by_trade,
+            trade_records_by_rid=trade_records_by_rid,
+            trade_records_by_lifecycle=trade_records_by_lifecycle,
+            trade_records_by_trade=trade_records_by_trade,
+            entry_fills_by_key=entry_fills_by_key,
+            close_candidates=close_candidates_by_rid.get(rid, []),
+        )
+        for rid, decision_record in decisions_by_rid.items()
+    }
+    denominator_stats = _build_denominator_coverage_stats(
+        runtime_evidence_by_rid)
+
     duplicate_close_candidates = 0
     blocker_duplicate_ambiguity_count = 0
     duplicate_groups: list[dict[str, Any]] = []
@@ -649,6 +1053,11 @@ def build_realized_outcome_dataset(
 
     for rid, decision_record in decisions_by_rid.items():
         decision = decision_record.data
+        if _is_accepted_unresolved_decision(decision):
+            accepted_unresolved_rows.append(
+                _build_accepted_unresolved_record(decision_record)
+            )
+            continue
         candidates = close_candidates_by_rid.get(rid, [])
         if not candidates:
             rejected_rows.append(
@@ -797,7 +1206,8 @@ def build_realized_outcome_dataset(
         warnings,
         valid_rows=valid_rows,
         invalid_rows=invalid_rows,
-        eligible_decision_rows=eligible_decision_rows,
+        denominator_stats=denominator_stats,
+        accepted_unresolved_rows_count=len(accepted_unresolved_rows),
         exact_identity_join_count=exact_identity_join_count,
         duplicate_close_candidates=duplicate_close_candidates,
         blocker_duplicate_ambiguity_count=blocker_duplicate_ambiguity_count,
@@ -824,6 +1234,26 @@ def build_realized_outcome_dataset(
         ],
     }
 
+    denominator_audit = {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "coverage_denominator_kind": "close_expected_rows",
+        "total_decision_rows": denominator_stats.total_decision_rows,
+        "rejected_or_not_executed_rows": denominator_stats.rejected_or_not_executed_rows,
+        "execution_eligible_rows": denominator_stats.execution_eligible_rows,
+        "entry_filled_rows": denominator_stats.entry_filled_rows,
+        "close_expected_rows": denominator_stats.close_expected_rows,
+        "close_matched_rows": summary.get("close_matched_rows"),
+        "exact_roundtrip_rows": summary.get("exact_roundtrip_rows"),
+        "decision_to_execution_rate": summary.get("decision_to_execution_rate"),
+        "execution_to_close_coverage_pct": summary.get("execution_to_close_coverage_pct"),
+        "close_to_exact_roundtrip_pct": summary.get("close_to_exact_roundtrip_pct"),
+        "total_decision_to_exact_roundtrip_pct": summary.get("total_decision_to_exact_roundtrip_pct"),
+        "legacy_total_decision_close_coverage_pct": _coverage_pct(
+            summary.get("close_matched_rows") or 0,
+            denominator_stats.total_decision_rows,
+        ),
+    }
+
     manifest = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "builder": "realized_outcome_builder",
@@ -839,10 +1269,24 @@ def build_realized_outcome_dataset(
             "order_log": len(order_log_records),
             "trade_lifecycle": len(trade_lifecycle_records),
         },
+        "total_decision_rows": summary.get("total_decision_rows"),
+        "rejected_or_not_executed_rows": summary.get("rejected_or_not_executed_rows"),
+        "execution_eligible_rows": summary.get("execution_eligible_rows"),
+        "entry_filled_rows": summary.get("entry_filled_rows"),
+        "close_expected_rows": summary.get("close_expected_rows"),
+        "close_matched_rows": summary.get("close_matched_rows"),
+        "exact_roundtrip_rows": summary.get("exact_roundtrip_rows"),
+        "decision_to_execution_rate": summary.get("decision_to_execution_rate"),
+        "execution_to_close_coverage_pct": summary.get("execution_to_close_coverage_pct"),
+        "close_to_exact_roundtrip_pct": summary.get("close_to_exact_roundtrip_pct"),
+        "total_decision_to_exact_roundtrip_pct": summary.get("total_decision_to_exact_roundtrip_pct"),
+        "coverage_denominator_kind": summary.get("coverage_denominator_kind"),
+        "coverage_denominator_rows": summary.get("coverage_denominator_rows"),
         "eligible_decision_rows": eligible_decision_rows,
         "eligible_close_rows": eligible_close_rows,
         "exact_rid_matches": exact_rid_matches,
         "emitted_realized_rows": len(realized_rows),
+        "accepted_unresolved_rows": len(accepted_unresolved_rows),
         "matched_rows": summary.get("matched_rows"),
         "unmatched_rows": summary.get("unmatched_rows"),
         "match_coverage_pct": summary.get("match_coverage_pct"),
@@ -877,6 +1321,7 @@ def build_realized_outcome_dataset(
             ),
         },
         "duplicate_decision_rids": duplicate_decision_rids,
+        "denominator_audit": denominator_audit,
         "data_quality": summary,
     }
 
@@ -887,9 +1332,16 @@ def build_realized_outcome_dataset(
             write_jsonl(out_dir / "realized_trades.jsonl", realized_rows)
         if rejected_rows:
             write_jsonl(out_dir / "rejected_rows.jsonl", rejected_rows)
+        if accepted_unresolved_rows:
+            write_jsonl(
+                out_dir / "accepted_unresolved_rows.jsonl",
+                accepted_unresolved_rows,
+            )
         write_manifest_json(out_dir / "dataset_manifest.json", manifest)
         write_manifest_json(
             out_dir / "canonicalization_report.json", canonicalization_report)
+        write_manifest_json(
+            out_dir / "denominator_audit.json", denominator_audit)
         (out_dir / "DATA_QUALITY_REPORT.md").write_text(
             _generate_quality_report(
                 summary,
@@ -904,6 +1356,10 @@ def build_realized_outcome_dataset(
             _generate_canonicalization_report_md(canonicalization_report),
             encoding="utf-8",
         )
+        (out_dir / "DENOMINATOR_AUDIT.md").write_text(
+            _generate_denominator_audit_report_md(denominator_audit),
+            encoding="utf-8",
+        )
 
     return BuilderResult(
         realized_rows=realized_rows,
@@ -912,5 +1368,6 @@ def build_realized_outcome_dataset(
         warnings=warnings,
         manifest=manifest,
         rejected_rows=rejected_rows,
+        accepted_unresolved_rows=accepted_unresolved_rows,
         canonicalization_report=canonicalization_report,
     )

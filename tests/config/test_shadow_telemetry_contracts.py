@@ -100,7 +100,7 @@ def test_current_aurora_config_loads_shadow_telemetry_contract() -> None:
     assert st.api.host == "127.0.0.1"
     assert st.api.port == 8443
     assert st.api.tls is False
-    assert st.api.auth_mode == "bearer"
+    assert st.api.auth_mode == "loopback_optional_bearer"
     assert st.api.write.symbol_allowlist == ["1000PEPEUSDT"]
     assert st.api.write.require_snapshot_ref is True
     assert st.egress_to_main.mode == "ipc"

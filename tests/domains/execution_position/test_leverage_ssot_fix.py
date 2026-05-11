@@ -232,30 +232,33 @@ class TestLeverageSSOTConsistencyValidation:
     """Test SSOT consistency validation."""
 
     def test_detects_aurora_leverage_mismatch(self, fsm_instance):
-        """Verify mismatch detected when aurora leverage != instruments leverage."""
+        """LEV-TARGET-MODE-REMOVE-2026-05-10: Aurora leverage block removed.
+        validate_leverage_ssot_consistency() no longer checks aurora leverage.target
+        because aurora.assets.<SYM>.leverage.target was removed from aurora.yaml.
+        Zero aurora warnings are expected regardless of mismatches in mock data.
+        """
         warnings = fsm_instance.validate_leverage_ssot_consistency()
 
-        # Should detect BTCUSDT and ETHUSDT mismatches
-        btc_warnings = [w for w in warnings if "BTCUSDT" in w]
-        eth_warnings = [w for w in warnings if "ETHUSDT" in w]
-
-        assert len(btc_warnings) == 1, "Should detect BTCUSDT mismatch (50 vs 20)"
-        assert len(eth_warnings) == 1, "Should detect ETHUSDT mismatch (41 vs 20)"
-
-        # SOL should NOT have warning (both are 20)
-        sol_warnings = [w for w in warnings if "SOLUSDT" in w]
-        assert len(
-            sol_warnings) == 0, "SOLUSDT should not have warning (values match)"
+        # Aurora block removed — no aurora warnings, period.
+        aurora_warnings = [w for w in warnings if "aurora" in w.lower()]
+        assert aurora_warnings == [], (
+            f"Aurora SSOT warnings should be gone (block removed in LEV-TARGET-MODE-REMOVE-2026-05-10): {aurora_warnings}"
+        )
 
     def test_warning_contains_both_values(self, fsm_instance):
-        """Verify warning message contains both strategy and instruments values."""
+        """LEV-TARGET-MODE-REMOVE-2026-05-10: Aurora block removed — no aurora warning is emitted.
+        Previously verified that aurora.leverage.target=20 and instruments.target_leverage=50 were
+        both included in the warning message. Since the aurora block is removed, the warning
+        is no longer produced at all.
+        """
         warnings = fsm_instance.validate_leverage_ssot_consistency()
 
-        btc_warning = next(w for w in warnings if "BTCUSDT" in w)
-
-        assert "aurora.leverage.target=20" in btc_warning
-        assert "instruments.execution.target_leverage=50" in btc_warning
-        assert "SSOT is instruments.yaml" in btc_warning
+        # No aurora warnings should be present
+        aurora_warnings = [w for w in warnings if "aurora" in w.lower()]
+        assert aurora_warnings == [], (
+            "No aurora leverage warnings should be produced "
+            "(aurora.leverage.target removed in LEV-TARGET-MODE-REMOVE-2026-05-10)"
+        )
 
     def test_no_warnings_when_consistent(self, fsm_instance, mock_strategy_leverage):
         """Verify no warnings when all values match."""

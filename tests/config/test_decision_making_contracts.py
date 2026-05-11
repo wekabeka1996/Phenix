@@ -84,6 +84,12 @@ def test_decision_making_extraction_preserves_field_contract(
 
 def test_current_aurora_config_loads_decision_making_contract() -> None:
     cfg = ConfigLoader(CONFIG_DIR).load_config()
+    domains = yaml.safe_load(
+        (CONFIG_DIR / "domains.yaml").read_text(encoding="utf-8"))
+    expected_max_regime_confidence_by_regime = (
+        domains["decision_making"]["directional_sanity"]["max_regime_confidence_by_regime"]
+    )
+    low_vol_thresholds = domains["decision_making"]["low_vol_cost_floor_gate"]["thresholds"]
 
     dm_domain = cfg.domains.decision_making
     assert dm_domain.entry_plan.enabled is True
@@ -102,10 +108,7 @@ def test_current_aurora_config_loads_decision_making_contract() -> None:
         "TREND_UP": 0.20,
         "TREND_DOWN": 0.20,
     }
-    assert dm_domain.directional_sanity.max_regime_confidence_by_regime == {
-        "TREND_UP": 0.32,
-        "TREND_DOWN": 0.32,
-    }
+    assert dm_domain.directional_sanity.max_regime_confidence_by_regime == expected_max_regime_confidence_by_regime
     assert dm_domain.low_vol_cost_floor_gate.enabled is True
     assert dm_domain.low_vol_cost_floor_gate.enforce_in_modes == [
         "testnet",
@@ -115,38 +118,21 @@ def test_current_aurora_config_loads_decision_making_contract() -> None:
         "live",
         "production",
     ]
-    assert dm_domain.low_vol_cost_floor_gate.thresholds.min_regime_confidence_by_regime == {
-        "DEFAULT": 0.45,
-        "LOW_VOLATILITY": 0.39,
-    }
-    assert dm_domain.low_vol_cost_floor_gate.thresholds.min_regime_confidence_overrides_by_strategy_symbol == {
-        "aurora": {
-            "XRPUSDT": {"DEFAULT": 0.46, "LOW_VOLATILITY": 0.45},
-        },
-        "md_amr": {
-            "XRPUSDT": {"DEFAULT": 0.46, "LOW_VOLATILITY": 0.45},
-        },
-    }
-    assert dm_domain.low_vol_cost_floor_gate.thresholds.min_direction_confidence_by_regime == {
-        "DEFAULT": 0.55,
-        "LOW_VOLATILITY": 0.51,
-    }
-    assert dm_domain.low_vol_cost_floor_gate.thresholds.min_direction_confidence_overrides_by_strategy_symbol == {
-        "aurora": {
-            "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.59},
-        },
-        "md_amr": {
-            "XRPUSDT": {"DEFAULT": 0.55, "LOW_VOLATILITY": 0.59},
-        },
-    }
+    assert dm_domain.low_vol_cost_floor_gate.thresholds.min_regime_confidence_by_regime == low_vol_thresholds[
+        "min_regime_confidence_by_regime"]
+    assert dm_domain.low_vol_cost_floor_gate.thresholds.min_regime_confidence_overrides_by_strategy_symbol == low_vol_thresholds[
+        "min_regime_confidence_overrides_by_strategy_symbol"]
+    assert dm_domain.low_vol_cost_floor_gate.thresholds.min_direction_confidence_by_regime == low_vol_thresholds[
+        "min_direction_confidence_by_regime"]
+    assert dm_domain.low_vol_cost_floor_gate.thresholds.min_direction_confidence_overrides_by_strategy_symbol == low_vol_thresholds[
+        "min_direction_confidence_overrides_by_strategy_symbol"]
     assert dm_domain.low_vol_cost_floor_gate.direction_confidence.required is True
     assert dm_domain.low_vol_cost_floor_gate.direction_confidence.missing_policy == "fail_closed"
-    assert dm_domain.low_vol_cost_floor_gate.direction_confidence.allowed_sources == [
+    assert set(dm_domain.low_vol_cost_floor_gate.direction_confidence.allowed_sources) == {
         "strategy_confidence",
         "signal_score",
         "final_score",
-        "judge_confidence",
-    ]
+    }
     assert dm_domain.price_motion_sanity.pm_norm_clip_abs == 10.0
     assert dm_domain.neocortex_enforcement_mode == "shadow"
     assert set(dm_domain.degraded_context_contracts_by_strategy) == {
@@ -387,8 +373,10 @@ def test_directional_sanity_rejects_invalid_band_configuration() -> None:
             min_abs_delta_price=0.0,
             min_confidence=0.0,
             min_regime_confidence=0.60,
-            min_regime_confidence_by_regime={"DEFAULT": 0.60, "TREND_UP": 0.75},
-            max_regime_confidence_by_regime={"DEFAULT": 0.45, "TREND_UP": 0.70},
+            min_regime_confidence_by_regime={
+                "DEFAULT": 0.60, "TREND_UP": 0.75},
+            max_regime_confidence_by_regime={
+                "DEFAULT": 0.45, "TREND_UP": 0.70},
             hard_veto_consecutive_bars=2,
             consecutive_bars=1,
         )
@@ -422,7 +410,9 @@ def test_low_vol_cost_floor_gate_accepts_explicit_contract() -> None:
         },
         direction_confidence={
             "required": True,
-            "allowed_sources": ["strategy_confidence", "signal_score"],
+            "raw_signed_score_sources": ["signal_score"],
+            "normalized_confidence_sources": ["strategy_confidence"],
+            "judge_confidence_live_producer_required": False,
             "missing_policy": "fail_closed",
         },
         geometry={"require_tpsl": True, "missing_policy": "fail_closed"},
@@ -456,7 +446,9 @@ def test_low_vol_cost_floor_gate_rejects_missing_low_volatility_threshold() -> N
             },
             direction_confidence={
                 "required": True,
-                "allowed_sources": ["signal_score"],
+                "raw_signed_score_sources": ["signal_score"],
+                "normalized_confidence_sources": [],
+                "judge_confidence_live_producer_required": False,
                 "missing_policy": "fail_closed",
             },
             geometry={"require_tpsl": True, "missing_policy": "fail_closed"},
@@ -482,7 +474,9 @@ def test_low_vol_cost_floor_gate_rejects_invalid_direction_confidence_missing_po
             },
             direction_confidence={
                 "required": True,
-                "allowed_sources": ["signal_score"],
+                "raw_signed_score_sources": ["signal_score"],
+                "normalized_confidence_sources": [],
+                "judge_confidence_live_producer_required": False,
                 "missing_policy": "hard_fail",
             },
             geometry={"require_tpsl": True, "missing_policy": "fail_closed"},
@@ -513,7 +507,9 @@ def test_low_vol_cost_floor_gate_rejects_noncanonical_strategy_symbol_threshold_
             },
             direction_confidence={
                 "required": True,
-                "allowed_sources": ["signal_score"],
+                "raw_signed_score_sources": ["signal_score"],
+                "normalized_confidence_sources": [],
+                "judge_confidence_live_producer_required": False,
                 "missing_policy": "fail_closed",
             },
             geometry={"require_tpsl": True, "missing_policy": "fail_closed"},

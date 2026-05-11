@@ -428,18 +428,29 @@ class ShadowCriticalEventJournal:
             event_origin_type=event_origin_type,
             rid=_coerce_text(rid),
             causation_rid=None,
-            symbol=_coerce_text((payload or {}).get("symbol")) if isinstance(payload, dict) else None,
-            order_id=_coerce_text((payload or {}).get("order_id")) if isinstance(payload, dict) else None,
-            client_order_id=_coerce_text((payload or {}).get("client_order_id")) if isinstance(payload, dict) else None,
-            position_id=_coerce_text((payload or {}).get("position_id")) if isinstance(payload, dict) else None,
-            lifecycle_id=_coerce_text((payload or {}).get("lifecycle_id")) if isinstance(payload, dict) else None,
-            strategy_id=_coerce_text((payload or {}).get("strategy_id")) if isinstance(payload, dict) else None,
-            side=_coerce_text((payload or {}).get("side")) if isinstance(payload, dict) else None,
-            qty=_coerce_text((payload or {}).get("qty")) if isinstance(payload, dict) else None,
-            price=_coerce_text((payload or {}).get("price")) if isinstance(payload, dict) else None,
+            symbol=_coerce_text((payload or {}).get(
+                "symbol")) if isinstance(payload, dict) else None,
+            order_id=_coerce_text((payload or {}).get(
+                "order_id")) if isinstance(payload, dict) else None,
+            client_order_id=_coerce_text((payload or {}).get(
+                "client_order_id")) if isinstance(payload, dict) else None,
+            position_id=_coerce_text((payload or {}).get(
+                "position_id")) if isinstance(payload, dict) else None,
+            lifecycle_id=_coerce_text((payload or {}).get(
+                "lifecycle_id")) if isinstance(payload, dict) else None,
+            strategy_id=_coerce_text((payload or {}).get(
+                "strategy_id")) if isinstance(payload, dict) else None,
+            side=_coerce_text((payload or {}).get("side")) if isinstance(
+                payload, dict) else None,
+            qty=_coerce_text((payload or {}).get("qty")) if isinstance(
+                payload, dict) else None,
+            price=_coerce_text((payload or {}).get("price")
+                               ) if isinstance(payload, dict) else None,
             truth_owner=truth_owner,
-            local_state_before=_to_jsonable(before) if before is not None else None,
-            local_state_after=_to_jsonable(after) if after is not None else None,
+            local_state_before=_to_jsonable(
+                before) if before is not None else None,
+            local_state_after=_to_jsonable(
+                after) if after is not None else None,
             restore_marker=restore_marker,
             suspected_duplicate=False,
             duplicate_kind=None,
@@ -563,6 +574,9 @@ def build_payload_fragment(payload: Dict[str, Any]) -> Dict[str, Any]:
         "reason",
         "trigger",
         "block_reason",
+        "shadow_only",
+        "authority_applied",
+        "no_effect",
         "current_local_state",
         "local_manage_state",
         "portfolio_truth_state",
@@ -618,6 +632,7 @@ def build_payload_fragment(payload: Dict[str, Any]) -> Dict[str, Any]:
         "data_quality",
         "regime_provenance",
         "restore_marker",
+        "anti_peak_observability",
     )
     fragment = {key: payload.get(key) for key in keep if key in payload}
     # Strip bare "unknown" placeholders from attribution-critical fields.

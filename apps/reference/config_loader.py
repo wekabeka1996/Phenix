@@ -1022,61 +1022,52 @@ class ConfigLoader:
         observability_config = self._load_observability()
         merged_config["observability"] = observability_config.model_dump()
 
-        # MODE-SSOT: Resolve trading mode from two potential sources.
-        # system.yaml → root `trading_mode`
-        # trading.yaml → `trading.mode`
-        # Policy: backtest from either source forces backtest everywhere.
-        # Any other mismatch is a HARD FAIL — the operator must fix config.
+        # T-TMODE-SSOT-2026-05-09: trading_mode SSOT = system.yaml:trading_mode (root).
+        # trading.yaml must NOT declare trading.mode — rejected fail-closed.
+        # Loader injects trading.mode into the trading block so TradingConfig.mode validates.
         try:
             root_mode = merged_config.get("trading_mode")
             trading_block = merged_config.get("trading")
-            trading_mode = None
-            if isinstance(trading_block, dict):
-                trading_mode = trading_block.get("mode")
+
+            if isinstance(trading_block, dict) and "mode" in trading_block:
+                raise ConfigContractError(
+                    path="trading.mode",
+                    why=(
+                        "trading.mode must not be declared in trading.yaml — "
+                        "canonical source is system.yaml:trading_mode (T-TMODE-SSOT-2026-05-09). "
+                        "Remove the 'mode:' line from the 'trading:' block in trading.yaml."
+                    ),
+                )
 
             root_norm = root_mode.strip().lower() if isinstance(root_mode, str) else None
-            trade_norm = trading_mode.strip().lower() if isinstance(trading_mode, str) else None
-
-            if root_norm and trade_norm and root_norm != trade_norm:
-                # Backtest safety: if either source says backtest, force backtest everywhere
-                if root_norm == "backtest" or trade_norm == "backtest":
-                    LOG.warning(
-                        "MODE_SSOT_CONFLICT: system.yaml trading_mode=%r vs trading.yaml trading.mode=%r — "
-                        "backtest detected in one source, forcing backtest everywhere. "
-                        "Fix config to remove ambiguity.",
-                        root_mode, trading_mode,
-                    )
-                    merged_config["trading_mode"] = "backtest"
-                    if isinstance(trading_block, dict):
-                        trading_block["mode"] = "backtest"
-                else:
-                    raise ConfigContractError(
-                        path="trading_mode",
-                        why=(
-                            f"MODE_SSOT_CONFLICT: system.yaml trading_mode={root_mode!r} "
-                            f"vs trading.yaml trading.mode={trading_mode!r}. "
-                            f"These must match. Fix one config source to eliminate ambiguity."
-                        ),
-                    )
-            elif root_norm and trade_norm:
-                pass  # Already consistent
-            elif root_norm and not trade_norm and isinstance(trading_block, dict):
+            if root_norm and isinstance(trading_block, dict):
                 trading_block["mode"] = root_mode
-            elif trade_norm and not root_norm:
-                merged_config["trading_mode"] = trading_mode
 
-            # Emit final mode truth for operator visibility
             effective_mode = merged_config.get("trading_mode", "UNKNOWN")
             LOG.info(
-                "MODE_SSOT_RESOLVED: effective_trading_mode=%s source=%s",
+                "MODE_SSOT_RESOLVED: effective_trading_mode=%s source=system.yaml",
                 effective_mode,
-                "system.yaml" if root_norm else (
-                    "trading.yaml" if trade_norm else "default"),
             )
         except ConfigContractError:
             raise
         except Exception as exc:
             LOG.error("MODE_SSOT_RESOLUTION_FAILED: %s", exc)
+
+        # EX-REMOVE-ROOT-2026-05-09: execution block must NOT appear at system.yaml root.
+        # Canonical source: trading.yaml -> trading.execution.*
+        # Loader guard: fail-closed if root execution block is present after merge.
+        root_execution = merged_config.get("execution")
+        if isinstance(root_execution, dict):
+            raise ConfigContractError(
+                path="execution",
+                why=(
+                    "execution.* must not be declared in system.yaml — "
+                    "canonical source is trading.yaml -> trading.execution.* "
+                    "(EX-REMOVE-ROOT-2026-05-09). "
+                    "Remove the 'execution:' block from system.yaml."
+                ),
+            )
+        LOG.info("EXEC_SSOT_RESOLVED: source=trading.yaml:trading.execution")
 
         # Enforce service key hygiene before validation
         for key in list(merged_config.keys()):
@@ -1086,24 +1077,12 @@ class ConfigLoader:
                     why="Service/migration keys with prefix '_config_' are forbidden at root (CFG-ROOT-STRICT-FREEZE-NO-EXTRAS-P1-19)",
                 )
 
-        # Migrate legacy root.guardian block into execution.order_guardian to satisfy strict root schema
+        # Migrate legacy root.guardian block into trading.execution.order_guardian.
+        # EX-REMOVE-ROOT-2026-05-09: root execution is gone; migration target is exclusively
+        # trading.execution — do NOT create a root execution block here.
         guardian_block = merged_config.pop("guardian", None)
         if isinstance(guardian_block, dict):
             import copy
-
-            root_exec = merged_config.get("execution")
-            if isinstance(root_exec, dict):
-                exec_block = root_exec
-            else:
-                trading_exec = None
-                trading_block = merged_config.get("trading")
-                if isinstance(trading_block, dict):
-                    trading_exec = trading_block.get("execution")
-
-                # Prefer cloning trading.execution as the base to keep schema-valid required fields.
-                exec_block = copy.deepcopy(trading_exec) if isinstance(
-                    trading_exec, dict) else {}
-                merged_config["execution"] = exec_block
 
             trading_block = merged_config.get("trading")
             trading_exec_block = None
@@ -1111,20 +1090,17 @@ class ConfigLoader:
                 trading_exec_raw = trading_block.get("execution")
                 if isinstance(trading_exec_raw, dict):
                     trading_exec_block = trading_exec_raw
-                else:
-                    trading_exec_block = copy.deepcopy(exec_block)
-                    trading_block["execution"] = trading_exec_block
 
-            if "order_guardian" in exec_block and exec_block.get("order_guardian") is not None:
+            if trading_exec_block is None:
                 raise ConfigContractError(
-                    path="execution.order_guardian",
+                    path="guardian",
                     why=(
-                        "Conflicting guardian configuration sources: found legacy root.guardian AND "
-                        "execution.order_guardian. Keep only one (prefer execution.order_guardian)."
+                        "Legacy root.guardian block found but trading.execution is absent — "
+                        "cannot migrate. Ensure trading.yaml has an 'execution:' block."
                     ),
                 )
 
-            if isinstance(trading_exec_block, dict) and "order_guardian" in trading_exec_block and trading_exec_block.get("order_guardian") is not None:
+            if "order_guardian" in trading_exec_block and trading_exec_block.get("order_guardian") is not None:
                 raise ConfigContractError(
                     path="trading.execution.order_guardian",
                     why=(
@@ -1133,10 +1109,7 @@ class ConfigLoader:
                     ),
                 )
 
-            exec_block["order_guardian"] = copy.deepcopy(guardian_block)
-            if isinstance(trading_exec_block, dict):
-                trading_exec_block["order_guardian"] = copy.deepcopy(
-                    guardian_block)
+            trading_exec_block["order_guardian"] = copy.deepcopy(guardian_block)
 
         # Resolve environment variables
         resolved_config = self._resolve_env_vars(merged_config)

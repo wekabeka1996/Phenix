@@ -93,6 +93,11 @@ def map_process_strategy_boundary_to_cmd(
     """
     warmup = _map_warmup(boundary.warmup)
     features: dict[str, Any] = dict(boundary.features or {})
+    price_motion = (
+        MappingProxyType(dict(boundary.price_motion))
+        if boundary.price_motion is not None
+        else None
+    )
     return ProcessStrategyCmd(
         symbol=boundary.symbol,
         tf_sec=boundary.tf_sec,
@@ -101,6 +106,7 @@ def map_process_strategy_boundary_to_cmd(
         features=MappingProxyType(features),
         warmup=warmup,
         raw=MappingProxyType(raw),
+        price_motion=price_motion,
     )
 
 

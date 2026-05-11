@@ -52,7 +52,8 @@ class LeverageConfigManager:
             Set of symbols that failed to sync (should be blocked from trading)
         """
         if self.shadow_mode or self.adapter is None:
-            LOG.info("TASK47c-P3: Leverage bootstrap skipped (shadow mode or no adapter)")
+            LOG.info(
+                "TASK47c-P3: Leverage bootstrap skipped (shadow mode or no adapter)")
             return set()
 
         # LEVERAGE-SSOT-FIX-01: Validate consistency and log warnings
@@ -72,10 +73,12 @@ class LeverageConfigManager:
         leverage_configs = self.collect_configs()
 
         if not leverage_configs:
-            LOG.warning("TASK47c-P3: No leverage configs found, bootstrap skipped")
+            LOG.warning(
+                "TASK47c-P3: No leverage configs found, bootstrap skipped")
             return set()
 
-        LOG.info(f"TASK47c-P3: Running leverage bootstrap for {len(leverage_configs)} symbols")
+        LOG.info(
+            f"TASK47c-P3: Running leverage bootstrap for {len(leverage_configs)} symbols")
 
         bootstrapper = LeverageBootstrapper(adapter=self.adapter, logger=LOG)
         results = await bootstrapper.run(leverage_configs)
@@ -87,9 +90,11 @@ class LeverageConfigManager:
             for sym in results.failed:
                 fail_result = results.failures.get(sym)
                 if fail_result:
-                    LOG.error(f"  {sym}: code={fail_result.error_code}, msg={fail_result.error_msg}")
+                    LOG.error(
+                        f"  {sym}: code={fail_result.error_code}, msg={fail_result.error_msg}")
         else:
-            LOG.info(f"TASK47c-P3: Leverage bootstrap SUCCESS for all {len(leverage_configs)} symbols")
+            LOG.info(
+                f"TASK47c-P3: Leverage bootstrap SUCCESS for all {len(leverage_configs)} symbols")
 
         return set(results.failed)
 
@@ -110,35 +115,41 @@ class LeverageConfigManager:
         try:
             registry = self.config.strategies_registry
             if registry is None or not hasattr(registry, 'assignments'):
-                LOG.warning("LEVERAGE-SSOT-FIX-01: No strategies_registry.assignments found")
+                LOG.warning(
+                    "LEVERAGE-SSOT-FIX-01: No strategies_registry.assignments found")
                 return result
             assignments = registry.assignments or {}
         except AttributeError:
-            LOG.warning("LEVERAGE-SSOT-FIX-01: Failed to read strategies_registry.assignments")
+            LOG.warning(
+                "LEVERAGE-SSOT-FIX-01: Failed to read strategies_registry.assignments")
             return result
 
         # Get instruments dict
         instruments = getattr(self.config, 'instruments', None)
         if not isinstance(instruments, dict):
-            LOG.warning("LEVERAGE-SSOT-FIX-01: No instruments dict found in config")
+            LOG.warning(
+                "LEVERAGE-SSOT-FIX-01: No instruments dict found in config")
             return result
 
         for symbol in assignments.keys():
             spec = instruments.get(symbol)
             if spec is None:
-                LOG.warning(f"LEVERAGE-SSOT-FIX-01: Symbol {symbol} in assignments but not in instruments")
+                LOG.warning(
+                    f"LEVERAGE-SSOT-FIX-01: Symbol {symbol} in assignments but not in instruments")
                 continue
 
             exec_cfg = getattr(spec, 'execution', None)
             if exec_cfg is None:
-                LOG.warning(f"LEVERAGE-SSOT-FIX-01: Symbol {symbol} has no execution config")
+                LOG.warning(
+                    f"LEVERAGE-SSOT-FIX-01: Symbol {symbol} has no execution config")
                 continue
 
             target_leverage = getattr(exec_cfg, 'target_leverage', None)
             margin_mode = getattr(exec_cfg, 'margin_mode', 'isolated')
 
             if target_leverage is None:
-                LOG.warning(f"LEVERAGE-SSOT-FIX-01: Symbol {symbol} has no target_leverage")
+                LOG.warning(
+                    f"LEVERAGE-SSOT-FIX-01: Symbol {symbol} has no target_leverage")
                 continue
 
             # Convert margin_mode to LeverageConfig format
@@ -165,6 +176,10 @@ class LeverageConfigManager:
 
         LEVERAGE-SSOT-FIX-01: Startup guard to detect legacy/stale strategy leverage.
 
+        Aurora leverage.target and leverage.mode were removed in LEV-TARGET-MODE-REMOVE-2026-05-10.
+        Only mean_reversion assets are checked here; Aurora no longer carries an authoritative
+        leverage value.
+
         Returns:
             List of warning messages for mismatches (empty if consistent)
         """
@@ -173,25 +188,6 @@ class LeverageConfigManager:
         instruments = getattr(self.config, 'instruments', None)
         if not isinstance(instruments, dict):
             return warnings
-
-        # Check Aurora strategy assets
-        try:
-            aurora = self.config.strategies.aurora
-            if aurora and aurora.assets:
-                for symbol, asset_cfg in aurora.assets.items():
-                    if asset_cfg and asset_cfg.leverage:
-                        strategy_lev = asset_cfg.leverage.target
-                        spec = instruments.get(symbol)
-                        if spec and spec.execution:
-                            inst_lev = spec.execution.target_leverage
-                            if strategy_lev != inst_lev:
-                                warnings.append(
-                                    f"LEVERAGE_SSOT_MISMATCH: {symbol} aurora.leverage.target={strategy_lev} "
-                                    f"!= instruments.execution.target_leverage={inst_lev} "
-                                    f"(SSOT is instruments.yaml, strategy value is IGNORED)"
-                                )
-        except AttributeError:
-            pass
 
         # Check MeanReversion strategy assets
         try:

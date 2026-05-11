@@ -29,10 +29,12 @@ def test_task47_duplicate_paths_fail_closed(tmp_path: Path) -> None:
     )
     _write_yaml(
         cfg_dir / "trading.yaml",
-        {"trading": {"mode": "testnet", "market_data": {"websocket_streams": ["trade"]}}},
+        {"trading": {"mode": "testnet", "market_data": {
+            "websocket_streams": ["trade"]}}},
     )
     _write_yaml(cfg_dir / "regime.yaml", {"hmm": {}, "features": {}})
-    _write_yaml(cfg_dir / "domains.yaml", {"debug": {"disable_positions_stale_gate": False, "disable_daily_loss_limit": False}})
+    _write_yaml(cfg_dir / "domains.yaml",
+                {"debug": {"disable_positions_stale_gate": False, "disable_daily_loss_limit": False}})
 
     loader = ConfigLoader(config_dir=cfg_dir)
     with pytest.raises(ConfigContractError) as ei:
@@ -49,18 +51,18 @@ def test_task47_debug_disables_forbidden_in_live_mode(tmp_path: Path) -> None:
     system_path = cfg_dir / "system.yaml"
     system = yaml.safe_load(system_path.read_text(encoding="utf-8"))
     system["trading_mode"] = "live"
-    system_path.write_text(yaml.safe_dump(system, sort_keys=False), encoding="utf-8")
+    system_path.write_text(yaml.safe_dump(
+        system, sort_keys=False), encoding="utf-8")
 
-    trading_path = cfg_dir / "trading.yaml"
-    trading = yaml.safe_load(trading_path.read_text(encoding="utf-8"))
-    trading["trading"]["mode"] = "live"
-    trading_path.write_text(yaml.safe_dump(trading, sort_keys=False), encoding="utf-8")
+    # T-TMODE-SSOT-2026-05-09: trading.mode must not be set in trading.yaml.
+    # system.yaml:trading_mode is the canonical source.
 
     domains_path = cfg_dir / "domains.yaml"
     domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
     domains.setdefault("debug", {})
     domains["debug"]["disable_positions_stale_gate"] = True
-    domains_path.write_text(yaml.safe_dump(domains, sort_keys=False), encoding="utf-8")
+    domains_path.write_text(yaml.safe_dump(
+        domains, sort_keys=False), encoding="utf-8")
 
     loader = ConfigLoader(config_dir=cfg_dir)
     with pytest.raises(ConfigContractError) as ei:
@@ -76,19 +78,18 @@ def test_task47_debug_disables_allowed_in_testnet_mode(tmp_path: Path) -> None:
     system_path = cfg_dir / "system.yaml"
     system = yaml.safe_load(system_path.read_text(encoding="utf-8"))
     system["trading_mode"] = "testnet"
-    system_path.write_text(yaml.safe_dump(system, sort_keys=False), encoding="utf-8")
+    system_path.write_text(yaml.safe_dump(
+        system, sort_keys=False), encoding="utf-8")
 
-    # Ensure testnet execution mode + enable flag.
-    trading_path = cfg_dir / "trading.yaml"
-    trading = yaml.safe_load(trading_path.read_text(encoding="utf-8"))
-    trading["trading"]["mode"] = "testnet"
-    trading_path.write_text(yaml.safe_dump(trading, sort_keys=False), encoding="utf-8")
+    # T-TMODE-SSOT-2026-05-09: trading.mode must not be set in trading.yaml.
+    # system.yaml:trading_mode is the canonical source; loader injects trading.mode.
 
     domains_path = cfg_dir / "domains.yaml"
     domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
     domains.setdefault("debug", {})
     domains["debug"]["disable_positions_stale_gate"] = True
-    domains_path.write_text(yaml.safe_dump(domains, sort_keys=False), encoding="utf-8")
+    domains_path.write_text(yaml.safe_dump(
+        domains, sort_keys=False), encoding="utf-8")
 
     cfg = ConfigLoader(config_dir=cfg_dir).load_config()
     assert cfg.domains.debug.disable_positions_stale_gate is True

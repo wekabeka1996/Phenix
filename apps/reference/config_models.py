@@ -182,6 +182,7 @@ from apps.reference.config.strategies.aurora import (
     AuroraExecutionConfig,
     AuroraExitConfig,
     AuroraInstrumentConfig,
+    AuroraLeverageOverrideConfig,
     AuroraSideBiasConfig,
     AuroraStrategyConfig,
     AuroraTakeProfitConfig,
@@ -414,7 +415,7 @@ class ExposureConfig(BaseModel):
     # Note: field-name drift — canonical uses post_fill_ttl_sec; this noncanonical stub retains _hold_ for legacy compat.
     post_fill_hold_ttl_sec: Optional[int] = Field(default=None)
     # TASK-ZOMBIE-FIX: Removed positions_stale_ttl_sec (duplicate, SSOT is domains.execution_position.exposure_guard.stale_ttl_sec)
-    leverage_defaults: Dict[str, int] = Field(...)
+    # LEV-REMOVE-DEFAULTS-2026-05-09: leverage_defaults removed. SSOT: instruments.yaml -> instruments.<SYM>.execution.target_leverage
     count_pending_orders: bool = Field(
         ..., description='Count pending orders in exposure')
     exclude_reduce_only: bool = Field(
@@ -968,18 +969,40 @@ class LLMIntentPolicyConfig(BaseModel):
     allowed_tif: List[Literal["GTC"]] = Field(...)
 
 
+class LLMExecutionPermissionsConfig(BaseModel):
+    """Execution permissions for the LLM orchestration loop."""
+    model_config = ConfigDict(extra='forbid')
+
+    allow_open: bool = Field(default=True)
+    allow_close: bool = Field(default=True)
+    allow_bracket_amend: bool = Field(default=True)
+
+
 class LLMOrchestrationConfig(BaseModel):
     """Global LLM orchestration mode and policy."""
     model_config = ConfigDict(extra='forbid')
 
     mode: Literal["baseline", "hybrid_advisory",
                   "llm_primary"] = Field(...)
+    authority_mode: Literal["advisory", "open_only", "full_auto"] = Field(
+        default="full_auto"
+    )
     llm_role: Literal["advisory", "filter",
                       "primary"] = Field(...)
+    decision_model_profile: Optional[str] = Field(default=None)
+    scout_model_profile: Optional[str] = Field(default=None)
     require_telemetry: bool = Field(...)
+    fast_cycle_sec: int = Field(default=300, ge=30)
+    deep_cycle_sec: int = Field(default=900, ge=60)
+    guardian_cycle_sec: int = Field(default=60, ge=10)
     symbols_llm: List[str] = Field(...)
+    context_symbols: List[str] = Field(default_factory=list)
     allowlist_symbols: List[str] = Field(
         ...)
+    trigger_policy: Dict[str, Any] = Field(default_factory=dict)
+    execution_permissions: LLMExecutionPermissionsConfig = Field(
+        default_factory=LLMExecutionPermissionsConfig
+    )
     intent_policy: LLMIntentPolicyConfig = Field(
         ...)
 
@@ -1153,7 +1176,9 @@ class AuroraConfig(BaseModel):
     # System configs
     system: SystemConfig = Field(...)
     system_meta: SystemMetaConfig = Field(...)
-    ops: OpsConfig = Field(...)
+    # T-OPS-SSOT-2026-05-09: Root ops is now an alias populated by _alias_ops_from_trading_ops.
+    # Canonical source: trading.yaml -> trading.ops.*  Do NOT add ops to system.yaml.
+    ops: Optional[OpsConfig] = Field(default=None)
 
     # Observability configs (CFG-OBS-001: Centralized logging/metrics/tracing)
     observability: ObservabilityConfig = Field(
@@ -1180,11 +1205,10 @@ class AuroraConfig(BaseModel):
     strategies: StrategiesConfig = Field(
         ..., description="Canonical strategies namespace (policy SSOT)")
 
-    # App-specific overrides
-    # TASK23.FIX.B: Legacy root aliases must NOT be required.
-    # If provided explicitly, they act as overrides; otherwise they should not block startup.
+    # EX-REMOVE-ROOT-2026-05-09: Root execution is now an alias populated by _activate_root_execution_alias.
+    # Canonical source: trading.yaml -> trading.execution.*  Do NOT add execution to system.yaml.
     execution: Optional[ExecutionConfig] = Field(
-        ..., description='Override trading.execution if set')
+        default=None, description='Alias for trading.execution — populated by _activate_root_execution_alias')
     brackets: Optional[BracketsConfig] = Field(...)
     trailing: Optional[TrailingDefaultsConfig] = Field(
         ..., description='Global trailing stop defaults')
@@ -1268,22 +1292,61 @@ class AuroraConfig(BaseModel):
     @field_validator('trading')
     @classmethod
     def validate_trading_mode_consistency(cls, v: TradingConfig, info) -> TradingConfig:
-        """Ensure trading.mode and trading_mode are consistent."""
-        # Note: In Pydantic V2, we can check info.data for other fields
+        """T-TMODE-SSOT-2026-05-09: trading.mode must match trading_mode (injected by loader).
+
+        Fail-closed: mismatch indicates a loader bug or direct model construction bypass.
+        """
         if 'trading_mode' in info.data:
             if v.mode != info.data['trading_mode']:
-                # Optionally sync them or raise an error
-                v.mode = info.data['trading_mode']
+                raise ValueError(
+                    f"trading.mode ({v.mode!r}) diverges from trading_mode ({info.data['trading_mode']!r}). "
+                    "Canonical source: system.yaml:trading_mode (T-TMODE-SSOT-2026-05-09). "
+                    "Loader must inject trading.mode from trading_mode before Pydantic validation."
+                )
         return v
 
     @model_validator(mode='after')
-    def _backcompat_root_execution_alias(self) -> "AuroraConfig":
-        """Back-compat: expose trading.execution at root execution if root is unset.
+    def _activate_root_execution_alias(self) -> "AuroraConfig":
+        """EX-REMOVE-ROOT-2026-05-09: trading.execution is the single canonical execution source.
 
-        This is a deterministic aliasing rule and must not be implemented via loader dict mutation.
+        Root execution (system.yaml) was removed. If it reappears, fail-closed to prevent
+        silent split-brain regression. Canonical source: trading.yaml -> trading.execution.*
         """
-        if self.execution is None and getattr(self.trading, "execution", None) is not None:
-            self.execution = self.trading.execution
+        trading_execution = getattr(self.trading, "execution", None)
+        if self.execution is not None:
+            raise ValueError(
+                "execution split-brain detected: execution.* found at config root — "
+                "this block was removed from system.yaml (EX-REMOVE-ROOT-2026-05-09). "
+                "Canonical source is trading.yaml -> trading.execution.*"
+            )
+        if trading_execution is None:
+            raise ValueError(
+                "trading.execution is required: execution config must be declared "
+                "in trading.yaml -> trading.execution.* (EX-REMOVE-ROOT-2026-05-09)"
+            )
+        self.execution = trading_execution
+        return self
+
+    @model_validator(mode='after')
+    def _alias_ops_from_trading_ops(self) -> "AuroraConfig":
+        """T-OPS-SSOT-2026-05-09: trading.ops is the single canonical ops source.
+
+        Root ops (system.yaml) was removed. If it reappears, fail-closed to prevent
+        silent split-brain regression. Canonical source: trading.yaml -> trading.ops.*
+        """
+        trading_ops = getattr(self.trading, "ops", None)
+        if self.ops is not None:
+            raise ValueError(
+                "ops split-brain detected: ops.* found at config root — "
+                "this block was removed from system.yaml (T-OPS-SSOT-2026-05-09). "
+                "Canonical source is trading.yaml -> trading.ops.*"
+            )
+        if trading_ops is None:
+            raise ValueError(
+                "trading.ops is required: ops config (panic_killswitch, metrics_url, reports_dir) "
+                "must be declared in trading.yaml -> trading.ops.*"
+            )
+        self.ops = trading_ops
         return self
 
     @model_validator(mode="after")

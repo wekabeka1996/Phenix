@@ -33,6 +33,124 @@ def _owner_ctx(*, final_owner: str | None, reason: str | None) -> dict:
     }
 
 
+def _representative_t6_decision_trace_payload(
+    *,
+    accepted: bool,
+    missing_signal_score: str | None,
+) -> dict:
+    return {
+        "rid": "aurora_BTCUSDT_1778424602438" if accepted else "aurora_XRPUSDT_1778429708097",
+        "lifecycle_id": "runtime-trace-id-001",
+        "intent_id": "runtime-trace-id-001",
+        "symbol": "BTCUSDT" if accepted else "XRPUSDT",
+        "side": "SELL",
+        "strategy_id": "aurora",
+        "ts": 1778424602465 if accepted else 1778429708115,
+        "event_ts_ms": 1778424602465 if accepted else 1778429708115,
+        "tf_sec": 300,
+        "bar_close_ts_ms": 1778424600000 if accepted else 1778429700000,
+        "intent_side": "SHORT",
+        "signal_score": -0.00861416 if accepted else -0.02070491,
+        "raw_score": None,
+        "decision_score": -0.00861416 if accepted else -0.02070491,
+        "active_threshold": 0.00054566696 if accepted else 0.01944,
+        "score_to_threshold_ratio": None,
+        "decision_surface": "decision_trace",
+        "gate_chain_result": "ALLOW" if accepted else "DENY",
+        "accepted_or_rejected": "ACCEPTED" if accepted else "REJECTED",
+        "reject_reason": None if accepted else "NRR-062",
+        "regime": "MEAN_REVERSION" if accepted else "LOW_VOLATILITY",
+        "regime_confidence": 0.587085 if accepted else 0.2331622196322638,
+        "resolved_regime_confidence_strategy_id": "aurora",
+        "resolved_regime_confidence_symbol": "BTCUSDT" if accepted else "XRPUSDT",
+        "resolved_regime_confidence_regime_key": None,
+        "min_regime_confidence": 0.35,
+        "resolved_min_regime_confidence": 0.35,
+        "resolved_min_regime_confidence_source": "domain_default",
+        "resolved_min_regime_confidence_strategy_id": None,
+        "resolved_min_regime_confidence_regime_key": None,
+        "resolved_max_regime_confidence": None,
+        "resolved_max_regime_confidence_source": None,
+        "resolved_max_regime_confidence_strategy_id": None,
+        "resolved_max_regime_confidence_regime_key": None,
+        "resolved_regime_confidence_band_active": True,
+        "regime_confidence_breach_kind": "none",
+        "regime_confidence_gate_verdict": "ALLOW" if accepted else "BYPASS",
+        "trend_dir": "UNKNOWN",
+        "trend_confidence": None,
+        "trend_run_length": None,
+        "delta_price": 0.0,
+        "pm_norm_10s": None,
+        "pm_norm_60s": None,
+        "pm_norm_300s": None,
+        "vol_pct_10s": None,
+        "vol_pct_60s": None,
+        "vol_pct_300s": None,
+        "gate_outcome": "ALLOW" if accepted else "DENY",
+        "deny_reason": None if accepted else "NRR-062",
+        "why": "runtime t6 payload shape",
+        "price_motion_context": {
+            "pm_norm_10s": None,
+            "pm_norm_60s": None,
+            "pm_norm_300s": None,
+            "vol_pct_10s": None,
+            "vol_pct_60s": None,
+            "vol_pct_300s": None,
+            "missing": {
+                "pm_norm_10s": True,
+                "pm_norm_60s": True,
+                "pm_norm_300s": False,
+                "vol_pct_10s": True,
+                "vol_pct_60s": False,
+                "vol_pct_300s": False,
+            },
+            "missing_reason": {
+                "pm_norm_10s": "absent_from_safety_gate_result",
+                "pm_norm_60s": None,
+                "pm_norm_300s": None,
+                "vol_pct_10s": "absent_from_safety_gate_result",
+                "vol_pct_60s": None,
+                "vol_pct_300s": None,
+            },
+        },
+        "missing_inputs": {
+            "regime_confidence": None,
+            "trend_dir": None,
+            "trend_confidence": None,
+            "trend_run_length": None,
+            "pm_norm_10s": "absent_from_safety_gate_result",
+            "pm_norm_60s": None,
+            "pm_norm_300s": None,
+            "vol_pct_10s": "absent_from_safety_gate_result",
+            "vol_pct_60s": None,
+            "vol_pct_300s": None,
+            "signal_score": missing_signal_score,
+            "low_vol_cost_floor": "not_evaluated_or_not_attached",
+        },
+        "safety_gate_snapshot": {
+            "apply_safety_gates": True,
+            "directional_sanity_enabled": True,
+            "nrr026_enabled": False,
+            "nrr026_effective_enforced": False,
+            "nrr027_enabled": False,
+            "nrr027_effective_enforced": False,
+            "price_motion_sanity_enabled": False,
+            "price_motion_backtest_bypass": False,
+            "nrr028_enabled": False,
+            "nrr028_effective_enforced": False,
+            "nrr029_enabled": False,
+            "nrr029_effective_enforced": False,
+            "nrr030_enabled": False,
+            "nrr030_effective_enforced": False,
+            "nrr063_enabled": True,
+            "nrr063_effective_enforced": True,
+            "regime_confidence_gate_verdict": "ALLOW" if accepted else "BYPASS",
+            "threshold_verdict": "PASS" if accepted else "BYPASS",
+            "threshold_reason": "runtime failure reproduction",
+        },
+    }
+
+
 @pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
 def test_strategy_signal_schema_accepts_tpsl_owner_ctx_additively() -> None:
     schema = _read_json(STRATEGY_SIGNAL_SCHEMA_PATH)
@@ -261,6 +379,7 @@ def test_decision_trace_schema_accepts_richer_allowed_extension_points() -> None
                 "vol_pct_10s": None,
                 "vol_pct_60s": None,
                 "vol_pct_300s": None,
+                "signal_score": None,
                 "low_vol_cost_floor": None,
             },
             "safety_gate_snapshot": {
@@ -291,7 +410,47 @@ def test_decision_trace_schema_accepts_richer_allowed_extension_points() -> None
                     "pm_norm_300s": 0.0,
                 },
             },
+            "score_lineage": {
+                "path": "pillar_sum -> QuadraticScoringKernel.compute() -> Aurora scoring payload -> StrategyGateway strategy_trace -> low_vol_cost_floor -> SafetyGateResult / decision trace",
+                "records": [
+                    {
+                        "field": "decision_score",
+                        "value": 0.9,
+                        "scale": "signed_decision_score",
+                        "producer": "QuadraticScoringKernel.compute()",
+                        "consumer_stage": "strategy_gateway.strategy_trace",
+                        "threshold_family": "aurora_admission",
+                        "live_authority_status": "live_authoritative",
+                        "compatibility_alias_for": None,
+                        "post_objective_override": False,
+                    }
+                ],
+            },
         },
+        schema=schema,
+    )
+
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_decision_trace_schema_accepts_representative_t6_allow_payload_shape() -> None:
+    schema = _read_json(DECISION_TRACE_SCHEMA_PATH)
+    validate(
+        instance=_representative_t6_decision_trace_payload(
+            accepted=True,
+            missing_signal_score=None,
+        ),
+        schema=schema,
+    )
+
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_decision_trace_schema_accepts_representative_t6_deny_payload_shape() -> None:
+    schema = _read_json(DECISION_TRACE_SCHEMA_PATH)
+    validate(
+        instance=_representative_t6_decision_trace_payload(
+            accepted=False,
+            missing_signal_score="absent_from_attached_score_lineage",
+        ),
         schema=schema,
     )
 

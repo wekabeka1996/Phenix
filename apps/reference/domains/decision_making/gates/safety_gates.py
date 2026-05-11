@@ -59,7 +59,9 @@ class SafetyGateResult:
     resolved_regime_confidence_regime_key: Optional[str] = None
     intent_side: str = "LONG"
     trace_ts_ms: int = 0
+    # Diagnostics-only unless backed by score_lineage from the upstream strategy trace.
     signal_score: Optional[float] = None
+    score_lineage: Optional[Dict[str, Any]] = None
     regime: Optional[str] = None
     regime_confidence: Optional[float] = None
     regime_provenance: Optional[Dict[str, Any]] = None
@@ -103,6 +105,8 @@ class SafetyGateResult:
     vol_pct_10s: Optional[float] = None
     vol_pct_60s: Optional[float] = None
     vol_pct_300s: Optional[float] = None
+    ret_60s: Optional[float] = None
+    ret_300s: Optional[float] = None
     low_vol_cost_floor_details: Optional[Dict[str, Any]] = None
     # Phase 0.5 overlay state. StrategyGateway is responsible for any STRESS
     # attenuation side effect; this module only surfaces the state.
@@ -158,6 +162,7 @@ def _extract_price_motion(symbol_states: dict, symbol: str) -> dict:
     result: Dict[str, Optional[float]] = {
         "pm_norm_10s": None, "pm_norm_60s": None, "pm_norm_300s": None,
         "vol_pct_10s": None, "vol_pct_60s": None, "vol_pct_300s": None,
+        "ret_60s": None, "ret_300s": None,
     }
     try:
         st = symbol_states.get(symbol)
@@ -174,7 +179,7 @@ def _extract_price_motion(symbol_states: dict, symbol: str) -> dict:
 
 
 def _extract_signal_score(why_chain: list) -> Optional[float]:
-    """Best-effort extraction of ``signal_score`` tokens from why_chain strings."""
+    """Best-effort diagnostics extraction of ``signal_score`` tokens from why_chain strings."""
     try:
         for item in (why_chain or []):
             if not isinstance(item, str):
@@ -940,6 +945,8 @@ def apply_safety_gates(
     result.vol_pct_10s = pm["vol_pct_10s"]
     result.vol_pct_60s = pm["vol_pct_60s"]
     result.vol_pct_300s = pm["vol_pct_300s"]
+    result.ret_60s = pm["ret_60s"]
+    result.ret_300s = pm["ret_300s"]
 
     result.signal_score = _extract_signal_score(why_chain)
     result.regime, result.regime_confidence, result.regime_provenance = _extract_regime(
@@ -1128,14 +1135,15 @@ def apply_safety_gates(
             result.threshold_verdict = "BYPASS"
             result.regime_confidence_gate_verdict = "BYPASS"
             result.threshold_reason = "nrr026_disabled:regime_confidence_missing"
-    elif result.regime_confidence < resolved_min_regime_conf:
+    elif result.regime_confidence <= resolved_min_regime_conf:
         if nrr026_enabled:
             result.threshold_applied = True
             result.threshold_verdict = "BLOCK"
             result.regime_confidence_gate_verdict = "DENY"
             result.regime_confidence_breach_kind = "below_min"
             result.threshold_reason = (
-                f"regime_confidence={result.regime_confidence} < min={resolved_min_regime_conf} "
+                f"REGIME_CONFIDENCE_AT_OR_BELOW_UNCERTAIN_CUTOFF:"
+                f"regime_confidence={result.regime_confidence} <= min={resolved_min_regime_conf} "
                 f"source={threshold_resolution.source} key={threshold_resolution.regime_key}"
             )
             result.outcome = "DENY"
@@ -1148,7 +1156,7 @@ def apply_safety_gates(
             result.regime_confidence_gate_verdict = "BYPASS"
             result.threshold_reason = (
                 f"nrr026_disabled:regime_confidence={result.regime_confidence}"
-                f"<min={resolved_min_regime_conf}"
+                f"<=min={resolved_min_regime_conf}"
             )
     elif (
         result.resolved_max_regime_confidence is not None

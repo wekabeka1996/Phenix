@@ -30,6 +30,7 @@ class TestProcessStrategyBoundary:
         assert b.rid is None
         assert b.features is None
         assert b.warmup is None
+        assert b.price_motion is None
 
     def test_full_payload(self):
         b = ProcessStrategyBoundary.model_validate({
@@ -39,6 +40,7 @@ class TestProcessStrategyBoundary:
             "rid": "req-1",
             "features": {"pillar_sum": 0.5, "atr": 0.01},
             "warmup": {"full_ready": True, "ticks_seen": 321, "ready": {}},
+            "price_motion": {"pm_norm_300s": 0.7, "ret_300s": 0.002},
         })
         assert b.symbol == "ETHUSDT"
         assert b.tf_sec == 300
@@ -46,6 +48,7 @@ class TestProcessStrategyBoundary:
         assert b.rid == "req-1"
         assert b.features == {"pillar_sum": 0.5, "atr": 0.01}
         assert b.warmup["full_ready"] is True
+        assert b.price_motion == {"pm_norm_300s": 0.7, "ret_300s": 0.002}
 
     def test_extra_fields_ignored(self):
         """extra="ignore" — unknown fields must not cause a failure."""

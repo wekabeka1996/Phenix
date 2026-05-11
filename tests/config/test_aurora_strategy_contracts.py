@@ -342,7 +342,7 @@ def test_aurora_extraction_preserves_cross_model_annotations() -> None:
     )
     assert _annotation_includes(
         instrument_fields["leverage"].annotation,
-        cm.LeverageConfig,
+        cm.AuroraLeverageOverrideConfig,
     )
     assert _annotation_includes(
         instrument_fields["exit"].annotation,
@@ -423,7 +423,8 @@ def test_aurora_low_vol_rr_contract_clears_low_vol_cost_floor_for_active_symbols
         assert regime_tpsl.mode == "pct_mult"
         assert "LOW_VOLATILITY" in regime_tpsl.tp_mult
 
-        effective_rr, tp_mult_source, tp_low_ratio, tp_mult = _resolve_aurora_low_vol_rr(asset_cfg)
+        effective_rr, tp_mult_source, tp_low_ratio, tp_mult = _resolve_aurora_low_vol_rr(
+            asset_cfg)
         assert tp_mult_source == "LOW_VOLATILITY"
         assert effective_rr >= min_rr, (
             f"{symbol} low-vol effective RR {effective_rr:.6f} must clear "
@@ -687,7 +688,7 @@ def test_current_aurora_config_loads_aurora_extraction_contract() -> None:
     if btc.side_bias is not None:
         assert type(btc.side_bias) is cm.AuroraSideBiasConfig
     if btc.leverage is not None:
-        assert type(btc.leverage) is cm.LeverageConfig
+        assert type(btc.leverage) is cm.AuroraLeverageOverrideConfig
     if btc.exit is not None:
         assert type(btc.exit) is cm.AuroraExitConfig
         if btc.exit.regime_tpsl is not None:

@@ -65,47 +65,36 @@ class ConfigResolverMixin:
         return node if node is not None else default
 
     def _resolve_fsm_periodic_cleanup_enabled(self) -> bool:
-        """Resolve cleanup ownership from explicit config surfaces only.
+        """Resolve cleanup ownership from trading.execution (canonical source).
 
-        Precedence is root execution override first, then legacy
-        trading.execution when the root alias is absent. Missing explicit config
-        is a contract error; silent defaults are prohibited.
+        EX-REMOVE-ROOT-2026-05-09: Root execution is gone; trading.execution is the sole source.
+        Missing explicit config is a contract error; silent defaults are prohibited.
         """
-        execution_present, execution_cfg = self._get_explicit_config_member(
-            self.config, "execution"
-        )
-        if execution_present and execution_cfg is not None:
-            cleanup_present, cleanup_enabled = self._get_explicit_config_member(
-                execution_cfg,
-                "fsm_periodic_cleanup_enabled",
-            )
-            if cleanup_present and cleanup_enabled is not None:
-                return bool(cleanup_enabled)
-            raise ValueError(
-                "execution.fsm_periodic_cleanup_enabled is required when config.execution is present"
-            )
-
         _, trading_cfg = self._get_explicit_config_member(
             self.config, "trading")
-        if trading_cfg is not None:
-            _, trading_execution_cfg = self._get_explicit_config_member(
-                trading_cfg,
-                "execution",
+        if trading_cfg is None:
+            raise ValueError(
+                "trading config is required: trading.execution.fsm_periodic_cleanup_enabled "
+                "cannot be resolved without trading config"
             )
-            if trading_execution_cfg is not None:
-                cleanup_present, cleanup_enabled = self._get_explicit_config_member(
-                    trading_execution_cfg,
-                    "fsm_periodic_cleanup_enabled",
-                )
-                if cleanup_present and cleanup_enabled is not None:
-                    return bool(cleanup_enabled)
-                raise ValueError(
-                    "trading.execution.fsm_periodic_cleanup_enabled is required when trading.execution is present"
-                )
 
+        _, trading_execution_cfg = self._get_explicit_config_member(
+            trading_cfg, "execution"
+        )
+        if trading_execution_cfg is None:
+            raise ValueError(
+                "trading.execution is required for fsm_periodic_cleanup_enabled resolution "
+                "(EX-REMOVE-ROOT-2026-05-09)"
+            )
+
+        cleanup_present, cleanup_enabled = self._get_explicit_config_member(
+            trading_execution_cfg, "fsm_periodic_cleanup_enabled"
+        )
+        if cleanup_present and cleanup_enabled is not None:
+            return bool(cleanup_enabled)
         raise ValueError(
-            "Missing cleanup ownership config: set execution.fsm_periodic_cleanup_enabled "
-            "or trading.execution.fsm_periodic_cleanup_enabled"
+            "trading.execution.fsm_periodic_cleanup_enabled is required "
+            "(EX-REMOVE-ROOT-2026-05-09)"
         )
 
     def _resolve_guardian_config(self) -> Dict[str, Any]:

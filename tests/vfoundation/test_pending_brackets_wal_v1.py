@@ -20,10 +20,29 @@ import json
 import os
 import shutil
 import tempfile
+import time
 from pathlib import Path
 from unittest import mock
 
 import pytest
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def _dedicated_wal_path(wal_dir: Path) -> Path:
+    return wal_dir / "execution_position_pending_brackets_v1.jsonl"
+
+
+def _daily_wal_path(wal_dir: Path) -> Path:
+    return wal_dir / f"{time.strftime('%Y-%m-%d')}.jsonl"
 
 
 # Mock WAL before imports
@@ -63,7 +82,7 @@ class TestWALBasicOperations:
     """Test basic WAL write/read operations."""
 
     def test_write_stored_creates_record(self, wal_module, mock_wal_dir):
-        """Stored call should create WAL record."""
+        """Stored call should create the dedicated pending-brackets WAL record."""
         wal_module["stored"](
             entry_order_id="ORD-001",
             symbol="BTCUSDT",
@@ -79,13 +98,43 @@ class TestWALBasicOperations:
             entry_client_order_id="client-001",
         )
 
-        # WAL file should exist with record
-        wal_files = list(mock_wal_dir.glob("**/*.jsonl"))
-        # Either direct file or via vfoundation WAL
-        assert True  # Write succeeded without exception
+        records = _read_jsonl(_dedicated_wal_path(mock_wal_dir))
+
+        assert len(records) == 1
+        assert records[0]["verb"] == "PENDING_BRACKETS_STORED"
+        assert records[0]["pld"]["entry_order_id"] == "ORD-001"
+        assert "_hash" not in records[0]
+        assert "_prev" not in records[0]
+
+    def test_write_stored_also_appends_daily_hash_chain_record(self, wal_module, mock_wal_dir):
+        wal_module["stored"](
+            entry_order_id="ORD-001-DUAL",
+            symbol="BTCUSDT",
+            side="BUY",
+            sl=49000.0,
+            tp=51000.0,
+            qty=0.1,
+            rid="rid-001-dual",
+            idem_key="idem-001-dual",
+            tick_size=0.01,
+            corr_id="corr-001-dual",
+            oco_group_id="oco-001-dual",
+            entry_client_order_id="client-001-dual",
+        )
+
+        records = _read_jsonl(_daily_wal_path(mock_wal_dir))
+
+        assert len(records) == 1
+        assert records[0]["op"] == "EVT"
+        assert records[0]["verb"] == "PENDING_BRACKETS_STORED"
+        assert records[0]["pld"]["entry_order_id"] == "ORD-001-DUAL"
+        assert records[0]["dst"] == "observability"
+        assert records[0]["_prev"] == "0" * 64
+        assert isinstance(records[0]["_hash"], str)
+        assert len(records[0]["_hash"]) == 64
 
     def test_write_cleared_after_stored(self, wal_module, mock_wal_dir):
-        """Cleared call should mark entry as resolved."""
+        """Cleared call should still write the dedicated pending-brackets WAL record."""
         wal_module["stored"](
             entry_order_id="ORD-002",
             symbol="ETHUSDT",
@@ -107,8 +156,74 @@ class TestWALBasicOperations:
             symbol="ETHUSDT",
         )
 
-        # Should not raise
-        assert True
+        records = _read_jsonl(_dedicated_wal_path(mock_wal_dir))
+
+        assert [record["verb"] for record in records] == [
+            "PENDING_BRACKETS_STORED",
+            "PENDING_BRACKETS_CLEARED",
+        ]
+        assert records[1]["pld"]["entry_order_id"] == "ORD-002"
+        assert records[1]["pld"]["reason"] == "filled"
+
+    def test_write_cleared_also_appends_daily_hash_chain_record(self, wal_module, mock_wal_dir):
+        wal_module["stored"](
+            entry_order_id="ORD-002-DUAL",
+            symbol="ETHUSDT",
+            side="SELL",
+            sl=2100.0,
+            tp=1900.0,
+            qty=1.0,
+            rid="rid-002-dual",
+            idem_key="idem-002-dual",
+            tick_size=0.01,
+            corr_id="corr-002-dual",
+            oco_group_id="oco-002-dual",
+            entry_client_order_id="client-002-dual",
+        )
+
+        wal_module["cleared"](
+            entry_order_id="ORD-002-DUAL",
+            reason="filled",
+            symbol="ETHUSDT",
+            rid="rid-clear-002-dual",
+        )
+
+        records = _read_jsonl(_daily_wal_path(mock_wal_dir))
+
+        assert [record["verb"] for record in records] == [
+            "PENDING_BRACKETS_STORED",
+            "PENDING_BRACKETS_CLEARED",
+        ]
+        assert records[1]["pld"]["entry_order_id"] == "ORD-002-DUAL"
+        assert records[1]["pld"]["reason"] == "filled"
+        assert records[1]["_prev"] == records[0]["_hash"]
+        assert isinstance(records[1]["_hash"], str)
+        assert len(records[1]["_hash"]) == 64
+
+    def test_secondary_daily_wal_append_failure_does_not_break_dedicated_write(self, wal_module, mock_wal_dir, caplog):
+        from apps.reference.domains.execution_position.flows.manage import pending_brackets_wal as pending_wal
+
+        with mock.patch.object(pending_wal.wal, "append", side_effect=RuntimeError("daily wal offline")):
+            wal_module["stored"](
+                entry_order_id="ORD-FAILOVER-001",
+                symbol="BTCUSDT",
+                side="BUY",
+                sl=48000.0,
+                tp=52000.0,
+                qty=0.5,
+                rid="rid-failover-001",
+                idem_key="idem-failover-001",
+                tick_size=0.01,
+            )
+
+        records = _read_jsonl(_dedicated_wal_path(mock_wal_dir))
+
+        assert len(records) == 1
+        assert records[0]["pld"]["entry_order_id"] == "ORD-FAILOVER-001"
+        assert any(
+            "secondary daily append failed" in record.message
+            for record in caplog.records
+        )
 
 
 class TestWALRehydration:
@@ -151,6 +266,63 @@ class TestWALRehydration:
         assert restored["ORD-REHYDRATE-001"]["owner_status"] == "resolved"
         assert restored["ORD-REHYDRATE-001"]["assigned_strategies"] == ["md_amr"]
         assert restored["ORD-REHYDRATE-001"]["placement_path"] == "deferred_pending"
+
+    def test_reader_loads_from_daily_wal_only(self, wal_module, mock_wal_dir):
+        from vfoundation.dr import wal
+
+        wal.append(
+            {
+                "op": "EVT",
+                "verb": "PENDING_BRACKETS_STORED",
+                "src": "execution_position",
+                "dst": "observability",
+                "rid": "rid-daily-001",
+                "ts": 1700000000000,
+                "why": "test_daily_seed",
+                "pld": {
+                    "ts_ms": 1700000000000,
+                    "entry_order_id": "ORD-DAILY-001",
+                    "symbol": "BTCUSDT",
+                    "side": "BUY",
+                    "sl": 48000.0,
+                    "tp": 52000.0,
+                    "qty": 0.5,
+                    "rid": "rid-daily-001",
+                    "idem_key": "idem-daily-001",
+                    "tick_size": 0.01,
+                },
+            }
+        )
+
+        restored = wal_module["read"]()
+
+        assert restored["ORD-DAILY-001"]["symbol"] == "BTCUSDT"
+        assert restored["ORD-DAILY-001"]["rid"] == "rid-daily-001"
+
+    def test_reader_deduplicates_dual_write_records(self, wal_module, mock_wal_dir):
+        from apps.reference.domains.execution_position.flows.manage import pending_brackets_wal as pending_wal
+
+        wal_module["stored"](
+            entry_order_id="ORD-DEDUP-001",
+            symbol="BTCUSDT",
+            side="BUY",
+            sl=48000.0,
+            tp=52000.0,
+            qty=0.5,
+            rid="rid-dedup-001",
+            idem_key="idem-dedup-001",
+            tick_size=0.01,
+        )
+
+        with mock.patch.object(
+            pending_wal,
+            "_apply_pending_brackets_record",
+            wraps=pending_wal._apply_pending_brackets_record,
+        ) as apply_record:
+            restored = wal_module["read"]()
+
+        assert restored["ORD-DEDUP-001"]["symbol"] == "BTCUSDT"
+        assert apply_record.call_count == 1
 
     def test_stored_then_cleared_not_rehydrated(self, wal_module, mock_wal_dir):
         """Entry stored then cleared should NOT be restored."""

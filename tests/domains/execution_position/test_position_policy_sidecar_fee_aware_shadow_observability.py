@@ -5,8 +5,10 @@ from unittest.mock import MagicMock
 
 import jsonschema
 
+from apps.reference.config_loader import ConfigLoader
 from apps.reference.core.time import get_clock
 from apps.reference.domains.execution_position.sidecar.position_policy_sidecar import PositionPolicySidecar
+from apps.reference.telemetry.shadow_journal import attach_shadow_journal
 from tests.domains.execution_position.test_position_policy_sidecar import (
     RecordingBus,
     DummyManageFlow,
@@ -15,6 +17,7 @@ from tests.domains.execution_position.test_position_policy_sidecar import (
     _topics,
     _payloads
 )
+from vfoundation.core.fsm_core import FSMCore
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SCHEMA_PATH = (
@@ -26,6 +29,31 @@ SCHEMA_PATH = (
     / "schemas"
     / "position_policy_sidecar_fee_aware_shadow_arm_state_v1.json"
 )
+
+
+class RecordingFSMBus(FSMCore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.events: list[tuple[str, dict, dict]] = []
+
+    def emit(self, event_name, payload=None, why="", data_ref=None, rid=None):
+        payload = payload or {}
+        self.events.append(
+            (event_name, payload, {"why": why,
+             "data_ref": data_ref, "rid": rid})
+        )
+        return super().emit(
+            event_name,
+            payload,
+            why=why,
+            data_ref=data_ref,
+            rid=rid,
+        )
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    with path.open("r", encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle if line.strip()]
 
 
 def test_fee_aware_shadow_arm_state_emission_and_schema(tmp_path: Path) -> None:
@@ -156,3 +184,88 @@ def test_fee_aware_shadow_event_isolation_and_backward_compat(tmp_path: Path) ->
 
     # Shadow fee aware should have missing economics tested too (optional)
     assert evaluated_payload["peak_giveback_snapshot"]["peak_giveback_shadow_arms"]["fee_aware"]["candidates"][0]["is_armed"] is True
+
+
+def test_fee_aware_shadow_event_writes_to_shadow_journal_without_authority_regression(
+    tmp_path: Path,
+) -> None:
+    bus = RecordingFSMBus()
+    journal_path = tmp_path / "shadow_critical_event_journal_v1.jsonl"
+    config = ConfigLoader().load_config()
+    config.observability.shadow_journal.path = str(journal_path)
+    attach_shadow_journal(bus, config)
+
+    manage_flow = DummyManageFlow(side="BUY", qty="1.0", entry_price="100.0")
+    cfg = _sidecar_config(tmp_path, mode="enable")
+    cfg.peak_giveback_close.enabled = True
+    cfg.peak_giveback_close.giveback_trigger_pct = 50.0
+    cfg.shadow_fee_aware_arm.enabled = True
+    cfg.shadow_fee_aware_arm.candidate_fee_multiples = [2.0]
+    cfg.shadow_fee_aware_arm.fee_source_priority = ["realized_lifecycle_fee"]
+    cfg.shadow_fee_aware_arm.optional_pct_notional_floor.enabled = False
+
+    sidecar = PositionPolicySidecar(
+        config=cfg,
+        bus=bus,
+        manage_flow_getter=lambda symbol: manage_flow,
+        known_symbols_getter=lambda: {"BTCUSDT"},
+        lifecycle_fee_getter=lambda symbol: 2.0,
+    )
+
+    sidecar.on_portfolio_state_updated(
+        _event(
+            positions=[
+                {
+                    "symbol": "BTCUSDT",
+                    "positionAmt": "1.0",
+                    "entryPrice": "100.0",
+                    "markPrice": "100.0",
+                    "unrealizedProfit": "0.0",
+                }
+            ]
+        )
+    )
+    sidecar.on_features_calculated(_event(symbol="BTCUSDT", signal_score=0.0))
+    sidecar.on_regime_detected(
+        _event(symbol="BTCUSDT", regime="MEAN_REVERSION", confidence=1.0)
+    )
+
+    bus.events.clear()
+
+    sidecar.on_portfolio_state_updated(
+        _event(
+            positions=[
+                {
+                    "symbol": "BTCUSDT",
+                    "positionAmt": "1.0",
+                    "entryPrice": "100.0",
+                    "markPrice": "105.0",
+                    "unrealizedProfit": "5.0",
+                }
+            ]
+        )
+    )
+
+    assert "EVT:POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE" in _topics(
+        bus)
+    assert "CMD:POSITION_POLICY_SIDECAR_CLOSE_REQUEST" not in _topics(bus)
+
+    journal_records = _read_jsonl(journal_path)
+    fee_aware_records = [
+        record
+        for record in journal_records
+        if record["event_name"] == "EVT:POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE"
+    ]
+    assert len(fee_aware_records) == 1
+
+    payload_fragment = fee_aware_records[0]["payload_fragment"]
+    assert payload_fragment["shadow_only"] is True
+    assert payload_fragment["authority_applied"] is False
+    assert payload_fragment["no_effect"] is True
+
+    trade_lifecycle_records = _read_jsonl(tmp_path / "trade_lifecycle.jsonl")
+    assert any(
+        record.get(
+            "event_type") == "POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE"
+        for record in trade_lifecycle_records
+    )

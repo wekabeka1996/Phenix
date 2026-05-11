@@ -226,6 +226,58 @@ class ExecutionTruthHardening:
             missing_fields=identity.missing_fields,
         )
 
+    def peek_trade_executed(
+        self,
+        payload: dict[str, Any],
+        *,
+        order_index: Any = None,
+    ) -> TradeExecutedDecision:
+        """Inspect whether a trade-executed identity was already seen.
+
+        This is a read-only probe over the shared fill deduper. It never seeds
+        a new identity and therefore is safe for late duplicate checks at
+        ingress boundaries.
+        """
+        identity = resolve_trade_executed_identity(
+            payload, order_index=order_index)
+        key = identity.key
+        if key is None:
+            return TradeExecutedDecision(
+                suppress=False,
+                key=None,
+                reason="fill_identity_insufficient_fail_open",
+                exact_identity=identity.exact_identity,
+                identity_quality=identity.identity_quality,
+                trade_id_present=identity.trade_id_present,
+                degraded_identity=identity.degraded_identity,
+                missing_fields=identity.missing_fields,
+            )
+
+        now_ms = get_clock().now_ms()
+        with self._lock:
+            self._fill_deduper.prune(now_ms)
+            self._prune_warm_state(now_ms)
+            warm_seeded = key in self._warm_seeded_fill_keys
+            seen = self._fill_deduper.seen(key)
+
+        return TradeExecutedDecision(
+            suppress=seen,
+            key=key,
+            reason=(
+                "duplicate_trade_executed_seeded_terminal_identity"
+                if seen and warm_seeded
+                else "duplicate_trade_executed_same_fill_identity"
+                if seen
+                else "fill_identity_not_seen"
+            ),
+            exact_identity=identity.exact_identity,
+            identity_quality=identity.identity_quality,
+            trade_id_present=identity.trade_id_present,
+            degraded_identity=identity.degraded_identity,
+            warm_state_hit=seen and warm_seeded,
+            missing_fields=identity.missing_fields,
+        )
+
     def evaluate_close_command(
         self,
         *,

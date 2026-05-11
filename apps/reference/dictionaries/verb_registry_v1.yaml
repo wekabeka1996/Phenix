@@ -193,6 +193,7 @@ registry:
   status: experimental
   schema: apps/reference/domains/execution_position/schemas/position_policy_sidecar_action_skipped_v1.json
   since: '2026-04-03'
+  notes: "Reserved. Schema and registry defined. No runtime emitter exists — not yet implemented."
 - op: CMD
   verb: POSITION_POLICY_SIDECAR_CLOSE_REQUEST
   owner: execution_position

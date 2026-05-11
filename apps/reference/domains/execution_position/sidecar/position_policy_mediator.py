@@ -5,6 +5,11 @@ from apps.reference.telemetry.trade_lifecycle_logger import (
     POSITION_POLICY_SIDECAR_RECORD_KIND,
     append_trade_lifecycle_record,
 )
+try:
+    from ..telemetry.lifecycle_stats_ledger import ExecutionLifecycleStatsLedger
+except ImportError:
+    ExecutionLifecycleStatsLedger = None
+
 from .position_policy_sidecar import (
     ACTION_PACKAGE_VERSION,
     CLOSE_REQUEST_COMMAND_TOPIC,
@@ -21,9 +26,9 @@ if TYPE_CHECKING:
 class PositionPolicyMediator:
     """
     Downstream command-bridge contour for position policy sidecar recommendations.
-    
-    Acts as the admissibility gatekeeper, scope parser, and execution truth 
-    bridge translating sidecar evaluative signals safely into standard CMD:CLOSE requests 
+
+    Acts as the admissibility gatekeeper, scope parser, and execution truth
+    bridge translating sidecar evaluative signals safely into standard CMD:CLOSE requests
     while suppressing duplicates and natively tracking state requests.
     """
 
@@ -31,6 +36,161 @@ class PositionPolicyMediator:
         self._fsm = fsm
         self._position_policy_close_requests: Dict[str, Dict[str, Any]] = {}
         self.position_policy_close_request_type = PositionPolicyCloseRequest
+
+    def _lifecycle_stats_ledger(self) -> Optional["ExecutionLifecycleStatsLedger"]:
+        ledger = getattr(self._fsm, "_lifecycle_stats_ledger", None)
+        if ledger is not None:
+            return ledger
+        if ExecutionLifecycleStatsLedger is None:
+            return None
+        try:
+            ledger = ExecutionLifecycleStatsLedger()
+        except Exception:
+            return None
+        setattr(self._fsm, "_lifecycle_stats_ledger", ledger)
+        return ledger
+
+    def _is_entry_order_ref(self, order_index: Any, ref: Any) -> bool:
+        classifier = getattr(order_index, "_is_entry_ref", None)
+        if callable(classifier):
+            try:
+                return bool(classifier(ref))
+            except Exception:
+                pass
+        return str(getattr(ref, "order_kind", "") or "").strip().upper() == "ENTRY"
+
+    def _recover_lifecycle_from_order_index(
+        self,
+        *,
+        symbol: str,
+        request_payload: Dict[str, Any],
+        manage_flow: Any,
+    ) -> str:
+        order_index = getattr(self._fsm, "_order_index", None)
+        if order_index is None or not hasattr(order_index, "get"):
+            return ""
+
+        fill_correlation = dict(request_payload.get("fill_correlation") or {})
+        candidate_keys = (
+            ("rid", fill_correlation.get("rid")),
+            ("clientOrderId", fill_correlation.get("client_order_id")),
+            ("exchangeOrderId", fill_correlation.get("order_id")),
+            ("clientOrderId", getattr(manage_flow, "entry_client_order_id", None)),
+            ("exchangeOrderId", getattr(manage_flow, "entry_order_id", None)),
+        )
+        seen: set[tuple[str, str]] = set()
+        for lookup_key, raw_value in candidate_keys:
+            lookup_value = str(raw_value or "").strip()
+            if not lookup_value:
+                continue
+            candidate = (lookup_key, lookup_value)
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            try:
+                ref = order_index.get(**{lookup_key: lookup_value})
+            except Exception:
+                ref = None
+            if ref is None:
+                continue
+            ref_symbol = str(getattr(ref, "symbol", "") or "").strip().upper()
+            if ref_symbol and ref_symbol != symbol:
+                continue
+            if not self._is_entry_order_ref(order_index, ref):
+                continue
+            lifecycle_id = str(
+                getattr(ref, "idempotent_key", "") or "").strip()
+            if lifecycle_id:
+                return lifecycle_id
+        return ""
+
+    def _resolve_close_request_lifecycle_id(
+        self,
+        request_payload: Dict[str, Any],
+        *,
+        manage_flow: Any = None,
+    ) -> str:
+        symbol = str(request_payload.get("symbol") or "").strip().upper()
+        if not symbol:
+            return ""
+        fill_correlation = dict(request_payload.get("fill_correlation") or {})
+        lifecycle_id = str(
+            request_payload.get("lifecycle_id")
+            or fill_correlation.get("lifecycle_id")
+            or getattr(self._fsm, "_last_lifecycle_ikey_by_symbol", {}).get(symbol)
+            or ""
+        ).strip()
+        if lifecycle_id:
+            return lifecycle_id
+        if manage_flow is None:
+            manage_flow = self._fsm.manage_flows.get(symbol)
+        return self._recover_lifecycle_from_order_index(
+            symbol=symbol,
+            request_payload=request_payload,
+            manage_flow=manage_flow,
+        )
+
+    def _reseed_close_request_lifecycle_context(
+        self,
+        request_payload: Dict[str, Any],
+        *,
+        lifecycle_id: str,
+    ) -> None:
+        lifecycle_id = str(lifecycle_id or "").strip()
+        if not lifecycle_id:
+            return
+        symbol = str(request_payload.get("symbol") or "").strip().upper()
+        if not symbol:
+            return
+        request_payload["lifecycle_id"] = lifecycle_id
+        fill_correlation = dict(request_payload.get("fill_correlation") or {})
+        fill_correlation.setdefault("lifecycle_id", lifecycle_id)
+        request_payload["fill_correlation"] = fill_correlation
+        lifecycle_cache = getattr(
+            self._fsm, "_last_lifecycle_ikey_by_symbol", None)
+        if isinstance(lifecycle_cache, dict):
+            lifecycle_cache[symbol] = lifecycle_id
+            return
+        setattr(self._fsm, "_last_lifecycle_ikey_by_symbol",
+                {symbol: lifecycle_id})
+
+    def _mark_lifecycle_close_requested(self, request_payload: Dict[str, Any]) -> None:
+        ledger = self._lifecycle_stats_ledger()
+        if ledger is None:
+            return
+        symbol = str(request_payload.get("symbol") or "").strip().upper()
+        if not symbol:
+            return
+        lifecycle_id = self._resolve_close_request_lifecycle_id(
+            request_payload)
+        if not lifecycle_id:
+            return
+        current_unrealized_raw = (
+            dict(request_payload.get("position_snapshot")
+                 or {}).get("unrealized_pnl_usdt")
+        )
+        try:
+            current_unrealized = (
+                None
+                if current_unrealized_raw in (None, "", "None")
+                else float(current_unrealized_raw)
+            )
+        except (TypeError, ValueError):
+            current_unrealized = None
+        close_actor = str(
+            request_payload.get("policy_source") or "position_policy_sidecar"
+        ).strip().upper()
+        try:
+            ledger.mark_close_requested(
+                lifecycle_id=lifecycle_id,
+                current_unrealized=current_unrealized,
+                close_actor=close_actor,
+                source=CLOSE_REQUEST_COMMAND_TOPIC,
+            )
+        except KeyError:
+            return
+        except Exception:
+            return
 
     def on_position_policy_close_request(self, event: Message) -> None:
         payload = dict(getattr(event, "pld", None) or {})
@@ -53,7 +213,7 @@ class PositionPolicyMediator:
         suppression_reason: Optional[str] = None
         incumbent_owner: Optional[str] = None
         manage_flow = self._fsm.manage_flows.get(symbol)
-        
+
         if not request.policy_source.startswith("position_policy_sidecar"):
             suppression_reason = "invalid_policy_source"
         elif request.requested_action != "SOFT_CLOSE":
@@ -79,8 +239,9 @@ class PositionPolicyMediator:
             incumbent_owner = "ManageFlowFSM"
 
         portfolio_state = self._fsm._get_portfolio_state_for_symbol(symbol)
-        position_signature = self._fsm._get_portfolio_position_signature(symbol)
-        
+        position_signature = self._fsm._get_portfolio_position_signature(
+            symbol)
+
         if suppression_reason is None and portfolio_state == "UNKNOWN":
             suppression_reason = "portfolio_state_unknown"
         elif suppression_reason is None and portfolio_state == "FLAT":
@@ -113,6 +274,15 @@ class PositionPolicyMediator:
                 },
             )
             return
+
+        lifecycle_id = self._resolve_close_request_lifecycle_id(
+            request_payload,
+            manage_flow=manage_flow,
+        )
+        self._reseed_close_request_lifecycle_context(
+            request_payload,
+            lifecycle_id=lifecycle_id,
+        )
 
         policy_context = self._position_policy_context_from_request_payload(
             request_payload
@@ -150,6 +320,8 @@ class PositionPolicyMediator:
             )
             return
 
+        self._mark_lifecycle_close_requested(request_payload)
+
         self._emit_position_policy_close_request_state(
             request_payload,
             request_state="close_command_emitted",
@@ -165,7 +337,7 @@ class PositionPolicyMediator:
 
     def on_execution_close_reconciled(self, event: Message) -> None:
         """
-        Intersect EXECUTION_CLOSE_RECONCILED natively to track completions across 
+        Intersect EXECUTION_CLOSE_RECONCILED natively to track completions across
         position_policy recommendation payloads gracefully releasing internal map locks.
         """
         payload = dict(getattr(event, "pld", None) or {})
@@ -320,6 +492,7 @@ class PositionPolicyMediator:
                 request_payload.get("portfolio_correlation") or {}
             ),
             "action_package_version": request_payload.get("action_package_version"),
+            "lifecycle_id": request_payload.get("lifecycle_id"),
             "request_ts_ms": request_payload.get("ts_ms"),
         }
 

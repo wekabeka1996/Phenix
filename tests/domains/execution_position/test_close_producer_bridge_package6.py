@@ -19,6 +19,10 @@ from apps.reference.domains.execution_position.sidecar.position_policy_mediator 
 from apps.reference.domains.execution_position.sidecar.position_policy_sidecar import (
     CLOSE_REQUEST_COMMAND_TOPIC,
 )
+from apps.reference.domains.execution_position.state.order_index import OrderIndex
+from apps.reference.domains.execution_position.telemetry.lifecycle_stats_ledger import (
+    ExecutionLifecycleStatsLedger,
+)
 from apps.reference.domains.execution_position.state.truth_hardening import (
     CloseGuardDecision,
 )
@@ -352,7 +356,7 @@ class _ManageFlow:
 
 
 class _MediatorFSM:
-    def __init__(self, out_path: Path) -> None:
+    def __init__(self, out_path: Path, *, ledger: ExecutionLifecycleStatsLedger | None = None) -> None:
         self.close_flow = CloseFlowFSM()
         self.manage_flows = {"BTCUSDT": _ManageFlow()}
         self.shadow_mode = True
@@ -360,6 +364,9 @@ class _MediatorFSM:
         self.config = SimpleNamespace()
         self._captured: list[Message | None] = []
         self._out_path = out_path
+        self._order_index = OrderIndex()
+        self._lifecycle_stats_ledger = ledger
+        self._last_lifecycle_ikey_by_symbol = {}
 
     def _get_portfolio_state_for_symbol(self, _symbol: str) -> str:
         return "OPEN"
@@ -380,7 +387,30 @@ class _MediatorFSM:
 
 
 def test_position_policy_mediator_path_reaches_typed_close_bridge(tmp_path: Path) -> None:
-    fsm = _MediatorFSM(tmp_path / "trade_lifecycle.jsonl")
+    ledger = ExecutionLifecycleStatsLedger(
+        log_file=str(tmp_path / "execution_lifecycle_stats_v1.jsonl"),
+        clock_ms_fn=lambda: 1_700_000_000_000,
+    )
+    ledger.seed_entry(
+        lifecycle_id="lifecycle-1",
+        entry_rid="entry-rid-1",
+        symbol="BTCUSDT",
+        side="BUY",
+        entry_ts_ms=1_700_000_000_000,
+        entry_price=100.0,
+        qty=0.10,
+        source="test_seed",
+    )
+    fsm = _MediatorFSM(tmp_path / "trade_lifecycle.jsonl", ledger=ledger)
+    fsm._order_index.upsert_from_open(
+        rid="entry-rid-1",
+        idempotent_key="lifecycle-1",
+        clientOrderId="ENTRY-recovered-1",
+        symbol="BTCUSDT",
+        side="BUY",
+        order_type="LIMIT",
+        order_kind="ENTRY",
+    )
     mediator = PositionPolicyMediator(fsm)
     event = Message(
         op="EVT",
@@ -392,6 +422,11 @@ def test_position_policy_mediator_path_reaches_typed_close_bridge(tmp_path: Path
             "request_id": "ppsreq:BTCUSDT:1",
             "trace_id": "pps:BTCUSDT:1:1",
             "symbol": "BTCUSDT",
+            "fill_correlation": {
+                "rid": "entry-rid-1",
+                "client_order_id": "ENTRY-recovered-1",
+            },
+            "position_snapshot": {"symbol": "BTCUSDT", "unrealized_pnl_usdt": "12.5"},
         },
         why="position_policy_sidecar_request",
     )
@@ -421,6 +456,14 @@ def test_position_policy_mediator_path_reaches_typed_close_bridge(tmp_path: Path
     assert decision.pld["command_trigger"] == CLOSE_REQUEST_COMMAND_TOPIC
     assert decision.pld["close_guard_prevalidated"] is True
     assert decision.pld["policy_context"]["policy_source"] == "position_policy_sidecar"
+    assert decision.pld["policy_context"]["lifecycle_id"] == "lifecycle-1"
+    assert decision.pld["policy_context"]["fill_correlation"]["lifecycle_id"] == "lifecycle-1"
+    assert fsm._last_lifecycle_ikey_by_symbol["BTCUSDT"] == "lifecycle-1"
+    latest_row = ledger.get_latest(lifecycle_id="lifecycle-1")
+    assert latest_row is not None
+    assert latest_row.provisional_status == "close_requested"
+    assert latest_row.current_unrealized_at_close_request == 12.5
+    assert latest_row.close_actor == "POSITION_POLICY_SIDECAR"
 
 
 class _FlipBus:
@@ -434,7 +477,8 @@ class _FlipBus:
 def test_flip_close_compatibility_payload_enters_typed_close_bridge() -> None:
     bus = _FlipBus()
     orchestrator = FlipOrchestrator(
-        clock=SimpleNamespace(now_ms=lambda: 1_700_000_000_000, now_sec=lambda: 1_700_000_000),
+        clock=SimpleNamespace(now_ms=lambda: 1_700_000_000_000,
+                              now_sec=lambda: 1_700_000_000),
         config=SimpleNamespace(
             domains=SimpleNamespace(
                 position_tracking=SimpleNamespace(positions_stale_ttl_sec=15)
@@ -457,7 +501,8 @@ def test_flip_close_compatibility_payload_enters_typed_close_bridge() -> None:
     )
 
     assert result == "FLIP_CLOSE_PENDING"
-    cmd_close_events = [event for event in bus.emits if event[0] == "CMD:CLOSE"]
+    cmd_close_events = [
+        event for event in bus.emits if event[0] == "CMD:CLOSE"]
     assert len(cmd_close_events) == 1
     payload = cmd_close_events[0][1] or {}
 

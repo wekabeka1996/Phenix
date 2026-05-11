@@ -181,31 +181,23 @@ def test_guardian_migration_only_allowed_root_mutation(tmp_path: Path) -> None:
     ).parents[2] / "config" / "aurora").resolve()
     _copy_tree(repo_cfg, tmp_path)
 
-    # Inject legacy root guardian block
+    # Inject legacy root guardian block into trading.yaml
     trading_obj = yaml.safe_load(
         (tmp_path / "trading.yaml").read_text(encoding="utf-8"))
     assert isinstance(trading_obj, dict)
 
-    # Ensure execution.order_guardian is absent to avoid conflict
+    # Ensure trading.execution.order_guardian is absent to avoid conflict
     trading_block = trading_obj.get("trading")
     assert isinstance(trading_block, dict)
     exec_block = trading_block.get("execution")
     if isinstance(exec_block, dict):
         exec_block.pop("order_guardian", None)
-    root_exec = trading_obj.get("execution")
-    if isinstance(root_exec, dict):
-        root_exec.pop("order_guardian", None)
 
     trading_obj["guardian"] = {"enabled": True, "max_open_orders": 123}
     _write_yaml(tmp_path / "trading.yaml", trading_obj)
 
-    system_obj = yaml.safe_load(
-        (tmp_path / "system.yaml").read_text(encoding="utf-8"))
-    assert isinstance(system_obj, dict)
-    system_exec = system_obj.get("execution")
-    if isinstance(system_exec, dict):
-        system_exec.pop("order_guardian", None)
-    _write_yaml(tmp_path / "system.yaml", system_obj)
+    # EX-REMOVE-ROOT-2026-05-09: system.yaml no longer has execution block;
+    # no manipulation needed there.
 
     loader = ConfigLoader(config_dir=tmp_path)
 
@@ -227,7 +219,8 @@ def test_guardian_migration_only_allowed_root_mutation(tmp_path: Path) -> None:
     dumped = cfg.model_dump()
     assert "guardian" not in dumped, "legacy guardian must not survive validation"
 
-    # Allowlisted migration target
+    # EX-REMOVE-ROOT-2026-05-09: migration target is trading.execution.order_guardian.
+    # cfg.execution is cfg.trading.execution via alias — both access the migrated guardian.
     assert cfg.execution is not None
     assert isinstance(cfg.execution.order_guardian, dict)
     assert cfg.execution.order_guardian.get("enabled") is True
@@ -235,32 +228,23 @@ def test_guardian_migration_only_allowed_root_mutation(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("system_guardian", "trading_guardian"),
+    "trading_guardian",
     [
-        ({"unified": True, "ledger_db_path": "data/shared_order_ledger.db"}, None),
-        (None, {"unified": True, "ledger_db_path": "data/shared_order_ledger.db"}),
-        (
-            {"unified": True, "ledger_db_path": "data/shared_order_ledger.db"},
-            {"unified": True, "ledger_db_path": "data/shared_order_ledger.db"},
-        ),
+        {"unified": True, "ledger_db_path": "data/shared_order_ledger.db"},
+        None,
     ],
 )
 def test_order_guardian_surfaces_load_when_non_conflicting(
     tmp_path: Path,
-    system_guardian: dict[str, Any] | None,
     trading_guardian: dict[str, Any] | None,
 ) -> None:
+    """EX-REMOVE-ROOT-2026-05-09: only trading.execution.order_guardian is the canonical source.
+
+    cfg.execution IS cfg.trading.execution (same object via alias).
+    """
     repo_cfg = (Path(__file__).resolve(
     ).parents[2] / "config" / "aurora").resolve()
     _copy_tree(repo_cfg, tmp_path)
-
-    system_obj = yaml.safe_load(
-        (tmp_path / "system.yaml").read_text(encoding="utf-8"))
-    assert isinstance(system_obj, dict)
-    system_exec = system_obj.get("execution")
-    assert isinstance(system_exec, dict)
-    system_exec["order_guardian"] = system_guardian
-    _write_yaml(tmp_path / "system.yaml", system_obj)
 
     trading_obj = yaml.safe_load(
         (tmp_path / "trading.yaml").read_text(encoding="utf-8"))
@@ -277,11 +261,18 @@ def test_order_guardian_surfaces_load_when_non_conflicting(
     assert cfg.execution is not None
     assert cfg.trading is not None
     assert cfg.trading.execution is not None
-    assert cfg.execution.order_guardian == system_guardian
+    # EX-REMOVE-ROOT: alias makes cfg.execution the same object as cfg.trading.execution
+    assert cfg.execution is cfg.trading.execution
+    assert cfg.execution.order_guardian == trading_guardian
     assert cfg.trading.execution.order_guardian == trading_guardian
 
 
 def test_order_guardian_surfaces_fail_when_divergent_at_config_load(tmp_path: Path) -> None:
+    """EX-REMOVE-ROOT-2026-05-09: root execution block is dead; reintroducing it fails closed.
+
+    The loader guard rejects any root execution block — it is the correct replacement
+    for the old root-vs-trading divergence check (which is now dead code).
+    """
     repo_cfg = (Path(__file__).resolve(
     ).parents[2] / "config" / "aurora").resolve()
     _copy_tree(repo_cfg, tmp_path)
@@ -289,33 +280,26 @@ def test_order_guardian_surfaces_fail_when_divergent_at_config_load(tmp_path: Pa
     system_obj = yaml.safe_load(
         (tmp_path / "system.yaml").read_text(encoding="utf-8"))
     assert isinstance(system_obj, dict)
-    system_exec = system_obj.get("execution")
-    assert isinstance(system_exec, dict)
-    system_exec["order_guardian"] = {
-        "unified": True,
-        "ledger_db_path": "data/root_order_ledger.db",
+    # Re-introduce root execution block — must be rejected fail-closed
+    system_obj["execution"] = {
+        "fsm_periodic_cleanup_enabled": False,
+        "cooldown_after_close_ms": 60000,
+        "anti_race_close_ms": 800,
+        "fallback": None,
+        "limit_orders": None,
+        "orders": None,
+        "allow_trade_with_guardian_tidy_only": False,
+        "order_guardian": {"unified": True, "ledger_db_path": "data/order_ledger.db"},
+        "manage": {"auto": True},
     }
     _write_yaml(tmp_path / "system.yaml", system_obj)
 
-    trading_obj = yaml.safe_load(
-        (tmp_path / "trading.yaml").read_text(encoding="utf-8"))
-    assert isinstance(trading_obj, dict)
-    trading_block = trading_obj.get("trading")
-    assert isinstance(trading_block, dict)
-    trading_exec = trading_block.get("execution")
-    assert isinstance(trading_exec, dict)
-    trading_exec["order_guardian"] = {
-        "unified": False,
-        "ledger_db_path": "data/trading_order_ledger.db",
-    }
-    _write_yaml(tmp_path / "trading.yaml", trading_obj)
-
-    with pytest.raises(ConfigContractError, match=r"execution\.order_guardian") as exc_info:
+    with pytest.raises(ConfigContractError) as exc_info:
         ConfigLoader(config_dir=tmp_path).load_config()
 
     message = str(exc_info.value)
-    assert "trading.execution.order_guardian" in message
-    assert "differ" in message
+    assert "execution" in message
+    assert "EX-REMOVE-ROOT" in message or "trading.yaml" in message
 
 
 def test_root_guardian_conflict_with_existing_order_guardian_still_fails(tmp_path: Path) -> None:

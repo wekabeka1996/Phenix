@@ -117,6 +117,36 @@ def _position_closed_payload(fsm):
     return payloads[0]
 
 
+def _run_execution_close_reconciled(fsm, *, symbol: str = "BTCUSDT"):
+    import apps.reference.domains.execution_position.fsm as fsm_mod
+    import apps.reference.domains.execution_position.orchestration.event_handlers as handlers_mod
+
+    written = []
+    trade_lifecycle = MagicMock()
+    fsm._evt_handlers = handlers_mod.EPEventHandlers(fsm)
+    fsm._position_policy_mediator = MagicMock()
+    fsm._apply_authoritative_local_close_reset = MagicMock(return_value=True)
+    fsm._position_policy_sidecar = None
+
+    event = SimpleNamespace(
+        pld={
+            "symbol": symbol,
+            "rid": "close-rid-1",
+            "source": "guardian",
+            "ts_ms": 1_700_000_000_000,
+            "business_close_reconciled": True,
+            "why": "guardian:close_reconciled",
+        }
+    )
+
+    with patch.object(handlers_mod, "_trade_lifecycle", trade_lifecycle), \
+            patch.object(handlers_mod, "_get_order_logger") as mock_log_fn:
+        mock_log_fn.return_value.write.side_effect = written.append
+        fsm_mod.ExecPosFSM._on_execution_close_reconciled(fsm, event)
+
+    return written, trade_lifecycle
+
+
 def test_sidecar_close_truth_uses_close_fill_not_stale_entry_cache() -> None:
     fsm = _make_mock_fsm()
     fsm._prev_position_amts = {"BTCUSDT": 0.01}
@@ -125,7 +155,8 @@ def test_sidecar_close_truth_uses_close_fill_not_stale_entry_cache() -> None:
     fsm._last_lifecycle_ikey_by_symbol = {"BTCUSDT": "life-1"}
     fsm._last_trade_id_by_symbol = {"BTCUSDT": "entry-trade-stale"}
     fsm._last_entry_side_by_symbol = {"BTCUSDT": "BUY"}
-    fsm._open_regime_by_symbol = {"BTCUSDT": {"regime_epoch_ref": "stable_epoch:BTCUSDT:1"}}
+    fsm._open_regime_by_symbol = {"BTCUSDT": {
+        "regime_epoch_ref": "stable_epoch:BTCUSDT:1"}}
 
     _run_fill(
         fsm,
@@ -167,7 +198,8 @@ def test_sidecar_close_without_fill_truth_emits_unresolved_not_fake_profit() -> 
     fsm._last_trade_id_by_symbol = {"BTCUSDT": "entry-trade-stale"}
     fsm._last_entry_side_by_symbol = {"BTCUSDT": "BUY"}
     fsm._accumulated_fees_by_symbol = {"BTCUSDT": 0.2}
-    fsm._open_regime_by_symbol = {"BTCUSDT": {"regime_epoch_ref": "stable_epoch:BTCUSDT:1"}}
+    fsm._open_regime_by_symbol = {"BTCUSDT": {
+        "regime_epoch_ref": "stable_epoch:BTCUSDT:1"}}
 
     _run_portfolio_close(fsm)
     payload = _position_closed_payload(fsm)
@@ -188,7 +220,8 @@ def test_opposite_entry_fill_is_accounted_as_entry_netting_close() -> None:
     fsm._last_lifecycle_fill_price_by_symbol = {"BTCUSDT": 81434.8}
     fsm._last_lifecycle_ikey_by_symbol = {"BTCUSDT": "life-btc-1"}
     fsm._last_entry_side_by_symbol = {"BTCUSDT": "BUY"}
-    fsm._open_regime_by_symbol = {"BTCUSDT": {"regime_epoch_ref": "stable_epoch:BTCUSDT:1"}}
+    fsm._open_regime_by_symbol = {"BTCUSDT": {
+        "regime_epoch_ref": "stable_epoch:BTCUSDT:1"}}
 
     _run_fill(
         fsm,
@@ -212,3 +245,50 @@ def test_opposite_entry_fill_is_accounted_as_entry_netting_close() -> None:
     assert payload["trade_id"] == "btc-close-trade-1"
     assert payload["realized_pnl"] == pytest.approx(-21.0375)
     assert payload["realized_pnl_net"] == pytest.approx(-21.93)
+
+
+def test_execution_close_reconciled_emits_position_closed_when_portfolio_edge_was_missed() -> None:
+    fsm = _make_mock_fsm()
+    fsm._prev_position_amts = {}
+    fsm._last_lifecycle_rid_by_symbol = {"BTCUSDT": "CLOSE-BTCUSDT-close-1"}
+    fsm._last_lifecycle_fill_price_by_symbol = {"BTCUSDT": 80450.0}
+    fsm._last_lifecycle_ikey_by_symbol = {"BTCUSDT": "life-1"}
+    fsm._last_entry_side_by_symbol = {"BTCUSDT": "BUY"}
+    fsm._open_regime_by_symbol = {
+        "BTCUSDT": {"regime_epoch_ref": "stable_epoch:BTCUSDT:1"}
+    }
+    fsm._close_accounting_truth_by_symbol = {
+        "BTCUSDT": {
+            "trade_id": "close-trade-1",
+            "close_price": 80450.0,
+            "realized_pnl": -12.5,
+            "fees": 0.4,
+            "lifecycle_id": "life-1",
+            "entry_side": "BUY",
+            "close_reason": "CLOSE",
+            "pnl_status": "resolved",
+            "pnl_source": "close_fill",
+            "economic_close_detected": True,
+            "economic_close_kind": "explicit_close_fill",
+            "close_fill_order_id": "close-order-1",
+            "close_fill_client_order_id": "CLOSE-BTCUSDT-close-1",
+        }
+    }
+
+    written, trade_lifecycle = _run_execution_close_reconciled(fsm)
+    payload = _position_closed_payload(fsm)
+
+    trade_lifecycle.on_close.assert_called_once()
+    assert payload["trade_id"] == "close-trade-1"
+    assert payload["close_reason"] == "CLOSE"
+    assert payload["close_price"] == pytest.approx(80450.0)
+    assert payload["realized_pnl_net"] == pytest.approx(-12.9)
+    assert payload["entry_regime_epoch_ref"] == "stable_epoch:BTCUSDT:1"
+    assert fsm._apply_authoritative_local_close_reset.call_count == 1
+
+    close_write = next(
+        item for item in written if isinstance(item, dict) and item.get("event_type") == "POSITION_CLOSED"
+    )
+    assert close_write["rid"] == "CLOSE-BTCUSDT-close-1"
+    assert close_write["trade_id"] == "close-trade-1"
+    assert close_write["lifecycle_id"] == "life-1"

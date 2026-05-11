@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -10,7 +11,6 @@ from apps.reference.config.domains.decision_making import (
     SafetyGatesConfig,
 )
 from apps.reference.config.shared.atoms import LiquidityGateConfig
-from apps.reference.config.shared.instruments import LeverageConfig
 
 
 class AuroraSideBiasConfig(BaseModel):
@@ -219,6 +219,27 @@ class VolatilityEntryConfig(BaseModel):
         return self
 
 
+class AuroraLeverageOverrideConfig(BaseModel):
+    """Aurora per-symbol leverage override — only the non-SSOT field survives.
+
+    LEV-TARGET-MODE-REMOVE-2026-05-10: leverage.target and leverage.mode removed.
+    Canonical values are in instruments.yaml (instruments.execution.target_leverage /
+    instruments.execution.margin_mode). Only max_notional_value is retained as an
+    optional per-symbol notional cap override.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_notional_value: Optional[Decimal] = Field(
+        None,
+        description=(
+            "Optional per-symbol notional cap (USDT). "
+            "None = 1_000_000 USDT default applied by quantizer. "
+            "Separate from SSOT leverage (instruments.yaml)."
+        ),
+    )
+
+
 CANONICAL_WEIGHT_KEYS = frozenset(
     {
         "obi",
@@ -269,8 +290,9 @@ class AuroraInstrumentConfig(BaseModel):
     position_mode: Optional[Literal["STRICT", "DYNAMIC"]] = Field(
         ..., description="STRICT = No pyramiding (1 trade only), DYNAMIC = Pyramiding allowed up to cap",
     )
-    leverage: Optional[LeverageConfig] = Field(
-        ..., description="Per-symbol leverage settings (P1: Active Leverage)",
+    leverage: Optional[AuroraLeverageOverrideConfig] = Field(
+        ..., description="Per-symbol leverage override (max_notional_value only). "
+                         "Canonical leverage/margin-mode live in instruments.yaml.",
     )
     regime_thresholds: Optional[Dict[str, float]] = Field(
         ..., description="Threshold multipliers per regime (TREND, VOLATILE, FLAT)",

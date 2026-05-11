@@ -47,7 +47,7 @@ class ProcessStrategyBoundary(BaseModel):
 
     Only the control-envelope fields needed for routing and core processing
     are declared. All remaining fields (bar, bar_identity, gap_state,
-    diagnostics, price_motion, regime snapshot, etc.) flow through the
+  diagnostics, regime snapshot, etc.) flow through the
     ``ProcessStrategyCmd.raw`` pass-through mapping.
 
     ``extra="ignore"`` is intentional: the schema is additive (was extended
@@ -73,6 +73,7 @@ class ProcessStrategyBoundary(BaseModel):
     # Rule 7: do NOT default to {} — handler decides whether to fail-closed.
     features: dict[str, Any] | None = None
     warmup: dict[str, Any] | None = None
+    price_motion: dict[str, Any] | None = None
 
 
 class RegimeDetectedBoundary(BaseModel):

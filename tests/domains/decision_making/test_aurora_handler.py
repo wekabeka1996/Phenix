@@ -529,7 +529,8 @@ class TestCanonicalSidePropagation:
                     thr_buy=Decimal("0.1"),
                     thr_sell=Decimal("0.1"),
                     why_chain=["enter:buy"],
-                    psi_vector={},
+                    psi_vector={
+                        "side_why": "enter:buy:score=0.5000>=thr_buy=0.1000"},
                     deferred=False,
                     defer_reason=None,
                     threshold_factor=1.0,

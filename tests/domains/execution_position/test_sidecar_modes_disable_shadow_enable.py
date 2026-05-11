@@ -205,3 +205,61 @@ class TestSidecarCloseInProgressSuppression:
         assert "partial_reduce_forbidden" in source, (
             "Mediator must enforce partial_reduce_forbidden scope restriction"
         )
+
+
+class TestSidecarBracketsPendingLifecycleEligibility:
+    """
+    A5 governance: BRACKETS_PENDING is an active lifecycle state.
+
+    Both observed runtime sidecar closes occurred with manage_state=BRACKETS_PENDING.
+    This class documents and enforces the explicit design decision that sidecar close
+    requests are intentionally permitted in BRACKETS_PENDING (position is real, fill
+    confirmed, bracket placement not yet exchange-confirmed).
+    """
+
+    def test_has_active_lifecycle_returns_true_for_brackets_pending(self):
+        """
+        BRACKETS_PENDING must pass has_active_lifecycle() — the state is non-FLAT,
+        meaning the sidecar mediator will not suppress on lifecycle grounds.
+        """
+        from apps.reference.domains.execution_position.flows.manage.fsm_manage import (
+            ManageFlowFSM,
+            ManageState,
+        )
+
+        source = inspect.getsource(ManageFlowFSM.has_active_lifecycle)
+        # has_active_lifecycle() is authoritative via state != FLAT check
+        assert "ManageState.FLAT" in source, (
+            "has_active_lifecycle must compare against ManageState.FLAT"
+        )
+        # BRACKETS_PENDING is not FLAT, so it returns True without additional checks
+        assert ManageState.BRACKETS_PENDING != ManageState.FLAT, (
+            "BRACKETS_PENDING must be a distinct non-FLAT state"
+        )
+
+    def test_mediator_does_not_block_brackets_pending_by_name(self):
+        """
+        Mediator source must NOT contain a BRACKETS_PENDING-specific suppression guard.
+        The eligibility decision (allow) must remain implicit via has_active_lifecycle().
+        If this test fails, a guard was added that changes the existing contract.
+        """
+        from apps.reference.domains.execution_position.sidecar.position_policy_mediator import (
+            PositionPolicyMediator,
+        )
+
+        source = inspect.getsource(
+            PositionPolicyMediator.on_position_policy_close_request)
+        assert "BRACKETS_PENDING" not in source, (
+            "A5 governance: Mediator must not contain a BRACKETS_PENDING-specific block. "
+            "If intentionally adding one, update this test and the SIDECAR_ENABLE_GOVERNANCE_AUDIT_REPORT "
+            "lifecycle-state eligibility matrix accordingly."
+        )
+
+    def test_brackets_pending_state_is_in_manage_state_enum(self):
+        """ManageState.BRACKETS_PENDING must exist with the exact string value."""
+        from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageState
+
+        assert hasattr(ManageState, "BRACKETS_PENDING"), (
+            "ManageState enum must define BRACKETS_PENDING"
+        )
+        assert ManageState.BRACKETS_PENDING.value == "BRACKETS_PENDING"

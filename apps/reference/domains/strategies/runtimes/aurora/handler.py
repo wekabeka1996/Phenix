@@ -152,8 +152,11 @@ class SymbolState:
         # Re-entry cooldown starts when the last exit is recorded.
         self.last_exit_timestamp = None
 
-        # Cached FEATURES price_motion because CMD:PROCESS_STRATEGY omits it.
+        # Same-bar fallback snapshot from EVT:FEATURES_CALCULATED. Direct CMD
+        # transport remains the canonical path when present.
         self.cached_price_motion = None
+        self.cached_price_motion_close_boundary_ts_ms = None
+        self.cached_price_motion_bar_close_ts = None
 
         # Objective-engine counters are event-fed and windowed later by config.
         self.objective_blocked_ts_ms = deque()
@@ -921,7 +924,8 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         """Cache non-trigger feature data from EVT:FEATURES_CALCULATED.
 
         This path does not update warmup and does not trigger decision logic. It
-        only preserves auxiliary data blocks that CMD:PROCESS_STRATEGY omits.
+        only preserves same-bar fallback metadata for auxiliary blocks when the
+        direct CMD transport does not carry them.
         """
         symbol = event.get("symbol")
         if not symbol:
@@ -929,10 +933,37 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
 
         state = self._symbol_states[symbol]
 
-        # price_motion is consumed later by volatility-adjusted gates.
         price_motion = event.get("price_motion")
-        if price_motion:
-            state.cached_price_motion = price_motion
+        if isinstance(price_motion, dict):
+            bar_identity = extract_canonical_bar_identity(
+                event,
+                default_symbol=str(symbol),
+                default_timeframe_sec=int(
+                    event.get("tf_sec") or self.timeframe_sec or 0),
+                default_source_mode=RuntimeBarSourceMode.LIVE,
+            )
+            cached_close_boundary_ts_ms = (
+                int(bar_identity.close_boundary_ts_ms)
+                if bar_identity is not None
+                else int(event.get("close_boundary_ts_ms") or 0) or None
+            )
+            bar_payload = event.get("bar") if isinstance(
+                event.get("bar"), dict) else {}
+            cached_bar_close_ts = (
+                int(bar_identity.bar_end_ts_ms)
+                if bar_identity is not None
+                else int(
+                    event.get("bar_close_ts")
+                    or bar_payload.get("end_ts_ms")
+                    or bar_payload.get("close_ts")
+                    or bar_payload.get("kline_close_time")
+                    or 0
+                )
+                or None
+            )
+            state.cached_price_motion = dict(price_motion)
+            state.cached_price_motion_close_boundary_ts_ms = cached_close_boundary_ts_ms
+            state.cached_price_motion_bar_close_ts = cached_bar_close_ts
 
     def on_features_calculated(self, event: Dict[str, Any]) -> None:
         """Compatibility wrapper for EVT:FEATURES_CALCULATED.

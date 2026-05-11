@@ -84,6 +84,12 @@ def test_runtime_close_coverage_classifies_rejected_and_source_gap(tmp_path: Pat
     assert rows["rid_reject"]["classification"] == "NOT_EXECUTED_OR_REJECTED"
     assert rows["rid_gap"]["classification"] == "SOURCE_LOGGING_GAP"
     assert result["source_inputs"]["authority_order_log_exists"] is False
+    assert result["denominator_audit"]["total_decision_rows"] == 2
+    assert result["denominator_audit"]["rejected_or_not_executed_rows"] == 1
+    assert result["denominator_audit"]["execution_eligible_rows"] == 1
+    assert result["denominator_audit"]["close_expected_rows"] == 1
+    assert result["denominator_audit"]["close_matched_rows"] == 0
+    assert result["denominator_audit"]["execution_to_close_coverage_pct"] == 0.0
 
 
 def test_runtime_close_coverage_classifies_lifecycle_bridge_and_writes_outputs(tmp_path: Path) -> None:
@@ -145,6 +151,8 @@ def test_runtime_close_coverage_classifies_lifecycle_bridge_and_writes_outputs(t
     assert (out_dir / "LIFECYCLE_BRIDGE_AUDIT.md").exists()
     assert (out_dir / "unmatched_classification.json").exists()
     assert (out_dir / "UNMATCHED_CLASSIFICATION.md").exists()
+    assert (out_dir / "denominator_audit.json").exists()
+    assert (out_dir / "DENOMINATOR_AUDIT.md").exists()
     assert "MISSING_SOURCE_SNAPSHOT" in (
         out_dir / "ORDER_LOG_EVENT_TAXONOMY.md").read_text(encoding="utf-8")
 
@@ -262,3 +270,126 @@ def test_runtime_close_coverage_prefers_artifact_snapshot_over_missing_live_auth
     assert result["source_inputs"]["authority_order_log_exists"] is True
     assert result["source_inputs"]["source_snapshot_manifest"]["exists"] is True
     assert result["source_inputs"]["decision_ledger"]["source_kind"] == "artifact_authority_snapshot"
+
+
+def test_runtime_close_coverage_denominator_prefers_execution_evidence_over_reject_terminal(tmp_path: Path) -> None:
+    artifact_dir = tmp_path / "artifacts" / \
+        "calibration_datasets" / "_smoke_03q_realized_outcome"
+    snapshot_dir = artifact_dir / "source_snapshot"
+
+    _write_jsonl(
+        snapshot_dir / "decision_ledger_v1.jsonl",
+        [
+            {
+                "decision_id": "dec_conflict",
+                "rid": "rid_conflict",
+                "symbol": "BTCUSDT",
+                "terminal_status": "REJECTED_UPSTREAM",
+                "lifecycle_id": "lc_conflict",
+                "apply_result": "SHADOW_RECORDED",
+                "causal_state_snapshot": {
+                    "decision_basis_ts_ms": 1714568399000,
+                    "candidate_intent_summary": {
+                        "strategy_id": "aurora",
+                        "side": "BUY",
+                        "proposed_action": "OPEN_LONG",
+                    },
+                },
+            }
+        ],
+    )
+    _write_jsonl(
+        snapshot_dir / "order_log_v1.jsonl",
+        [
+            {
+                "rid": "rid_conflict",
+                "event_type": "ORDER_FILLED",
+                "order_kind": "ENTRY",
+                "symbol": "BTCUSDT",
+                "lifecycle_id": "lc_conflict",
+                "timestamp": 1714568450000,
+            },
+            {
+                "rid": "rid_conflict",
+                "event_type": "POSITION_CLOSED",
+                "lifecycle_id": "lc_conflict",
+                "trade_id": "trade_conflict",
+                "symbol": "BTCUSDT",
+                "realized_pnl_net": 2.5,
+                "fees": 0.2,
+                "timestamp": 1714568600000,
+            },
+        ],
+    )
+    _write_jsonl(
+        artifact_dir / "realized_trades.jsonl",
+        [
+            {
+                "rid": "rid_conflict",
+                "exact_roundtrip": True,
+            }
+        ],
+    )
+    (snapshot_dir / "source_snapshot_manifest.json").write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-05-07T00:00:00+00:00",
+                "builder": "realized_outcome_builder",
+                "repo_root": tmp_path.as_posix(),
+                "sources": [
+                    {
+                        "role": "decision_ledger",
+                        "source_path": (tmp_path / "logs" / "shadow_telemetry" / "decision_ledger_v1.jsonl").as_posix(),
+                        "source_kind": "current_workspace_authority",
+                        "exists": True,
+                        "size_bytes": (snapshot_dir / "decision_ledger_v1.jsonl").stat().st_size,
+                        "sha256": "unused",
+                        "mtime_utc": "2026-05-07T00:00:00+00:00",
+                        "copied_to": "source_snapshot/decision_ledger_v1.jsonl",
+                        "required": True,
+                        "notes": None,
+                    },
+                    {
+                        "role": "order_log",
+                        "source_path": (tmp_path / "logs" / "order_log_v1.jsonl").as_posix(),
+                        "source_kind": "current_workspace_authority",
+                        "exists": True,
+                        "size_bytes": (snapshot_dir / "order_log_v1.jsonl").stat().st_size,
+                        "sha256": "unused",
+                        "mtime_utc": "2026-05-07T00:00:00+00:00",
+                        "copied_to": "source_snapshot/order_log_v1.jsonl",
+                        "required": True,
+                        "notes": None,
+                    },
+                    {
+                        "role": "trade_lifecycle",
+                        "source_path": (tmp_path / "logs" / "trade_lifecycle.jsonl").as_posix(),
+                        "source_kind": "current_workspace_authority",
+                        "exists": False,
+                        "size_bytes": None,
+                        "sha256": None,
+                        "mtime_utc": None,
+                        "copied_to": None,
+                        "required": False,
+                        "notes": None,
+                    },
+                ],
+                "missing_required_sources": [],
+                "warnings": [],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    result = analyze_runtime_close_coverage(
+        tmp_path,
+        realized_artifact_dir=artifact_dir,
+    )
+
+    assert result["denominator_audit"]["rejected_or_not_executed_rows"] == 0
+    assert result["denominator_audit"]["execution_eligible_rows"] == 1
+    assert result["denominator_audit"]["close_expected_rows"] == 1
+    assert result["denominator_audit"]["close_matched_rows"] == 1
+    assert result["denominator_audit"]["exact_roundtrip_rows"] == 1
+    assert result["denominator_audit"]["execution_to_close_coverage_pct"] == 100.0

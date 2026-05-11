@@ -37,6 +37,7 @@ from .restore_artifact import (
     ExecutionPositionStartupTruthInputSnapshot,
 )
 from vfoundation.dr.replay import replay_w5_bounded_startup_subset
+from vfoundation.dr.wal import check_daily_wal_integrity, WalChainIntegrityResult
 
 if TYPE_CHECKING:
     from apps.reference.domains.execution_position.fsm import ExecPosFSM
@@ -49,6 +50,7 @@ RESTORE_PHASE_UNKNOWN = "UNKNOWN"
 BRACKET_STATE_UNKNOWN = "UNKNOWN"
 BRACKET_STATE_DEFERRED_PENDING_WAL = "DEFERRED_PENDING_WAL"
 STARTUP_TRUTH_ARTIFACT_WRITER_COMPONENT = "execution_position"
+_W5_REPLAY_SUMMARY_ARTIFACT_PATH = Path("ops/restore/w5_replay_startup_summary_v1.json")
 
 
 class StartupTruthOrchestrator:
@@ -376,6 +378,8 @@ class StartupTruthOrchestrator:
         bounded_replay_summary = bounded_replay_summary or self._bounded_startup_replay_summary(
             symbols_considered=symbols_considered,
         )
+        self._persist_w5_replay_summary(bounded_replay_summary)
+        self._check_daily_wal_integrity()
         restore_writer = self._restore_artifact_writer
         restore_artifact_path = restore_writer.storage_path if restore_writer is not None else None
 
@@ -635,6 +639,94 @@ class StartupTruthOrchestrator:
             )
         except Exception:
             return ExecutionPositionStartupTruthCacheStatus()
+
+    def _check_daily_wal_integrity(self) -> WalChainIntegrityResult:
+        """Run observational WAL chain check. Never raises; never blocks startup."""
+        try:
+            result = check_daily_wal_integrity()
+        except Exception as exc:
+            from vfoundation.dr.wal import WalChainIntegrityResult as _R
+            import time as _t
+            result = _R(
+                file_path="unknown",
+                chain_ok=False,
+                record_count=0,
+                first_bad_index=None,
+                checked_at_ms=int(_t.time() * 1000),
+            )
+            LOG.warning("WAL integrity check raised unexpectedly: %s", exc)
+            return result
+
+        if result.chain_ok:
+            LOG.debug(
+                "WAL chain OK: file=%s records=%d",
+                result.file_path, result.record_count,
+            )
+        else:
+            LOG.warning(
+                "WAL chain break detected: file=%s records=%d first_bad_index=%s "
+                "— cross-process write collision suspected (Windows thread-lock only). "
+                "Observational only; startup continues.",
+                result.file_path, result.record_count, result.first_bad_index,
+            )
+
+        self._fsm._emit_observability_event(
+            "RESTORE:EXECUTION_POSITION_WAL_CHAIN_INTEGRITY_CHECKED",
+            {
+                "file_path": result.file_path,
+                "chain_ok": result.chain_ok,
+                "record_count": result.record_count,
+                "first_bad_index": result.first_bad_index,
+                "checked_at_ms": result.checked_at_ms,
+            },
+        )
+        return result
+
+    def _persist_w5_replay_summary(
+        self,
+        summary: Optional[ExecutionPositionStartupTruthReplaySummary],
+    ) -> bool:
+        """Persist W5 bounded replay summary to ops/restore/w5_replay_startup_summary_v1.json.
+
+        Write is best-effort and observational only. Preserves restore_boundary_separation
+        and authoritative_mutation_attempted=False invariants (baked into the model).
+        Returns True on success, False on any error.
+        """
+        if summary is None:
+            return False
+        try:
+            artifact_path = _W5_REPLAY_SUMMARY_ARTIFACT_PATH
+            artifact_path.parent.mkdir(parents=True, exist_ok=True)
+            payload = summary.model_dump(mode="json")
+            tmp_path = artifact_path.with_suffix(".tmp")
+            tmp_path.write_text(
+                __import__("json").dumps(payload, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            tmp_path.replace(artifact_path)
+            LOG.debug(
+                "W5 replay summary persisted: path=%s completed=%s accepted=%s",
+                artifact_path, payload.get("completed"), payload.get("records_accepted"),
+            )
+            self._fsm._emit_observability_event(
+                "RESTORE:EXECUTION_POSITION_W5_REPLAY_SUMMARY_PERSISTED",
+                {
+                    "path": str(artifact_path),
+                    "completed": payload.get("completed"),
+                    "records_seen": payload.get("records_seen"),
+                    "records_accepted": payload.get("records_accepted"),
+                    "restore_boundary_separation": payload.get("restore_boundary_separation"),
+                    "authoritative_mutation_attempted": payload.get("authoritative_mutation_attempted"),
+                },
+            )
+            return True
+        except Exception as exc:
+            LOG.warning("W5 replay summary persist failed: %s", exc)
+            self._fsm._emit_observability_event(
+                "RESTORE:EXECUTION_POSITION_W5_REPLAY_SUMMARY_PERSIST_FAILED",
+                {"reason": type(exc).__name__, "detail": str(exc)[:200]},
+            )
+            return False
 
     def _bounded_startup_replay_summary(
         self,

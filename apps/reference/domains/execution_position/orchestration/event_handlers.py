@@ -42,12 +42,32 @@ try:
 except ImportError:
     _get_order_logger = None
 
+try:
+    from ..telemetry.lifecycle_stats_ledger import ExecutionLifecycleStatsLedger
+except ImportError:
+    ExecutionLifecycleStatsLedger = None
+
 
 class EPEventHandlers:
     """Handles FSM bus events for execution_position domain."""
 
     def __init__(self, fsm: Any) -> None:
         self._fsm = fsm
+
+    def _lifecycle_stats_ledger(self) -> Optional["ExecutionLifecycleStatsLedger"]:
+        ledger = getattr(self._fsm, "_lifecycle_stats_ledger", None)
+        if ledger is not None:
+            return ledger
+        if ExecutionLifecycleStatsLedger is None:
+            return None
+        try:
+            ledger = ExecutionLifecycleStatsLedger()
+        except Exception:
+            LOG.debug("Failed to initialize lifecycle stats ledger",
+                      exc_info=True)
+            return None
+        setattr(self._fsm, "_lifecycle_stats_ledger", ledger)
+        return ledger
 
     def _close_accounting_cache(self) -> Dict[str, Dict[str, Any]]:
         cache = getattr(self._fsm, "_close_accounting_truth_by_symbol", None)
@@ -65,6 +85,320 @@ class EPEventHandlers:
             return float(value)
         except (TypeError, ValueError):
             return None
+
+    def _update_open_lifecycle_stats(
+        self,
+        *,
+        symbol: str,
+        position_payload: Dict[str, Any],
+        observed_ts_ms: int,
+    ) -> None:
+        ledger = self._lifecycle_stats_ledger()
+        if ledger is None:
+            return
+        lifecycle_id = str(
+            getattr(self._fsm, "_last_lifecycle_ikey_by_symbol",
+                    {}).get(symbol) or ""
+        ).strip()
+        if not lifecycle_id:
+            return
+        mark_price = self._optional_float(
+            position_payload.get(
+                "markPrice") or position_payload.get("mark_price")
+        )
+        unrealized_pnl = self._optional_float(
+            position_payload.get("unrealizedPnl")
+            or position_payload.get("unrealized_pnl")
+            or position_payload.get("unrealized_pnl_usdt")
+        )
+        try:
+            ledger.update_open(
+                lifecycle_id=lifecycle_id,
+                mark_price=mark_price,
+                observed_ts_ms=observed_ts_ms,
+                unrealized_pnl=unrealized_pnl,
+            )
+        except KeyError:
+            return
+        except Exception:
+            LOG.debug(
+                "Failed to update lifecycle stats from portfolio snapshot for %s",
+                symbol,
+                exc_info=True,
+            )
+
+    def _finalize_lifecycle_stats(
+        self,
+        *,
+        symbol: str,
+        close_ts_ms: int,
+        close_reason: str,
+        close_truth: Optional[Dict[str, Any]],
+    ) -> None:
+        ledger = self._lifecycle_stats_ledger()
+        if ledger is None:
+            return
+        lifecycle_id = str(
+            (close_truth or {}).get("lifecycle_id")
+            or getattr(self._fsm, "_last_lifecycle_ikey_by_symbol", {}).get(symbol, "")
+            or ""
+        ).strip()
+        if not lifecycle_id:
+            return
+        close_actor = "EXECUTION_POSITION"
+        pnl_status = str((close_truth or {}).get(
+            "pnl_status") or "").strip().lower()
+        close_truth_is_resolved = pnl_status == "resolved"
+        final_close_reason = str(close_reason or "").strip(
+        ).upper() or "POSITION_CLOSED_DETECTED"
+        if final_close_reason == "POSITION_CLOSED_DETECTED":
+            close_truth_reason = str((close_truth or {}).get(
+                "close_reason") or "").strip().upper()
+            if close_truth_reason:
+                final_close_reason = close_truth_reason
+        gross_pnl = (
+            self._optional_float((close_truth or {}).get("realized_pnl"))
+            if close_truth_is_resolved
+            else None
+        )
+        fees = (
+            self._optional_float((close_truth or {}).get("fees"))
+            if close_truth_is_resolved
+            else None
+        )
+        net_pnl = (
+            gross_pnl - fees
+            if gross_pnl is not None and fees is not None
+            else (
+                self._optional_float(
+                    (close_truth or {}).get("realized_pnl_net"))
+                if close_truth_is_resolved
+                else None
+            )
+        )
+        try:
+            ledger.finalize_close(
+                lifecycle_id=lifecycle_id,
+                close_ts_ms=close_ts_ms,
+                close_actor=close_actor,
+                close_reason=final_close_reason,
+                gross_pnl=gross_pnl,
+                fees=fees,
+                net_pnl=net_pnl,
+            )
+        except KeyError:
+            return
+        except Exception:
+            LOG.debug(
+                "Failed to finalize lifecycle stats for %s",
+                symbol,
+                exc_info=True,
+            )
+
+    def _seed_lifecycle_stats_from_fill(
+        self,
+        *,
+        symbol: str,
+        lifecycle_id: str,
+        entry_rid: str,
+        side: str,
+        entry_ts_ms: int,
+        entry_price: Optional[float],
+        qty: Optional[float],
+    ) -> None:
+        ledger = self._lifecycle_stats_ledger()
+        if ledger is None or not lifecycle_id:
+            return
+        try:
+            ledger.seed_entry(
+                lifecycle_id=lifecycle_id,
+                entry_rid=entry_rid,
+                symbol=symbol,
+                side=side,
+                entry_ts_ms=entry_ts_ms,
+                entry_price=entry_price,
+                qty=qty,
+                fees=self._optional_float(
+                    getattr(self._fsm, "_accumulated_fees_by_symbol",
+                            {}).get(symbol)
+                ),
+            )
+        except Exception:
+            LOG.debug(
+                "Failed to seed lifecycle stats from fill for %s",
+                symbol,
+                exc_info=True,
+            )
+
+    def emit_position_closed_observability(
+        self,
+        symbol: str,
+        *,
+        close_ts_ms: Optional[int] = None,
+        close_reason: Optional[str] = None,
+        open_regime: Optional[Dict[str, Any]] = None,
+        bus_why: str = "position_closed_detected",
+        require_close_truth: bool = False,
+    ) -> bool:
+        sym = str(symbol or "").strip().upper()
+        if not sym:
+            return False
+
+        close_truth = dict(self._close_accounting_cache().get(sym) or {})
+        if require_close_truth and not close_truth:
+            return False
+
+        cached_rid = str(
+            getattr(self._fsm, "_last_lifecycle_rid_by_symbol", {}).get(sym) or ""
+        ).strip()
+        lifecycle_id = str(
+            close_truth.get("lifecycle_id")
+            or getattr(self._fsm, "_last_lifecycle_ikey_by_symbol", {}).get(sym, "")
+            or ""
+        ).strip()
+        if not close_truth and not cached_rid and not lifecycle_id:
+            return False
+
+        if close_ts_ms is None:
+            close_ts_ms = get_clock().now_ms()
+
+        resolved_close_reason = str(close_reason or "").strip().upper()
+        if not resolved_close_reason:
+            resolved_close_reason = str(
+                close_truth.get("close_reason") or ""
+            ).strip().upper()
+        if not resolved_close_reason:
+            resolved_close_reason = self._resolve_position_close_reason(sym)
+
+        rid_for_sym = cached_rid or f"position_close:{sym}:{close_ts_ms}"
+
+        if _trade_lifecycle is not None:
+            try:
+                close_price = close_truth.get("close_price")
+                _trade_lifecycle.on_close(
+                    rid=rid_for_sym,
+                    close_price=float(close_price)
+                    if close_price is not None
+                    else None,
+                    close_reason=resolved_close_reason,
+                )
+            except Exception:
+                pass
+            finally:
+                try:
+                    self._fsm._last_lifecycle_rid_by_symbol.pop(sym, None)
+                    self._fsm._last_lifecycle_fill_price_by_symbol.pop(
+                        sym, None)
+                except Exception:
+                    pass
+
+        if _get_order_logger is None:
+            return False
+
+        emitted = False
+        try:
+            _pnl_status = str(close_truth.get("pnl_status") or "unresolved")
+            _accounting_reason = (
+                close_truth.get("accounting_unresolved_reason")
+                or "missing_close_fill_truth"
+            )
+            _resolved = _pnl_status == "resolved"
+            _pos_fees = (
+                self._optional_float(close_truth.get(
+                    "fees")) if _resolved else None
+            )
+            _trade_id = close_truth.get("trade_id") if _resolved else None
+            _entry_side = str(
+                close_truth.get("entry_side")
+                or self._fsm._last_entry_side_by_symbol.get(sym, "N/A")
+            )
+            _entry_regime_epoch_ref = (
+                open_regime or {}).get("regime_epoch_ref")
+            _realized_pnl = (
+                self._optional_float(close_truth.get("realized_pnl"))
+                if _resolved
+                else None
+            )
+            _realized_pnl_net = (
+                _realized_pnl - _pos_fees
+                if _resolved and _realized_pnl is not None and _pos_fees is not None
+                else None
+            )
+            _close_price = self._optional_float(close_truth.get("close_price"))
+            _lifecycle_id = lifecycle_id
+            self._finalize_lifecycle_stats(
+                symbol=sym,
+                close_ts_ms=close_ts_ms,
+                close_reason=resolved_close_reason,
+                close_truth={
+                    **close_truth,
+                    "realized_pnl_net": _realized_pnl_net,
+                    "lifecycle_id": _lifecycle_id,
+                },
+            )
+            _get_order_logger().write({
+                "rid": rid_for_sym,
+                "event_type": "POSITION_CLOSED",
+                "lifecycle_id": _lifecycle_id,
+                "symbol": sym,
+                "side": _entry_side,
+                "trade_id": _trade_id,
+                "fees": _pos_fees,
+                "realized_pnl_net": _realized_pnl_net,
+                "source_fsm": "ExecPosFSM",
+                "why": resolved_close_reason,
+                "close_reason": resolved_close_reason,
+                "pnl_status": _pnl_status,
+                "pnl_source": close_truth.get("pnl_source") if _resolved else "unresolved",
+                "economic_close_detected": bool(close_truth.get("economic_close_detected")),
+                "economic_close_kind": close_truth.get("economic_close_kind"),
+                "accounting_unresolved_reason": None if _resolved else _accounting_reason,
+                "metadata": {
+                    "close_price": _close_price,
+                    "realized_pnl": _realized_pnl,
+                    "close_fill_order_id": close_truth.get("close_fill_order_id"),
+                    "close_fill_client_order_id": close_truth.get("close_fill_client_order_id"),
+                },
+            })
+            if hasattr(self._fsm, "bus") and self._fsm.bus is not None:
+                self._fsm.bus.emit(
+                    "EVT:POSITION_CLOSED",
+                    payload={
+                        "event_type": "POSITION_CLOSED",
+                        "symbol": sym,
+                        "trade_id": _trade_id,
+                        "close_reason": resolved_close_reason,
+                        "close_ts_ms": close_ts_ms,
+                        "realized_pnl_net": _realized_pnl_net,
+                        "fees": _pos_fees,
+                        "entry_regime_epoch_ref": _entry_regime_epoch_ref,
+                        "side": _entry_side,
+                        "lifecycle_id": _lifecycle_id,
+                        "realized_pnl": _realized_pnl,
+                        "close_price": _close_price,
+                        "pnl_status": _pnl_status,
+                        "pnl_source": close_truth.get("pnl_source") if _resolved else "unresolved",
+                        "economic_close_detected": bool(close_truth.get("economic_close_detected")),
+                        "economic_close_kind": close_truth.get("economic_close_kind"),
+                        "accounting_unresolved_reason": None if _resolved else _accounting_reason,
+                    },
+                    why=bus_why,
+                    rid=rid_for_sym,
+                )
+            emitted = True
+        except Exception as e:
+            LOG.error(f"Failed to write/emit POSITION_CLOSED close truth: {e}")
+
+        try:
+            self._fsm._last_lifecycle_ikey_by_symbol.pop(sym, None)
+            self._fsm._last_trade_id_by_symbol.pop(sym, None)
+            self._fsm._last_entry_side_by_symbol.pop(sym, None)
+            self._fsm._accumulated_fees_by_symbol.pop(sym, None)
+            self._close_accounting_cache().pop(sym, None)
+        except Exception:
+            pass
+
+        return emitted
 
     def _position_amt_before_fill(self, symbol: str) -> Optional[float]:
         if not symbol:
@@ -373,10 +707,12 @@ class EPEventHandlers:
             positions = self._fsm._latest_portfolio_state.get(
                 "positions") or []
             current_amts: Dict[str, float] = {}
+            positions_by_symbol: Dict[str, Dict[str, Any]] = {}
             for pos in positions:
                 sym = pos.get("symbol")
                 if not sym:
                     continue
+                positions_by_symbol[str(sym).upper()] = dict(pos)
                 try:
                     current_amts[sym] = float(
                         pos.get("net_position") or pos.get("positionAmt") or 0.0)
@@ -397,9 +733,20 @@ class EPEventHandlers:
                             sym,
                         ),
                     )
+            observed_ts_ms = int(
+                self._fsm._latest_portfolio_state.get("positions_last_ts_ms")
+                or self._fsm._latest_portfolio_state.get("ts_ms")
+                or get_clock().now_ms()
+            )
             for sym in all_syms:
                 prev_amt = float(self._fsm._prev_position_amts.get(sym, 0.0))
                 now_amt = float(current_amts.get(sym, 0.0))
+                if abs(now_amt) >= epsilon:
+                    self._update_open_lifecycle_stats(
+                        symbol=sym,
+                        position_payload=positions_by_symbol.get(sym, {}),
+                        observed_ts_ms=observed_ts_ms,
+                    )
                 if abs(prev_amt) >= epsilon and abs(now_amt) < epsilon:
                     closed_at = get_clock().now_sec()
                     self._fsm._last_position_closed_ts[sym] = closed_at
@@ -407,7 +754,7 @@ class EPEventHandlers:
 
                     _pos_close_regime = self._fsm._open_regime_by_symbol.pop(sym, {
                     })
-                    close_truth = self._close_accounting_cache().pop(sym, None)
+                    close_truth = self._close_accounting_cache().get(sym)
                     close_reason = self._resolve_position_close_reason(sym)
                     try:
                         self._fsm._open_strategy_by_symbol.pop(sym, None)
@@ -423,178 +770,13 @@ class EPEventHandlers:
                         f" | open_regime={_pos_close_regime.get('regime')} | pnl_status={((close_truth or {}).get('pnl_status') or 'unresolved')}"
                         f" | realized_pnl={(close_truth or {}).get('realized_pnl')}"
                     )
-
-                    # FIX-LIFECYCLE-01: Flush lifecycle record
-                    if _trade_lifecycle is not None:
-                        try:
-                            rid_for_sym = ""
-                            try:
-                                rid_for_sym = str(
-                                    self._fsm._last_lifecycle_rid_by_symbol.get(sym) or "")
-                            except Exception:
-                                rid_for_sym = ""
-                            if not rid_for_sym:
-                                rid_for_sym = f"position_close:{sym}:{int(closed_at * 1000)}"
-                            close_price = None
-                            try:
-                                if close_truth is not None:
-                                    close_price = close_truth.get(
-                                        "close_price")
-                            except Exception:
-                                close_price = None
-                            _trade_lifecycle.on_close(
-                                rid=rid_for_sym,
-                                close_price=float(
-                                    close_price) if close_price is not None else None,
-                                close_reason=close_reason,
-                            )
-                        except Exception:
-                            pass
-                        finally:
-                            try:
-                                self._fsm._last_lifecycle_rid_by_symbol.pop(
-                                    sym, None)
-                                self._fsm._last_lifecycle_fill_price_by_symbol.pop(
-                                    sym, None)
-                            except Exception:
-                                pass
-
-                    if _get_order_logger is not None:
-                        try:
-                            _pnl_status = str(
-                                (close_truth or {}).get(
-                                    "pnl_status") or "unresolved"
-                            )
-                            _accounting_reason = (
-                                (close_truth or {}).get(
-                                    "accounting_unresolved_reason")
-                                or "missing_close_fill_truth"
-                            )
-                            _resolved = _pnl_status == "resolved"
-                            _pos_fees = (
-                                self._optional_float(
-                                    (close_truth or {}).get("fees"))
-                                if _resolved
-                                else None
-                            )
-                            _trade_id = (
-                                (close_truth or {}).get("trade_id")
-                                if _resolved
-                                else None
-                            )
-                            _entry_side = str(
-                                (close_truth or {}).get("entry_side")
-                                or self._fsm._last_entry_side_by_symbol.get(sym, "N/A")
-                            )
-                            _close_ts_ms = int(closed_at * 1000)
-                            _entry_regime_epoch_ref = _pos_close_regime.get(
-                                "regime_epoch_ref")
-                            _realized_pnl = (
-                                self._optional_float(
-                                    (close_truth or {}).get("realized_pnl"))
-                                if _resolved
-                                else None
-                            )
-                            _realized_pnl_net = (
-                                _realized_pnl - _pos_fees
-                                if _resolved and _realized_pnl is not None and _pos_fees is not None
-                                else None
-                            )
-                            _close_price = self._optional_float(
-                                (close_truth or {}).get("close_price")
-                            )
-                            _lifecycle_id = str(
-                                (close_truth or {}).get("lifecycle_id")
-                                or self._fsm._last_lifecycle_ikey_by_symbol.get(sym, "")
-                            )
-                            _get_order_logger().write({
-                                "rid": str(rid_for_sym) if 'rid_for_sym' in locals() and rid_for_sym else f"position_close:{sym}:{int(closed_at * 1000)}",
-                                "event_type": "POSITION_CLOSED",
-                                # PHASE 1
-                                "lifecycle_id": _lifecycle_id,
-                                "symbol": sym,
-                                # PHASE 2: real entry side from cache; falls back to "N/A" if cache empty
-                                "side": _entry_side,
-                                # PHASE 2: exchange tradeId from last fill cached per symbol
-                                "trade_id": _trade_id,
-                                # PHASE 3: accumulated fees and net PnL for neocortex reward_complete
-                                "fees": _pos_fees,
-                                "realized_pnl_net": _realized_pnl_net,
-                                "source_fsm": "ExecPosFSM",
-                                "why": close_reason,
-                                "close_reason": close_reason,
-                                "pnl_status": _pnl_status,
-                                "pnl_source": (
-                                    (close_truth or {}).get("pnl_source")
-                                    if _resolved
-                                    else "unresolved"
-                                ),
-                                "economic_close_detected": bool(
-                                    (close_truth or {}).get(
-                                        "economic_close_detected")
-                                ),
-                                "economic_close_kind": (close_truth or {}).get("economic_close_kind"),
-                                "accounting_unresolved_reason": None if _resolved else _accounting_reason,
-                                "metadata": {
-                                    "close_price": _close_price,
-                                    "realized_pnl": _realized_pnl,
-                                    "close_fill_order_id": (close_truth or {}).get("close_fill_order_id"),
-                                    "close_fill_client_order_id": (close_truth or {}).get("close_fill_client_order_id"),
-                                }
-                            })
-                            if hasattr(self._fsm, "bus") and self._fsm.bus is not None:
-                                self._fsm.bus.emit(
-                                    "EVT:POSITION_CLOSED",
-                                    payload={
-                                        "event_type": "POSITION_CLOSED",
-                                        "symbol": sym,
-                                        "trade_id": _trade_id,
-                                        "close_reason": close_reason,
-                                        "close_ts_ms": _close_ts_ms,
-                                        "realized_pnl_net": _realized_pnl_net,
-                                        "fees": _pos_fees,
-                                        "entry_regime_epoch_ref": _entry_regime_epoch_ref,
-                                        "side": _entry_side,
-                                        "lifecycle_id": _lifecycle_id,
-                                        "realized_pnl": _realized_pnl,
-                                        "close_price": _close_price,
-                                        "pnl_status": _pnl_status,
-                                        "pnl_source": (
-                                            (close_truth or {}).get(
-                                                "pnl_source")
-                                            if _resolved
-                                            else "unresolved"
-                                        ),
-                                        "economic_close_detected": bool(
-                                            (close_truth or {}).get(
-                                                "economic_close_detected")
-                                        ),
-                                        "economic_close_kind": (close_truth or {}).get("economic_close_kind"),
-                                        "accounting_unresolved_reason": None if _resolved else _accounting_reason,
-                                    },
-                                    why="position_closed_detected",
-                                    rid=str(rid_for_sym) if 'rid_for_sym' in locals(
-                                    ) and rid_for_sym else f"position_close:{sym}:{_close_ts_ms}",
-                                )
-                        except Exception as e:
-                            LOG.error(
-                                f"Failed to write/emit POSITION_CLOSED close truth: {e}")
-
-                        # PHASE 1: Clean up lifecycle ikey cache after POSITION_CLOSED write.
-                        # CRITICAL: this block must stay AFTER the write above, NOT inside the
-                        # _trade_lifecycle finally block at lines ~238-243 which runs before this write.
-                        # PHASE 2: Also clean up trade_id and entry side caches.
-                        # PHASE 3: Also clean up accumulated fees cache.
-                        try:
-                            self._fsm._last_lifecycle_ikey_by_symbol.pop(
-                                sym, None)
-                            self._fsm._last_trade_id_by_symbol.pop(sym, None)
-                            self._fsm._last_entry_side_by_symbol.pop(sym, None)
-                            self._fsm._accumulated_fees_by_symbol.pop(
-                                sym, None)
-                            self._close_accounting_cache().pop(sym, None)
-                        except Exception:
-                            pass
+                    self.emit_position_closed_observability(
+                        sym,
+                        close_ts_ms=int(closed_at * 1000),
+                        close_reason=close_reason,
+                        open_regime=_pos_close_regime,
+                        bus_why="position_closed_detected",
+                    )
 
                     self._fsm._apply_authoritative_local_close_reset(
                         sym,
@@ -914,8 +1096,10 @@ class EPEventHandlers:
                         ref = self._fsm.fsm.order_index.get(rid=str(rid))
                     if ref is not None:
                         self._fsm.fsm.order_index.mark_terminal(ref)
-                        # PHASE 1: Cache lifecycle_id for ORDER_FILLED and POSITION_CLOSED correlation
-                        if ref.idempotent_key and symbol:
+                        # PHASE 1: Cache lifecycle_id for ORDER_FILLED and POSITION_CLOSED correlation.
+                        # ENTRY fills only — close/bracket fills must not overwrite the entry lifecycle_id
+                        # or finalize_close() will receive a key never seeded in the ledger (→ silent KeyError).
+                        if order_kind == "ENTRY" and ref.idempotent_key and symbol:
                             try:
                                 self._fsm._last_lifecycle_ikey_by_symbol[symbol] = str(
                                     ref.idempotent_key)
@@ -976,6 +1160,23 @@ class EPEventHandlers:
                     symbol,
                     exc_info=True,
                 )
+
+        if symbol and order_kind == "ENTRY" and _fill_status != "PARTIALLY_FILLED":
+            lifecycle_id = str(
+                self._fsm._last_lifecycle_ikey_by_symbol.get(symbol)
+                or payload.get("lifecycle_id")
+                or ""
+            ).strip()
+            self._seed_lifecycle_stats_from_fill(
+                symbol=symbol,
+                lifecycle_id=lifecycle_id,
+                entry_rid=str(rid or client_order_id or order_id),
+                side=str(payload.get("side") or ""),
+                entry_ts_ms=int(payload.get("ts_ms") or payload.get(
+                    "ts") or get_clock().now_ms()),
+                entry_price=self._optional_float(payload.get("price")),
+                qty=self._optional_float(filled_qty),
+            )
 
         # PHASE A2 FIX: Inject cached intent data into ManageFlowFSM
         if rid in self._fsm._pending_intent_data:
@@ -1143,10 +1344,12 @@ class EPEventHandlers:
     def entry_tidy_gate_allow(self, symbol: str) -> bool:
         """Return True if new ENTRY is allowed under SYMBOL_TIDY gate."""
         try:
+            # EX-REMOVE-ROOT-2026-05-09: read from canonical path, not root alias.
+            trading_exec = getattr(
+                self._fsm.config.trading, "execution", None)
             allow_gate = bool(
-                aget(self._fsm.config.execution,
-                     "allow_trade_with_guardian_tidy_only", False)
-            ) if self._fsm.config.execution else False
+                aget(trading_exec, "allow_trade_with_guardian_tidy_only", False)
+            ) if trading_exec is not None else False
         except Exception:
             allow_gate = False
 

@@ -41,6 +41,9 @@ _LOW_VOL_COST_FLOOR_RUNTIME_MODES = frozenset(
 _LOW_VOL_DIRECTION_CONFIDENCE_SOURCES = frozenset(
     {"strategy_confidence", "signal_score", "final_score", "judge_confidence"}
 )
+_LOW_VOL_RAW_SIGNED_SCORE_SOURCES = frozenset({"signal_score", "final_score"})
+_LOW_VOL_NORMALIZED_CONFIDENCE_SOURCES = frozenset(
+    {"strategy_confidence", "judge_confidence"})
 
 
 def _validate_regime_confidence_threshold_mapping_shape(value, *, field_name: str):
@@ -296,6 +299,32 @@ def _validate_low_vol_direction_sources(value, *, field_name: str):
             allowed = ', '.join(sorted(_LOW_VOL_DIRECTION_CONFIDENCE_SOURCES))
             raise ValueError(
                 f"unsupported {field_name} source '{raw_source}'; allowed: {allowed}"
+            )
+        if source in seen:
+            raise ValueError(f'{field_name} entries must be unique')
+        seen.add(source)
+        normalized.append(source)
+    return normalized
+
+
+def _validate_low_vol_source_family(value, *, field_name: str, allowed: frozenset[str]) -> List[str]:
+    """Validate a source family list (may be empty — both lists share that responsibility)."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f'{field_name} must be a list')
+    normalized: List[str] = []
+    seen: set[str] = set()
+    for raw_source in value:
+        if not isinstance(raw_source, str):
+            raise ValueError(f'{field_name} entries must be strings')
+        source = raw_source.strip()
+        if raw_source != source:
+            raise ValueError(
+                f'{field_name} entries must not contain surrounding whitespace')
+        if source not in allowed:
+            raise ValueError(
+                f"unsupported {field_name} source '{raw_source}'; allowed: {sorted(allowed)}"
             )
         if source in seen:
             raise ValueError(f'{field_name} entries must be unique')
@@ -1301,11 +1330,28 @@ class LowVolCostFloorThresholdsConfig(BaseModel):
     min_tp_fee_coverage: float = Field(..., gt=0.0)
     min_rr: float = Field(..., gt=0.0)
     min_regime_confidence_by_regime: Dict[str, float] = Field(...)
+    # Migration alias: kept for backward compat. Gate uses min_raw_score_by_regime /
+    # min_normalized_confidence_by_regime instead. If those are absent, this is copied into both.
     min_direction_confidence_by_regime: Dict[str, float] = Field(...)
     min_regime_confidence_overrides_by_strategy_symbol: Optional[
         Dict[str, Dict[str, Dict[str, float]]]
     ] = Field(default=None)
     min_direction_confidence_overrides_by_strategy_symbol: Optional[
+        Dict[str, Dict[str, Dict[str, float]]]
+    ] = Field(default=None)
+    # Scale-split threshold families (preferred over migration alias above).
+    min_raw_score_by_regime: Optional[Dict[str, float]] = Field(
+        default=None,
+        description="Threshold for raw_signed_score sources (signal_score, final_score). Compared to abs(value).",
+    )
+    min_normalized_confidence_by_regime: Optional[Dict[str, float]] = Field(
+        default=None,
+        description="Threshold for normalized_confidence sources (strategy_confidence, judge_confidence).",
+    )
+    min_raw_score_overrides_by_strategy_symbol: Optional[
+        Dict[str, Dict[str, Dict[str, float]]]
+    ] = Field(default=None)
+    min_normalized_confidence_overrides_by_strategy_symbol: Optional[
         Dict[str, Dict[str, Dict[str, float]]]
     ] = Field(default=None)
 
@@ -1325,6 +1371,22 @@ class LowVolCostFloorThresholdsConfig(BaseModel):
             field_name='low_vol_cost_floor_gate.thresholds.min_direction_confidence_by_regime',
         )
 
+    @field_validator('min_raw_score_by_regime', mode='before')
+    @classmethod
+    def validate_min_raw_score_by_regime_shape(cls, value):
+        return _validate_regime_confidence_threshold_mapping_shape(
+            value,
+            field_name='low_vol_cost_floor_gate.thresholds.min_raw_score_by_regime',
+        )
+
+    @field_validator('min_normalized_confidence_by_regime', mode='before')
+    @classmethod
+    def validate_min_normalized_confidence_by_regime_shape(cls, value):
+        return _validate_regime_confidence_threshold_mapping_shape(
+            value,
+            field_name='low_vol_cost_floor_gate.thresholds.min_normalized_confidence_by_regime',
+        )
+
     @field_validator('min_regime_confidence_overrides_by_strategy_symbol', mode='before')
     @classmethod
     def validate_min_regime_confidence_overrides_by_strategy_symbol_shape(cls, value):
@@ -1339,6 +1401,22 @@ class LowVolCostFloorThresholdsConfig(BaseModel):
         return _validate_low_vol_strategy_symbol_threshold_overrides_shape(
             value,
             field_name='low_vol_cost_floor_gate.thresholds.min_direction_confidence_overrides_by_strategy_symbol',
+        )
+
+    @field_validator('min_raw_score_overrides_by_strategy_symbol', mode='before')
+    @classmethod
+    def validate_min_raw_score_overrides_by_strategy_symbol_shape(cls, value):
+        return _validate_low_vol_strategy_symbol_threshold_overrides_shape(
+            value,
+            field_name='low_vol_cost_floor_gate.thresholds.min_raw_score_overrides_by_strategy_symbol',
+        )
+
+    @field_validator('min_normalized_confidence_overrides_by_strategy_symbol', mode='before')
+    @classmethod
+    def validate_min_normalized_confidence_overrides_by_strategy_symbol_shape(cls, value):
+        return _validate_low_vol_strategy_symbol_threshold_overrides_shape(
+            value,
+            field_name='low_vol_cost_floor_gate.thresholds.min_normalized_confidence_overrides_by_strategy_symbol',
         )
 
     @model_validator(mode='after')
@@ -1359,27 +1437,97 @@ class LowVolCostFloorThresholdsConfig(BaseModel):
             self.min_direction_confidence_overrides_by_strategy_symbol,
             field_name='low_vol_cost_floor_gate.thresholds.min_direction_confidence_overrides_by_strategy_symbol',
         )
+        # Normalize new split families if explicitly provided.
+        if self.min_raw_score_by_regime is not None:
+            self.min_raw_score_by_regime = _normalize_low_vol_gate_threshold_mapping(
+                self.min_raw_score_by_regime,
+                field_name='low_vol_cost_floor_gate.thresholds.min_raw_score_by_regime',
+            )
+        else:
+            # Migration alias: copy from legacy field so gate always has a value.
+            self.min_raw_score_by_regime = dict(
+                self.min_direction_confidence_by_regime)
+        if self.min_normalized_confidence_by_regime is not None:
+            self.min_normalized_confidence_by_regime = _normalize_low_vol_gate_threshold_mapping(
+                self.min_normalized_confidence_by_regime,
+                field_name='low_vol_cost_floor_gate.thresholds.min_normalized_confidence_by_regime',
+            )
+        else:
+            self.min_normalized_confidence_by_regime = dict(
+                self.min_direction_confidence_by_regime)
+        if self.min_raw_score_overrides_by_strategy_symbol is not None:
+            self.min_raw_score_overrides_by_strategy_symbol = _normalize_low_vol_strategy_symbol_threshold_overrides(
+                self.min_raw_score_overrides_by_strategy_symbol,
+                field_name='low_vol_cost_floor_gate.thresholds.min_raw_score_overrides_by_strategy_symbol',
+            )
+        if self.min_normalized_confidence_overrides_by_strategy_symbol is not None:
+            self.min_normalized_confidence_overrides_by_strategy_symbol = _normalize_low_vol_strategy_symbol_threshold_overrides(
+                self.min_normalized_confidence_overrides_by_strategy_symbol,
+                field_name='low_vol_cost_floor_gate.thresholds.min_normalized_confidence_overrides_by_strategy_symbol',
+            )
         return self
 
 
 class LowVolDirectionConfidenceConfig(BaseModel):
-    """Direction-confidence sourcing contract for LOW_VOL gating."""
+    """Direction-confidence sourcing contract for LOW_VOL gating.
+
+    Source families are separated by scale so each is compared against its own threshold family:
+    - raw_signed_score_sources: signal_score, final_score (range [-1,1], magnitude used)
+    - normalized_confidence_sources: strategy_confidence, judge_confidence (range [0,1])
+    """
 
     model_config = ConfigDict(extra='forbid')
 
     required: bool = Field(...)
-    allowed_sources: List[Literal['strategy_confidence',
-                                  'signal_score', 'final_score', 'judge_confidence']] = Field(...)
+    raw_signed_score_sources: List[Literal['signal_score', 'final_score']] = Field(
+        default_factory=list,
+        description="Sources with range [-1,1]; gate compares abs(value) to min_raw_score threshold",
+    )
+    normalized_confidence_sources: List[Literal['strategy_confidence', 'judge_confidence']] = Field(
+        default_factory=list,
+        description="Sources with range [0,1]; gate compares value to min_normalized_confidence threshold",
+    )
+    judge_confidence_live_producer_required: bool = Field(
+        default=False,
+        description=(
+            "When True, judge_confidence is only accepted if trace contains "
+            "judge_confidence_live_producer_proof=True"
+        ),
+    )
     missing_policy: Literal['fail_closed',
                             'warn_and_allow', 'disabled'] = Field(...)
 
-    @field_validator('allowed_sources', mode='before')
+    @field_validator('raw_signed_score_sources', mode='before')
     @classmethod
-    def validate_allowed_sources(cls, value):
-        return _validate_low_vol_direction_sources(
+    def validate_raw_signed_score_sources(cls, value):
+        return _validate_low_vol_source_family(
             value,
-            field_name='low_vol_cost_floor_gate.direction_confidence.allowed_sources',
+            field_name='low_vol_cost_floor_gate.direction_confidence.raw_signed_score_sources',
+            allowed=_LOW_VOL_RAW_SIGNED_SCORE_SOURCES,
         )
+
+    @field_validator('normalized_confidence_sources', mode='before')
+    @classmethod
+    def validate_normalized_confidence_sources(cls, value):
+        return _validate_low_vol_source_family(
+            value,
+            field_name='low_vol_cost_floor_gate.direction_confidence.normalized_confidence_sources',
+            allowed=_LOW_VOL_NORMALIZED_CONFIDENCE_SOURCES,
+        )
+
+    @model_validator(mode='after')
+    def validate_at_least_one_source_family(self) -> 'LowVolDirectionConfidenceConfig':
+        if not self.raw_signed_score_sources and not self.normalized_confidence_sources:
+            raise ValueError(
+                'low_vol_cost_floor_gate.direction_confidence: at least one source family '
+                '(raw_signed_score_sources or normalized_confidence_sources) must be non-empty'
+            )
+        return self
+
+    @property
+    def allowed_sources(self) -> List[str]:
+        """Combined ordered list for gate backward compatibility."""
+        return list(self.raw_signed_score_sources) + list(self.normalized_confidence_sources)
 
 
 class LowVolGeometryConfig(BaseModel):

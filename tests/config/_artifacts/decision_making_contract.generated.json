@@ -886,6 +886,26 @@
         "default": "None",
         "default_factory": null,
         "required": false
+      },
+      "min_raw_score_by_regime": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "min_normalized_confidence_by_regime": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "min_raw_score_overrides_by_strategy_symbol": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "min_normalized_confidence_overrides_by_strategy_symbol": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
       }
     }
   },
@@ -897,15 +917,25 @@
         "default_factory": null,
         "required": true
       },
-      "allowed_sources": {
-        "default": "'<required>'",
-        "default_factory": null,
-        "required": true
-      },
       "missing_policy": {
         "default": "'<required>'",
         "default_factory": null,
         "required": true
+      },
+      "raw_signed_score_sources": {
+        "default": "PydanticUndefined",
+        "default_factory": "list",
+        "required": false
+      },
+      "normalized_confidence_sources": {
+        "default": "PydanticUndefined",
+        "default_factory": "list",
+        "required": false
+      },
+      "judge_confidence_live_producer_required": {
+        "default": "False",
+        "default_factory": null,
+        "required": false
       }
     }
   },

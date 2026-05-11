@@ -14,7 +14,11 @@ from apps.reference.domains.neocortex.contracts.failure_taxonomy import (
     FailureReasonCode,
     record_failure_outcome,
 )
-from apps.reference.domains.shadow_telemetry.contracts import CmdLlmIntentSubmitV1
+from apps.reference.domains.shadow_telemetry.contracts import (
+    CmdLlmBracketAmendV1,
+    CmdLlmIntentSubmitV1,
+    CmdLlmPositionCloseV1,
+)
 from apps.reference.domains.shadow_telemetry.ipc import (
     JsonlTcpQueueClient,
     JsonlTcpServer,
@@ -397,10 +401,216 @@ class LLMIntentIngressBridge:
         if self._server is not None:
             self._server.stop()
 
+    def _runtime_allowlist(self) -> tuple[str, list[str], list[str]]:
+        llm_cfg = getattr(getattr(self.config, "trading", None), "llm_orchestration", None)
+        mode = str(getattr(llm_cfg, "mode", "baseline"))
+        symbols_llm = [str(s).upper() for s in (getattr(llm_cfg, "symbols_llm", []) or [])]
+        allow = [str(s).upper() for s in (getattr(llm_cfg, "allowlist_symbols", []) or [])]
+        return mode, symbols_llm, allow
+
+    def _emit_bridge_reject(
+        self,
+        *,
+        event_name: str,
+        rid: str,
+        payload: Dict[str, Any],
+        why: str,
+    ) -> None:
+        self.fsm.emit(event_name, payload, why)
+        _append_wal_event(event_name.split(":", 1)[1], rid, payload, why)
+
+    def _reject_runtime_symbol(
+        self,
+        *,
+        event_name: str,
+        rid: str,
+        action_key: str,
+        action_value: str,
+        request_id: str,
+        symbol: str,
+        lifecycle_id: str | None,
+        idempotency_key: str,
+        mode: str,
+        symbols_llm: list[str],
+        allow: list[str],
+    ) -> bool:
+        if mode == "baseline":
+            self._emit_bridge_reject(
+                event_name=event_name,
+                rid=rid,
+                payload={
+                    action_key: action_value,
+                    "request_id": request_id,
+                    "ts_ms": int(time.time() * 1000),
+                    "reason_code": "LLM_MODE_DISABLED",
+                    "reason": "llm_orchestration.mode=baseline",
+                    "symbol": symbol,
+                    "lifecycle_id": lifecycle_id,
+                    "idempotency_key": idempotency_key,
+                },
+                why=f"{event_name.lower()}_mode_disabled",
+            )
+            return True
+
+        sym_u = str(symbol).upper()
+        if symbols_llm and sym_u not in symbols_llm:
+            self._emit_bridge_reject(
+                event_name=event_name,
+                rid=rid,
+                payload={
+                    action_key: action_value,
+                    "request_id": request_id,
+                    "ts_ms": int(time.time() * 1000),
+                    "reason_code": "SYMBOL_NOT_OWNED_BY_LLM",
+                    "reason": "symbol not owned by llm_microstructure",
+                    "symbol": symbol,
+                    "lifecycle_id": lifecycle_id,
+                    "idempotency_key": idempotency_key,
+                },
+                why=f"{event_name.lower()}_symbol_not_owned",
+            )
+            return True
+
+        if allow and sym_u not in allow:
+            self._emit_bridge_reject(
+                event_name=event_name,
+                rid=rid,
+                payload={
+                    action_key: action_value,
+                    "request_id": request_id,
+                    "ts_ms": int(time.time() * 1000),
+                    "reason_code": "SYMBOL_NOT_ALLOWED",
+                    "reason": "symbol not in llm_orchestration.allowlist_symbols",
+                    "symbol": symbol,
+                    "lifecycle_id": lifecycle_id,
+                    "idempotency_key": idempotency_key,
+                },
+                why=f"{event_name.lower()}_symbol_not_allowed",
+            )
+            return True
+        return False
+
     def _on_command(self, payload: Dict[str, Any]) -> None:
         request_id = str(payload.get("request_id") or "")
-        rid = str(payload.get("intent_id") or payload.get("rid")
-                  or request_id or f"llm-{int(time.time() * 1000)}")
+        request_kind = str(payload.get("request_kind") or "")
+        rid = str(
+            payload.get("intent_id")
+            or payload.get("action_id")
+            or payload.get("rid")
+            or request_id
+            or f"llm-{int(time.time() * 1000)}"
+        )
+        mode, symbols_llm, allow = self._runtime_allowlist()
+
+        if request_kind == "close_position":
+            try:
+                cmd_close = CmdLlmPositionCloseV1.model_validate(payload)
+            except Exception as e:
+                self._emit_bridge_reject(
+                    event_name="EVT:LLM_CLOSE_REJECTED_V1",
+                    rid=rid,
+                    payload={
+                        "action_id": payload.get("action_id"),
+                        "request_id": request_id,
+                        "ts_ms": int(time.time() * 1000),
+                        "reason_code": "SCHEMA_INVALID",
+                        "reason": str(e),
+                        "symbol": payload.get("symbol"),
+                        "lifecycle_id": payload.get("lifecycle_id"),
+                        "idempotency_key": payload.get("idempotency_key"),
+                    },
+                    why="llm_close_schema_invalid",
+                )
+                return
+
+            if self._reject_runtime_symbol(
+                event_name="EVT:LLM_CLOSE_REJECTED_V1",
+                rid=cmd_close.action_id,
+                action_key="action_id",
+                action_value=cmd_close.action_id,
+                request_id=request_id,
+                symbol=cmd_close.symbol,
+                lifecycle_id=cmd_close.lifecycle_id,
+                idempotency_key=cmd_close.idempotency_key,
+                mode=mode,
+                symbols_llm=symbols_llm,
+                allow=allow,
+            ):
+                return
+
+            accepted_payload = {
+                "action_id": cmd_close.action_id,
+                "request_id": request_id,
+                "enqueue_ts_ms": int(time.time() * 1000),
+                "ipc_endpoint": self._endpoint,
+                "queue_depth": 0,
+                "lifecycle_id": cmd_close.lifecycle_id,
+            }
+            self.fsm.emit("EVT:LLM_CLOSE_ACCEPTED_V1",
+                          accepted_payload, "llm_close_ipc_accepted")
+            _append_wal_event("LLM_CLOSE_ACCEPTED_V1", cmd_close.action_id,
+                              accepted_payload, "llm_close_ipc_accepted")
+            self.fsm.emit(
+                "CMD:LLM_POSITION_CLOSE_V1",
+                payload=cmd_close.model_dump(),
+                why="llm_position_close",
+            )
+            return
+
+        if request_kind == "amend_brackets":
+            try:
+                cmd_amend = CmdLlmBracketAmendV1.model_validate(payload)
+            except Exception as e:
+                self._emit_bridge_reject(
+                    event_name="EVT:LLM_BRACKET_AMEND_REJECTED_V1",
+                    rid=rid,
+                    payload={
+                        "action_id": payload.get("action_id"),
+                        "request_id": request_id,
+                        "ts_ms": int(time.time() * 1000),
+                        "reason_code": "SCHEMA_INVALID",
+                        "reason": str(e),
+                        "symbol": payload.get("symbol"),
+                        "lifecycle_id": payload.get("lifecycle_id"),
+                        "idempotency_key": payload.get("idempotency_key"),
+                    },
+                    why="llm_bracket_amend_schema_invalid",
+                )
+                return
+
+            if self._reject_runtime_symbol(
+                event_name="EVT:LLM_BRACKET_AMEND_REJECTED_V1",
+                rid=cmd_amend.action_id,
+                action_key="action_id",
+                action_value=cmd_amend.action_id,
+                request_id=request_id,
+                symbol=cmd_amend.symbol,
+                lifecycle_id=cmd_amend.lifecycle_id,
+                idempotency_key=cmd_amend.idempotency_key,
+                mode=mode,
+                symbols_llm=symbols_llm,
+                allow=allow,
+            ):
+                return
+
+            accepted_payload = {
+                "action_id": cmd_amend.action_id,
+                "request_id": request_id,
+                "enqueue_ts_ms": int(time.time() * 1000),
+                "ipc_endpoint": self._endpoint,
+                "queue_depth": 0,
+                "lifecycle_id": cmd_amend.lifecycle_id,
+            }
+            self.fsm.emit("EVT:LLM_BRACKET_AMEND_ACCEPTED_V1",
+                          accepted_payload, "llm_bracket_amend_ipc_accepted")
+            _append_wal_event("LLM_BRACKET_AMEND_ACCEPTED_V1", cmd_amend.action_id,
+                              accepted_payload, "llm_bracket_amend_ipc_accepted")
+            self.fsm.emit(
+                "CMD:LLM_BRACKET_AMEND_V1",
+                payload=cmd_amend.model_dump(),
+                why="llm_bracket_amend",
+            )
+            return
 
         try:
             cmd = CmdLlmIntentSubmitV1.model_validate(payload)
@@ -420,61 +630,19 @@ class LLMIntentIngressBridge:
                               reject_payload, "llm_intent_schema_invalid")
             return
 
-        llm_cfg = getattr(getattr(self.config, "trading",
-                          None), "llm_orchestration", None)
-        mode = str(getattr(llm_cfg, "mode", "baseline"))
-        symbols_llm = [str(s).upper()
-                       for s in (getattr(llm_cfg, "symbols_llm", []) or [])]
-        allow = [str(s).upper()
-                 for s in (getattr(llm_cfg, "allowlist_symbols", []) or [])]
-
-        if mode == "baseline":
-            reject_payload = {
-                "intent_id": cmd.intent_id,
-                "request_id": request_id,
-                "ts_ms": int(time.time() * 1000),
-                "reason_code": "LLM_MODE_DISABLED",
-                "reason": "llm_orchestration.mode=baseline",
-                "symbol": cmd.symbol,
-                "idempotency_key": cmd.idempotency_key,
-            }
-            self.fsm.emit("EVT:LLM_INTENT_REJECTED_V1",
-                          reject_payload, "llm_mode_disabled")
-            _append_wal_event("LLM_INTENT_REJECTED_V1",
-                              cmd.intent_id, reject_payload, "llm_mode_disabled")
-            return
-
-        sym_u = str(cmd.symbol).upper()
-        if symbols_llm and sym_u not in symbols_llm:
-            reject_payload = {
-                "intent_id": cmd.intent_id,
-                "request_id": request_id,
-                "ts_ms": int(time.time() * 1000),
-                "reason_code": "SYMBOL_NOT_OWNED_BY_LLM",
-                "reason": "symbol not owned by llm_microstructure",
-                "symbol": cmd.symbol,
-                "idempotency_key": cmd.idempotency_key,
-            }
-            self.fsm.emit("EVT:LLM_INTENT_REJECTED_V1",
-                          reject_payload, "llm_symbol_not_owned")
-            _append_wal_event("LLM_INTENT_REJECTED_V1", cmd.intent_id,
-                              reject_payload, "llm_symbol_not_owned")
-            return
-
-        if allow and sym_u not in allow:
-            reject_payload = {
-                "intent_id": cmd.intent_id,
-                "request_id": request_id,
-                "ts_ms": int(time.time() * 1000),
-                "reason_code": "SYMBOL_NOT_ALLOWED",
-                "reason": "symbol not in llm_orchestration.allowlist_symbols",
-                "symbol": cmd.symbol,
-                "idempotency_key": cmd.idempotency_key,
-            }
-            self.fsm.emit("EVT:LLM_INTENT_REJECTED_V1",
-                          reject_payload, "llm_symbol_not_allowed")
-            _append_wal_event("LLM_INTENT_REJECTED_V1", cmd.intent_id,
-                              reject_payload, "llm_symbol_not_allowed")
+        if self._reject_runtime_symbol(
+            event_name="EVT:LLM_INTENT_REJECTED_V1",
+            rid=cmd.intent_id,
+            action_key="intent_id",
+            action_value=cmd.intent_id,
+            request_id=request_id,
+            symbol=cmd.symbol,
+            lifecycle_id=None,
+            idempotency_key=cmd.idempotency_key,
+            mode=mode,
+            symbols_llm=symbols_llm,
+            allow=allow,
+        ):
             return
 
         accepted_payload = {
@@ -488,7 +656,6 @@ class LLMIntentIngressBridge:
                       accepted_payload, "llm_intent_ipc_accepted")
         _append_wal_event("LLM_INTENT_ACCEPTED_V1", cmd.intent_id,
                           accepted_payload, "llm_intent_ipc_accepted")
-
         self.fsm.emit(
             "CMD:LLM_INTENT_SUBMIT_V1",
             payload=cmd.model_dump(),
@@ -497,7 +664,7 @@ class LLMIntentIngressBridge:
 
 
 def register_llm_command_mapper(fsm: Any, logger: Optional[logging.Logger] = None) -> None:
-    """Register CMD:LLM_INTENT_SUBMIT_V1 -> CMD:EXTERNAL_OPEN_REQUEST_V1 mapper."""
+    """Register LLM ingress mappers into execution_position intake commands."""
 
     lg = logger or logging.getLogger(__name__)
 
@@ -505,7 +672,6 @@ def register_llm_command_mapper(fsm: Any, logger: Optional[logging.Logger] = Non
         try:
             pld = event.pld if isinstance(event.pld, dict) else {}
             cmd = CmdLlmIntentSubmitV1.model_validate(pld)
-
             ext_payload = {
                 "rid": str(cmd.intent_id),
                 "intent_id": str(cmd.intent_id),
@@ -523,16 +689,62 @@ def register_llm_command_mapper(fsm: Any, logger: Optional[logging.Logger] = Non
                 "snapshot_ref": cmd.snapshot_ref.model_dump() if cmd.snapshot_ref else None,
                 "why_short": truncate_why(str(cmd.why_short), 80),
             }
-
             fsm.emit(
                 "CMD:EXTERNAL_OPEN_REQUEST_V1",
                 payload=ext_payload,
                 why="llm_external_open_request",
             )
-            lg.info("LLM_EXTERNAL: intent_id=%s rid=%s side=%s qty=%s price=%s -> CMD:EXTERNAL_OPEN_REQUEST_V1",
-                    cmd.intent_id, cmd.intent_id, cmd.side, cmd.order.qty, cmd.order.limit_price)
         except Exception as e:
             lg.error("LLM command mapper failed: %s", e, exc_info=True)
 
+    def _close_handler(event: Message) -> None:
+        try:
+            pld = event.pld if isinstance(event.pld, dict) else {}
+            cmd = CmdLlmPositionCloseV1.model_validate(pld)
+            ext_payload = {
+                "rid": str(cmd.action_id),
+                "action_id": str(cmd.action_id),
+                "lifecycle_id": str(cmd.lifecycle_id),
+                "symbol": str(cmd.symbol).upper(),
+                "qty": str(cmd.qty) if cmd.qty is not None else None,
+                "reason": str(cmd.reason),
+                "idempotent_key": str(cmd.idempotency_key),
+                "source": "external_llm",
+            }
+            fsm.emit(
+                "CMD:EXTERNAL_POSITION_CLOSE_REQUEST_V1",
+                payload=ext_payload,
+                why="llm_external_close_request",
+            )
+        except Exception as e:
+            lg.error("LLM close mapper failed: %s", e, exc_info=True)
+
+    def _amend_handler(event: Message) -> None:
+        try:
+            pld = event.pld if isinstance(event.pld, dict) else {}
+            cmd = CmdLlmBracketAmendV1.model_validate(pld)
+            ext_payload = {
+                "rid": str(cmd.action_id),
+                "action_id": str(cmd.action_id),
+                "lifecycle_id": str(cmd.lifecycle_id),
+                "symbol": str(cmd.symbol).upper(),
+                "side": str(cmd.side).upper(),
+                "tp_price": str(cmd.brackets.tp_price),
+                "sl_price": str(cmd.brackets.sl_price),
+                "entry_price": str(cmd.entry_price) if cmd.entry_price is not None else None,
+                "reason": str(cmd.reason),
+                "idempotent_key": str(cmd.idempotency_key),
+                "source": "external_llm",
+            }
+            fsm.emit(
+                "CMD:EXTERNAL_BRACKET_AMEND_REQUEST_V1",
+                payload=ext_payload,
+                why="llm_external_bracket_amend_request",
+            )
+        except Exception as e:
+            lg.error("LLM bracket amend mapper failed: %s", e, exc_info=True)
+
     fsm.listen("CMD:LLM_INTENT_SUBMIT_V1", _handler)
-    lg.info("Registered LLM command mapper: CMD:LLM_INTENT_SUBMIT_V1 -> CMD:EXTERNAL_OPEN_REQUEST_V1")
+    fsm.listen("CMD:LLM_POSITION_CLOSE_V1", _close_handler)
+    fsm.listen("CMD:LLM_BRACKET_AMEND_V1", _amend_handler)
+    lg.info("Registered LLM command mappers for open, close, and bracket amend ingress")

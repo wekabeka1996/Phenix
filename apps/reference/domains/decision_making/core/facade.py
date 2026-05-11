@@ -48,6 +48,7 @@ from apps.reference.domains.neocortex.logic.datasets.time_provenance import (
     is_causal_time_provenance,
 )
 from apps.reference.domains.neocortex.transport.authority_bridge import NeocortexAuthorityBridge
+from apps.reference.shared.decision_primitives.score_lineage import find_score_lineage_record
 
 try:
     from apps.reference.telemetry.alerts import AlertManager as _AlertManager
@@ -489,9 +490,26 @@ class DecisionMaking:
                 score_missing = {}
             else:
                 score_missing = dict(score_missing)
-            if score_context.get("signal_score") is None and getattr(sg, "signal_score", None) is not None:
-                score_context["signal_score"] = getattr(
-                    sg, "signal_score", None)
+            direction_selection = enriched.get(
+                "direction_confidence_selection")
+            if (
+                score_context.get("signal_score") is None
+                and isinstance(direction_selection, dict)
+                and direction_selection.get("selected_source") == "signal_score"
+                and direction_selection.get("raw_value") is not None
+            ):
+                score_context["signal_score"] = direction_selection.get(
+                    "raw_value")
+            if score_context.get("signal_score") is None:
+                signal_score_record = find_score_lineage_record(
+                    getattr(sg, "score_lineage", None)
+                    if isinstance(getattr(sg, "score_lineage", None), dict)
+                    else None,
+                    "signal_score",
+                )
+                if signal_score_record is not None:
+                    score_context["signal_score"] = signal_score_record.get(
+                        "value")
             score_missing["signal_score"] = score_context.get(
                 "signal_score") is None
             score_context["missing"] = score_missing
@@ -514,6 +532,8 @@ class DecisionMaking:
             "vol_pct_10s",
             "vol_pct_60s",
             "vol_pct_300s",
+            "ret_60s",
+            "ret_300s",
         ):
             if price_motion_context.get(key) is None and getattr(sg, key, None) is not None:
                 price_motion_context[key] = getattr(sg, key, None)
@@ -534,6 +554,8 @@ class DecisionMaking:
             "vol_pct_10s",
             "vol_pct_60s",
             "vol_pct_300s",
+            "ret_60s",
+            "ret_300s",
         ):
             if isinstance(enriched.get("price_motion_context"), dict):
                 missing_inputs[key] = enriched["price_motion_context"].get(
@@ -749,6 +771,10 @@ class DecisionMaking:
                 clock=self._clock, symbol_states=self.symbol_states,
                 per_symbol_regimes=self._per_symbol_regimes,
                 system_stress_states=system_stress_states)
+        if isinstance(strategy_trace, dict):
+            strategy_score_lineage = strategy_trace.get("score_lineage")
+            if isinstance(strategy_score_lineage, dict):
+                sg.score_lineage = dict(strategy_score_lineage)
         if sg.outcome == "CONFIG_ERROR":
             self._emit_trade_intent_rejected(
                 symbol=symbol, strategy_id=str(strategy_id), side=str(side), rid=str(rid),
@@ -782,6 +808,9 @@ class DecisionMaking:
                 why_chain,
                 sg,
                 strategy_id=strategy_id,
+                strategy_trace=strategy_trace if isinstance(
+                    strategy_trace, dict) else None,
+                tf_sec=tf_sec,
             )
             return
         if str(getattr(sg, "regime", "") or "") == "LOW_VOLATILITY" and not reduce_only:
@@ -871,6 +900,9 @@ class DecisionMaking:
                         why_chain,
                         sg,
                         strategy_id=strategy_id,
+                        strategy_trace=strategy_trace if isinstance(
+                            strategy_trace, dict) else None,
+                        tf_sec=tf_sec,
                     )
                     return
         # After this point the builder owns payload assembly, arbitration, QoS,
@@ -887,7 +919,18 @@ class DecisionMaking:
             authority_context=authority_context,
             normalize_mode=self.normalize_signals_mode, sg=sg)
 
-    def _handle_safety_deny(self, symbol, side, rid, why_chain, sg, *, strategy_id: str) -> None:
+    def _handle_safety_deny(
+        self,
+        symbol,
+        side,
+        rid,
+        why_chain,
+        sg,
+        *,
+        strategy_id: str,
+        strategy_trace: dict | None = None,
+        tf_sec: int | None = None,
+    ) -> None:
         """Emit best-effort observability for a safety-gate denial."""
         def _g(a, d=None): return getattr(sg, a, d)  # noqa: E731
         deny_family = str(_g("deny_family", "SAFETY_GATES") or "SAFETY_GATES")
@@ -900,9 +943,11 @@ class DecisionMaking:
             order_side=str(side),
             lifecycle_id=None,
             sg=sg,
+            strategy_trace=strategy_trace,
             regime_provenance=_g("regime_provenance") if isinstance(
                 _g("regime_provenance"), dict) else None,
             tpsl_owner_ctx=None,
+            tf_sec=tf_sec,
             gate_outcome="DENY",
             deny_reason=sg.deny_reason,
             why=_g("why_short", ""),

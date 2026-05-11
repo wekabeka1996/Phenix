@@ -855,8 +855,11 @@ class IntentBuilder:
             order_side=str(side),
             lifecycle_id=str(trade_intent["idempotent_key"]),
             sg=sg,
+            strategy_trace=strategy_trace if isinstance(
+                strategy_trace, dict) else None,
             regime_provenance=regime_provenance,
             tpsl_owner_ctx=tpsl_payload.owner_ctx,
+            tf_sec=tf_sec,
         )
         if tpsl_payload.owner_ctx is not None:
             self.logger.info(

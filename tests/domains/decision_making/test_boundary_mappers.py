@@ -104,6 +104,7 @@ class TestMapProcessStrategyBoundaryToCmd:
             "rid": "req-1",
             "features": {"pillar_sum": 0.5},
             "warmup": {"full_ready": True, "ticks_seen": 10, "ready": {}},
+            "price_motion": {"pm_norm_300s": 0.65, "ret_300s": 0.0015},
         }
         boundary = self._make_boundary(raw)
         cmd = map_process_strategy_boundary_to_cmd(boundary, raw=raw)
@@ -112,6 +113,8 @@ class TestMapProcessStrategyBoundaryToCmd:
         assert cmd.tf_sec == 300
         assert cmd.bar_close_ts == 1700000000
         assert cmd.rid == "req-1"
+        assert isinstance(cmd.price_motion, MappingProxyType)
+        assert cmd.price_motion["pm_norm_300s"] == pytest.approx(0.65)
 
     def test_features_is_mapping_proxy(self):
         raw = {"symbol": "BTCUSDT", "features": {"atr": 0.01}}
@@ -132,6 +135,7 @@ class TestMapProcessStrategyBoundaryToCmd:
         boundary = self._make_boundary(raw)
         cmd = map_process_strategy_boundary_to_cmd(boundary, raw=raw)
         assert dict(cmd.features) == {}
+        assert cmd.price_motion is None
 
     def test_none_tf_sec_preserved(self):
         raw = {"symbol": "BTCUSDT"}
