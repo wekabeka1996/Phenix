@@ -257,6 +257,9 @@ class AuroraDecisionMixin:
             neutral_threshold=effective_neutral,
             current_side=current_side,
         )
+        selected_engine_name = "quadratic_v1" if self.scoring_kernel_cls is QuadraticScoringKernel else "aurora_v1"
+        if hasattr(self, "_record_scoring_selection"):
+            self._record_scoring_selection(symbol, selected_engine_name)
         try:
             result = self.scoring_kernel_cls.compute(
                 **_compute_kwargs,
@@ -264,6 +267,8 @@ class AuroraDecisionMixin:
             )
         except Exception as _kernel_exc:
             if self.scoring_kernel_cls is QuadraticScoringKernel:
+                if hasattr(self, "_record_quadratic_fallback"):
+                    self._record_quadratic_fallback(symbol)
                 self.logger.error(
                     "[%s] QUADRATIC_FALLBACK: %s — falling back to AuroraScoringKernel (local only)",
                     symbol, _kernel_exc,
@@ -271,6 +276,8 @@ class AuroraDecisionMixin:
                 try:
                     result = AuroraScoringKernel.compute(**_compute_kwargs)
                 except Exception as _fallback_exc:
+                    if hasattr(self, "_record_fallback_also_failed"):
+                        self._record_fallback_also_failed(symbol)
                     self.logger.error("[%s] FALLBACK ALSO FAILED: %s", symbol, _fallback_exc)
                     raise _fallback_exc from _kernel_exc
             else:
@@ -281,11 +288,14 @@ class AuroraDecisionMixin:
 
         # Kernel visibility log
         _psi = result.psi_vector or {}
+        observed_engine_name = str(_psi.get("scoring_engine") or selected_engine_name)
+        if hasattr(self, "_record_scoring_observed"):
+            self._record_scoring_observed(symbol, observed_engine_name)
         self.logger.info(
             "[%s] KERNEL_DIAG: engine=%s s_linear=%.4f score=%.6f "
             "shield_mult=%.3f deferred=%s defer_reason=%s side=%s thr_buy=%s thr_sell=%s",
             symbol,
-            _psi.get("scoring_engine", "?"),
+            observed_engine_name,
             float(_psi.get("s_linear", 0.0)),
             float(result.score),
             float(result.shield_multiplier or 1.0),

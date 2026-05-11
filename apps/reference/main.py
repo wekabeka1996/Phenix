@@ -722,15 +722,20 @@ def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False
     
     # 3b. Initialize Aurora Strategy Handler (processes CMD:PROCESS_STRATEGY)
     # This is CRITICAL - without this, no signals will be generated!
+    aurora_handler = None
     try:
         from apps.reference.domains.strategies.plugins.aurora_builtin import AuroraBuiltinPlugin
-        aurora_plugin = AuroraBuiltinPlugin()
-        # DET-BT-COOLDOWN-FIX: Pass bt_clock.monotonic for deterministic cooldowns/holds
-        aurora_handler = aurora_plugin.create_handler(
-            fsm=fsm, config=config, monotonic_fn=bt_clock.monotonic
-        )
-        aurora_handler.register()
-        LOG.info("✅ Aurora Strategy Handler registered for Backtest.")
+        aurora_cfg = getattr(config.strategies, "aurora", None)
+        if aurora_cfg is not None:
+            aurora_plugin = AuroraBuiltinPlugin()
+            # DET-BT-COOLDOWN-FIX: Pass bt_clock.monotonic for deterministic cooldowns/holds
+            aurora_handler = aurora_plugin.create_handler(
+                fsm=fsm, config=config, monotonic_fn=bt_clock.monotonic
+            )
+            aurora_handler.register()
+            LOG.info("✅ Aurora Strategy Handler registered for Backtest.")
+        else:
+            LOG.info("⏭️  Skipping Aurora Strategy Handler (config missing).")
     except Exception as e:
         LOG.error(f"Failed to register Aurora Strategy Handler: {e}")
         import traceback
@@ -740,10 +745,14 @@ def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False
     # FIX-BACKTEST-MR: Mean Reversion was not registered, so BTC (assigned to MR) couldn't trade!
     try:
         from apps.reference.domains.strategies.plugins.mean_reversion import MeanReversionPlugin
-        mr_plugin = MeanReversionPlugin()
-        mr_handler = mr_plugin.create_handler(fsm=fsm, config=config)
-        mr_handler.register()
-        LOG.info("✅ Mean Reversion Strategy Handler registered for Backtest.")
+        mr_cfg = getattr(config.strategies, "mean_reversion", None)
+        if mr_cfg is not None:
+            mr_plugin = MeanReversionPlugin()
+            mr_handler = mr_plugin.create_handler(fsm=fsm, config=config)
+            mr_handler.register()
+            LOG.info("✅ Mean Reversion Strategy Handler registered for Backtest.")
+        else:
+            LOG.info("⏭️  Skipping Mean Reversion Strategy Handler (config missing).")
     except Exception as e:
         LOG.error(f"Failed to register Mean Reversion Strategy Handler: {e}")
         import traceback
@@ -879,6 +888,7 @@ def run_backtest_simulation(config: AuroraConfig, *, return_result: bool = False
                 "decision_clock_violations": int(decision_clock_violations),
                 "blocked_reason_counts": {str(k): int(v) for k, v in blocked_reason_counts.items()},
             },
+            scoring_telemetry=(aurora_handler.get_scoring_telemetry() if aurora_handler is not None else {}),
         )
         
         # Inject Alpha Search Summary (since it's a standalone plugin)

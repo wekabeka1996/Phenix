@@ -1,0 +1,78 @@
+# =============================================================================
+# OVERLAY: patched6 - Block DOGEUSDT from active universe
+# =============================================================================
+# Target file : config/aurora/strategies.yaml
+# Applied     : YES - inline registry edit
+# Baseline    : patched5
+# =============================================================================
+#
+# RATIONALE
+# ---------
+# Q1 2024 forensic analysis attributed nearly the entire cumulative loss to
+# DOGEUSDT being active in the strategy registry despite the intended baseline.
+#
+#   Q1 total CUM        : -595.68 USDT
+#   DOGEUSDT contribution: -686.69 USDT
+#   ETH + BNB combined  : +89.77 USDT
+#
+# Decision:
+# - ETH TREND_DOWN: KEEP
+# - ETH MR: KEEP
+# - BNB MR: MONITOR
+# - DOGEUSDT: BLOCK
+#
+# IMPORTANT CONTRACT NOTE
+# -----------------------
+# In the current loader, active symbols are derived from assignments KEYS.
+# Therefore this is the effective patched6 change:
+#   remove DOGEUSDT from assignments entirely
+# and NOT:
+#   DOGEUSDT: []
+# because an empty list would still keep DOGEUSDT in symbols_to_track.
+#
+# =============================================================================
+# BEFORE / AFTER DIFF
+# =============================================================================
+#
+# --- BEFORE (patched5) -------------------------------------------------------
+# assignments:
+#   ETHUSDT: [aurora]
+#   SOLUSDT: [aurora]
+#   DOGEUSDT: [aurora]
+#   XRPUSDT: [aurora]
+#   BTCUSDT: [aurora]
+#   BNBUSDT: [aurora]
+#   1000PEPEUSDT: [aurora]
+#
+# --- AFTER (patched6) --------------------------------------------------------
+
+version: "1.0.0"
+
+assignments:
+  ETHUSDT:
+    - aurora
+
+  SOLUSDT:
+    - aurora
+
+  XRPUSDT:
+    - aurora
+
+  BTCUSDT:
+    - aurora
+
+  BNBUSDT:
+    - aurora
+
+  1000PEPEUSDT:
+    - aurora
+
+arbitration:
+  mode: priority
+  window_ms: 1000
+  priority:
+    aurora: 1
+    mean_reversion: 2
+  logging:
+    rejected_why_prefix: "ARBITRATION_REJECT"
+    log_level: "INFO"

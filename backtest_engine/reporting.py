@@ -280,6 +280,19 @@ def save_backtest_run_bundle(
         "active_strategies": active_strategies,
         "assignments": assignments,
     }
+    try:
+        runtime = getattr(getattr(config, "system_meta", None), "runtime", None)
+        trial = getattr(runtime, "research_trial", None)
+        if trial is not None:
+            if hasattr(trial, "model_dump"):
+                trial_payload = _to_jsonable(trial.model_dump())
+            else:
+                trial_payload = _to_jsonable(trial)
+            if isinstance(trial_payload, dict) and not trial_payload.get("run_id"):
+                trial_payload["run_id"] = run_id
+            manifest["search_provenance"] = trial_payload
+    except Exception:
+        pass
     _write_bytes(bundle_dir / "manifest.json", _canonical_json_bytes(manifest))
 
     return bundle_dir
@@ -501,6 +514,28 @@ def _extract_backtest_config_snapshot(config: Any) -> dict[str, Any]:
         pass
 
     try:
+        runtime = getattr(getattr(config, "system_meta", None), "runtime", None)
+        proxy = getattr(runtime, "research_proxy", None)
+        if proxy is not None:
+            if hasattr(proxy, "model_dump"):
+                out["system_meta.runtime.research_proxy"] = _to_jsonable(proxy.model_dump())
+            else:
+                out["system_meta.runtime.research_proxy"] = _to_jsonable(proxy)
+    except Exception:
+        pass
+
+    try:
+        runtime = getattr(getattr(config, "system_meta", None), "runtime", None)
+        trial = getattr(runtime, "research_trial", None)
+        if trial is not None:
+            if hasattr(trial, "model_dump"):
+                out["system_meta.runtime.research_trial"] = _to_jsonable(trial.model_dump())
+            else:
+                out["system_meta.runtime.research_trial"] = _to_jsonable(trial)
+    except Exception:
+        pass
+
+    try:
         ex = getattr(getattr(config, "trading", None), "execution", None)
         if ex is not None and hasattr(ex, "model_dump"):
             out["trading.execution"] = _to_jsonable(ex.model_dump())
@@ -541,6 +576,7 @@ def build_backtest_report(
     trade_intents: list[dict[str, Any]] | None = None,
     order_log_path: str | None = None,
     pipeline: dict[str, Any] | None = None,
+    scoring_telemetry: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     broker = getattr(engine, "broker", None)
 
@@ -1021,7 +1057,7 @@ def build_backtest_report(
         return datetime.combine(v, datetime.min.time(), tzinfo=timezone.utc).isoformat()
 
     report_data: dict[str, Any] = {
-        "report_version": "2.0.0",
+        "report_version": "2.2.0",
         "run_id": run_id,
         "metadata": {
             "timestamp": datetime.now(tz=timezone.utc).isoformat(),
@@ -1050,6 +1086,7 @@ def build_backtest_report(
         "regime_log": _to_jsonable((regimes or {}).get("regime_log", [])),
         "features": _to_jsonable(features),
         "pipeline": _to_jsonable(pipeline or {}),
+        "scoring_telemetry": _to_jsonable(scoring_telemetry or {}),
         "artifacts": {
             "order_log_jsonl": str(order_log_file) if order_log_file is not None else None,
         },
@@ -1059,6 +1096,31 @@ def build_backtest_report(
             "close_reason classification is derived from broker order type/clientOrderId and flip detection",
         ],
     }
+
+    try:
+        runtime = getattr(getattr(config, "system_meta", None), "runtime", None)
+        proxy = getattr(runtime, "research_proxy", None)
+        if proxy is not None:
+            if hasattr(proxy, "model_dump"):
+                report_data["proxy_universe"] = _to_jsonable(proxy.model_dump())
+            else:
+                report_data["proxy_universe"] = _to_jsonable(proxy)
+    except Exception:
+        pass
+
+    try:
+        runtime = getattr(getattr(config, "system_meta", None), "runtime", None)
+        trial = getattr(runtime, "research_trial", None)
+        if trial is not None:
+            if hasattr(trial, "model_dump"):
+                trial_payload = _to_jsonable(trial.model_dump())
+            else:
+                trial_payload = _to_jsonable(trial)
+            if isinstance(trial_payload, dict) and not trial_payload.get("run_id"):
+                trial_payload["run_id"] = run_id
+            report_data["search_provenance"] = trial_payload
+    except Exception:
+        pass
 
     try:
         stress_params = getattr(broker, "applied_stress_params", None)

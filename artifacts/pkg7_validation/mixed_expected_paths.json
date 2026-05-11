@@ -1,0 +1,5 @@
+[
+  "strategies.aurora.assets.ETHUSDT.weights.macro_resid",
+  "strategies.aurora.assets.ETHUSDT.weights.tfi",
+  "strategies.aurora.assets.ETHUSDT.signal_threshold.value"
+]

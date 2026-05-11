@@ -1,0 +1,30 @@
+{
+  "status": "search_rejected",
+  "package": "PKG-4",
+  "reason": "No honest bounded search was executed: current SelectiveOptimizer path conflicts with strict config truth, ETH-only proxy is invalid zero-trade, and the smallest honest ETH+BTC March proxy is still expensive.",
+  "reference_candidates": [
+    {
+      "candidate_id": "baseline_full_surface",
+      "run_id": "20260314_041537",
+      "role": "baseline_reference",
+      "surface": "MARCH_SIDE_B_DEGRADED_PARTIAL_UNIVERSE"
+    },
+    {
+      "candidate_id": "march_candidate_v1_block_eth_trend_down",
+      "run_id": "20260314_041758",
+      "role": "best_evidence_bound_reference",
+      "surface": "MARCH_SIDE_B_DEGRADED_PARTIAL_UNIVERSE"
+    },
+    {
+      "candidate_id": "eth_btc_proxy_baseline",
+      "run_id": "20260314_125711",
+      "role": "proxy_runtime_benchmark",
+      "surface": "MARCH_ETH_PLUS_BTC_PROXY"
+    }
+  ],
+  "fallback_contamination": {
+    "observed_in_logs": false,
+    "artifact_counter_present": false,
+    "status": "zero_observed_not_artifact_hardened"
+  }
+}

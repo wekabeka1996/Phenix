@@ -27,6 +27,8 @@ from calendar import monthrange
 from pathlib import Path
 from typing import Optional
 
+import yaml
+
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -69,7 +71,27 @@ def _parse_args(argv=None):
     p.add_argument("--end", default=None, help="End date YYYY-MM-DD")
     p.add_argument("--balance", type=float, default=1000.0,
                    help="Initial balance USDT (default: 1000)")
+    p.add_argument("--overlay-yaml", default=None,
+                   help="Optional YAML file with backtest-only overlay (raw dict or {meta, overlay})")
     return p.parse_args(argv)
+
+
+def _load_overlay_yaml(path_str: str) -> dict:
+    overlay_path = Path(path_str)
+    if not overlay_path.exists():
+        raise FileNotFoundError(f"Overlay file not found: {overlay_path}")
+
+    with overlay_path.open("r", encoding="utf-8-sig", errors="replace") as handle:
+        payload = yaml.safe_load(handle) or {}
+
+    if not isinstance(payload, dict):
+        raise ValueError(f"Overlay YAML must decode to a mapping: {overlay_path}")
+
+    overlay = payload.get("overlay", payload)
+    if not isinstance(overlay, dict):
+        raise ValueError(f"Overlay payload must be a mapping: {overlay_path}")
+
+    return overlay
 
 
 def main(argv=None) -> int:
@@ -88,12 +110,21 @@ def main(argv=None) -> int:
 
     config_dir = CONFIG_DIRS[args.side]
     side_name = "aurora_baseline (A)" if args.side == "A" else "aurora (B-patched)"
+    overlay = None
+    if args.overlay_yaml:
+        try:
+            overlay = _load_overlay_yaml(args.overlay_yaml)
+        except Exception as exc:
+            print(f"ERROR: Failed to load overlay YAML: {exc}")
+            return 1
 
     print("=" * 60)
     print(f"  AURORA SINGLE BACKTEST - side={args.side}, rung={rung_label}")
     print(f"  Config : {config_dir.name}")
     print(f"  Period : {start_date} -> {end_date}")
     print(f"  Balance: {args.balance:.2f} USDT")
+    if args.overlay_yaml:
+        print(f"  Overlay: {args.overlay_yaml}")
     print("=" * 60)
 
     if not config_dir.exists():
@@ -102,7 +133,7 @@ def main(argv=None) -> int:
 
     # Load config
     from apps.reference.config_loader import ConfigLoader
-    loader = ConfigLoader(config_dir=config_dir)
+    loader = ConfigLoader(config_dir=config_dir, optuna_overlay=overlay)
     config = loader.load_config()
 
     try:

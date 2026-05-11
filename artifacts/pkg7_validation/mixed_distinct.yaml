@@ -1,0 +1,10 @@
+strategies:
+  aurora:
+    assets:
+      ETHUSDT:
+        weights:
+          macro_resid: 0.31
+          tfi: 0.14
+        signal_threshold:
+          enabled: true
+          value: 0.0095

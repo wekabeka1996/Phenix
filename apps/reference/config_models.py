@@ -3906,6 +3906,91 @@ class SystemRuntimeMeta(BaseModel):
 
     config_name: Optional[str] = Field(default=None, description='Identifier of the loaded config profile')
     config_dir: Optional[str] = Field(default=None, description='Filesystem path of the config directory in use')
+    research_proxy: Optional["ResearchProxyRuntimeMeta"] = Field(
+        default=None,
+        description="Optional research-only proxy metadata captured for bounded backtest harness runs.",
+    )
+    research_trial: Optional["ResearchTrialRuntimeMeta"] = Field(
+        default=None,
+        description="Optional research-only trial provenance metadata captured for bounded search runs.",
+    )
+
+
+class ResearchProxyRuntimeMeta(BaseModel):
+    """Research-only runtime metadata for proxy-universe backtests."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    label: Optional[str] = Field(default=None, description='Human-readable proxy label')
+    tracked_symbols: List[str] = Field(
+        default_factory=list,
+        description='Symbols loaded into the runtime for this proxy run.',
+    )
+    tradable_symbols: List[str] = Field(
+        default_factory=list,
+        description='Subset of tracked symbols that remain active in strategies_registry.assignments.',
+    )
+    context_symbols: List[str] = Field(
+        default_factory=list,
+        description='Tracked-only context symbols required for feature readiness or anchor context.',
+    )
+    strategy_assignments: Dict[str, List[str]] = Field(
+        default_factory=dict,
+        description='Per-symbol strategy assignments enforced by the research harness.',
+    )
+    fail_closed_on_scoring_fallback: bool = Field(
+        default=False,
+        description='Research harness flag: treat any quadratic fallback as a hard-invalid run verdict.',
+    )
+
+
+class ResearchTrialRuntimeMeta(BaseModel):
+    """Research-only runtime metadata for trial provenance and preflight materialization."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    trial_id: str = Field(description='Stable trial identifier used for manifest persistence.')
+    arm_id: str = Field(description='Logical experiment arm identifier.')
+    trial_params_json: Dict[str, Any] = Field(
+        default_factory=dict,
+        description='Structured trial parameters as materialized JSON payload.',
+    )
+    overlay_hash: str = Field(description='SHA256 hash of the effective overlay payload applied at load time.')
+    effective_config_hash: str = Field(description='SHA256 hash of the fully materialized effective config.')
+    effective_strategy_slice_hash: str = Field(
+        description='SHA256 hash of the targeted effective strategy slice used for distinctness checks.'
+    )
+    proxy_universe: Dict[str, Any] = Field(
+        default_factory=dict,
+        description='Effective proxy-universe contract for this trial.',
+    )
+    fail_closed_on_scoring_fallback: bool = Field(
+        default=False,
+        description='Whether fail-closed fallback rejection was active for this trial.',
+    )
+    run_id: Optional[str] = Field(default=None, description='Backtest run identifier once execution starts.')
+    parent_anchor: Optional[str] = Field(default=None, description='Anchor/base label used for preflight delta checks.')
+    timestamp: str = Field(description='UTC timestamp when the trial was materialized.')
+    expected_changed_paths: List[str] = Field(
+        default_factory=list,
+        description='Expected YAML dot-paths that should materially differ from the anchor.',
+    )
+    effective_changed_values: Dict[str, Any] = Field(
+        default_factory=dict,
+        description='Resolved effective values for the expected changed paths after config load.',
+    )
+    preflight_passed: bool = Field(default=False, description='Whether preflight materialization gate passed.')
+    rejection_reason: Optional[str] = Field(default=None, description='Preflight rejection reason, if any.')
+    anchor_effective_config_hash: Optional[str] = Field(
+        default=None,
+        description='Effective config hash of the declared anchor/base config.',
+    )
+    anchor_effective_strategy_slice_hash: Optional[str] = Field(
+        default=None,
+        description='Effective strategy slice hash of the declared anchor/base config.',
+    )
+    manifest_path: Optional[str] = Field(default=None, description='Filesystem path of the persisted trial manifest.')
+    execution_status: Optional[str] = Field(default=None, description='Current execution state for the persisted manifest.')
 
 
 class SystemMetaConfig(BaseModel):

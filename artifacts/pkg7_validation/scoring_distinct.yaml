@@ -1,0 +1,6 @@
+strategies:
+  aurora:
+    assets:
+      ETHUSDT:
+        weights:
+          macro_resid: 0.31

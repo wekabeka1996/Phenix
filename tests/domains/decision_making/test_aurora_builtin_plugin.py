@@ -101,3 +101,14 @@ class TestAuroraBuiltinPlugin:
         assert "EVT:FEATURES_CALCULATED" in listen_calls  # Data-only (warmup caching)
         assert "EVT:TRADE_EXECUTED" in listen_calls  # P0-3-FIX: Position state sync
         assert "EVT:SYSTEM_STRESS_STATE_UPDATED" in listen_calls
+
+    def test_handler_wrapper_proxies_scoring_telemetry(self):
+        """Handler wrapper should expose scoring telemetry from the Aurora handler."""
+        handler_impl = MagicMock()
+        handler_impl.get_scoring_telemetry.return_value = {"quadratic_fallback_count": 0}
+        fsm = MagicMock()
+
+        wrapper = _AuroraHandlerWrapper(handler_impl, fsm)
+
+        assert wrapper.get_scoring_telemetry() == {"quadratic_fallback_count": 0}
+        handler_impl.get_scoring_telemetry.assert_called_once_with()

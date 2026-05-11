@@ -1,0 +1,19 @@
+# =============================================================================
+# OVERLAY: patched7 candidate — Q1 2024 cumulative window
+# =============================================================================
+# Purpose:
+# - validate that the patched7 ETH TREND_DOWN anti-exhaustion filter improves March
+#   without breaking Jan-Feb carry
+# - use only after the minimal patched7 code path from reports/patched7_minimal_patch_proposal.md
+#   is implemented and validated
+#
+# Note:
+# - in this repo the single-backtest helper also accepts --start / --end CLI args
+# - keep those CLI dates aligned with this overlay
+# =============================================================================
+
+trading:
+  backtest:
+    start_date: "2024-01-01"
+    end_date:   "2024-03-31"
+    initial_balance: 1000.0

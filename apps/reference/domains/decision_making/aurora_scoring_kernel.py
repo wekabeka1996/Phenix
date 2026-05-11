@@ -205,6 +205,7 @@ class AuroraScoringKernel:
         
         # 5. Update psi_vector for explainability
         result.psi_vector = {
+            "scoring_engine": "aurora_v1",
             "dir_score": float(ds_score.dir_score),
             "strength_score": float(ds_score.strength_score),
             "final_score": float(ds_score.final_score),

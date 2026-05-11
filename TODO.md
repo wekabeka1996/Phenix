@@ -1,5 +1,79 @@
 # TODO
 
+## PKG-7 — TRIAL MATERIALIZATION & SEARCH PROVENANCE HARDENING (completed 2026-03-15)
+- [x] Phase 0: freeze PKG-7 reference state and record the exact PKG-6 evidence surface
+- [x] Phase 1: determine the exact root cause of PKG-6 trial collapse from live code and artifact evidence
+- [x] Phase 2: add additive trial provenance contract and runtime metadata
+- [x] Phase 3: add preflight materialization gate with `NO_EFFECTIVE_CONFIG_DELTA` fail-closed rejection
+- [x] Phase 4: persist per-trial manifests under `artifacts/search_trials/`
+- [x] Phase 5: add focused tests for materialization, no-effect rejection, provenance export, and manifest preservation
+- [x] Phase 6: run mini validation set for anchor, scoring-distinct, mixed-distinct, and no-effect rejection paths
+- [x] Phase 7: prepare PKG-7 reports, update `JOURNAL.md`, and close the package
+
+## PKG-6 — BOUNDED ALPHA SEARCH ON HARDENED ETH+BTC PROXY (completed 2026-03-14 as rejection package)
+- [x] Phase 0: freeze PKG-6 reference state and confirm fail-closed harness path
+- [x] Phase 1: run hardened proxy smoke validation and confirm telemetry + proxy lock
+- [x] Phase 2: define bounded v1-anchored search space with runtime-backed knobs only
+- [x] Phase 3: define experiment arms and reject unsafe recovery arm expansion
+- [x] Phase 4: define conservative composite objective with hard fallback rejection
+- [x] Phase 5: run bounded search until practical runtime limit and recover completed March trials honestly
+- [x] Phase 6: reject candidate selection because recovered March trials were v1-config duplicates
+- [x] Phase 7: run Jan/Feb sanity replay windows for the v1 anchor with fail-closed fallback rejection
+- [x] Phase 8: prepare final rejection package, reports, and artifacts
+
+## PKG-5 — RESEARCH HARNESS HARDENING FOR HONEST BOUNDED SEARCH (completed 2026-03-14)
+- [x] Freeze reference commit/config surface for March proxy hardening work
+- [x] Add artifact-visible scoring telemetry to raw reports and summary reports
+- [x] Build a strict-config-compatible proxy research runner path
+- [x] Formalize proxy-universe contract for ETH tradable + BTC context
+- [x] Add fail-closed fallback rejection support at harness level
+- [x] Add focused tests for telemetry export, proxy runner path, and wrapper passthrough
+- [x] Run March baseline proxy benchmark on the hardened harness
+- [x] Run March v1 proxy benchmark on the hardened harness
+- [x] Prepare package reports and benchmark artifacts
+- [x] Log the package in `JOURNAL.md`
+
+## Next Package Candidate
+- [ ] PKG-8: resume bounded search only through PKG-7 manifests, preflight materialization, and artifact-visible provenance gates
+
+
+## PKG-4 — SCORING INTEGRITY + CONSTRAINED ALPHA SEARCH (completed 2026-03-14 as rejection package)
+- [x] Freeze reference commit/config surface for March baseline and v1 reference
+- [x] Audit live quadratic scoring path and fail-open fallback code
+- [x] Scan available March runtime logs for observed fallback contamination
+- [x] Classify scoring integrity status for the current research surface
+- [x] Define a strict constrained search space with code-backed YAML knobs only
+- [x] Build baseline / regime-first / scoring-first / mixed experiment matrix
+- [x] Benchmark candidate search execution surfaces for honesty and runtime feasibility
+- [x] Reject unsafe search execution paths (`SelectiveOptimizer` strict-config conflict, ETH-only zero-trade proxy)
+- [x] Prepare package reports and rejection artifacts
+
+## PKG-2 — EVIDENCE-BOUND BACKTEST STRATEGY CONSTRUCTION (completed 2026-03-14)
+- [x] Freeze the March side B degraded research surface from current repo truth
+- [x] Build the March evidence matrix from `20260312_132130` bundle artifacts and current rerun evidence
+- [x] Extract a short candidate-rule list and classify config-only vs code-required options
+- [x] Select one minimal candidate package bound to repeated March evidence
+- [x] Implement the candidate as a reproducible backtest-only overlay instead of mutating canonical SSOT
+- [x] Add launcher support for overlay-backed March A/B runs
+- [x] Validate overlay loading with focused pytest
+- [x] Run March side B baseline A/B against the selected candidate
+- [x] Prepare `reports/MARCH_STRATEGY_EVIDENCE_MATRIX.md`
+- [x] Prepare `reports/MINIMAL_BACKTEST_STRATEGY_SPEC.md`
+- [x] Prepare `reports/MARCH_STRATEGY_AB_REPORT.md`
+- [x] Log the package in `JOURNAL.md`
+
+## BACKTEST GROUND-TRUTH RECON + STRATEGY RESEARCH BASELINE (completed 2026-03-14)
+- [x] Inspect `JOURNAL.md`, `TODO.md`, verb registry, diagnostics entrypoints, and reports inventory before touching runtime claims
+- [x] Trace current backtest call chain from launcher to `run_backtest_simulation()` to `BacktestEngine.run()`
+- [x] Confirm current strategy activation from registry SSOT instead of comments/docs
+- [x] Confirm current Aurora scoring path (`quadratic` + `signed_v2`) and local fallback behavior
+- [x] Inventory existing primary research evidence in `reports/backtests/`, `reports/arhive/`, `runs/optuna/`, and `reports/`
+- [x] Prepare `reports/BACKTEST_GROUND_TRUTH_REPORT.md`
+- [x] Prepare `reports/BACKTEST_EXPERIMENT_INVENTORY.md`
+- [x] Prepare `reports/BACKTEST_BASELINE_COMMANDS.md`
+- [x] Log the phase in `JOURNAL.md`
+- [x] Document the current blocker: reproducible March baseline exists, but canonical Q2/full-universe baseline remains blocked by missing processed coverage
+
 ## EP-SSOT-NORMALIZE-SIGNEDV2 — normalize_mode SSOT Enforcement (completed 2026-03-01)
 - [x] P1: Wire `normalize_signals_mode` YAML → `AuroraConfigLoaderMixin` → `AuroraScoringKernel` (block non-`signed_v2` in kernel)
 - [x] P1: `intent_builder.py` — pass `normalize_mode` + write `normalize_mode_effective` to WAL ORDER_INTENT metadata

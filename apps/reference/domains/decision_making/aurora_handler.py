@@ -18,7 +18,7 @@ import decimal
 import logging
 # DET-BT-11: Import for deterministic backtest
 from apps.reference.core.time import get_clock
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Callable
 
@@ -166,9 +166,72 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         
         # T2B-01: Tick-path rejection counter for observability
         self._tick_path_rejections: int = 0
+
+        # PKG-5: artifact-visible scoring telemetry for research harness runs.
+        self._selected_engine_counts: Counter[str] = Counter()
+        self._observed_engine_counts: Counter[str] = Counter()
+        self._quadratic_engine_selected_count: int = 0
+        self._quadratic_fallback_count: int = 0
+        self._fallback_also_failed_count: int = 0
+        self._per_symbol_scoring: Dict[str, Dict[str, Any]] = defaultdict(
+            lambda: {
+                "selected_engine_counts": Counter(),
+                "observed_engine_counts": Counter(),
+                "quadratic_engine_selected_count": 0,
+                "quadratic_fallback_count": 0,
+                "fallback_also_failed_count": 0,
+            }
+        )
         
         # Config extraction
         self._load_config()
+
+    def _record_scoring_selection(self, symbol: str, engine_name: str) -> None:
+        engine = str(engine_name or "unknown")
+        self._selected_engine_counts[engine] += 1
+        bucket = self._per_symbol_scoring[symbol]
+        bucket["selected_engine_counts"][engine] += 1
+        if engine == "quadratic_v1":
+            self._quadratic_engine_selected_count += 1
+            bucket["quadratic_engine_selected_count"] += 1
+
+    def _record_scoring_observed(self, symbol: str, engine_name: str) -> None:
+        engine = str(engine_name or "unknown")
+        self._observed_engine_counts[engine] += 1
+        bucket = self._per_symbol_scoring[symbol]
+        bucket["observed_engine_counts"][engine] += 1
+
+    def _record_quadratic_fallback(self, symbol: str) -> None:
+        self._quadratic_fallback_count += 1
+        bucket = self._per_symbol_scoring[symbol]
+        bucket["quadratic_fallback_count"] += 1
+
+    def _record_fallback_also_failed(self, symbol: str) -> None:
+        self._fallback_also_failed_count += 1
+        bucket = self._per_symbol_scoring[symbol]
+        bucket["fallback_also_failed_count"] += 1
+
+    def get_scoring_telemetry(self) -> Dict[str, Any]:
+        per_symbol: Dict[str, Any] = {}
+        for symbol, bucket in sorted(self._per_symbol_scoring.items()):
+            per_symbol[symbol] = {
+                "selected_engine_counts": dict(sorted(bucket["selected_engine_counts"].items())),
+                "observed_engine_counts": dict(sorted(bucket["observed_engine_counts"].items())),
+                "quadratic_engine_selected_count": int(bucket["quadratic_engine_selected_count"]),
+                "quadratic_fallback_count": int(bucket["quadratic_fallback_count"]),
+                "fallback_also_failed_count": int(bucket["fallback_also_failed_count"]),
+                "engine_names_observed": sorted(bucket["observed_engine_counts"].keys()),
+            }
+
+        return {
+            "quadratic_engine_selected_count": int(self._quadratic_engine_selected_count),
+            "quadratic_fallback_count": int(self._quadratic_fallback_count),
+            "fallback_also_failed_count": int(self._fallback_also_failed_count),
+            "selected_engine_counts": dict(sorted(self._selected_engine_counts.items())),
+            "observed_engine_counts": dict(sorted(self._observed_engine_counts.items())),
+            "engine_names_observed": sorted(self._observed_engine_counts.keys()),
+            "per_symbol": per_symbol,
+        }
     
     # _load_config → moved to AuroraConfigLoaderMixin (see aurora_config_loader.py)
 

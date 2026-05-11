@@ -1,6 +1,290 @@
 # Engineering Journal
 
 
+## 2026-03-15: PKG-7 — TRIAL MATERIALIZATION & SEARCH PROVENANCE HARDENING (completed)
+
+**Task:** Make future bounded search provably distinct, artifact-first, resumable, and auditable, without running a new alpha-search package.
+
+**Phase 0 freeze evidence:**
+
+- closeout branch: `backtest_1`
+- freeze commit: `cf074c7229252aaca83aed7dc70331115018866d`
+- `optimization/research/proxy_runner.py`: `7a81ddfa8fa72f2bf8898cb276a5bbe5b6e9c2b1e31c664736b36b805d7b9986`
+- `scripts/diagnostics/run_research_proxy_backtest.py`: `480f725f334c8bcc03a5fe1267afa65facc9a1009a8bd8ed22adabd4a9549289`
+- `optimization/backtest_interface.py`: `61a6bdf0666d85108945ef66a5034c053723d89fa93b7dfc114fba043f644c03`
+- `artifacts/pkg6_optuna_trials.csv`: `8487ac90cd2c497ead8ba096fca1be29dd05c0b2a10e256cdc589d6be8ecf0aa`
+- `artifacts/pkg6_top_candidates.json`: `503a7b71f940ecbfbf10c3b923e846956711f7b315dcf8525b7dad87337d69ef`
+- note: a dedicated PKG-7 worktree was not created in-session; freeze evidence is commit-and-hash based.
+
+**Root cause established:**
+
+1. **PKG-6 trial collapse was caused by artifact/provenance insufficiency, not by proven dead parameters**
+   - Live probe confirmed that distinct ETH trial overlays did mutate the loaded effective strategy slice in memory.
+   - The old report snapshot/hash path still stayed identical because it only hashed a narrow materialized view containing the `BTCUSDT` slice plus `regime.yaml` and copied on-disk YAMLs instead of overlay-materialized effective config.
+   - Exact evidence from the probe: distinct ETH values changed (`macro_resid`, `tfi`, `signal_threshold`), while the old snapshot hash stayed `a593200968fdb4b1c3330c42e27fde50e73bd6da8426eece5cd41aa51b7a2dd1` and the resolved asset keys inside the snapshot stayed `BTCUSDT` only.
+
+2. **ConfigLoader overlay order was not the failure point**
+   - `ConfigLoader` applies `optuna_overlay` last.
+   - Therefore PKG-6 ambiguity was not explained by late overwrite of requested trial deltas.
+
+**Implementation completed:**
+
+1. **New additive provenance contract was introduced under runtime metadata and persisted artifacts**
+   - Added `system_meta.runtime.research_trial` typed metadata in config models.
+   - Added `optimization/research/provenance.py` for canonical JSON hashing, strategy-slice extraction, effective path extraction, and per-trial manifest persistence.
+   - Added per-trial manifest persistence under `artifacts/search_trials/<trial_id>.json`.
+
+2. **Preflight materialization gate now fail-closes no-effect trials before expensive runtime**
+   - Research runner now materializes trial payloads before execution.
+   - Trials with requested parameter deltas but no effective delta are rejected with `NO_EFFECTIVE_CONFIG_DELTA`.
+   - Partial/resumed study evidence is preserved because manifests are written before runtime and updated after completion/rejection.
+
+3. **Raw reports and summaries now export search provenance**
+   - Raw report version advanced to `2.2.0`.
+   - Summary version advanced to `1.2.0`.
+   - Bundle manifests, raw backtest reports, and compact summaries now expose `search_provenance`.
+
+4. **Focused validation completed**
+   - Focused pytest coverage: `7 passed` across provenance gate, manifest lifecycle, and reporting export tests.
+   - Repro command: `pytest -q tests/optimization/test_research_proxy_runner.py tests/backtest_engine/test_scoring_telemetry_reporting.py`
+   - Real validation manifests were produced for four PKG-7 trials:
+     - anchor completed: `pkg7-anchor`, run_id `20260315_034241`
+     - scoring-distinct completed: `pkg7-scoring`, run_id `20260315_034313`
+     - mixed-distinct completed: `pkg7-mixed`, run_id `20260315_034335`
+     - no-effect rejected preflight: `pkg7-no-effect`, `NO_EFFECTIVE_CONFIG_DELTA`
+   - Repro CLI path: `scripts/diagnostics/run_research_proxy_backtest.py` with `artifacts/pkg7_validation/*.yaml`, `*_params.json`, and `*_expected_paths.json`.
+
+**Operational conclusion:**
+
+- PKG-7 resolves the trustworthiness gap exposed by PKG-6.
+- Future bounded search can now prove whether a trial is materially distinct before spending runtime.
+- The next package should resume bounded search only through this provenance-hardened path, not through the old report-hash path.
+
+
+## 2026-03-14: PKG-6 — BOUNDED ALPHA SEARCH ON HARDENED ETH+BTC PROXY (completed as rejection package)
+
+**Task:** Run the first honest bounded alpha search on top of the PKG-5 hardened ETH+BTC proxy harness, starting from the v1-safe surface rather than from raw baseline.
+
+**Completed work:**
+
+1. **Phase 0 / 1 — freeze and harness validation completed**
+   - git sha confirmed: `cf074c7229252aaca83aed7dc70331115018866d`.
+   - baseline proxy reference remained `20260314_170343`.
+   - v1 proxy anchor remained `20260314_172657`.
+   - Smoke run `20260314_180946` revalidated the hardened proxy path with fail-closed fallback rejection enabled.
+   - Proxy lock stayed correct: `ETHUSDT` tradable, `BTCUSDT` context.
+   - Observed engine set stayed `quadratic_v1` only and fallback contamination stayed zero.
+
+2. **Phase 2 / 3 / 4 — bounded search design completed**
+   - Search scope was limited to 6 runtime-backed parameters only.
+   - The search anchor stayed v1, not raw baseline.
+   - Unsafe recovery-arm expansion was rejected.
+   - `optuna` was missing in the active venv and was installed as a real blocker fix before search execution.
+
+3. **Phase 5 / 6 — bounded search completed as a non-signal rejection**
+   - The initial bounded Optuna study was launched honestly on the hardened ETH+BTC proxy.
+   - The original 10-trial budget proved operationally too expensive; the live study exceeded practical runtime and was terminated.
+   - Five completed March search runs were recovered before termination: `20260314_181857`, `20260314_183705`, `20260314_192436`, `20260314_201516`, `20260314_203520`.
+   - All recovered completed runs had the same `config_hash` as the v1 anchor: `a593200968fdb4b1c3330c42e27fde50e73bd6da8426eece5cd41aa51b7a2dd1`.
+   - All recovered completed runs also matched the v1 anchor outcome surface materially: `+51.38 USDT`, `+5.14% ROI`, `18 trades`, `~4.08% max DD`, zero quadratic fallbacks, fail-closed proxy metadata present.
+   - Result: no distinct candidate state was honestly recovered from completed March trials, so no top candidate was selected.
+
+4. **Phase 7 — sanity replay completed for the v1 anchor only**
+   - No candidate set existed after Phase 6, so sanity replay was run for the v1 anchor only.
+   - January sanity window `2024-01-15 -> 2024-01-22` produced run `20260314_215848`: `-35.43 USDT`, `-3.54% ROI`, `2 trades`, `3.56% max DD`, zero quadratic fallbacks.
+   - February sanity window `2024-02-12 -> 2024-02-19` produced run `20260314_220436`: `+14.97 USDT`, `+1.50% ROI`, `2 trades`, `0.00% max DD`, zero quadratic fallbacks.
+   - Full-month Jan/Feb replays were intentionally not presented as complete package evidence because they are materially more expensive on this hardened proxy surface and were not required to satisfy the stated sanity-window requirement.
+
+**Operational conclusion:**
+
+- PKG-6 does not promote a new winner.
+- The hardened proxy harness remains valid and fallback-clean.
+- The v1 anchor remains the best evidence-bound reference on this surface.
+- The bounded search package ends as an honest rejection because completed March trials did not materialize a distinct alpha hint.
+
+
+## 2026-03-14: PKG-5 — RESEARCH HARNESS HARDENING FOR HONEST BOUNDED SEARCH
+
+**Task:** Build a valid research harness for future bounded search on the smallest honest March proxy surface, without faking search results and without violating strict config truth.
+
+**Why:** PKG-4 established that the current March surface was still blocked by harness issues rather than by observed quadratic-fallback contamination. Specifically, bundle artifacts did not persist scoring fallback counts, ETH-only proxy was invalid, and the legacy `SelectiveOptimizer` path conflicted with strict config truth by overlaying `trading.symbols_to_track`.
+
+**Findings:**
+
+1. **Artifact-visible scoring telemetry is now available and benchmark-proven**
+   - Backtest report bundles now persist `scoring_telemetry` with quadratic selection counts, fallback counts, observed engine counts, engine names, and per-symbol counters.
+   - March ETH+BTC proxy baseline `20260314_170343` recorded `quadratic_engine_selected_count=17724`, `quadratic_fallback_count=0`, `fallback_also_failed_count=0`, `engine_names_observed=[quadratic_v1]`.
+   - March ETH+BTC proxy v1 `20260314_172657` recorded `quadratic_engine_selected_count=17723`, `quadratic_fallback_count=0`, `fallback_also_failed_count=0`, `engine_names_observed=[quadratic_v1]`.
+
+2. **The honest proxy-universe contract is now formalized and typed**
+   - Research proxy state is expressed through `system_meta.runtime.research_proxy` rather than illegal overlay of SSOT-derived config fields.
+   - ETH-only remains invalid.
+   - ETH tradable + BTC context is now the first accepted honest proxy contract.
+
+3. **PKG-5 required a dedicated strict-compatible runner instead of repairing `SelectiveOptimizer`**
+   - New proxy harness path was added for research backtests with runtime proxy metadata and optional fail-closed fallback rejection.
+   - This keeps the strict config contract intact while still allowing bounded proxy experimentation.
+
+4. **Real benchmark execution found a runtime/plugin boundary defect that unit-only work would have missed**
+   - The first real baseline rerun completed simulation but failed while building the report because the Aurora plugin wrapper did not proxy `get_scoring_telemetry()`.
+   - Fix: `_AuroraHandlerWrapper` now forwards scoring telemetry from the real Aurora handler.
+
+5. **Windows console encoding is a real operational benchmark constraint**
+   - Initial proxy run attempt hit `UnicodeEncodeError` under CP1251 because runtime logs emit Unicode/emoji.
+   - Successful benchmark reproduction required explicit UTF-8 shell configuration before launching the proxy runner.
+
+**Implementation:**
+
+- Added typed proxy runtime metadata in config models.
+- Added runtime scoring telemetry collection in Aurora runtime and report export.
+- Added summary export of scoring telemetry and proxy universe.
+- Added strict-compatible proxy harness path and dedicated diagnostic CLI.
+- Hardened `optimization.research` import boundary so proxy-only use does not fail on optional legacy dependencies.
+- Added focused tests for telemetry export, proxy runner behavior, and plugin wrapper telemetry passthrough.
+
+**Benchmark outcome:**
+
+- Baseline proxy run `20260314_170343`: `-303.42 USDT`, `-30.34% ROI`, `62.79% max DD`, `180 trades`, elapsed `1367.893s`, zero observed fallbacks.
+- V1 proxy run `20260314_172657`: `+51.38 USDT`, `+5.14% ROI`, `4.08% max DD`, `18 trades`, elapsed `995.142s`, zero observed fallbacks.
+
+**Operational conclusion:**
+
+- PKG-5 clears the harness blocker identified by PKG-4.
+- The repo is now ready for the next honest bounded-search package on the ETH+BTC proxy surface, with artifact-level fallback rejection available.
+
+
+## 2026-03-14: PKG-4 — SCORING INTEGRITY + CONSTRAINED ALPHA SEARCH (MARCH-FIRST)
+
+**Task:** Determine whether the first honest alpha hint on the current March research surface should be sought primarily in regime/context filtering, scoring/weights, or a small mixed combination, but only after verifying scoring integrity.
+
+**Why:** Previous packages established that the only reproducible research surface is March side B degraded partial-universe and that v1 coarse ETH TREND_DOWN blocking materially improves March. Before any new Optuna search, the repo needed a hard answer to one question: are current March runs genuinely quadratic, or are they contaminated by local fallback into the legacy Aurora scoring kernel?
+
+**Findings:**
+
+1. **Quadratic fallback is real in code, but not observed in the available March logs**
+   - `aurora_decision.py` contains a live fail-open path: if `QuadraticScoringKernel.compute(...)` raises, runtime logs `QUADRATIC_FALLBACK` and retries through `AuroraScoringKernel.compute(...)`.
+   - Current log scan over `logs/*.log*` found zero observed `QUADRATIC_FALLBACK` and zero `FALLBACK ALSO FAILED` events.
+   - Sampled March log windows show `KERNEL_DIAG: engine=quadratic_v1` repeatedly; the scanned reference windows produced 671 observed `quadratic_v1` engine labels.
+
+2. **Scoring integrity gate is passed only in a limited sense**
+   - Observed contamination status is effectively zero for available March logs.
+   - However, current run bundles do not persist fallback counts, so scoring integrity is log-observed rather than artifact-proven.
+
+3. **The current research Optuna harness is not strict-config compatible**
+   - Existing `SelectiveOptimizer` injects `trading.symbols_to_track` through overlay.
+   - Current strict config contract rejects that field as SSOT-derived, which makes the off-the-shelf search path unusable without harness adjustment.
+
+4. **ETH-only proxy search is invalid; BTC anchor context is mandatory**
+   - ETH-only March proxy benchmark (`20260314_125415`) finished quickly but produced zero trades because macro-resid readiness collapsed.
+   - Minimal honest proxy found in this package was ETH trading with BTC tracked as anchor context.
+   - That ETH+BTC proxy benchmark (`20260314_125711`) was valid but still cost about 1405 seconds for March.
+
+**Package outcome:**
+
+- PKG-4 does not accept a new scoring-first or mixed alpha winner.
+- The package rejects bounded search execution for now because the current harness is incompatible with strict config truth and the smallest honest proxy still carries a non-trivial compute cost.
+- The best evidence-bound reference remains `march_candidate_v1_block_eth_trend_down` from `20260314_041758`.
+
+**Deliverables created:**
+
+- `reports/SCORING_INTEGRITY_REPORT.md`
+- `reports/CONSTRAINED_SEARCH_SPACE.md`
+- `reports/ALPHA_SEARCH_EXPERIMENT_MATRIX.md`
+- `reports/OPTUNA_SEARCH_REPORT.md`
+- `reports/JAN_FEB_MARCH_SANITY_REPORT.md`
+- `reports/PKG4_FINAL_REPORT.md`
+- `artifacts/optuna_trials.csv`
+- `artifacts/top_candidates.json`
+
+
+## 2026-03-14: PKG-2 — EVIDENCE-BOUND BACKTEST STRATEGY CONSTRUCTION (MARCH RESEARCH SURFACE)
+
+**Task:** Build the first minimal evidence-bound strategy candidate from current repo truth for the March 2024 side B degraded surface; implement it with the smallest honest surface; run March A/B; package the evidence and result.
+
+**Why:** Ground-truth recon established that the only reproducible surface available right now is a March-only degraded partial-universe replay. The next step had to be deliberately constrained: use the required March anchor bundle as primary evidence, avoid broad tuning, and produce one minimal candidate tied to a repeated loss cluster rather than to generic intuition.
+
+**Research-surface findings:**
+
+1. **The March reproducible surface is narrower than the six-symbol metadata suggests**
+   - The required anchor bundle `20260312_132130` still advertises six configured symbols, but its actual `result.json` trade surface collapses to `ETHUSDT` and `BNBUSDT` only.
+   - `logs/backtests/order_log_20260312_132130.jsonl` is not present in the workspace, so richer entry-phase evidence is unavailable.
+
+2. **ETH TREND_DOWN is the dominant repeated March loss engine**
+   - In the anchor bundle and the current baseline rerun, the major negative slice is `ETHUSDT / TREND_DOWN`.
+   - The repeated root cluster is specifically `ETHUSDT / TREND_DOWN / LONG / SL`, but the current anchor/baseline also contain a smaller negative `ETHUSDT / TREND_DOWN / SHORT` slice.
+   - `ETHUSDT / MEAN_REVERSION` remains net positive on this same March surface.
+
+3. **Current config surface supports a coarse regime block, not a fine exhaustion gate**
+   - Existing ETH knobs include `allowed_regimes`, thresholds, volatility-entry multipliers, holding period, cooldown, and regime TP/SL.
+   - There is no current config-only hook for a green-bounce / entry-phase exhaustion veto.
+   - Therefore the smallest honest v1 was a coarse config-only regime block rather than a new code path built on incomplete evidence.
+
+**Implementation:**
+
+- Added backtest-only overlay support to `scripts/diagnostics/run_single_backtest.py` via `--overlay-yaml`, wired to the existing `ConfigLoader(..., optuna_overlay=...)` research path.
+- Added `config/overlays/march_candidate_v1_block_eth_trend_down.yaml` to express the candidate as a separate reproducible delta instead of mutating canonical side B SSOT.
+- Added focused test coverage for overlay loading in `tests/scripts/test_run_single_backtest_overlay.py`.
+
+**A/B outcome:**
+
+- Baseline rerun `20260314_041537`: `-364.33 USDT`, `-36.43% ROI`, `56.19% max DD`.
+- Candidate rerun `20260314_041758`: `+22.84 USDT`, `+2.28% ROI`, `6.99% max DD`.
+- The candidate removed the ETH TREND_DOWN cluster and left only ETH/BNB mean-reversion slices.
+
+**Deliverables created:**
+
+- `reports/MARCH_STRATEGY_EVIDENCE_MATRIX.md`
+- `reports/MINIMAL_BACKTEST_STRATEGY_SPEC.md`
+- `reports/MARCH_STRATEGY_AB_REPORT.md`
+
+**Operational conclusion:**
+
+- The first minimal evidence-bound March candidate is valid as a research artifact: it is coarse, honest, reproducible, and strongly improves the only reproducible March surface currently available.
+- It must not be treated as a production-ready or cross-period solution until either richer March order-log evidence or broader data coverage becomes available.
+
+
+## 2026-03-14: BACKTEST GROUND-TRUTH RECON + STRATEGY RESEARCH BASELINE
+
+**Task:** Reconstruct the real current backtest execution path, identify the actually active strategy/regime/scoring stack from current code + YAML + artifacts, inventory prior empirical evidence already present in the repo, and prepare a reproducible baseline command package without guessing from outdated docs.
+
+**Why:** Recent forensic work proved that artifact labels can overstate coverage when data is missing. Before any new strategy iteration, the repo needed a current-source-of-truth map answering four questions: what code path really runs, which strategy stack is actually active, which existing artifacts are primary evidence versus commentary, and what baseline command is safe to treat as reproducible today.
+
+**Ground-truth findings:**
+
+1. **Real backtest driver = `scripts/diagnostics/run_single_backtest.py` → `apps/reference.main.run_backtest_simulation()`**
+   - The single-side launcher mutates `config.trading.backtest.start_date/end_date/initial_balance` after `ConfigLoader.load_config()` and then delegates directly into `run_backtest_simulation()`.
+   - `run_backtest_simulation()` is the central backtest path that initializes `FSMCore`, `MockClock`, `BacktestEngine`, `FeatureEngineering`, `RegimeDetector`, `SystemStressOverlay`, `RiskManagement`, `DecisionMaking`, `BacktestExecPosFSM`, then registers strategy plugins and executes `engine.run()`.
+
+2. **Current active strategy path for canonical side B is Aurora-only, not MR**
+   - `config/aurora/strategies.yaml` assignments currently contain only `aurora` for `ETHUSDT`, `SOLUSDT`, `XRPUSDT`, `BTCUSDT`, `BNBUSDT`, `1000PEPEUSDT`.
+   - Mean Reversion is still wired in the runtime and plugin registration path, but it is **inactive in the canonical current side B registry universe** because no symbol is assigned to `mean_reversion` there.
+
+3. **Current Aurora scoring path is Quadratic-first with local linear fallback**
+   - `config/aurora/strategies/aurora.yaml` sets `scoring_version: "quadratic"` and `signals.normalize_signals_mode: signed_v2`.
+   - `AuroraConfigLoaderMixin` activates `QuadraticScoringKernel` when scoring_version is quadratic.
+   - `aurora_decision.py` catches quadratic kernel exceptions and locally falls back to `AuroraScoringKernel`, which means observed runs can be “quadratic intended” while still partially executing on the legacy linear kernel if runtime failures occur.
+
+4. **Current baseline runs are reproducible, but not necessarily canonical-clean**
+   - `BacktestEngine._find_data_files()` warns and skips symbols with no parquet instead of failing the run.
+   - This means a March 2024 side B run is reproducible from current repo state, but it is a **degraded partial-universe run**, not a full canonical six-symbol benchmark, because `SOLUSDT` and `XRPUSDT` currently have no processed 5m enriched coverage and Q2 months are missing for the rest.
+
+5. **Current empirical evidence is already large enough to establish a research baseline**
+   - Primary evidence clusters exist under `reports/backtests/`, `reports/arhive/`, `runs/optuna/`, and several research markdown/json outputs in `reports/`.
+   - The strongest current evidence classes are: timestamped backtest bundles with resolved config + result data, parquet-pipeline regime/statistical studies, forensic trade-level postmortems, and Optuna patch outputs.
+
+**Deliverables created:**
+
+- `reports/BACKTEST_GROUND_TRUTH_REPORT.md`
+- `reports/BACKTEST_EXPERIMENT_INVENTORY.md`
+- `reports/BACKTEST_BASELINE_COMMANDS.md`
+
+**Operational conclusion:**
+
+- Treat `20260312_132130` as the best current March 2024 reference artifact for side B behavior, but not as a full-universe benchmark.
+- Treat Apr-Jun/Q2 work as blocked by data coverage until the processed parquet gap documented in `reports/processed_data_coverage_audit_q2_2024.md` is resolved.
+- Treat old runbooks and research documents as secondary evidence unless they are backed by concrete run bundles, parquet outputs, or logs still present on disk.
+
+
 ## 2026-03-04: Phase 0.7 — Backtest Engine OHLCV DataContract Integration
 
 **Task:** Wire fail-fast OHLCV data contract validation into `BacktestEngine.load_data()` at parquet load time (per-symbol, before frame concatenation).

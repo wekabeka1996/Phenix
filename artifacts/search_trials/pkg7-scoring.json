@@ -1,0 +1,46 @@
+{
+  "manifest_version": "1.0.0",
+  "trial_id": "pkg7-scoring",
+  "arm_id": "scoring",
+  "trial_params_json": {
+    "macro_resid": 0.31
+  },
+  "expected_changed_paths": [
+    "strategies.aurora.assets.ETHUSDT.weights.macro_resid"
+  ],
+  "effective_changed_values": {
+    "strategies.aurora.assets.ETHUSDT.weights.macro_resid": 0.31
+  },
+  "overlay_hash": "69e9dd8d79d4a5102bae7196cf1addf22815d062935fd2e28709155bd4389d29",
+  "effective_config_hash": "f2a76270071db527f4836185ffb68ea90edcfa99795953393b8bbaef0a54067e",
+  "effective_strategy_slice_hash": "ff17634d1fc6988eb534742352156e2aeb3a452af9e19b2bf59db6de753303d9",
+  "proxy_universe": {
+    "label": "pkg7_scoring_validation",
+    "tracked_symbols": [
+      "ETHUSDT",
+      "BTCUSDT"
+    ],
+    "tradable_symbols": [
+      "ETHUSDT"
+    ],
+    "context_symbols": [
+      "BTCUSDT"
+    ],
+    "strategy_assignments": {
+      "ETHUSDT": [
+        "aurora"
+      ]
+    },
+    "fail_closed_on_scoring_fallback": true
+  },
+  "fail_closed_on_scoring_fallback": true,
+  "run_id": "20260315_034313",
+  "parent_anchor": "v1",
+  "timestamp": "2026-03-15T00:43:12.735019+00:00",
+  "anchor_effective_config_hash": "3fe30766f7a1c1d0a3473ebb58da4c2e17d3692332591ac4b31554686bf17879",
+  "anchor_effective_strategy_slice_hash": "0e5c8c0bae724e1fd3f4000f89c1a6d577ac9def30b26fc0b70f534cea7aba81",
+  "preflight_passed": true,
+  "rejection_reason": null,
+  "execution_status": "completed",
+  "manifest_path": "artifacts\\search_trials\\pkg7-scoring.json"
+}

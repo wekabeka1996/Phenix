@@ -28,9 +28,6 @@ assignments:
   SOLUSDT:
     - aurora
 
-  DOGEUSDT:
-    - aurora
-
   XRPUSDT:
     - aurora
 
@@ -43,6 +40,10 @@ assignments:
 
   1000PEPEUSDT:
     - aurora
+
+  # patched6: DOGEUSDT intentionally removed from assignments.
+  # Reason: active universe is derived from assignments keys, so an empty list
+  # would still keep DOGEUSDT in symbols_to_track.
 
 
 # ==============================================================================

@@ -1,0 +1,16 @@
+meta:
+  candidate_id: march_candidate_v1_block_eth_trend_down
+  scope: MARCH_SIDE_B_DEGRADED_PARTIAL_UNIVERSE
+  rationale: >-
+    Evidence-bound config-only candidate: remove ETHUSDT TREND_DOWN from allowed_regimes
+    because the 20260312_132130 March anchor bundle is dominated by ETH TREND_DOWN losses,
+    while ETH MEAN_REVERSION remains net positive.
+overlay:
+  strategies:
+    aurora:
+      assets:
+        ETHUSDT:
+          allowed_regimes:
+            - FLAT_LOW
+            - FLAT_NORMAL
+            - MEAN_REVERSION

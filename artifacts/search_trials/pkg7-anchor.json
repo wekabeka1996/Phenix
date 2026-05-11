@@ -1,0 +1,40 @@
+{
+  "manifest_version": "1.0.0",
+  "trial_id": "pkg7-anchor",
+  "arm_id": "anchor",
+  "trial_params_json": {},
+  "expected_changed_paths": [],
+  "effective_changed_values": {},
+  "overlay_hash": "16e8595741a0e94042f48e4910f38f159916f6793587a7960eebc47afb5d84e9",
+  "effective_config_hash": "527b9881cb2c771ee20b827e84061be436cc6d640de34f8057538393e7bfd189",
+  "effective_strategy_slice_hash": "0e5c8c0bae724e1fd3f4000f89c1a6d577ac9def30b26fc0b70f534cea7aba81",
+  "proxy_universe": {
+    "label": "pkg7_anchor_validation",
+    "tracked_symbols": [
+      "ETHUSDT",
+      "BTCUSDT"
+    ],
+    "tradable_symbols": [
+      "ETHUSDT"
+    ],
+    "context_symbols": [
+      "BTCUSDT"
+    ],
+    "strategy_assignments": {
+      "ETHUSDT": [
+        "aurora"
+      ]
+    },
+    "fail_closed_on_scoring_fallback": true
+  },
+  "fail_closed_on_scoring_fallback": true,
+  "run_id": "20260315_034241",
+  "parent_anchor": "v1",
+  "timestamp": "2026-03-15T00:42:41.246245+00:00",
+  "anchor_effective_config_hash": null,
+  "anchor_effective_strategy_slice_hash": null,
+  "preflight_passed": true,
+  "rejection_reason": null,
+  "execution_status": "completed",
+  "manifest_path": "artifacts\\search_trials\\pkg7-anchor.json"
+}

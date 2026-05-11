@@ -499,13 +499,42 @@ def summarize(report: dict[str, Any]) -> dict[str, Any]:
              "ensemble_perf": _safe_float(perf.get("ensemble_performance"))
          }
 
+    scoring = report.get("scoring_telemetry") if isinstance(report.get("scoring_telemetry"), dict) else {}
+    scoring_summary = None
+    if scoring:
+        scoring_summary = {
+            "quadratic_engine_selected_count": scoring.get("quadratic_engine_selected_count"),
+            "quadratic_fallback_count": scoring.get("quadratic_fallback_count"),
+            "fallback_also_failed_count": scoring.get("fallback_also_failed_count"),
+            "engine_names_observed": scoring.get("engine_names_observed") or [],
+            "observed_engine_counts": scoring.get("observed_engine_counts") or {},
+        }
+
+    proxy_universe = report.get("proxy_universe") if isinstance(report.get("proxy_universe"), dict) else None
+    search_provenance = report.get("search_provenance") if isinstance(report.get("search_provenance"), dict) else None
+    if search_provenance:
+        search_provenance = {
+            "trial_id": search_provenance.get("trial_id"),
+            "arm_id": search_provenance.get("arm_id"),
+            "parent_anchor": search_provenance.get("parent_anchor"),
+            "overlay_hash": search_provenance.get("overlay_hash"),
+            "effective_config_hash": search_provenance.get("effective_config_hash"),
+            "effective_strategy_slice_hash": search_provenance.get("effective_strategy_slice_hash"),
+            "preflight_passed": search_provenance.get("preflight_passed"),
+            "rejection_reason": search_provenance.get("rejection_reason"),
+            "manifest_path": search_provenance.get("manifest_path"),
+        }
+
     # Top-level metrics (keep compact)
     metrics = report.get("metrics") if isinstance(report.get("metrics"), dict) else {}
 
     out: dict[str, Any] = {
-        "summary_version": "1.0.0",
+        "summary_version": "1.2.0",
         "run_id": report.get("run_id"),
         "alpha_search": alpha_summary,  # Added here
+        "scoring_telemetry": scoring_summary,
+        "proxy_universe": proxy_universe,
+        "search_provenance": search_provenance,
         "range": {
             "start_date": (report.get("metadata") or {}).get("start_date") if isinstance(report.get("metadata"), dict) else None,
             "end_date": (report.get("metadata") or {}).get("end_date") if isinstance(report.get("metadata"), dict) else None,

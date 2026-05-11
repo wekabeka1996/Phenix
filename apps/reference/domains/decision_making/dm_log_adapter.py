@@ -1,11 +1,12 @@
 import json
 import logging
-import logging.handlers
 import os
+import threading
 from datetime import datetime
 from typing import Any, Dict, Optional
 
 LOGGER_NAME = "domain.decision_making"
+_WRITE_LOCK = threading.Lock()
 
 
 def _ensure_dir(p: str) -> None:
@@ -19,37 +20,22 @@ def _get_log_path() -> str:
     return os.path.join(log_dir, "domain_decision_making.log")
 
 
-def _get_logger() -> logging.Logger:
-    lg = logging.getLogger(LOGGER_NAME)
-    lg.setLevel(logging.INFO)
-    # Always recreate handler to respect DM_LOG_DIR changes
-    # Remove existing handlers
-    for h in lg.handlers[:]:
-        if isinstance(h, logging.handlers.RotatingFileHandler):
-            try:
-                h.close()
-            except Exception:
-                pass
-            lg.removeHandler(h)
+def _format_line(message: str) -> str:
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return f"{timestamp} | INFO | {message}\n"
 
-    # Create new handler with current log path
-    log_path = _get_log_path()
-    _ensure_dir(log_path)
-    fh = logging.handlers.RotatingFileHandler(
-        log_path, maxBytes=5_000_000, backupCount=5, encoding="utf-8", delay=False
-    )
-    fmt = logging.Formatter(
-        "%(asctime)s | %(levelname)s | %(message)s", "%Y-%m-%d %H:%M:%S")
-    fh.setFormatter(fmt)
-    fh.setLevel(logging.INFO)
-    lg.addHandler(fh)
-    lg.propagate = False
-    return lg
+
+def _append_line(path: str, line: str) -> None:
+    _ensure_dir(path)
+    with _WRITE_LOCK:
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(line)
 
 
 class DecisionLog:
     def __init__(self, logger: Optional[logging.Logger] = None, *, clock: Optional["Clock"] = None) -> None:
-        self._lg = logger or _get_logger()
+        self._lg = logger
+        self._log_path = _get_log_path()
         from apps.reference.core.time.clock import LiveClock
         self._clock = clock or LiveClock()
 
@@ -60,10 +46,14 @@ class DecisionLog:
             "rid": rid,
             **payload,
         }
-        self._lg.info(json.dumps(
-            rec, ensure_ascii=False, separators=(",", ":")))
-        for h in self._lg.handlers:
-            try:
-                h.flush()
-            except Exception:
-                pass
+        message = json.dumps(rec, ensure_ascii=False, separators=(",", ":"))
+        if self._lg is not None:
+            self._lg.info(message)
+            for h in self._lg.handlers:
+                try:
+                    h.flush()
+                except Exception:
+                    pass
+            return
+
+        _append_line(self._log_path, _format_line(message))

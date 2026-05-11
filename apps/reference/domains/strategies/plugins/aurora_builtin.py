@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 class StrategyHandlerProtocol(Protocol):
     """Protocol for strategy handlers."""
     def register(self) -> None: ...
+    def get_scoring_telemetry(self) -> dict[str, Any]: ...
 
 
 # SCORCHED-EARTH-2026-01-27: _NoopHandler DELETED
@@ -46,6 +47,10 @@ class _AuroraHandlerWrapper:
         self.fsm.listen("EVT:FEATURES_CALCULATED", self._on_features_data_only)
         # P0-3-FIX: Position state sync via canonical execution event
         self.fsm.listen("EVT:TRADE_EXECUTED", self._on_trade_executed)
+
+    def get_scoring_telemetry(self) -> dict[str, Any]:
+        """Expose runtime scoring telemetry through the plugin wrapper boundary."""
+        return self.handler.get_scoring_telemetry()
     
     def _on_process_strategy(self, event: Any) -> None:
         """T2B-03: Primary entry point - forward CMD:PROCESS_STRATEGY to handler."""
