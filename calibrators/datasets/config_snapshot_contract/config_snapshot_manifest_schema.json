@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "config_snapshot_manifest",
+  "type": "object",
+  "required": [
+    "generated_at_utc",
+    "authority_caveat",
+    "snapshot_mode",
+    "future_bundle_target_root",
+    "git",
+    "files",
+    "summary"
+  ],
+  "properties": {
+    "generated_at_utc": {
+      "type": "string"
+    },
+    "authority_caveat": {
+      "type": "string"
+    },
+    "snapshot_mode": {
+      "type": "string"
+    },
+    "future_bundle_target_root": {
+      "type": "string"
+    },
+    "git": {
+      "type": "object",
+      "required": [
+        "branch",
+        "commit_sha",
+        "status_short",
+        "dirty_worktree"
+      ],
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "commit_sha": {
+          "type": "string"
+        },
+        "status_short": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dirty_worktree": {
+          "type": "boolean"
+        },
+        "dirty_config_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "config",
+          "required",
+          "exists",
+          "parse_status",
+          "top_level_keys"
+        ],
+        "properties": {
+          "config": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "exists": {
+            "type": "boolean"
+          },
+          "size_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "copied_to": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "modified_time_utc": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parse_status": {
+            "type": "string"
+          },
+          "top_level_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "string"
+          },
+          "parse_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object"
+    }
+  }
+}

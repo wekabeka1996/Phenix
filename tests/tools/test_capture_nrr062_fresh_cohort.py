@@ -21,6 +21,11 @@ def _write_csv(path: Path, open_times: list[int]) -> None:
             f.write(f"{ts},1,1,1,1,1\n")
 
 
+def _write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
 def test_build_parser_default_out_dir_logs_frozen() -> None:
     parser = mod.build_parser()
     args = parser.parse_args([])
@@ -134,6 +139,10 @@ def test_main_capture_path_is_under_logs_frozen(tmp_path: Path, monkeypatch) -> 
     _write_jsonl(logs / "shadow_critical_event_journal_v1.jsonl", [])
     _write_jsonl(logs / "regime_confidence_audit_v1.jsonl", [])
     _write_jsonl(logs / "trade_lifecycle.jsonl", [])
+    _write_text(
+        tmp_path / "config" / "aurora" / "domains.yaml",
+        "decision_making:\n  low_vol_cost_floor_gate:\n    enabled: true\n",
+    )
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
@@ -150,3 +159,17 @@ def test_main_capture_path_is_under_logs_frozen(tmp_path: Path, monkeypatch) -> 
     captures = list(
         (tmp_path / "logs" / "frozen").glob("nrr062_fresh_capture_*"))
     assert captures, "expected capture dir under logs/frozen"
+    capture_dir = captures[0]
+    config_snapshot_manifest = json.loads(
+        (capture_dir / "config_snapshot_manifest.json").read_text(encoding="utf-8")
+    )
+    top_manifest = json.loads(
+        (capture_dir / "MANIFEST.json").read_text(encoding="utf-8"))
+
+    assert (capture_dir / "config_snapshot" / "config" /
+            "aurora" / "domains.yaml").is_file()
+    assert top_manifest["config_snapshot"]["manifest_path"].endswith(
+        "config_snapshot_manifest.json"
+    )
+    assert config_snapshot_manifest["summary"]["required_present"] == 1
+    assert "config/aurora/trading.yaml" in config_snapshot_manifest["summary"]["missing_configs"]

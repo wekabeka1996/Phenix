@@ -50,6 +50,16 @@ class _NoopClient:
         return None
 
 
+class _CapturingClient(_NoopClient):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.enqueued_payloads: list[dict] = []
+
+    def enqueue(self, payload) -> bool:
+        self.enqueued_payloads.append(payload)
+        return True
+
+
 def _copy_config(tmp_path: Path) -> Path:
     cfg_dir = tmp_path / "aurora"
     shutil.copytree(CONFIG_DIR, cfg_dir)
@@ -122,3 +132,68 @@ def test_loopback_optional_auth_still_rejects_missing_bearer_for_non_loopback_re
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail["reason_code"] == "AUTH_MISSING"
+
+
+def test_eze_direct_open_route_accepts_symbol_outside_guarded_allowlist(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg_dir = _copy_config(tmp_path)
+    _set_shadow_auth_mode(cfg_dir, "loopback_optional_bearer")
+    config = ConfigLoader(config_dir=cfg_dir).load_config()
+
+    holder: dict[str, _CapturingClient] = {}
+
+    def _client_factory(*args, **kwargs) -> _CapturingClient:
+        client = _CapturingClient(*args, **kwargs)
+        holder["client"] = client
+        return client
+
+    monkeypatch.setenv("AURORA_SHADOW_TELEMETRY_BEARER_TOKEN", "eze-test-token")
+    monkeypatch.delenv("SHADOW_TELEMETRY_BEARER_TOKEN", raising=False)
+    monkeypatch.delenv("SHADOW_TELEMETRY_BEARER_TOKENS", raising=False)
+    monkeypatch.setattr(
+        "apps.reference.domains.shadow_telemetry.main.JsonlTcpServer",
+        _NoopServer,
+    )
+    monkeypatch.setattr(
+        "apps.reference.domains.shadow_telemetry.main.JsonlTcpQueueClient",
+        _client_factory,
+    )
+    monkeypatch.setattr(
+        "apps.reference.domains.shadow_telemetry.main._probe_ipc_endpoint",
+        lambda endpoint: True,
+    )
+
+    app = create_shadow_telemetry_app(config)
+    payload = {
+        "symbol": "BTCUSDT",
+        "side": "BUY",
+        "order": {
+            "type": "LIMIT",
+            "limit_price": "100.0",
+            "qty": "0.2",
+            "time_in_force": "GTC",
+        },
+        "brackets": {
+            "tp_price": "101.0",
+            "sl_price": "99.0",
+        },
+        "snapshot_ref": {
+            "snapshot_id": "snap-eze-1",
+            "inputs_digest": "digest-eze-1234",
+        },
+        "why_short": "direct execution test",
+        "idempotency_key": "idem-eze-open-1234",
+    }
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/execution/eze/intents/v1",
+            json=payload,
+            headers={"Authorization": "Bearer eze-test-token"},
+        )
+
+    assert response.status_code == 202
+    assert holder["client"].enqueued_payloads[0]["request_kind"] == "eze_open"
+    assert holder["client"].enqueued_payloads[0]["symbol"] == "BTCUSDT"

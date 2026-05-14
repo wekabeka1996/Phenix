@@ -81,6 +81,7 @@ def test_trading_read_models_build_latest_context_from_disk_and_runtime(tmp_path
     assert latest["active_positions"][0]["lifecycle_id"] == "life-1"
     assert latest["recent_rejections"][0]["reason_code"] == "TEST_REJECT"
     assert latest["recent_decisions"][0]["decision"] == "OPEN_LONG"
+    assert latest["runtime_health"]["degraded"] is False
 
 
 def test_trading_read_models_lookup_bracket_state_by_lifecycle(tmp_path: Path) -> None:
@@ -126,6 +127,77 @@ def test_trading_read_models_fail_closed_when_rejection_ledger_is_missing(tmp_pa
 
     with pytest.raises(TradingReadModelUnavailableError):
         service.get_recent_rejections(limit=5)
+
+
+def test_trading_read_models_context_latest_uses_portfolio_truth_when_execution_runtime_is_missing(
+    tmp_path: Path,
+) -> None:
+    snapshots_path = tmp_path / "data" / "shadow_telemetry" / \
+        "snapshots" / "ETHUSDT" / "2026-05-10" / "12.jsonl"
+    _write_jsonl(
+        snapshots_path,
+        [
+            {
+                "snapshot_id": "snap-eth-1",
+                "ts_ms": 2000,
+                "symbol": "ETHUSDT",
+                "tf_sec": 300,
+                "features": {"price": "2500.0"},
+                "regime": {"state": "LOW_VOLATILITY"},
+                "execution": {"event": "SNAPSHOT_ONLY"},
+            }
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "logs" / "order_log_v1.jsonl",
+        [{"ts_ms": 2100, "symbol": "ETHUSDT", "reason_code": "LOW_VOL_COST_FLOOR",
+            "reason": "reject", "strategy_id": "mean_reversion"}],
+    )
+    _write_jsonl(
+        tmp_path / "logs" / "shadow_telemetry" / "decision_ledger_v1.jsonl",
+        [{"ts_ms": 2200, "symbol": "ETHUSDT",
+            "neocortex_action": "NO_ACTION", "gate_trace_summary": "warmup"}],
+    )
+    _write_jsonl(
+        tmp_path / "logs" / "shadow_critical_event_journal_v1.jsonl",
+        [
+            {
+                "event_name": "EVT:EXPOSURE_SUMMARY_UPDATED",
+                "payload_fragment": {
+                    "portfolio_state": {
+                        "positions_last_ts_ms": 12345,
+                        "positions": [
+                            {
+                                "symbol": "ETHUSDT",
+                                "net_position": "-2.5",
+                                "avg_entry_price": "2500.0",
+                                "markPrice": "2490.0",
+                                "unrealizedPnl": "25.0",
+                            }
+                        ],
+                    }
+                },
+            }
+        ],
+    )
+    (tmp_path / "data").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "data" / "risk_gate_state.json").write_text(
+        json.dumps({"is_gate_open": True, "reference_equity": "2000.0"}),
+        encoding="utf-8",
+    )
+
+    service = TradingReadModelService(project_root=tmp_path, execution_position=None)
+
+    latest = service.get_context_latest(symbol="ETHUSDT", tf_sec=300)
+
+    assert latest["snapshot"]["snapshot_id"] == "snap-eth-1"
+    assert latest["active_positions"][0]["source"] == "portfolio_state"
+    assert latest["runtime_health"] == {
+        "execution_position_available": False,
+        "active_positions_source": "portfolio_state",
+        "degraded": True,
+        "degraded_reasons": ["execution_position_unavailable"],
+    }
 
 
 def test_trading_read_models_market_overview_requires_explicit_symbols_and_risk_gate(
@@ -227,6 +299,11 @@ def test_trading_read_models_market_overview_allow_degraded_uses_snapshot_store_
                 "event_name": "EVT:EXPOSURE_SUMMARY_UPDATED",
                 "payload_fragment": {
                     "portfolio_state": {
+                        "equity": "2100.5",
+                        "open_positions_usd": "125.25",
+                        "available_balance": "1500.0",
+                        "unrealized_pnl": "32.5",
+                        "realized_pnl": "-10.0",
                         "positions_last_ts_ms": 12345,
                         "positions": [],
                     }
@@ -276,10 +353,17 @@ def test_trading_read_models_market_overview_allow_degraded_uses_snapshot_store_
     assert overview["risk_gate"]["available"] is True
     assert overview["risk_gate"]["source_path"] == str(risk_gate_path)
     assert overview["active_positions"] == []
+    assert overview["equity_usd"] == 2100.5
+    assert overview["positions_usd"] == 125.25
+    assert overview["available_balance"] == 1500.0
+    assert overview["unrealized_pnl"] == 32.5
+    assert overview["realized_pnl"] == -10.0
+    assert overview["positions_last_ts_ms"] == 12345
     assert overview["runtime_health"] == {
         "execution_position_available": False,
         "snapshot_source": "shadow_telemetry_api",
         "risk_gate_available": True,
+        "portfolio_truth_available": True,
         "degraded": True,
         "degraded_reasons": [
             "missing_snapshot_truth",

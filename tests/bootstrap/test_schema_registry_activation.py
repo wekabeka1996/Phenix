@@ -424,6 +424,61 @@ def test_fsm_emit_rejects_trade_intent_proposed_with_unexpected_authority_contex
                  payload=payload, why="strict_authority_context")
 
 
+def test_fsm_emit_validates_neocortex_authority_seam_decision_event() -> None:
+    init_global_registry(project_root=".")
+    fsm = FSMCore()
+    observed: list[dict] = []
+    fsm.listen("EVT:NEOCORTEX_AUTHORITY_SEAM_DECISION",
+               lambda msg: observed.append(msg.pld))
+
+    payload = {
+        "schema_version": "1.0.0",
+        "ts_ms": 1_700_000_000_500,
+        "rid": "rid-seam-1",
+        "decision_id": "decision-seam-1",
+        "symbol": "BTCUSDT",
+        "strategy_id": "aurora",
+        "config_snapshot": {
+            "trust_enabled": False,
+            "authority_mode": "shadow",
+            "evidence_capture_mode": "journal_only",
+            "collect_authority_request": True,
+            "collect_authority_response": True,
+            "emit_shadow_decision_logged": True,
+        },
+        "branch_selection": {
+            "selected_branch": "journal_only",
+            "selection_reason": "journal_only_mode_enabled",
+            "trust_disabled": True,
+            "journal_only_enabled": True,
+            "shadow_counterfactual_enabled": False,
+        },
+        "request_response_persistence": {
+            "authority_request_written": True,
+            "authority_response_written": True,
+            "request_write_error": None,
+            "response_write_error": None,
+        },
+        "no_effect_safety": {
+            "returned_action": "ALLOW",
+            "authority_applied": False,
+            "no_effect": True,
+        },
+        "result": {
+            "apply_result": "SHADOW_RECORDED",
+            "model_action": "ALLOW",
+            "fallback_reason": None,
+        },
+    }
+
+    fsm.emit("EVT:NEOCORTEX_AUTHORITY_SEAM_DECISION",
+             payload=payload, why="authority_seam_observability")
+
+    assert observed
+    assert observed[0]["branch_selection"]["selected_branch"] == "journal_only"
+    assert observed[0]["request_response_persistence"]["authority_response_written"] is True
+
+
 def test_fsm_emit_rejects_trade_intent_proposed_with_unexpected_top_level_field() -> None:
     """Strict root additionalProperties must still reject unknown top-level fields."""
     init_global_registry(project_root=".")

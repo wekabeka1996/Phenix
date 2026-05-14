@@ -65,6 +65,13 @@ def _decimal_to_text(value: Decimal) -> str:
     return text or "0"
 
 
+def _decimal_to_number(value: Any) -> Optional[float]:
+    dec = _decimal_or_none(value)
+    if dec is None:
+        return None
+    return float(dec)
+
+
 class TradingReadModelService:
     """Normalized read-model service for trading/operator surfaces."""
 
@@ -98,14 +105,34 @@ class TradingReadModelService:
 
     def get_context_latest(self, *, symbol: str, tf_sec: int = 300) -> Dict[str, Any]:
         snapshot = self._latest_snapshot(symbol=symbol, tf_sec=tf_sec)
+        if snapshot is None:
+            raise TradingReadModelUnavailableError(
+                f"missing snapshot truth for symbol={str(symbol).upper()} tf_sec={int(tf_sec)}"
+            )
+        execution_position_available = self.execution_position is not None and hasattr(
+            self.execution_position, "manage_flows"
+        )
+        active_positions = self.get_active_positions(allow_degraded=True)
+        degraded_reasons: List[str] = []
+        if not execution_position_available:
+            degraded_reasons.append("execution_position_unavailable")
+        active_positions_source = "execution_position"
+        if any(bool(item.get("portfolio_truth")) for item in active_positions) or not execution_position_available:
+            active_positions_source = "portfolio_state"
         return {
             "symbol": str(symbol).upper(),
             "tf_sec": int(tf_sec),
             "snapshot": snapshot,
             "risk_gate": self._read_risk_gate_state(),
-            "active_positions": self.get_active_positions(),
+            "active_positions": active_positions,
             "recent_rejections": self.get_recent_rejections(limit=10),
             "recent_decisions": self.get_recent_decisions(limit=10),
+            "runtime_health": {
+                "execution_position_available": execution_position_available,
+                "active_positions_source": active_positions_source,
+                "degraded": bool(degraded_reasons),
+                "degraded_reasons": degraded_reasons,
+            },
             "provenance": {
                 "snapshot_source": self._snapshot_source_name(),
                 "risk_gate_path": str(self.data_dir / "risk_gate_state.json"),
@@ -324,10 +351,13 @@ class TradingReadModelService:
             raise TradingReadModelUnavailableError(
                 "risk gate truth is unavailable")
         degraded_reasons: List[str] = []
+        portfolio_state = self._latest_portfolio_state()
         if missing_snapshots:
             degraded_reasons.append("missing_snapshot_truth")
         if not bool(risk_gate.get("available")):
             degraded_reasons.append("risk_gate_unavailable")
+        if portfolio_state is None:
+            degraded_reasons.append("portfolio_truth_unavailable")
         try:
             active_positions = self.get_active_positions(
                 allow_degraded=allow_degraded)
@@ -345,16 +375,48 @@ class TradingReadModelService:
             degraded_reasons.append("recent_rejections_unavailable")
         if self.execution_position is None:
             degraded_reasons.append("execution_position_unavailable")
+        equity_usd = (
+            _decimal_to_number(portfolio_state.get("equity"))
+            if isinstance(portfolio_state, dict)
+            else None
+        )
+        positions_usd = (
+            _decimal_to_number(portfolio_state.get("open_positions_usd"))
+            if isinstance(portfolio_state, dict)
+            else None
+        )
+        available_balance = (
+            _decimal_to_number(portfolio_state.get("available_balance"))
+            if isinstance(portfolio_state, dict)
+            else None
+        )
+        unrealized_pnl = (
+            _decimal_to_number(portfolio_state.get("unrealized_pnl"))
+            if isinstance(portfolio_state, dict)
+            else None
+        )
+        realized_pnl = (
+            _decimal_to_number(portfolio_state.get("realized_pnl"))
+            if isinstance(portfolio_state, dict)
+            else None
+        )
         return {
             "symbols": context_symbols,
             "snapshots": snapshots,
             "active_positions": active_positions,
             "recent_rejections": recent_rejections,
             "risk_gate": risk_gate,
+            "equity_usd": equity_usd,
+            "positions_usd": positions_usd,
+            "available_balance": available_balance,
+            "unrealized_pnl": unrealized_pnl,
+            "realized_pnl": realized_pnl,
+            "positions_last_ts_ms": portfolio_state.get("positions_last_ts_ms") if isinstance(portfolio_state, dict) else None,
             "runtime_health": {
                 "execution_position_available": self.execution_position is not None,
                 "snapshot_source": self._snapshot_source_name(),
                 "risk_gate_available": bool(risk_gate.get("available")),
+                "portfolio_truth_available": isinstance(portfolio_state, dict),
                 "degraded": bool(degraded_reasons),
                 "degraded_reasons": degraded_reasons,
             },

@@ -39,10 +39,12 @@ def _gate_config(**overrides):
         },
         "direction_confidence": {
             "required": True,
-            "allowed_sources": [
-                "strategy_confidence",
+            "raw_signed_score_sources": [
                 "signal_score",
                 "final_score",
+            ],
+            "normalized_confidence_sources": [
+                "strategy_confidence",
                 "judge_confidence",
             ],
             "missing_policy": "fail_closed",
@@ -259,6 +261,18 @@ def test_build_gate_observations_for_symbol_uses_shared_strategy_confidence_help
 
 
 def test_evaluate_surface_patched_contract_prefers_strategy_confidence() -> None:
+    patched_gate_cfg = _gate_config(
+        direction_confidence={
+            "required": True,
+            "raw_signed_score_sources": [],
+            "normalized_confidence_sources": [
+                "strategy_confidence",
+                "judge_confidence",
+            ],
+            "judge_confidence_live_producer_required": False,
+            "missing_policy": "fail_closed",
+        }
+    )
     observation = calibrator.GateObservation(
         symbol="BTCUSDT",
         ts_ms=1,
@@ -292,13 +306,13 @@ def test_evaluate_surface_patched_contract_prefers_strategy_confidence() -> None
 
     legacy_rows, legacy_metrics = calibrator.evaluate_surface(
         observations=[observation],
-        gate_cfg=_gate_config(),
+        gate_cfg=patched_gate_cfg,
         trading_mode="testnet",
         contract_mode=calibrator.LEGACY_DIRECTION_CONTRACT,
     )
     patched_rows, patched_metrics = calibrator.evaluate_surface(
         observations=[observation],
-        gate_cfg=_gate_config(),
+        gate_cfg=patched_gate_cfg,
         trading_mode="testnet",
         contract_mode=calibrator.PATCHED_DIRECTION_CONTRACT,
     )
@@ -306,7 +320,7 @@ def test_evaluate_surface_patched_contract_prefers_strategy_confidence() -> None
     assert legacy_metrics.blocked_count == 1
     assert patched_metrics.allowed_count == 1
     assert patched_rows[0]["selected_direction_confidence_source"] == "strategy_confidence"
-    assert legacy_rows[0]["selected_direction_confidence_source"] == "signal_score"
+    assert legacy_rows[0]["selected_direction_confidence_source"] == "unavailable"
 
 
 def test_select_patch_candidate_prefers_highest_pnl_with_sl_rate_guard() -> None:

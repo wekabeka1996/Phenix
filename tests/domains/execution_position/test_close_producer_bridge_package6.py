@@ -363,6 +363,7 @@ class _MediatorFSM:
         self.adapter = object()
         self.config = SimpleNamespace()
         self._captured: list[Message | None] = []
+        self._emitted: list[tuple[str, dict | None]] = []
         self._out_path = out_path
         self._order_index = OrderIndex()
         self._lifecycle_stats_ledger = ledger
@@ -379,8 +380,8 @@ class _MediatorFSM:
         self._captured.append(result)
         return result
 
-    def _emit_execution_bus_event(self, *_args, **_kwargs) -> None:
-        return
+    def _emit_execution_bus_event(self, topic: str, payload: dict | None = None, *_args, **_kwargs) -> None:
+        self._emitted.append((topic, payload))
 
     def _trade_lifecycle_log_path(self) -> str:
         return str(self._out_path)
@@ -464,6 +465,261 @@ def test_position_policy_mediator_path_reaches_typed_close_bridge(tmp_path: Path
     assert latest_row.provisional_status == "close_requested"
     assert latest_row.current_unrealized_at_close_request == 12.5
     assert latest_row.close_actor == "POSITION_POLICY_SIDECAR"
+
+
+def test_position_policy_mediator_recovers_canonical_fill_rid_without_order_index_entry(tmp_path: Path) -> None:
+    canonical_lifecycle_id = "aurora_BTCUSDT_1778613004676"
+    ledger = ExecutionLifecycleStatsLedger(
+        log_file=str(tmp_path / "execution_lifecycle_stats_v1.jsonl"),
+        clock_ms_fn=lambda: 1_700_000_000_000,
+    )
+    ledger.seed_entry(
+        lifecycle_id=canonical_lifecycle_id,
+        entry_rid=canonical_lifecycle_id,
+        symbol="BTCUSDT",
+        side="BUY",
+        entry_ts_ms=1_700_000_000_000,
+        entry_price=100.0,
+        qty=0.10,
+        source="test_seed",
+    )
+    fsm = _MediatorFSM(tmp_path / "trade_lifecycle.jsonl", ledger=ledger)
+    mediator = PositionPolicyMediator(fsm)
+    event = Message(
+        op="EVT",
+        verb="POSITION_POLICY_SIDECAR_CLOSE_REQUESTED",
+        src="execution_position.position_policy_sidecar",
+        dst="execution_position",
+        rid="ppsreq:BTCUSDT:residual-1",
+        pld={
+            "request_id": "ppsreq:BTCUSDT:residual-1",
+            "trace_id": "pps:BTCUSDT:residual-1",
+            "symbol": "BTCUSDT",
+            "fill_correlation": {
+                "rid": canonical_lifecycle_id,
+                "client_order_id": "ENTRY-expired-or-missing",
+            },
+            "position_snapshot": {"symbol": "BTCUSDT", "unrealized_pnl_usdt": "7.5"},
+        },
+        why="position_policy_sidecar_request",
+    )
+
+    with patch.object(
+        mediator,
+        "_position_policy_allowed_scope",
+        return_value={
+            "soft_close_symbol_current_net_only": True,
+            "partial_reduce": False,
+            "bracket_mutation": False,
+            "exact_targeting": False,
+        },
+    ), patch(
+        "apps.reference.domains.execution_position.sidecar.position_policy_mediator.append_trade_lifecycle_record",
+        lambda *args, **kwargs: None,
+    ), patch(
+        "apps.reference.domains.execution_position.flows.close.fsm_close.adapt_cmd_close_to_dec_close",
+        wraps=adapt_cmd_close_to_dec_close,
+    ):
+        mediator.on_position_policy_close_request(event)
+
+    assert len(fsm._captured) == 1
+    decision = fsm._captured[0]
+    assert decision is not None
+    assert decision.pld["policy_context"]["lifecycle_id"] == canonical_lifecycle_id
+    assert (
+        decision.pld["policy_context"]["fill_correlation"]["lifecycle_id"]
+        == canonical_lifecycle_id
+    )
+    assert fsm._last_lifecycle_ikey_by_symbol["BTCUSDT"] == canonical_lifecycle_id
+    latest_row = ledger.get_latest(lifecycle_id=canonical_lifecycle_id)
+    assert latest_row is not None
+    assert latest_row.provisional_status == "close_requested"
+    assert latest_row.current_unrealized_at_close_request == 7.5
+    emitted_states = [
+        payload
+        for topic, payload in fsm._emitted
+        if topic == "EVT:POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE"
+    ]
+    assert all(payload["request_state"] !=
+               "identity_recovery_failed" for payload in emitted_states)
+
+
+def test_position_policy_mediator_prefers_explicit_lifecycle_id_over_fill_rid(tmp_path: Path) -> None:
+    ledger = ExecutionLifecycleStatsLedger(
+        log_file=str(tmp_path / "execution_lifecycle_stats_v1.jsonl"),
+        clock_ms_fn=lambda: 1_700_000_000_000,
+    )
+    ledger.seed_entry(
+        lifecycle_id="explicit-life-1",
+        entry_rid="ENTRY-BTCUSDT-explicit-1",
+        symbol="BTCUSDT",
+        side="BUY",
+        entry_ts_ms=1_700_000_000_000,
+        entry_price=100.0,
+        qty=0.10,
+        source="test_seed",
+    )
+    fsm = _MediatorFSM(tmp_path / "trade_lifecycle.jsonl", ledger=ledger)
+    mediator = PositionPolicyMediator(fsm)
+    event = Message(
+        op="EVT",
+        verb="POSITION_POLICY_SIDECAR_CLOSE_REQUESTED",
+        src="execution_position.position_policy_sidecar",
+        dst="execution_position",
+        rid="ppsreq:BTCUSDT:explicit-1",
+        pld={
+            "request_id": "ppsreq:BTCUSDT:explicit-1",
+            "trace_id": "pps:BTCUSDT:explicit-1",
+            "symbol": "BTCUSDT",
+            "lifecycle_id": "explicit-life-1",
+            "fill_correlation": {
+                "rid": "aurora_BTCUSDT_1778613004676",
+            },
+            "position_snapshot": {"symbol": "BTCUSDT", "unrealized_pnl_usdt": "4.0"},
+        },
+        why="position_policy_sidecar_request",
+    )
+
+    with patch.object(
+        mediator,
+        "_position_policy_allowed_scope",
+        return_value={
+            "soft_close_symbol_current_net_only": True,
+            "partial_reduce": False,
+            "bracket_mutation": False,
+            "exact_targeting": False,
+        },
+    ), patch(
+        "apps.reference.domains.execution_position.sidecar.position_policy_mediator.append_trade_lifecycle_record",
+        lambda *args, **kwargs: None,
+    ):
+        mediator.on_position_policy_close_request(event)
+
+    decision = fsm._captured[0]
+    assert decision is not None
+    assert decision.pld["policy_context"]["lifecycle_id"] == "explicit-life-1"
+    assert decision.pld["policy_context"]["fill_correlation"]["lifecycle_id"] == "explicit-life-1"
+    assert fsm._last_lifecycle_ikey_by_symbol["BTCUSDT"] == "explicit-life-1"
+    latest_row = ledger.get_latest(lifecycle_id="explicit-life-1")
+    assert latest_row is not None
+    assert latest_row.provisional_status == "close_requested"
+
+
+def test_position_policy_mediator_falls_back_to_cached_lifecycle_id_when_fill_rid_is_not_canonical(tmp_path: Path) -> None:
+    ledger = ExecutionLifecycleStatsLedger(
+        log_file=str(tmp_path / "execution_lifecycle_stats_v1.jsonl"),
+        clock_ms_fn=lambda: 1_700_000_000_000,
+    )
+    ledger.seed_entry(
+        lifecycle_id="cached-life-1",
+        entry_rid="ENTRY-BTCUSDT-cached-1",
+        symbol="BTCUSDT",
+        side="BUY",
+        entry_ts_ms=1_700_000_000_000,
+        entry_price=100.0,
+        qty=0.10,
+        source="test_seed",
+    )
+    fsm = _MediatorFSM(tmp_path / "trade_lifecycle.jsonl", ledger=ledger)
+    fsm._last_lifecycle_ikey_by_symbol["BTCUSDT"] = "cached-life-1"
+    mediator = PositionPolicyMediator(fsm)
+    event = Message(
+        op="EVT",
+        verb="POSITION_POLICY_SIDECAR_CLOSE_REQUESTED",
+        src="execution_position.position_policy_sidecar",
+        dst="execution_position",
+        rid="ppsreq:BTCUSDT:cached-1",
+        pld={
+            "request_id": "ppsreq:BTCUSDT:cached-1",
+            "trace_id": "pps:BTCUSDT:cached-1",
+            "symbol": "BTCUSDT",
+            "fill_correlation": {
+                "rid": "ppsreq:btc:noncanonical",
+            },
+            "position_snapshot": {"symbol": "BTCUSDT", "unrealized_pnl_usdt": "3.5"},
+        },
+        why="position_policy_sidecar_request",
+    )
+
+    with patch.object(
+        mediator,
+        "_position_policy_allowed_scope",
+        return_value={
+            "soft_close_symbol_current_net_only": True,
+            "partial_reduce": False,
+            "bracket_mutation": False,
+            "exact_targeting": False,
+        },
+    ), patch(
+        "apps.reference.domains.execution_position.sidecar.position_policy_mediator.append_trade_lifecycle_record",
+        lambda *args, **kwargs: None,
+    ):
+        mediator.on_position_policy_close_request(event)
+
+    decision = fsm._captured[0]
+    assert decision is not None
+    assert decision.pld["policy_context"]["lifecycle_id"] == "cached-life-1"
+    assert decision.pld["policy_context"]["fill_correlation"]["lifecycle_id"] == "cached-life-1"
+    latest_row = ledger.get_latest(lifecycle_id="cached-life-1")
+    assert latest_row is not None
+    assert latest_row.provisional_status == "close_requested"
+
+
+def test_position_policy_mediator_emits_identity_recovery_failed_when_no_canonical_candidate_exists(tmp_path: Path) -> None:
+    ledger = ExecutionLifecycleStatsLedger(
+        log_file=str(tmp_path / "execution_lifecycle_stats_v1.jsonl"),
+        clock_ms_fn=lambda: 1_700_000_000_000,
+    )
+    fsm = _MediatorFSM(tmp_path / "trade_lifecycle.jsonl", ledger=ledger)
+    mediator = PositionPolicyMediator(fsm)
+    event = Message(
+        op="EVT",
+        verb="POSITION_POLICY_SIDECAR_CLOSE_REQUESTED",
+        src="execution_position.position_policy_sidecar",
+        dst="execution_position",
+        rid="ppsreq:BTCUSDT:no-life-1",
+        pld={
+            "request_id": "ppsreq:BTCUSDT:no-life-1",
+            "trace_id": "pps:BTCUSDT:no-life-1",
+            "symbol": "BTCUSDT",
+            "fill_correlation": {
+                "rid": "ppsreq:btc:noncanonical",
+                "client_order_id": "CLOSE-BTCUSDT-1",
+            },
+            "position_snapshot": {"symbol": "BTCUSDT", "unrealized_pnl_usdt": "1.5"},
+        },
+        why="position_policy_sidecar_request",
+    )
+
+    with patch.object(
+        mediator,
+        "_position_policy_allowed_scope",
+        return_value={
+            "soft_close_symbol_current_net_only": True,
+            "partial_reduce": False,
+            "bracket_mutation": False,
+            "exact_targeting": False,
+        },
+    ), patch(
+        "apps.reference.domains.execution_position.sidecar.position_policy_mediator.append_trade_lifecycle_record",
+        lambda *args, **kwargs: None,
+    ):
+        mediator.on_position_policy_close_request(event)
+
+    decision = fsm._captured[0]
+    assert decision is not None
+    assert decision.pld["policy_context"]["lifecycle_id"] is None
+    emitted_states = [
+        payload
+        for topic, payload in fsm._emitted
+        if topic == "EVT:POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE"
+    ]
+    failure_state = next(
+        payload for payload in emitted_states if payload["request_state"] == "identity_recovery_failed"
+    )
+    assert failure_state["recovery_reason"] == "no_canonical_lifecycle_candidate"
+    assert failure_state["lifecycle_recovery_candidates"]["fill_correlation_rid"] == "ppsreq:btc:noncanonical"
+    assert ledger.get_latest(lifecycle_id="ppsreq:BTCUSDT:no-life-1") is None
 
 
 class _FlipBus:

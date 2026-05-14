@@ -80,6 +80,35 @@ def _expected_score_lineage() -> dict:
     )
 
 
+def _runtime_shaped_anti_peak_observability() -> dict:
+    return {
+        "schema_version": "1.0.0",
+        "strategy_id": "aurora",
+        "symbol": "BTCUSDT",
+        "side": "BUY",
+        "tf_sec": 300,
+        "motion": {
+            "enabled": False,
+            "window_sec": 300,
+            "window_sec_value_source": "disabled_config_snapshot",
+            "motion_norm_sigma": None,
+            "anti_fomo_sigma": 10.0,
+            "anti_flat_sigma": 0.3,
+            "anti_fomo_sigma_value_source": "disabled_config_snapshot",
+            "anti_flat_sigma_value_source": "disabled_config_snapshot",
+            "anti_fomo_triggered": None,
+            "anti_flat_triggered": None,
+            "motion_available": False,
+            "missing_reason": "gate_disabled",
+        },
+        "score_path": {
+            "final_score": 0.91,
+            "signal_threshold": 0.45,
+            "would_emit_signal_after_shields": True,
+        },
+    }
+
+
 class _FakeSG:
     def __init__(self) -> None:
         self.intent_side = "LONG"
@@ -591,6 +620,40 @@ def test_build_and_emit_persists_explicit_missing_reasons_for_absent_inputs() ->
     assert decision_trace_payload["missing_inputs"]["trend_confidence"] == "absent_from_safety_gate_result"
     assert decision_trace_payload["missing_inputs"]["signal_score"] is None
     assert decision_trace_payload["missing_inputs"]["low_vol_cost_floor"] == "not_evaluated_or_not_attached"
+
+
+def test_build_and_emit_accepts_runtime_shaped_anti_peak_observability_in_decision_trace() -> None:
+    builder = _make_builder()
+    kwargs = _build_kwargs()
+    kwargs["strategy_trace"] = {
+        **kwargs["strategy_trace"],
+        "anti_peak_observability": _runtime_shaped_anti_peak_observability(),
+    }
+
+    with (
+        patch("apps.reference.domains.decision_making.intent.builder.wal.append",
+              return_value="wal-ok"),
+        patch("apps.reference.domains.decision_making.intent.builder.order_logger.write"),
+        patch("apps.reference.domains.decision_making.intent.builder.print"),
+        patch("apps.reference.domains.decision_making.intent.builder.emit_regime_decision_audit"),
+        patch(
+            "apps.reference.domains.decision_making.intent.builder._trade_lifecycle", None),
+    ):
+        builder.build_and_emit(**kwargs)
+
+    decision_trace_payload = next(
+        call.kwargs["payload"]
+        for call in builder._fsm.emit.call_args_list
+        if call.args[0] == "EVT:DECISION_TRACE_EMITTED"
+    )
+
+    _validate_decision_trace_payload(decision_trace_payload)
+
+    anti_peak = decision_trace_payload["anti_peak_observability"]
+    assert anti_peak["motion"]["enabled"] is False
+    assert anti_peak["motion"]["window_sec_value_source"] == "disabled_config_snapshot"
+    assert anti_peak["motion"]["anti_fomo_sigma_value_source"] == "disabled_config_snapshot"
+    assert anti_peak["motion"]["anti_flat_sigma_value_source"] == "disabled_config_snapshot"
 
 
 def test_decision_trace_emit_failure_logs_loudly_without_blocking_trade_intent() -> None:

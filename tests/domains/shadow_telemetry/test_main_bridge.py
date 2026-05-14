@@ -181,6 +181,13 @@ def _llm_cmd_payload() -> Dict[str, Any]:
     }
 
 
+def _eze_open_payload(symbol: str = "BTCUSDT") -> Dict[str, Any]:
+    payload = _llm_cmd_payload()
+    payload["symbol"] = symbol
+    payload["request_kind"] = "eze_open"
+    return payload
+
+
 def _llm_close_payload() -> Dict[str, Any]:
     return {
         "request_kind": "close_position",
@@ -258,6 +265,27 @@ def test_llm_ingress_bridge_maps_owned_symbol_to_external_open_request(tmp_path:
     assert payload["rid"] == "intent-1"
     assert payload["stop_price"] == "99.0"
     assert payload["target_price"] == "101.0"
+
+
+def test_llm_ingress_bridge_eze_open_bypasses_runtime_symbol_gate(tmp_path: Path) -> None:
+    cfg_dir = _copy_config_to_tmp(tmp_path)
+    _configure_shadow_llm(cfg_dir, mode="hybrid_advisory")
+    config = ConfigLoader(config_dir=cfg_dir).load_config()
+    fsm = _StubFSM()
+    register_llm_command_mapper(fsm)
+    bridge = LLMIntentIngressBridge(fsm=fsm, config=config)
+
+    bridge._on_command(_eze_open_payload(symbol="BTCUSDT"))
+
+    event_names = [event["event"] for event in fsm.emitted]
+    assert "EVT:LLM_INTENT_ACCEPTED_V1" in event_names
+    assert "CMD:EXTERNAL_OPEN_REQUEST_V1" in event_names
+    assert "EVT:LLM_INTENT_REJECTED_V1" not in event_names
+
+    accepted = next(event for event in fsm.emitted if event["event"] == "EVT:LLM_INTENT_ACCEPTED_V1")
+    assert accepted["payload"]["ingress_mode"] == "eze_direct"
+    ext_event = next(event for event in fsm.emitted if event["event"] == "CMD:EXTERNAL_OPEN_REQUEST_V1")
+    assert ext_event["payload"]["symbol"] == "BTCUSDT"
 
 
 def test_llm_direct_external_open_carries_idempotency_key(tmp_path: Path) -> None:

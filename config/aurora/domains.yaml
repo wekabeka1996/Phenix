@@ -581,7 +581,7 @@ execution_position:
       bracket_mutation: false
       exact_targeting: false
     peak_giveback_close:
-      enabled: true
+      enabled: false
       edge_arm_usd: 25.0
       giveback_trigger_pct: 50.0
     shadow_percent_notional_arm:
@@ -648,7 +648,12 @@ shadow_telemetry:
       rate_limit_per_min: 30
       max_body_kb: 64
       symbol_allowlist:
-      - 1000PEPEUSDT
+      - DOGEUSDT
+      - BTCUSDT
+      - ETHUSDT
+      - XRPUSDT
+      - BNBUSDT
+      - SOLUSDT
       require_snapshot_ref: true
       idempotency_ttl_sec: 300
       consequential: true

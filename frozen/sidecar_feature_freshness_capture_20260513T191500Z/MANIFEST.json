@@ -1,0 +1,286 @@
+﻿{
+    "bundle_root":  "frozen/sidecar_feature_freshness_capture_20260513T191500Z",
+    "bundle_path":  "C:/Users/user/Music/Phenix/frozen/sidecar_feature_freshness_capture_20260513T191500Z",
+    "bundle_created_utc":  "2026-05-13T19:24:15Z",
+    "primary_artifacts":  [
+                              {
+                                  "original_path":  "logs/trade_lifecycle.jsonl",
+                                  "frozen_path":  "logs/trade_lifecycle.jsonl",
+                                  "exists":  true,
+                                  "size_bytes":  2219970914,
+                                  "raw_line_count":  232708,
+                                  "sha256":  "4903a2c08eac0ae06f25e0b3958296427007019ec4d76579e4099e13d5757fa6",
+                                  "modified_time_utc":  "2026-05-13T19:13:49Z",
+                                  "copy_time_utc":  "2026-05-13T19:24:15Z"
+                              },
+                              {
+                                  "original_path":  "logs/order_log_v1.jsonl",
+                                  "frozen_path":  "logs/order_log_v1.jsonl",
+                                  "exists":  true,
+                                  "size_bytes":  2302757,
+                                  "raw_line_count":  761,
+                                  "sha256":  "21ffae4edd2da1b78a132d357cd9156c007f4466beadf6e312d74a8529eb0e54",
+                                  "modified_time_utc":  "2026-05-13T17:55:01Z",
+                                  "copy_time_utc":  "2026-05-13T19:24:15Z"
+                              },
+                              {
+                                  "original_path":  "logs/shadow_critical_event_journal_v1.jsonl",
+                                  "frozen_path":  "logs/shadow_critical_event_journal_v1.jsonl",
+                                  "exists":  true,
+                                  "size_bytes":  97268639,
+                                  "raw_line_count":  76279,
+                                  "sha256":  "9fc7a7a51f65117d923f7f627c9e0de457fd4d243bd5c84d71a4c5b81400edcd",
+                                  "modified_time_utc":  "2026-05-13T19:15:01Z",
+                                  "copy_time_utc":  "2026-05-13T19:24:15Z"
+                              },
+                              {
+                                  "original_path":  "logs/execution_lifecycle_stats_v1.jsonl",
+                                  "frozen_path":  "logs/execution_lifecycle_stats_v1.jsonl",
+                                  "exists":  true,
+                                  "size_bytes":  23826933,
+                                  "raw_line_count":  24307,
+                                  "sha256":  "49317b09dde7951c41b50a2003cea677dca17b1dedd29a9955e893578f6c4822",
+                                  "modified_time_utc":  "2026-05-13T15:18:55Z",
+                                  "copy_time_utc":  "2026-05-13T19:24:15Z"
+                              },
+                              {
+                                  "original_path":  "logs/regime_confidence_audit_v1.jsonl",
+                                  "frozen_path":  "logs/regime_confidence_audit_v1.jsonl",
+                                  "exists":  true,
+                                  "size_bytes":  5088016,
+                                  "raw_line_count":  4030,
+                                  "sha256":  "a98f597663b3f94cb7646024a231470329ac47807f08f18ccd04b1497a2f16fa",
+                                  "modified_time_utc":  "2026-05-13T19:10:08Z",
+                                  "copy_time_utc":  "2026-05-13T19:24:15Z"
+                              },
+                              {
+                                  "original_path":  "logs/shadow_telemetry/decision_ledger_v1.jsonl",
+                                  "frozen_path":  "logs/shadow_telemetry/decision_ledger_v1.jsonl",
+                                  "exists":  true,
+                                  "size_bytes":  1650874,
+                                  "raw_line_count":  334,
+                                  "sha256":  "6533a2b4f938f14eb4b290158c875d6cd381f3c8bb9ada6d2a66e8646a82b1b6",
+                                  "modified_time_utc":  "2026-05-13T14:25:03Z",
+                                  "copy_time_utc":  "2026-05-13T19:24:15Z"
+                              },
+                              {
+                                  "original_path":  "logs/aurora_events.jsonl",
+                                  "frozen_path":  "logs/aurora_events.jsonl",
+                                  "exists":  true,
+                                  "size_bytes":  94397,
+                                  "raw_line_count":  279,
+                                  "sha256":  "6a6cd1f652162222a22aff4edc19d4688195994502154591d762e9c7f133b178",
+                                  "modified_time_utc":  "2026-05-13T15:18:55Z",
+                                  "copy_time_utc":  "2026-05-13T19:24:15Z"
+                              },
+                              {
+                                  "original_path":  "logs/event_chain.log",
+                                  "frozen_path":  "logs/event_chain.log",
+                                  "exists":  true,
+                                  "size_bytes":  6872715,
+                                  "raw_line_count":  37118,
+                                  "sha256":  "a206ba82a6c20ee92278f892194abcd414b6db0e70b4c35e8f9e64f0124e4c2c",
+                                  "modified_time_utc":  "2026-05-13T19:12:05Z",
+                                  "copy_time_utc":  "2026-05-13T19:24:15Z"
+                              }
+                          ],
+    "supporting_sets":  [
+                            {
+                                "pattern":  "logs/aurora_core.log*",
+                                "file_count":  51,
+                                "total_size_bytes":  528367882,
+                                "matched_files":  [
+                                                      "logs/aurora_core.log",
+                                                      "logs/aurora_core.log.1",
+                                                      "logs/aurora_core.log.10",
+                                                      "logs/aurora_core.log.11",
+                                                      "logs/aurora_core.log.12",
+                                                      "logs/aurora_core.log.13",
+                                                      "logs/aurora_core.log.14",
+                                                      "logs/aurora_core.log.15",
+                                                      "logs/aurora_core.log.16",
+                                                      "logs/aurora_core.log.17",
+                                                      "logs/aurora_core.log.18",
+                                                      "logs/aurora_core.log.19",
+                                                      "logs/aurora_core.log.2",
+                                                      "logs/aurora_core.log.20",
+                                                      "logs/aurora_core.log.21",
+                                                      "logs/aurora_core.log.22",
+                                                      "logs/aurora_core.log.23",
+                                                      "logs/aurora_core.log.24",
+                                                      "logs/aurora_core.log.25",
+                                                      "logs/aurora_core.log.26",
+                                                      "logs/aurora_core.log.27",
+                                                      "logs/aurora_core.log.28",
+                                                      "logs/aurora_core.log.29",
+                                                      "logs/aurora_core.log.3",
+                                                      "logs/aurora_core.log.30",
+                                                      "logs/aurora_core.log.31",
+                                                      "logs/aurora_core.log.32",
+                                                      "logs/aurora_core.log.33",
+                                                      "logs/aurora_core.log.34",
+                                                      "logs/aurora_core.log.35",
+                                                      "logs/aurora_core.log.36",
+                                                      "logs/aurora_core.log.37",
+                                                      "logs/aurora_core.log.38",
+                                                      "logs/aurora_core.log.39",
+                                                      "logs/aurora_core.log.4",
+                                                      "logs/aurora_core.log.40",
+                                                      "logs/aurora_core.log.41",
+                                                      "logs/aurora_core.log.42",
+                                                      "logs/aurora_core.log.43",
+                                                      "logs/aurora_core.log.44",
+                                                      "logs/aurora_core.log.45",
+                                                      "logs/aurora_core.log.46",
+                                                      "logs/aurora_core.log.47",
+                                                      "logs/aurora_core.log.48",
+                                                      "logs/aurora_core.log.49",
+                                                      "logs/aurora_core.log.5",
+                                                      "logs/aurora_core.log.50",
+                                                      "logs/aurora_core.log.6",
+                                                      "logs/aurora_core.log.7",
+                                                      "logs/aurora_core.log.8",
+                                                      "logs/aurora_core.log.9"
+                                                  ]
+                            },
+                            {
+                                "pattern":  "logs/domain_execution_position.log*",
+                                "file_count":  4,
+                                "total_size_bytes":  20312175,
+                                "matched_files":  [
+                                                      "logs/domain_execution_position.log",
+                                                      "logs/domain_execution_position.log.1",
+                                                      "logs/domain_execution_position.log.2",
+                                                      "logs/domain_execution_position.log.3"
+                                                  ]
+                            },
+                            {
+                                "pattern":  "logs/order_guardian.log*",
+                                "file_count":  1,
+                                "total_size_bytes":  13594142,
+                                "matched_files":  [
+                                                      "logs/order_guardian.log"
+                                                  ]
+                            },
+                            {
+                                "pattern":  "logs/aurora_trades.log*",
+                                "file_count":  1,
+                                "total_size_bytes":  51167,
+                                "matched_files":  [
+                                                      "logs/aurora_trades.log"
+                                                  ]
+                            },
+                            {
+                                "pattern":  "logs/domain_feature_engineering.log*",
+                                "file_count":  31,
+                                "total_size_bytes":  157693546,
+                                "matched_files":  [
+                                                      "logs/domain_feature_engineering.log",
+                                                      "logs/domain_feature_engineering.log.1",
+                                                      "logs/domain_feature_engineering.log.10",
+                                                      "logs/domain_feature_engineering.log.11",
+                                                      "logs/domain_feature_engineering.log.12",
+                                                      "logs/domain_feature_engineering.log.13",
+                                                      "logs/domain_feature_engineering.log.14",
+                                                      "logs/domain_feature_engineering.log.15",
+                                                      "logs/domain_feature_engineering.log.16",
+                                                      "logs/domain_feature_engineering.log.17",
+                                                      "logs/domain_feature_engineering.log.18",
+                                                      "logs/domain_feature_engineering.log.19",
+                                                      "logs/domain_feature_engineering.log.2",
+                                                      "logs/domain_feature_engineering.log.20",
+                                                      "logs/domain_feature_engineering.log.21",
+                                                      "logs/domain_feature_engineering.log.22",
+                                                      "logs/domain_feature_engineering.log.23",
+                                                      "logs/domain_feature_engineering.log.24",
+                                                      "logs/domain_feature_engineering.log.25",
+                                                      "logs/domain_feature_engineering.log.26",
+                                                      "logs/domain_feature_engineering.log.27",
+                                                      "logs/domain_feature_engineering.log.28",
+                                                      "logs/domain_feature_engineering.log.29",
+                                                      "logs/domain_feature_engineering.log.3",
+                                                      "logs/domain_feature_engineering.log.30",
+                                                      "logs/domain_feature_engineering.log.4",
+                                                      "logs/domain_feature_engineering.log.5",
+                                                      "logs/domain_feature_engineering.log.6",
+                                                      "logs/domain_feature_engineering.log.7",
+                                                      "logs/domain_feature_engineering.log.8",
+                                                      "logs/domain_feature_engineering.log.9"
+                                                  ]
+                            },
+                            {
+                                "pattern":  "logs/domain_decision_making.log*",
+                                "file_count":  3,
+                                "total_size_bytes":  11730346,
+                                "matched_files":  [
+                                                      "logs/domain_decision_making.log",
+                                                      "logs/domain_decision_making.log.1",
+                                                      "logs/domain_decision_making.log.30"
+                                                  ]
+                            },
+                            {
+                                "pattern":  "logs/domain_regime_detector.log*",
+                                "file_count":  1,
+                                "total_size_bytes":  2075423,
+                                "matched_files":  [
+                                                      "logs/domain_regime_detector.log"
+                                                  ]
+                            }
+                        ],
+    "directory_summaries":  [
+                                {
+                                    "frozen_path":  "data/recorder",
+                                    "exists":  true,
+                                    "file_count":  1839,
+                                    "total_size_bytes":  342566350,
+                                    "first_top_level_entry":  "2026-02-08",
+                                    "last_top_level_entry":  "2026-05-13"
+                                },
+                                {
+                                    "frozen_path":  "logs/features",
+                                    "exists":  true,
+                                    "file_count":  7,
+                                    "total_size_bytes":  297291100,
+                                    "first_top_level_entry":  "1000PEPEUSDT.log",
+                                    "last_top_level_entry":  "XRPUSDT.log"
+                                },
+                                {
+                                    "frozen_path":  "logs/ta_features",
+                                    "exists":  true,
+                                    "file_count":  9,
+                                    "total_size_bytes":  71213616,
+                                    "first_top_level_entry":  "1000PEPEUSDT.jsonl",
+                                    "last_top_level_entry":  "XRPUSDT.jsonl.1"
+                                },
+                                {
+                                    "frozen_path":  "data/shadow_telemetry/snapshots",
+                                    "exists":  true,
+                                    "file_count":  2465,
+                                    "total_size_bytes":  1572221639,
+                                    "first_top_level_entry":  "1000PEPEUSDT",
+                                    "last_top_level_entry":  "XRPUSDT"
+                                },
+                                {
+                                    "frozen_path":  "generated_reports",
+                                    "exists":  true,
+                                    "file_count":  14,
+                                    "total_size_bytes":  464481,
+                                    "first_top_level_entry":  "FEATURE_REGIME_INPUT_INTEGRITY_DEEP_RESEARCH_REPORT.md",
+                                    "last_top_level_entry":  "SIDECAR_ENABLE_GOVERNANCE_AUDIT_REPORT.md"
+                                },
+                                {
+                                    "frozen_path":  "config_snapshot",
+                                    "exists":  true,
+                                    "file_count":  12,
+                                    "total_size_bytes":  119353,
+                                    "first_top_level_entry":  "apps",
+                                    "last_top_level_entry":  "config"
+                                }
+                            ],
+    "summary":  {
+                    "primary_artifact_count":  8,
+                    "primary_artifacts_present":  8,
+                    "supporting_set_count":  7,
+                    "directory_summary_count":  6
+                }
+}

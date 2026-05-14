@@ -899,6 +899,137 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
         tags=["shadow-telemetry"],
     )
 
+    async def post_eze_execution_intent(
+        intent: LLMIntentRequestV1,
+        request: Request,
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
+    ) -> JSONResponse:
+        request_id = str(request.headers.get("x-request-id") or f"req-{uuid.uuid4()}")
+        auth_subject = _authorize_or_reject(app, request_id, request, credentials)
+        now_ms = _now_ms()
+        _cleanup_runtime_state(app, now_ms)
+
+        idempotency_hdr = str(request.headers.get("idempotency-key") or "").strip()
+        idempotency_key = str(intent.idempotency_key or idempotency_hdr or compute_idempotency_key(intent))
+        normalized_intent = intent.model_copy(update={"idempotency_key": idempotency_key})
+        payload_hash = canonical_payload_hash(
+            normalized_intent.model_dump(mode="json", exclude={"idempotency_key"})
+        )
+
+        with app.state.state_lock:
+            rec = app.state.idempotency_records.get(idempotency_key)
+            if rec is not None:
+                if rec["payload_hash"] == payload_hash:
+                    return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=dict(rec["response"]))
+                _reject_with_event(
+                    app,
+                    request_id,
+                    http_status=status.HTTP_409_CONFLICT,
+                    reason_code="IDEMPOTENCY_CONFLICT",
+                    reason="same idempotency_key used with different payload",
+                    intent_id=normalized_intent.intent_id,
+                    symbol=normalized_intent.symbol,
+                    idempotency_key=idempotency_key,
+                )
+
+        cmd = CmdLlmIntentSubmitV1.model_validate(
+            {
+                **normalized_intent.model_dump(mode="json"),
+                "request_id": request_id,
+                "idempotency_key": idempotency_key,
+            }
+        )
+
+        _emit_audit_event(
+            app,
+            "EVT:LLM_INTENT_RECEIVED_V1",
+            {
+                "intent_id": cmd.intent_id,
+                "request_id": request_id,
+                "auth_subject": auth_subject,
+                "source_ip": request.client.host if request.client is not None else None,
+                "ts_ms": now_ms,
+                "symbol": cmd.symbol,
+                "side": cmd.side,
+                "idempotency_key": cmd.idempotency_key,
+                "why_short": truncate_why(str(cmd.why_short), 80),
+                "ingress_mode": "eze_direct",
+            },
+            "eze_intent_received",
+        )
+
+        app.state.snapshot_store.record_external_intent(
+            {
+                "symbol": cmd.symbol,
+                "intent_id": cmd.intent_id,
+                "idempotency_key": cmd.idempotency_key,
+                "snapshot_ref": cmd.snapshot_ref.model_dump(mode="json") if cmd.snapshot_ref else None,
+                "llm_decision": {
+                    "side": cmd.side,
+                    "limit_price": cmd.order.limit_price,
+                    "qty": cmd.order.qty,
+                    "tp_price": cmd.brackets.tp_price,
+                    "sl_price": cmd.brackets.sl_price,
+                },
+                "why_short": truncate_why(str(cmd.why_short), 80),
+                "model_meta": cmd.model_meta.model_dump(mode="json") if cmd.model_meta else None,
+                "ingress_mode": "eze_direct",
+            }
+        )
+
+        ipc_endpoint = str(app.state.shadow_cfg.egress_to_main.ipc_commands_endpoint)
+        if not _probe_ipc_endpoint(ipc_endpoint):
+            _reject_with_event(
+                app,
+                request_id,
+                http_status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                reason_code="IPC_UNAVAILABLE",
+                reason=f"main ingress endpoint is unavailable: {ipc_endpoint}",
+                intent_id=cmd.intent_id,
+                symbol=cmd.symbol,
+                idempotency_key=cmd.idempotency_key,
+            )
+
+        eze_payload = {
+            **cmd.model_dump(mode="json"),
+            "request_kind": "eze_open",
+        }
+        ok = bool(app.state.command_client.enqueue(eze_payload))
+        if not ok:
+            _reject_with_event(
+                app,
+                request_id,
+                http_status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                reason_code="IPC_QUEUE_FULL",
+                reason="failed to enqueue direct execution command to main ingress",
+                intent_id=cmd.intent_id,
+                symbol=cmd.symbol,
+                idempotency_key=cmd.idempotency_key,
+            )
+
+        response_obj = IntentAcceptedResponseV1(
+            intent_id=cmd.intent_id,
+            request_id=request_id,
+            state="queued",
+        )
+        response_payload = response_obj.model_dump(mode="json")
+        with app.state.state_lock:
+            app.state.idempotency_records[idempotency_key] = {
+                "payload_hash": payload_hash,
+                "response": response_payload,
+                "ts_ms": now_ms,
+            }
+            app.state.intent_status[str(cmd.intent_id)] = {
+                "intent_id": str(cmd.intent_id),
+                "request_id": request_id,
+                "state": "queued",
+                "symbol": str(cmd.symbol).upper(),
+                "ts_ms": now_ms,
+                "idempotency_key": idempotency_key,
+                "ingress_mode": "eze_direct",
+            }
+        return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=response_payload)
+
     async def post_position_close(
         lifecycle_id: str,
         payload: LLMCloseRequestV1,
@@ -1004,6 +1135,112 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
                 http_status=status.HTTP_503_SERVICE_UNAVAILABLE,
                 reason_code="IPC_QUEUE_FULL",
                 reason="failed to enqueue close command to main ingress",
+                symbol=cmd.symbol,
+                idempotency_key=cmd.idempotency_key,
+            )
+
+        response_obj = PositionActionAcceptedResponseV1(
+            action_id=cmd.action_id,
+            request_id=request_id,
+            lifecycle_id=cmd.lifecycle_id,
+            action="close_position",
+            state="queued",
+        )
+        response_payload = response_obj.model_dump(mode="json")
+        with app.state.state_lock:
+            app.state.idempotency_records[idempotency_key] = {
+                "payload_hash": payload_hash,
+                "response": response_payload,
+                "ts_ms": now_ms,
+            }
+            app.state.position_action_status[str(cmd.action_id)] = response_payload
+        return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=response_payload)
+
+    async def post_eze_position_close(
+        lifecycle_id: str,
+        payload: LLMCloseRequestV1,
+        request: Request,
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
+    ) -> JSONResponse:
+        request_id = str(request.headers.get("x-request-id") or f"req-{uuid.uuid4()}")
+        now_ms = _now_ms()
+        _cleanup_runtime_state(app, now_ms)
+        auth_subject = _authorize_or_reject(app, request_id, request, credentials)
+
+        if str(lifecycle_id).strip() != str(payload.lifecycle_id).strip():
+            _reject_with_event(
+                app,
+                request_id,
+                http_status=status.HTTP_400_BAD_REQUEST,
+                reason_code="LIFECYCLE_ID_MISMATCH",
+                reason="path lifecycle_id must match payload lifecycle_id",
+                symbol=payload.symbol,
+            )
+
+        symbol = str(payload.symbol).upper()
+        idempotency_key = payload.idempotency_key or compute_close_idempotency_key(payload)
+        payload_hash = canonical_payload_hash(payload.model_dump(mode="json"))
+        with app.state.state_lock:
+            rec = app.state.idempotency_records.get(idempotency_key)
+            if rec is not None:
+                if rec["payload_hash"] == payload_hash:
+                    return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=dict(rec["response"]))
+                _reject_with_event(
+                    app,
+                    request_id,
+                    http_status=status.HTTP_409_CONFLICT,
+                    reason_code="IDEMPOTENCY_CONFLICT",
+                    reason="same idempotency_key used with different payload",
+                    symbol=symbol,
+                    idempotency_key=idempotency_key,
+                )
+
+        cmd = CmdLlmPositionCloseV1.model_validate(
+            {
+                **payload.model_dump(mode="json"),
+                "request_id": request_id,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        _emit_audit_event(
+            app,
+            "EVT:LLM_CLOSE_RECEIVED_V1",
+            {
+                "action_id": cmd.action_id,
+                "request_id": request_id,
+                "auth_subject": auth_subject,
+                "source_ip": request.client.host if request.client is not None else None,
+                "ts_ms": now_ms,
+                "symbol": cmd.symbol,
+                "lifecycle_id": cmd.lifecycle_id,
+                "reason": truncate_why(str(cmd.reason), 80),
+                "ingress_mode": "eze_direct",
+            },
+            "eze_close_received",
+        )
+
+        ipc_endpoint = str(app.state.shadow_cfg.egress_to_main.ipc_commands_endpoint)
+        if not _probe_ipc_endpoint(ipc_endpoint):
+            _reject_with_event(
+                app,
+                request_id,
+                http_status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                reason_code="IPC_UNAVAILABLE",
+                reason=f"main ingress endpoint is unavailable: {ipc_endpoint}",
+                symbol=cmd.symbol,
+                idempotency_key=cmd.idempotency_key,
+            )
+        ok = bool(app.state.command_client.enqueue({
+            **cmd.model_dump(mode="json"),
+            "request_kind": "eze_close_position",
+        }))
+        if not ok:
+            _reject_with_event(
+                app,
+                request_id,
+                http_status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                reason_code="IPC_QUEUE_FULL",
+                reason="failed to enqueue direct execution close command to main ingress",
                 symbol=cmd.symbol,
                 idempotency_key=cmd.idempotency_key,
             )
@@ -1152,6 +1389,113 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
             app.state.position_action_status[str(cmd.action_id)] = response_payload
         return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=response_payload)
 
+    async def patch_eze_position_brackets(
+        lifecycle_id: str,
+        payload: LLMBracketAmendRequestV1,
+        request: Request,
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
+    ) -> JSONResponse:
+        request_id = str(request.headers.get("x-request-id") or f"req-{uuid.uuid4()}")
+        now_ms = _now_ms()
+        _cleanup_runtime_state(app, now_ms)
+        auth_subject = _authorize_or_reject(app, request_id, request, credentials)
+
+        if str(lifecycle_id).strip() != str(payload.lifecycle_id).strip():
+            _reject_with_event(
+                app,
+                request_id,
+                http_status=status.HTTP_400_BAD_REQUEST,
+                reason_code="LIFECYCLE_ID_MISMATCH",
+                reason="path lifecycle_id must match payload lifecycle_id",
+                symbol=payload.symbol,
+            )
+
+        symbol = str(payload.symbol).upper()
+        idempotency_key = payload.idempotency_key or compute_bracket_amend_idempotency_key(payload)
+        payload_hash = canonical_payload_hash(payload.model_dump(mode="json"))
+        with app.state.state_lock:
+            rec = app.state.idempotency_records.get(idempotency_key)
+            if rec is not None:
+                if rec["payload_hash"] == payload_hash:
+                    return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=dict(rec["response"]))
+                _reject_with_event(
+                    app,
+                    request_id,
+                    http_status=status.HTTP_409_CONFLICT,
+                    reason_code="IDEMPOTENCY_CONFLICT",
+                    reason="same idempotency_key used with different payload",
+                    symbol=symbol,
+                    idempotency_key=idempotency_key,
+                )
+
+        cmd = CmdLlmBracketAmendV1.model_validate(
+            {
+                **payload.model_dump(mode="json"),
+                "request_id": request_id,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        _emit_audit_event(
+            app,
+            "EVT:LLM_BRACKET_AMEND_RECEIVED_V1",
+            {
+                "action_id": cmd.action_id,
+                "request_id": request_id,
+                "auth_subject": auth_subject,
+                "source_ip": request.client.host if request.client is not None else None,
+                "ts_ms": now_ms,
+                "symbol": cmd.symbol,
+                "lifecycle_id": cmd.lifecycle_id,
+                "tp_price": cmd.brackets.tp_price,
+                "sl_price": cmd.brackets.sl_price,
+                "ingress_mode": "eze_direct",
+            },
+            "eze_bracket_amend_received",
+        )
+
+        ipc_endpoint = str(app.state.shadow_cfg.egress_to_main.ipc_commands_endpoint)
+        if not _probe_ipc_endpoint(ipc_endpoint):
+            _reject_with_event(
+                app,
+                request_id,
+                http_status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                reason_code="IPC_UNAVAILABLE",
+                reason=f"main ingress endpoint is unavailable: {ipc_endpoint}",
+                symbol=cmd.symbol,
+                idempotency_key=cmd.idempotency_key,
+            )
+        ok = bool(app.state.command_client.enqueue({
+            **cmd.model_dump(mode="json"),
+            "request_kind": "eze_amend_brackets",
+        }))
+        if not ok:
+            _reject_with_event(
+                app,
+                request_id,
+                http_status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                reason_code="IPC_QUEUE_FULL",
+                reason="failed to enqueue direct execution bracket amend command to main ingress",
+                symbol=cmd.symbol,
+                idempotency_key=cmd.idempotency_key,
+            )
+
+        response_obj = PositionActionAcceptedResponseV1(
+            action_id=cmd.action_id,
+            request_id=request_id,
+            lifecycle_id=cmd.lifecycle_id,
+            action="amend_brackets",
+            state="queued",
+        )
+        response_payload = response_obj.model_dump(mode="json")
+        with app.state.state_lock:
+            app.state.idempotency_records[idempotency_key] = {
+                "payload_hash": payload_hash,
+                "response": response_payload,
+                "ts_ms": now_ms,
+            }
+            app.state.position_action_status[str(cmd.action_id)] = response_payload
+        return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=response_payload)
+
     app.add_api_route(
         path="/positions/{lifecycle_id}/close",
         endpoint=post_position_close,
@@ -1163,6 +1507,30 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
     app.add_api_route(
         path="/positions/{lifecycle_id}/brackets",
         endpoint=patch_position_brackets,
+        methods=["PATCH"],
+        response_model=PositionActionAcceptedResponseV1,
+        status_code=status.HTTP_202_ACCEPTED,
+        tags=["shadow-telemetry"],
+    )
+    app.add_api_route(
+        path="/execution/eze/intents/v1",
+        endpoint=post_eze_execution_intent,
+        methods=["POST"],
+        response_model=IntentAcceptedResponseV1,
+        status_code=status.HTTP_202_ACCEPTED,
+        tags=["shadow-telemetry"],
+    )
+    app.add_api_route(
+        path="/execution/eze/positions/{lifecycle_id}/close",
+        endpoint=post_eze_position_close,
+        methods=["POST"],
+        response_model=PositionActionAcceptedResponseV1,
+        status_code=status.HTTP_202_ACCEPTED,
+        tags=["shadow-telemetry"],
+    )
+    app.add_api_route(
+        path="/execution/eze/positions/{lifecycle_id}/brackets",
+        endpoint=patch_eze_position_brackets,
         methods=["PATCH"],
         response_model=PositionActionAcceptedResponseV1,
         status_code=status.HTTP_202_ACCEPTED,

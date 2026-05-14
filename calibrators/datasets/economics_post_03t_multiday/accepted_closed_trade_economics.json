@@ -1,0 +1,100 @@
+{
+  "generated_at_utc": "2026-05-13T21:18:32.557213+00:00",
+  "source_realized_dataset": "artifacts\\calibration_datasets\\_post_03t_multiday_realized_outcome\\realized_trades.jsonl",
+  "canonical_closed_rows": 12,
+  "exact_roundtrip_rows": 11,
+  "diagnostics_only": true,
+  "promotion_grade": false,
+  "totals": {
+    "gross_pnl": 171.06727,
+    "net_pnl": 139.18404117,
+    "fees": 31.88322883,
+    "profitable_closes": 9,
+    "losing_closes": 3,
+    "fee_share_of_losses_pct": 28.6212
+  },
+  "per_symbol_net_pnl": {
+    "BNBUSDT": 55.791205860000005,
+    "BTCUSDT": 75.19168914000001,
+    "ETHUSDT": 12.11909301,
+    "XRPUSDT": -3.9179468400000026
+  },
+  "per_side_net_pnl": {
+    "LONG": 38.889701970000004,
+    "SHORT": 100.2943392
+  },
+  "per_strategy_net_pnl": {
+    "aurora": 139.18404117000003
+  },
+  "per_regime_net_pnl": {
+    "MEAN_REVERSION": 45.69114118,
+    "TREND_DOWN": 72.42122092000001,
+    "TREND_UP": 21.071679070000002
+  },
+  "close_reason_counts": {
+    "CLOSE": 2,
+    "SL": 1,
+    "TP": 9
+  },
+  "bracket_tp_closes": 9,
+  "bracket_sl_closes": 1,
+  "sidecar_close_outcomes": {
+    "close_requests": 15,
+    "reconciled_sidecar_closes": 15,
+    "canonical_realized_sidecar_closes": 0,
+    "net_pnl": 0,
+    "fees": 0,
+    "profitable_closes": 0,
+    "losing_closes": 0,
+    "symbols": [],
+    "observed_position_closed_rows": 15,
+    "observed_position_closed_net_pnl": -92.86671668,
+    "observed_position_closed_fees": 39.27871668
+  },
+  "mfe_mae_inventory": {
+    "mfe_non_null_rows": 0,
+    "mae_non_null_rows": 0,
+    "trade_lifecycle_peak_giveback_rows": 231271,
+    "trade_lifecycle_peak_giveback_non_null_rows": 231271
+  },
+  "top_winners": [
+    {
+      "rid": "aurora_BNBUSDT_1778518204673",
+      "symbol": "BNBUSDT",
+      "net_pnl": 48.93256879,
+      "outcome": "closed_win"
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778676306439",
+      "symbol": "BTCUSDT",
+      "net_pnl": 45.85079224,
+      "outcome": "closed_win"
+    },
+    {
+      "rid": "aurora_XRPUSDT_1778577601352",
+      "symbol": "XRPUSDT",
+      "net_pnl": 23.94294288,
+      "outcome": "closed_win"
+    }
+  ],
+  "top_losers": [
+    {
+      "rid": "aurora_XRPUSDT_1778548203246",
+      "symbol": "XRPUSDT",
+      "net_pnl": -27.86088972,
+      "outcome": "closed_loss"
+    },
+    {
+      "rid": "aurora_BNBUSDT_1778594405405",
+      "symbol": "BNBUSDT",
+      "net_pnl": -9.49160721,
+      "outcome": "closed_loss"
+    },
+    {
+      "rid": "aurora_BNBUSDT_1778560504646",
+      "symbol": "BNBUSDT",
+      "net_pnl": -0.61071211,
+      "outcome": "closed_loss"
+    }
+  ]
+}

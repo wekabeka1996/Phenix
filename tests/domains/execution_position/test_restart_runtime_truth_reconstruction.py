@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
@@ -15,7 +16,13 @@ from apps.reference.adapters.binance_ws_client import BinanceWebSocketClient
 from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageState
 from apps.reference.domains.execution_position.state.order_index import OrderIndex
 from apps.reference.domains.execution_position.state.restore_artifact import (
+    BRACKET_STATE_LINKED_ACTIVE,
+    ExecutionPositionRestoreEnvelope,
+    ExecutionPositionRestoreLifecycleRecord,
+    LinkedBracketRef,
     TRUTH_SOURCE_RECONSTRUCTED_GUARDIAN,
+    TRUTH_SOURCE_RESTORE_ARTIFACT,
+    TRUTH_SOURCE_RUNTIME_LOCAL,
 )
 from vfoundation.dr import wal as vwal
 
@@ -360,3 +367,122 @@ async def test_ws_terminal_hit_after_startup_reconstruction_uses_rebuilt_order_i
     assert payload["rid"] == "aurora_ETHUSDT_1775247901546:SL"
     assert payload["bracket_role"] == "SL"
     assert payload["terminal_correlation_source"] == "order_index_canonical"
+
+
+@pytest.mark.asyncio
+async def test_startup_reconcile_rehydrates_order_index_from_authoritative_restore_when_fresh_orders_empty(
+    fsm_harness,
+    tmp_path,
+) -> None:
+    fsm, _, _ = fsm_harness
+    symbol = "ETHUSDT"
+    fsm._trade_lifecycle_log_path = lambda: str(
+        tmp_path / "trade_lifecycle.jsonl")
+
+    restore_path = tmp_path / "execution_restore.json"
+    startup_truth_path = tmp_path / "execution_startup_truth.jsonl"
+    fsm.config.domains.execution_position.restore_artifact = ExecutionPositionRestoreArtifactConfig(
+        mode="authoritative",
+        storage_path=str(restore_path),
+        flush_interval_ms=250,
+        dark_read_max_artifact_age_ms=300000,
+    )
+    fsm._startup_truth_orchestrator._restore_artifact_writer = fsm._startup_truth_orchestrator._create_restore_artifact_writer()
+    fsm._startup_truth_orchestrator._restore_artifact_dark_reader = fsm._startup_truth_orchestrator._create_restore_artifact_dark_reader()
+    fsm.config.domains.execution_position.startup_truth_artifact = (
+        ExecutionPositionStartupTruthArtifactConfig(
+            mode="writer_only",
+            storage_path=str(startup_truth_path),
+        )
+    )
+    fsm._startup_truth_orchestrator._startup_truth_artifact_writer = fsm._startup_truth_orchestrator._create_startup_truth_artifact_writer()
+
+    envelope = ExecutionPositionRestoreEnvelope(
+        schema_version="1.0.0",
+        artifact_type="execution_position_restore_envelope_v1",
+        generated_at_ms=int(time.time() * 1000),
+        writer_component="execution_position",
+        requires_live_reconcile=True,
+        active_lifecycles=[
+            ExecutionPositionRestoreLifecycleRecord(
+                symbol=symbol,
+                manage_phase="BRACKETS_PENDING",
+                manage_truth_source=TRUTH_SOURCE_RUNTIME_LOCAL,
+                close_phase="FLAT",
+                bracket_state=BRACKET_STATE_LINKED_ACTIVE,
+                bracket_truth_source=TRUTH_SOURCE_RUNTIME_LOCAL,
+                live_reconcile_required=True,
+                linked_bracket_ref=LinkedBracketRef(
+                    entry_order_id="entry-eth-order-1",
+                    entry_client_order_id="aurora_ETHUSDT_1775247901546",
+                    sl_order_id="8631145709",
+                    tp_order_id="8631145710",
+                    sl_client_order_id="SL-ETHUSDT-1",
+                    tp_client_order_id="TP-ETHUSDT-1",
+                ),
+            )
+        ],
+    )
+    restore_path.write_text(
+        json.dumps(envelope.model_dump(
+            mode="json", exclude_none=True), sort_keys=True),
+        encoding="utf-8",
+    )
+
+    manage_flow = MagicMock()
+    manage_flow.state = ManageState.BRACKETS_PENDING
+    manage_flow.set_bracket_ids = MagicMock()
+    manage_flow.has_active_lifecycle.return_value = True
+    fsm.manage_flows[symbol] = manage_flow
+    fsm.fsm.order_index = OrderIndex(ttl_sec=600)
+
+    fsm.adapter = MagicMock()
+    fsm.adapter.get_open_positions = AsyncMock(
+        return_value=[{"symbol": symbol, "positionAmt": "0.10"}]
+    )
+    fsm.adapter.get_open_orders = AsyncMock(side_effect=[[], []])
+
+    fsm.order_guardian.link_existing_from_rest = AsyncMock()
+    fsm.order_guardian.cleanup_orphans = AsyncMock()
+    fsm.order_guardian.resolve_terminal_bracket_context = MagicMock(
+        return_value=None)
+
+    await fsm._startup_order_guardian_reconcile()
+
+    assert fsm._symbol_brackets[symbol] == {
+        "sl_order_id": "8631145709",
+        "tp_order_id": "8631145710",
+    }
+    assert fsm._symbol_bracket_truth_source[symbol] == TRUTH_SOURCE_RESTORE_ARTIFACT
+
+    sl_ref = fsm.fsm.order_index.get(exchangeOrderId="8631145709")
+    tp_ref = fsm.fsm.order_index.get(exchangeOrderId="8631145710")
+    assert sl_ref is not None
+    assert tp_ref is not None
+    assert sl_ref.rid == "aurora_ETHUSDT_1775247901546:SL"
+    assert tp_ref.rid == "aurora_ETHUSDT_1775247901546:TP"
+
+    startup_rows = [
+        json.loads(line)
+        for line in startup_truth_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(startup_rows) == 1
+    startup_row = startup_rows[0]
+    assert startup_row["runtime_truth_summary"] == {
+        "symbols_reconstructed": 1,
+        "order_index_registrations": 2,
+        "unresolved_symbols": 0,
+    }
+    assert startup_row["runtime_truth_records"] == [
+        {
+            "symbol": symbol,
+            "status": "reindexed_from_restore_state",
+            "sl_order_id": "8631145709",
+            "tp_order_id": "8631145710",
+            "bracket_truth_source": TRUTH_SOURCE_RESTORE_ARTIFACT,
+            "manage_truth_source": TRUTH_SOURCE_RESTORE_ARTIFACT,
+            "order_index_registrations": 2,
+            "unresolved_reasons": [],
+        }
+    ]

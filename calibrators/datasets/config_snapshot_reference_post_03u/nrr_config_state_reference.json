@@ -1,0 +1,171 @@
+{
+  "generated_at_utc": "2026-05-13T23:48:56.919908+00:00",
+  "authority_caveat": "CURRENT_WORKSPACE_REFERENCE_ONLY_NOT_RUNTIME_AUTHORITY",
+  "reference_manifest": "calibrators/datasets/config_snapshot_reference_post_03u/config_snapshot_reference_manifest.json",
+  "nrr062_low_vol_cost_floor_gate": {
+    "path": "decision_making.low_vol_cost_floor_gate",
+    "enabled": true,
+    "enforce_in_modes": [
+      "testnet",
+      "hybrid_live_data_testnet_exec"
+    ],
+    "observe_only_in_modes": [
+      "live",
+      "production"
+    ],
+    "regimes": [
+      "LOW_VOLATILITY"
+    ],
+    "fee": {
+      "open_fee_bps": 4.0,
+      "close_fee_bps": 4.0,
+      "fee_source": "explicit_config"
+    },
+    "slippage": {
+      "buffer_bps": 2.0,
+      "source": "explicit_config"
+    },
+    "thresholds": {
+      "target_net_fee_multiple": 2.0,
+      "min_tp_fee_coverage": 3.0,
+      "min_rr": 1.2,
+      "min_regime_confidence_by_regime": {
+        "DEFAULT": 0.45,
+        "LOW_VOLATILITY": 0.39
+      },
+      "min_regime_confidence_overrides_by_strategy_symbol": {
+        "aurora": {
+          "XRPUSDT": {
+            "DEFAULT": 0.46,
+            "LOW_VOLATILITY": 0.45
+          }
+        },
+        "md_amr": {
+          "XRPUSDT": {
+            "DEFAULT": 0.46,
+            "LOW_VOLATILITY": 0.45
+          }
+        }
+      },
+      "min_direction_confidence_by_regime": {
+        "DEFAULT": 0.55,
+        "LOW_VOLATILITY": 0.25
+      },
+      "min_direction_confidence_overrides_by_strategy_symbol": {
+        "aurora": {
+          "XRPUSDT": {
+            "DEFAULT": 0.55,
+            "LOW_VOLATILITY": 0.25
+          }
+        },
+        "md_amr": {
+          "XRPUSDT": {
+            "DEFAULT": 0.55,
+            "LOW_VOLATILITY": 0.59
+          }
+        }
+      },
+      "min_raw_score_by_regime": {
+        "DEFAULT": 0.55,
+        "LOW_VOLATILITY": 0.25
+      },
+      "min_normalized_confidence_by_regime": {
+        "DEFAULT": 0.55,
+        "LOW_VOLATILITY": 0.25
+      },
+      "min_raw_score_overrides_by_strategy_symbol": {
+        "aurora": {
+          "XRPUSDT": {
+            "DEFAULT": 0.55,
+            "LOW_VOLATILITY": 0.25
+          }
+        }
+      },
+      "min_normalized_confidence_overrides_by_strategy_symbol": {
+        "md_amr": {
+          "XRPUSDT": {
+            "DEFAULT": 0.55,
+            "LOW_VOLATILITY": 0.59
+          }
+        }
+      }
+    },
+    "direction_confidence": {
+      "required": true,
+      "raw_signed_score_sources": [
+        "signal_score",
+        "final_score"
+      ],
+      "normalized_confidence_sources": [
+        "strategy_confidence"
+      ],
+      "judge_confidence_live_producer_required": false,
+      "missing_policy": "fail_closed"
+    },
+    "runtime_authority": false,
+    "notes": "CURRENT_WORKSPACE_REFERENCE_ONLY_NOT_RUNTIME_AUTHORITY"
+  },
+  "selected_source_scale_threshold_family_reference": {
+    "raw_signed_score_sources": [
+      "signal_score",
+      "final_score"
+    ],
+    "normalized_confidence_sources": [
+      "strategy_confidence"
+    ],
+    "threshold_surfaces_present": [
+      "min_raw_score_by_regime",
+      "min_normalized_confidence_by_regime",
+      "min_direction_confidence_by_regime",
+      "min_regime_confidence_by_regime"
+    ],
+    "runtime_authority": false,
+    "notes": "Current YAML exposes candidate confidence sources and threshold families, but not frozen runtime-selected source/scale authority."
+  },
+  "directional_sanity_reference": {
+    "path": "decision_making.directional_sanity",
+    "nrr027_enabled": false,
+    "min_regime_confidence": 0.35,
+    "min_regime_confidence_by_regime": {
+      "DEFAULT": 0.35,
+      "TREND_UP": 0.2,
+      "TREND_DOWN": 0.2
+    },
+    "runtime_authority": false,
+    "notes": "CURRENT_WORKSPACE_REFERENCE_ONLY_NOT_RUNTIME_AUTHORITY"
+  },
+  "nrr027_030_reference": {
+    "NRR-027": {
+      "current_reference_state": false,
+      "path": "decision_making.directional_sanity.nrr027_enabled",
+      "runtime_authority": false,
+      "notes": "CURRENT_WORKSPACE_REFERENCE_ONLY_NOT_RUNTIME_AUTHORITY"
+    },
+    "NRR-028": {
+      "current_reference_state": "NOT_PRESENT_IN_CURRENT_REFERENCE",
+      "path": null,
+      "runtime_authority": false,
+      "notes": "CURRENT_WORKSPACE_REFERENCE_ONLY_NOT_RUNTIME_AUTHORITY"
+    },
+    "NRR-029": {
+      "current_reference_state": "NOT_PRESENT_IN_CURRENT_REFERENCE",
+      "path": null,
+      "runtime_authority": false,
+      "notes": "CURRENT_WORKSPACE_REFERENCE_ONLY_NOT_RUNTIME_AUTHORITY"
+    },
+    "NRR-030": {
+      "current_reference_state": "NOT_PRESENT_IN_CURRENT_REFERENCE",
+      "path": null,
+      "runtime_authority": false,
+      "notes": "CURRENT_WORKSPACE_REFERENCE_ONLY_NOT_RUNTIME_AUTHORITY"
+    }
+  },
+  "pydantic_model_references": [
+    {
+      "surface": "LowVolCostFloorGateConfig",
+      "path": "apps/reference/config/domains/decision_making.py",
+      "notes": "Primary Pydantic model for NRR-062 LOW_VOL gate config.",
+      "exists": true
+    }
+  ]
+}

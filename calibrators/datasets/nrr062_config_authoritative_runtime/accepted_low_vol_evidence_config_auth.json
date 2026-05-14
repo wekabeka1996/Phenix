@@ -1,0 +1,64 @@
+{
+  "generated_at_utc": "2026-05-14T05:17:31.497159+00:00",
+  "bundle_root": "logs/frozen/nrr062_fresh_capture_20260514_050245",
+  "status": "NO_ACCEPTED_LOW_VOL_EVIDENCE_CONFIG_AUTH",
+  "facts": {
+    "order_log_accepted_intent_rows": 0,
+    "order_log_low_vol_accepted_rows": 0,
+    "decision_ledger_terminal_status_counts": {
+      "EXECUTED_AND_CLOSED": 24,
+      "INVALID_FOR_DATASET": 49,
+      "REJECTED_UPSTREAM": 343
+    },
+    "decision_ledger_low_vol_accepted_rows": 0,
+    "trade_lifecycle_low_vol_diagnostic_rows": 3,
+    "regime_confidence_audit_low_vol_rows": 2551
+  },
+  "rows": [],
+  "diagnostic_rows": [
+    {
+      "surface_class": "TRADE_LIFECYCLE_LOW_VOL_DIAGNOSTIC",
+      "lifecycle_id": null,
+      "rid": "aurora_BTCUSDT_1778669703907",
+      "symbol": "BTCUSDT",
+      "side": "SHORT",
+      "strategy_id": "aurora",
+      "record_kind": "trade_lifecycle_snapshot",
+      "event_type": "TRADE_LIFECYCLE_ORDERED",
+      "status": "ORDERED",
+      "close_reason": null,
+      "ts_utc": null
+    },
+    {
+      "surface_class": "TRADE_LIFECYCLE_LOW_VOL_DIAGNOSTIC",
+      "lifecycle_id": null,
+      "rid": "aurora_BTCUSDT_1778669703907",
+      "symbol": "BTCUSDT",
+      "side": "SHORT",
+      "strategy_id": "aurora",
+      "record_kind": "trade_lifecycle_snapshot",
+      "event_type": "TRADE_LIFECYCLE_FILLED",
+      "status": "FILLED",
+      "close_reason": null,
+      "ts_utc": null
+    },
+    {
+      "surface_class": "TRADE_LIFECYCLE_LOW_VOL_DIAGNOSTIC",
+      "lifecycle_id": null,
+      "rid": "aurora_BTCUSDT_1778669703907",
+      "symbol": "BTCUSDT",
+      "side": "SHORT",
+      "strategy_id": "aurora",
+      "record_kind": null,
+      "event_type": null,
+      "status": "ORPHANED_TTL",
+      "close_reason": "TTL_EXPIRED_3600s",
+      "ts_utc": "2026-05-13T11:57:41.569000+00:00"
+    }
+  ],
+  "notes": [
+    "Accepted LOW_VOL evidence was tested only against frozen order_log, frozen decision_ledger, and frozen trade_lifecycle surfaces from the Package E bundle.",
+    "No objective or realized-trade auxiliary datasets were used for this Package E accepted-evidence audit.",
+    "trade_lifecycle LOW_VOL markers are diagnostic only unless paired with accepted rid-level proof on canonical accepted surfaces."
+  ]
+}

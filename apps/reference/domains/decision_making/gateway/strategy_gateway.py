@@ -52,7 +52,9 @@ from apps.reference.domains.neocortex.contracts.control_decision import (
 )
 from apps.reference.domains.neocortex.contracts.causal_time import DatasetVisibility
 from apps.reference.domains.neocortex.contracts.failure_taxonomy import (
+    FailureOutcomeTaxonomy,
     FailureReasonCode,
+    record_failure_outcome,
 )
 from apps.reference.domains.neocortex.contracts.observation_envelope import ObservationEnvelope
 from apps.reference.domains.neocortex.logic.datasets.time_provenance import CausalTimeProvenance
@@ -204,10 +206,10 @@ class StrategyGateway:
             return None
         return Path(data_dir) / name
 
-    def _append_authority_journal_row(self, name: str, payload: dict[str, Any]) -> None:
+    def _append_authority_journal_row(self, name: str, payload: dict[str, Any]) -> tuple[bool, str | None]:
         path = self._authority_journal_path(name)
         if path is None:
-            return
+            return False, "data_dir_unavailable"
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open("a", encoding="utf-8") as handle:
@@ -218,24 +220,207 @@ class StrategyGateway:
                 journal=name,
                 reason_code=FailureReasonCode.TELEMETRY_FLUSH_FAILED.value,
             )
-            try:
-                from apps.reference.domains.neocortex.contracts.failure_taxonomy import (
-                    FailureOutcomeTaxonomy,
-                    record_failure_outcome,
-                )
-
-                record_failure_outcome(
-                    FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
-                    FailureReasonCode.TELEMETRY_FLUSH_FAILED,
-                    source="decision_making.gateway.strategy_gateway._append_authority_journal_row",
-                    location=f"strategy_gateway.{name}",
-                    detail=type(exc).__name__,
-                    message="Authority journal append failed",
-                )
-            except Exception:
-                pass
+            record_failure_outcome(
+                FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+                FailureReasonCode.TELEMETRY_FLUSH_FAILED,
+                source="decision_making.gateway.strategy_gateway._append_authority_journal_row",
+                location=f"strategy_gateway.{name}",
+                detail=type(exc).__name__,
+                message="Authority journal append failed",
+            )
             self.logger.warning(
                 "Authority journal append degraded path=%s", path, exc_info=exc)
+            return False, f"{type(exc).__name__}: {exc}"
+        return True, None
+
+    def _authority_seam_config_snapshot(self, bridge: Any) -> dict[str, Any]:
+        snapshot_fn = getattr(bridge, "authority_seam_config_snapshot", None)
+        raw_snapshot = snapshot_fn() if callable(snapshot_fn) else None
+        if not isinstance(raw_snapshot, dict):
+            short_circuit_reason = getattr(
+                bridge, "short_circuit_reason", None)
+            journal_only_enabled = bool(
+                getattr(bridge, "journal_only_capture_enabled", False)
+            )
+            shadow_counterfactual_enabled = bool(
+                getattr(bridge, "shadow_counterfactual_capture_enabled", False)
+            )
+            evidence_capture_mode = "disabled"
+            collect_authority_response = None
+            emit_shadow_decision_logged = None
+            if shadow_counterfactual_enabled:
+                evidence_capture_mode = "shadow_counterfactual"
+                collect_authority_response = bool(
+                    getattr(
+                        bridge, "shadow_counterfactual_response_journal_enabled", False)
+                )
+                emit_shadow_decision_logged = bool(
+                    getattr(
+                        bridge, "shadow_counterfactual_emit_shadow_decision_logged", False)
+                )
+            elif journal_only_enabled:
+                evidence_capture_mode = "journal_only"
+                collect_authority_response = bool(
+                    getattr(bridge, "journal_only_response_journal_enabled", False)
+                )
+                emit_shadow_decision_logged = bool(
+                    getattr(
+                        bridge, "journal_only_emit_shadow_decision_logged", False)
+                )
+
+            authority_mode = getattr(
+                bridge, "authority_mode", AuthorityMode.SHADOW)
+            authority_mode_text = getattr(
+                authority_mode, "value", authority_mode)
+            raw_snapshot = {
+                "trust_enabled": short_circuit_reason != "TRUST_DISABLED",
+                "authority_mode": str(authority_mode_text).strip().lower() or "unknown",
+                "evidence_capture_mode": evidence_capture_mode,
+                "collect_authority_request": (
+                    journal_only_enabled or shadow_counterfactual_enabled
+                ),
+                "collect_authority_response": collect_authority_response,
+                "emit_shadow_decision_logged": emit_shadow_decision_logged,
+            }
+
+        return {
+            "trust_enabled": bool(raw_snapshot.get("trust_enabled", False)),
+            "authority_mode": str(
+                raw_snapshot.get("authority_mode") or "unknown"
+            ).strip().lower() or "unknown",
+            "evidence_capture_mode": str(
+                raw_snapshot.get("evidence_capture_mode") or "disabled"
+            ).strip().lower() or "disabled",
+            "collect_authority_request": _coerce_optional_bool(
+                raw_snapshot.get("collect_authority_request")
+            ),
+            "collect_authority_response": _coerce_optional_bool(
+                raw_snapshot.get("collect_authority_response")
+            ),
+            "emit_shadow_decision_logged": _coerce_optional_bool(
+                raw_snapshot.get("emit_shadow_decision_logged")
+            ),
+        }
+
+    def _authority_seam_selection_reason(
+        self,
+        *,
+        selected_branch: str,
+        config_snapshot: dict[str, Any],
+        short_circuit_reason: str | None,
+    ) -> str:
+        evidence_capture_mode = str(
+            config_snapshot.get("evidence_capture_mode") or "disabled"
+        ).strip().lower()
+        if selected_branch == "shadow_counterfactual":
+            if evidence_capture_mode != "shadow_counterfactual":
+                return "shadow_counterfactual_selected_outside_config_mode"
+            return "shadow_counterfactual_mode_enabled"
+        if selected_branch == "journal_only":
+            if evidence_capture_mode == "shadow_counterfactual":
+                return "shadow_counterfactual_configured_but_capture_unavailable"
+            if evidence_capture_mode == "journal_only":
+                if config_snapshot.get("collect_authority_response") is False:
+                    return "journal_only_request_only_contract"
+                return "journal_only_mode_enabled"
+            return "journal_only_fallback_branch"
+        if selected_branch == "disabled":
+            if short_circuit_reason == "TRUST_DISABLED":
+                if config_snapshot.get("collect_authority_request") is False:
+                    return "trust_disabled_capture_not_requested"
+                return "trust_disabled_no_capture_branch"
+            if short_circuit_reason:
+                return str(short_circuit_reason).strip().lower()
+            return "capture_disabled"
+        if selected_branch == "shadow":
+            return "standard_authority_decide_path"
+        return "unknown"
+
+    def _emit_neocortex_authority_seam_decision(
+        self,
+        *,
+        bridge: Any,
+        selected_branch: str,
+        short_circuit_reason: str | None,
+        request: ControlDecisionRequest | None,
+        symbol: str,
+        rid: str,
+        strategy_id: str,
+        request_written: bool | None,
+        request_write_error: str | None,
+        response_written: bool | None,
+        response_write_error: str | None,
+        returned_action: str | None,
+        authority_applied: bool | None,
+        no_effect: bool | None,
+        apply_result: str | None,
+        model_action: str | None,
+        fallback_reason: str | None,
+        decision_id: str | None = None,
+        ts_ms: int | None = None,
+    ) -> None:
+        config_snapshot = self._authority_seam_config_snapshot(bridge)
+        payload = {
+            "schema_version": "1.0.0",
+            "ts_ms": int(ts_ms if ts_ms is not None else self._clock.now_ms()),
+            "rid": str(rid) if rid else None,
+            "decision_id": decision_id or (request.decision_id if request is not None else None),
+            "symbol": str(symbol) if symbol else None,
+            "strategy_id": str(strategy_id) if strategy_id else None,
+            "config_snapshot": config_snapshot,
+            "branch_selection": {
+                "selected_branch": selected_branch,
+                "selection_reason": self._authority_seam_selection_reason(
+                    selected_branch=selected_branch,
+                    config_snapshot=config_snapshot,
+                    short_circuit_reason=short_circuit_reason,
+                ),
+                "trust_disabled": not bool(config_snapshot.get("trust_enabled", False)),
+                "journal_only_enabled": bool(
+                    getattr(bridge, "journal_only_capture_enabled", False)
+                ),
+                "shadow_counterfactual_enabled": bool(
+                    getattr(bridge, "shadow_counterfactual_capture_enabled", False)
+                ),
+            },
+            "request_response_persistence": {
+                "authority_request_written": request_written,
+                "authority_response_written": response_written,
+                "request_write_error": request_write_error,
+                "response_write_error": response_write_error,
+            },
+            "no_effect_safety": {
+                "returned_action": returned_action,
+                "authority_applied": authority_applied,
+                "no_effect": no_effect,
+            },
+            "result": {
+                "apply_result": apply_result,
+                "model_action": model_action,
+                "fallback_reason": fallback_reason,
+            },
+        }
+        try:
+            self._dm.fsm.emit(
+                "EVT:NEOCORTEX_AUTHORITY_SEAM_DECISION",
+                payload=payload,
+                why="neocortex_authority_seam_decision",
+            )
+        except Exception as exc:
+            record_failure_outcome(
+                FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+                FailureReasonCode.HANDLER_FAILURE,
+                source="decision_making.gateway.strategy_gateway._emit_neocortex_authority_seam_decision",
+                location="strategy_gateway.authority_seam_decision",
+                detail=type(exc).__name__,
+                message="Authority seam decision emit degraded",
+            )
+            self.logger.warning(
+                "Authority seam decision emit degraded decision_id=%s rid=%s",
+                payload.get("decision_id"),
+                payload.get("rid"),
+                exc_info=exc,
+            )
 
     def _emit_neocortex_veto(
         self,
@@ -605,7 +790,7 @@ class StrategyGateway:
                 )
                 request_row = request.model_dump(mode="json")
                 request_row["capture_mode"] = "shadow_counterfactual"
-                self._append_authority_journal_row(
+                request_written, request_write_error = self._append_authority_journal_row(
                     "authority_request_journal_v1.jsonl",
                     request_row,
                 )
@@ -642,6 +827,8 @@ class StrategyGateway:
                     authority_context["overlay_patch"] = dict(
                         response.overlay_patch)
 
+                response_written = False
+                response_write_error = None
                 if bool(getattr(bridge, "shadow_counterfactual_response_journal_enabled", False)):
                     response_row = response.model_dump(mode="json")
                     response_row["apply_result"] = apply_result.value
@@ -654,10 +841,34 @@ class StrategyGateway:
                     if supports_counterfactual_join:
                         response_row["returned_action"] = ControlDecisionAction.ALLOW.value
                         response_row["counterfactual_evaluation"] = True
-                    self._append_authority_journal_row(
+                    response_written, response_write_error = self._append_authority_journal_row(
                         "authority_response_journal_v1.jsonl",
                         response_row,
                     )
+                self._emit_neocortex_authority_seam_decision(
+                    bridge=bridge,
+                    selected_branch="shadow_counterfactual",
+                    short_circuit_reason=short_circuit_reason,
+                    request=request,
+                    symbol=str(symbol),
+                    rid=str(rid),
+                    strategy_id=str(strategy_id),
+                    request_written=request_written,
+                    request_write_error=request_write_error,
+                    response_written=response_written,
+                    response_write_error=response_write_error,
+                    returned_action=ControlDecisionAction.ALLOW.value,
+                    authority_applied=False,
+                    no_effect=True,
+                    apply_result=apply_result.value,
+                    model_action=response.action.value.upper(),
+                    fallback_reason=(
+                        response.reason_code
+                        if response.action == ControlDecisionAction.FALLBACK
+                        else None
+                    ),
+                    ts_ms=int(response.returned_at_ms),
+                )
                 return authority_context, False
 
             if journal_only_capture_enabled and callable(journal_only_capture):
@@ -692,7 +903,7 @@ class StrategyGateway:
                 )
                 request_row = request.model_dump(mode="json")
                 request_row["capture_mode"] = "journal_only"
-                self._append_authority_journal_row(
+                request_written, request_write_error = self._append_authority_journal_row(
                     "authority_request_journal_v1.jsonl",
                     request_row,
                 )
@@ -722,6 +933,8 @@ class StrategyGateway:
                     authority_context["overlay_patch"] = dict(
                         response.overlay_patch)
 
+                response_written = False
+                response_write_error = None
                 if bool(getattr(bridge, "journal_only_response_journal_enabled", False)):
                     response_row = response.model_dump(mode="json")
                     response_row["apply_result"] = apply_result.value
@@ -730,16 +943,60 @@ class StrategyGateway:
                     response_row["capture_mode"] = "journal_only"
                     response_row["authority_applied"] = False
                     response_row["no_effect"] = True
-                    self._append_authority_journal_row(
+                    response_written, response_write_error = self._append_authority_journal_row(
                         "authority_response_journal_v1.jsonl",
                         response_row,
                     )
+                self._emit_neocortex_authority_seam_decision(
+                    bridge=bridge,
+                    selected_branch="journal_only",
+                    short_circuit_reason=short_circuit_reason,
+                    request=request,
+                    symbol=str(symbol),
+                    rid=str(rid),
+                    strategy_id=str(strategy_id),
+                    request_written=request_written,
+                    request_write_error=request_write_error,
+                    response_written=response_written,
+                    response_write_error=response_write_error,
+                    returned_action=ControlDecisionAction.ALLOW.value,
+                    authority_applied=False,
+                    no_effect=True,
+                    apply_result=apply_result.value,
+                    model_action=response.action.value.upper(),
+                    fallback_reason=(
+                        response.reason_code
+                        if response.action == ControlDecisionAction.FALLBACK
+                        else None
+                    ),
+                    ts_ms=int(response.returned_at_ms),
+                )
                 return authority_context, False
 
             inc_neocortex_authority_request(
                 mode=authority_mode.value,
                 symbol=str(symbol),
                 apply_result=ControlDecisionApplyResult.TRUST_DISABLED_FASTPATH.value,
+            )
+            self._emit_neocortex_authority_seam_decision(
+                bridge=bridge,
+                selected_branch="disabled",
+                short_circuit_reason=short_circuit_reason,
+                request=None,
+                symbol=str(symbol),
+                rid=str(rid),
+                strategy_id=str(strategy_id),
+                request_written=False,
+                request_write_error=None,
+                response_written=False,
+                response_write_error=None,
+                returned_action=None,
+                authority_applied=None,
+                no_effect=None,
+                apply_result=ControlDecisionApplyResult.TRUST_DISABLED_FASTPATH.value,
+                model_action=ControlDecisionAction.FALLBACK.value,
+                fallback_reason="TRUST_DISABLED",
+                ts_ms=self._clock.now_ms(),
             )
             return ({
                 "decision_id": None,
@@ -781,7 +1038,7 @@ class StrategyGateway:
                 observation.candidate_intent_summary),
             idempotent_key=decision_id,
         )
-        self._append_authority_journal_row(
+        request_written, request_write_error = self._append_authority_journal_row(
             "authority_request_journal_v1.jsonl",
             request.model_dump(mode="json"),
         )
@@ -826,9 +1083,47 @@ class StrategyGateway:
         response_row["apply_result"] = apply_result.value
         response_row["authority_mode"] = request.authority_mode.value
         response_row["expires_at_ms"] = int(request.expires_at_ms)
-        self._append_authority_journal_row(
+        response_written, response_write_error = self._append_authority_journal_row(
             "authority_response_journal_v1.jsonl",
             response_row,
+        )
+
+        selected_branch = (
+            "shadow"
+            if authority_mode == AuthorityMode.SHADOW
+            else "unknown"
+        )
+        self._emit_neocortex_authority_seam_decision(
+            bridge=bridge,
+            selected_branch=selected_branch,
+            short_circuit_reason=short_circuit_reason,
+            request=request,
+            symbol=str(symbol),
+            rid=str(rid),
+            strategy_id=str(strategy_id),
+            request_written=request_written,
+            request_write_error=request_write_error,
+            response_written=response_written,
+            response_write_error=response_write_error,
+            returned_action=(
+                ControlDecisionAction.ALLOW.value
+                if authority_mode == AuthorityMode.SHADOW
+                else None
+            ),
+            authority_applied=(
+                False if authority_mode == AuthorityMode.SHADOW else None
+            ),
+            no_effect=(
+                True if authority_mode == AuthorityMode.SHADOW else None
+            ),
+            apply_result=apply_result.value,
+            model_action=response.action.value.upper(),
+            fallback_reason=(
+                response.reason_code
+                if response.action == ControlDecisionAction.FALLBACK
+                else None
+            ),
+            ts_ms=int(response.returned_at_ms),
         )
 
         if apply_result == ControlDecisionApplyResult.GATED_DENY:
@@ -1388,7 +1683,8 @@ class StrategyGateway:
                     return float(dec)
 
                 raw_signal_score = _obs_float(scoring.get("score"))
-                decision_score_value = _obs_float(scoring.get("decision_score"))
+                decision_score_value = _obs_float(
+                    scoring.get("decision_score"))
                 final_score_raw = _obs_float(
                     scoring.get("decision_score", scoring.get("score"))
                 )
@@ -1463,10 +1759,12 @@ class StrategyGateway:
                 upstream_score_lineage = extract_score_lineage_records(scoring)
                 strategy_lineage_records = [dict(record)
                                             for record in upstream_score_lineage]
-                upstream_score_record = find_score_lineage_record(scoring, "score")
+                upstream_score_record = find_score_lineage_record(
+                    scoring, "score")
                 upstream_decision_score_record = find_score_lineage_record(
                     scoring, "decision_score")
-                score_scale = str(upstream_score_record.get("scale")) if upstream_score_record is not None else None
+                score_scale = str(upstream_score_record.get(
+                    "scale")) if upstream_score_record is not None else None
                 score_alias_for = (
                     str(upstream_score_record.get("compatibility_alias_for"))
                     if upstream_score_record is not None and upstream_score_record.get("compatibility_alias_for") is not None
@@ -1482,7 +1780,8 @@ class StrategyGateway:
                             scale=score_scale,
                             compatibility_alias_for=score_alias_for,
                             post_objective_override=bool(
-                                upstream_score_record.get("post_objective_override")
+                                upstream_score_record.get(
+                                    "post_objective_override")
                             ) if upstream_score_record is not None else False,
                         )
                     )
@@ -1532,7 +1831,8 @@ class StrategyGateway:
                 # carries the block even when vol gates are disabled.
                 _anti_peak_obs = scoring.get("anti_peak_observability")
                 if isinstance(_anti_peak_obs, dict):
-                    strategy_trace_payload["anti_peak_observability"] = dict(_anti_peak_obs)
+                    strategy_trace_payload["anti_peak_observability"] = dict(
+                        _anti_peak_obs)
 
             # Dispatch through facade (safety gates already ran in chain)
             dm._propose_trade_intent(

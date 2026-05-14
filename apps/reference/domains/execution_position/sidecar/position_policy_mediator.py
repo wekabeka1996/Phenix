@@ -50,6 +50,13 @@ class PositionPolicyMediator:
         setattr(self._fsm, "_lifecycle_stats_ledger", ledger)
         return ledger
 
+    @staticmethod
+    def _canonical_lifecycle_id(candidate: Any) -> str:
+        value = str(candidate or "").strip()
+        if value.startswith("aurora_"):
+            return value
+        return ""
+
     def _is_entry_order_ref(self, order_index: Any, ref: Any) -> bool:
         classifier = getattr(order_index, "_is_entry_ref", None)
         if callable(classifier):
@@ -114,20 +121,63 @@ class PositionPolicyMediator:
         if not symbol:
             return ""
         fill_correlation = dict(request_payload.get("fill_correlation") or {})
-        lifecycle_id = str(
-            request_payload.get("lifecycle_id")
-            or fill_correlation.get("lifecycle_id")
-            or getattr(self._fsm, "_last_lifecycle_ikey_by_symbol", {}).get(symbol)
+        explicit_lifecycle_id = str(
+            request_payload.get("lifecycle_id") or ""
+        ).strip()
+        if explicit_lifecycle_id:
+            return explicit_lifecycle_id
+        canonical_fill_rid = self._canonical_lifecycle_id(
+            fill_correlation.get("rid")
+        )
+        if canonical_fill_rid:
+            return canonical_fill_rid
+        cached_lifecycle_id = str(
+            getattr(self._fsm, "_last_lifecycle_ikey_by_symbol", {}).get(symbol)
             or ""
         ).strip()
-        if lifecycle_id:
-            return lifecycle_id
+        if cached_lifecycle_id:
+            return cached_lifecycle_id
         if manage_flow is None:
             manage_flow = self._fsm.manage_flows.get(symbol)
         return self._recover_lifecycle_from_order_index(
             symbol=symbol,
             request_payload=request_payload,
             manage_flow=manage_flow,
+        )
+
+    def _emit_lifecycle_identity_recovery_failed(
+        self,
+        request_payload: Dict[str, Any],
+        *,
+        manage_flow: Any,
+        portfolio_state: str,
+        position_signature: str,
+    ) -> None:
+        symbol = str(request_payload.get("symbol") or "").strip().upper()
+        fill_correlation = dict(request_payload.get("fill_correlation") or {})
+        cache_lifecycle_id = str(
+            getattr(self._fsm, "_last_lifecycle_ikey_by_symbol",
+                    {}).get(symbol) or ""
+        ).strip()
+        self._emit_position_policy_close_request_state(
+            request_payload,
+            request_state="identity_recovery_failed",
+            why="position_policy_sidecar:lifecycle_identity_recovery_failed",
+            extra={
+                "recovery_reason": "no_canonical_lifecycle_candidate",
+                "portfolio_state": portfolio_state,
+                "portfolio_position_signature": position_signature,
+                "lifecycle_recovery_candidates": {
+                    "explicit_lifecycle_id": str(request_payload.get("lifecycle_id") or "").strip() or None,
+                    "fill_correlation_lifecycle_id": str(fill_correlation.get("lifecycle_id") or "").strip() or None,
+                    "fill_correlation_rid": str(fill_correlation.get("rid") or "").strip() or None,
+                    "cached_lifecycle_id": cache_lifecycle_id or None,
+                    "fill_correlation_client_order_id": str(fill_correlation.get("client_order_id") or "").strip() or None,
+                    "fill_correlation_order_id": str(fill_correlation.get("order_id") or "").strip() or None,
+                    "manage_flow_entry_client_order_id": str(getattr(manage_flow, "entry_client_order_id", "") or "").strip() or None,
+                    "manage_flow_entry_order_id": str(getattr(manage_flow, "entry_order_id", "") or "").strip() or None,
+                },
+            },
         )
 
     def _reseed_close_request_lifecycle_context(
@@ -283,6 +333,13 @@ class PositionPolicyMediator:
             request_payload,
             lifecycle_id=lifecycle_id,
         )
+        if not lifecycle_id:
+            self._emit_lifecycle_identity_recovery_failed(
+                request_payload,
+                manage_flow=manage_flow,
+                portfolio_state=portfolio_state,
+                position_signature=position_signature,
+            )
 
         policy_context = self._position_policy_context_from_request_payload(
             request_payload

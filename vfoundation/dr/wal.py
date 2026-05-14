@@ -5,6 +5,7 @@ import os
 import time
 import hashlib
 import pathlib
+import socket
 import sys
 import threading
 from dataclasses import dataclass
@@ -34,6 +35,7 @@ _GLOBAL_WAL_LOCK = threading.Lock()
 
 WAL_DIR = config.wal_dir
 LOG = logging.getLogger("vfoundation.dr.wal")
+WAL_WRITER_VERSION = "P11_B4_ATTRIBUTION_V1"
 
 # Global state for performance optimization
 _last_hash: Optional[str] = None
@@ -387,6 +389,48 @@ def _wal_file_for_today() -> pathlib.Path:
     return WAL_DIR / f"{d}.jsonl"
 
 
+def _writer_process_name() -> str:
+    if sys.argv:
+        argv0 = str(sys.argv[0]).strip()
+        if argv0:
+            name = pathlib.Path(argv0).name.strip()
+            if name:
+                return name
+    try:
+        import multiprocessing
+
+        name = str(multiprocessing.current_process().name).strip()
+        if name:
+            return name
+    except Exception:
+        pass
+    return "python"
+
+
+def _writer_lock_mode() -> str:
+    if LOCK_AVAILABLE:
+        if sys.platform == "win32" and msvcrt is not None:
+            return "thread+process(msvcrt)"
+        if fcntl:
+            return "thread+process(fcntl)"
+    return "thread_only(no_file_lock)"
+
+
+def _build_writer_metadata() -> Dict[str, Any]:
+    try:
+        writer_host = socket.gethostname()
+    except Exception:
+        writer_host = "unknown"
+
+    return {
+        "_writer_pid": os.getpid(),
+        "_writer_process_name": _writer_process_name(),
+        "_writer_host": str(writer_host or "unknown"),
+        "_wal_writer_version": WAL_WRITER_VERSION,
+        "_writer_lock_mode": _writer_lock_mode(),
+    }
+
+
 def append(record: Dict[str, Any], lock_timeout_s: Optional[float] = None) -> Optional[str]:
     """
     Atomically append a record to WAL with thread + process-level locking.
@@ -410,7 +454,8 @@ def append(record: Dict[str, Any], lock_timeout_s: Optional[float] = None) -> Op
             with path.open("a+", encoding="utf-8") as f:
                 prev_hash = _read_tail_hash_locked(f)
 
-                payload = {**record, "_prev": prev_hash}
+                payload = {**record, **_build_writer_metadata(),
+                           "_prev": prev_hash}
                 record_hash = _calculate_record_hash(payload)
                 payload["_hash"] = record_hash
 
@@ -470,7 +515,8 @@ def append_cas(
                 if actual_prev_hash != expected_prev_hash:
                     return (False, None)
 
-                payload = {**record, "_prev": actual_prev_hash}
+                payload = {**record, **_build_writer_metadata(),
+                           "_prev": actual_prev_hash}
                 record_hash = _calculate_record_hash(payload)
                 payload["_hash"] = record_hash
 

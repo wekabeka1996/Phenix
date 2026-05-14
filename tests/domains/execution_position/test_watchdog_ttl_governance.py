@@ -2,7 +2,7 @@
 T5A Timer Governance: OrderTimeoutWatchdog fill_ttl_ms proof tests.
 
 Verifies that:
-1. The canonical YAML value for fill_ttl_ms is 3600000 (trading.yaml only — T5A.1 SSOT).
+1. The canonical YAML value for fill_ttl_ms matches the calibrated trading.yaml SSOT.
 2. Non-default fill_ttl_ms kwargs propagate into the watchdog instance without
    being overridden by constructor defaults.
 3. Global fill_ttl_ms is used as the fill deadline when no per-order override
@@ -40,7 +40,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 TRADING_YAML = REPO_ROOT / "config" / "aurora" / "trading.yaml"
 SYSTEM_YAML = REPO_ROOT / "config" / "aurora" / "system.yaml"
 
-CANONICAL_FILL_TTL_MS = 3_600_000  # 1 hour — DO NOT CHANGE
+CANONICAL_FILL_TTL_MS = 1_800_000  # 30 minutes — calibrated T5D global backstop
 
 
 # ---------------------------------------------------------------------------
@@ -61,17 +61,17 @@ def _make_watchdog(fill_ttl_ms: int = 30_000, ack_ttl_ms: int = 8_000,
 
 
 # ---------------------------------------------------------------------------
-# Test 1 — canonical config YAML paths exist and hold 3 600 000
+# Test 1 — canonical config YAML paths exist and hold calibrated fill_ttl_ms
 # ---------------------------------------------------------------------------
 
 class TestWatchdogConfigCanonicalValue:
-    """T5A-1: Both YAML surfaces for fill_ttl_ms must equal 3600000."""
+    """T5A-1: trading.yaml holds the calibrated fill_ttl_ms and system.yaml stays absent."""
 
-    def test_trading_yaml_fill_ttl_ms_is_3600000(self):
-        """trading.execution.watchdog.fill_ttl_ms must equal 3600000.
+    def test_trading_yaml_fill_ttl_ms_matches_calibrated_canonical_value(self):
+        """trading.execution.watchdog.fill_ttl_ms must equal the calibrated canonical value.
 
         SSOT: config/aurora/trading.yaml -> trading.execution.watchdog.fill_ttl_ms
-        DO NOT change this value — calibration is tracked under T5B.
+        Further changes require a new calibration package.
         """
         raw = yaml.safe_load(TRADING_YAML.read_text(encoding="utf-8"))
         trading = raw.get("trading", {}) or {}
@@ -166,7 +166,7 @@ class TestNonDefaultFillTtlPropagates:
         )
 
     def test_constructor_default_differs_from_canonical(self):
-        """The constructor default (30000) is NOT the canonical production value (3600000).
+        """The constructor default (30000) is NOT the canonical production value.
 
         This is documented as compatibility debt: the default is a development-era
         value.  The production path always passes an explicit kwarg from config, so
@@ -181,10 +181,10 @@ class TestNonDefaultFillTtlPropagates:
 
         assert default_fill_ttl != CANONICAL_FILL_TTL_MS, (
             "Constructor default now matches production value — update this test. "
-            "If you changed the default to 3600000, also verify the FSM still passes "
+            "If you changed the default to the calibrated canonical value, also verify the FSM still passes "
             "the kwarg explicitly so there is no regression on fail-closed loading."
         )
-        # Document: constructor default is 30000; production value is 3600000.
+        # Document: constructor default is 30000; production value comes from trading.yaml SSOT.
         assert default_fill_ttl == 30_000, (
             f"Expected constructor default to be 30000, got {default_fill_ttl}. "
             "Update this test if the default has intentionally changed."
@@ -287,7 +287,8 @@ class TestPerOrderFillOverrideWins:
         ) as mock_clock:
             mock_clock.return_value.now_ms.return_value = NOW
 
-            wd.track_order_placed("o1", "c1", "SOLUSDT", fill_ttl_override_ms=12_345)
+            wd.track_order_placed("o1", "c1", "SOLUSDT",
+                                  fill_ttl_override_ms=12_345)
             wd.on_order_ack("o1")
 
         dl = wd.acked_orders["o1"]
@@ -313,7 +314,8 @@ class TestPerOrderFillOverrideWins:
         ) as mock_clock:
             mock_clock.return_value.now_ms.return_value = NOW
 
-            wd.track_order_placed("o1", "c1", "XRPUSDT", fill_ttl_override_ms=0)
+            wd.track_order_placed("o1", "c1", "XRPUSDT",
+                                  fill_ttl_override_ms=0)
             wd.on_order_ack("o1")
 
         dl = wd.acked_orders["o1"]
@@ -361,11 +363,13 @@ class TestNoSilentFallbackOnMissingConfig:
         from apps.reference.config_models import WatchdogConfig
 
         with pytest.raises(ValidationError) as exc_info:
-            WatchdogConfig(ack_ttl_ms=8000, check_interval_ms=1000, rps_limit=10)
+            WatchdogConfig(ack_ttl_ms=8000,
+                           check_interval_ms=1000, rps_limit=10)
             # fill_ttl_ms deliberately missing
 
         errors = exc_info.value.errors()
-        missing_fields = [e["loc"][0] for e in errors if e["type"] == "missing"]
+        missing_fields = [e["loc"][0]
+                          for e in errors if e["type"] == "missing"]
         assert "fill_ttl_ms" in missing_fields, (
             f"Expected ValidationError on missing fill_ttl_ms. "
             f"Got errors: {errors}. "
@@ -375,7 +379,7 @@ class TestNoSilentFallbackOnMissingConfig:
     def test_watchdog_config_pydantic_no_fill_ttl_default(self):
         """WatchdogConfig.fill_ttl_ms must have no Pydantic-level default.
 
-        Field(...) enforces this. If a default were added (even 3600000), this
+        Field(...) enforces this. If a default were added (even the calibrated canonical value), this
         test would fail — alerting that silent fallback has been introduced.
         """
         from pydantic.fields import PydanticUndefined
@@ -396,7 +400,8 @@ class TestNoSilentFallbackOnMissingConfig:
         production when fill_ttl_ms is absent from config.
         """
         # Replicate the logic from fsm.py:588-599
-        watchdog_config = {"ack_ttl_ms": 8000, "check_interval_ms": 1000, "rps_limit": 10}
+        watchdog_config = {"ack_ttl_ms": 8000,
+                           "check_interval_ms": 1000, "rps_limit": 10}
         # fill_ttl_ms is deliberately absent
 
         def get_watchdog_setting(key: str, default: Any):
@@ -423,7 +428,7 @@ class TestNoSilentFallbackOnMissingConfig:
         with pytest.raises(ValidationError):
             WatchdogConfig(
                 ack_ttl_ms=8000,
-                fill_ttl_ms=3_600_000,
+                fill_ttl_ms=CANONICAL_FILL_TTL_MS,
                 check_interval_ms=1000,
                 rps_limit=10,
                 unknown_future_field=99,  # must be rejected

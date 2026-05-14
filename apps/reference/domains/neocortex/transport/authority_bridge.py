@@ -175,6 +175,51 @@ class NeocortexAuthorityBridge:
             and bool(getattr(capture_cfg, "emit_shadow_decision_logged", False))
         )
 
+    def authority_seam_config_snapshot(self) -> dict[str, object]:
+        if self._config is None:
+            return {
+                "trust_enabled": False,
+                "authority_mode": AuthorityMode.SHADOW.value,
+                "evidence_capture_mode": "disabled",
+                "collect_authority_request": None,
+                "collect_authority_response": None,
+                "emit_shadow_decision_logged": None,
+            }
+
+        capture_cfg = getattr(self._config, "evidence_capture", None)
+        authority_cfg = getattr(self._config, "authority", None)
+        evidence_capture_mode = "disabled"
+        if capture_cfg is not None:
+            evidence_capture_mode = str(
+                getattr(capture_cfg, "mode", "disabled")
+            ).strip().lower() or "disabled"
+        authority_mode = self.authority_mode.value
+        if authority_cfg is not None:
+            authority_mode = str(
+                getattr(authority_cfg, "mode", authority_mode)
+            ).strip().lower() or authority_mode
+
+        return {
+            "trust_enabled": bool(getattr(self._config, "trust_enabled", False)),
+            "authority_mode": authority_mode,
+            "evidence_capture_mode": evidence_capture_mode,
+            "collect_authority_request": (
+                bool(getattr(capture_cfg, "collect_authority_request", False))
+                if capture_cfg is not None
+                else None
+            ),
+            "collect_authority_response": (
+                bool(getattr(capture_cfg, "collect_authority_response", False))
+                if capture_cfg is not None
+                else None
+            ),
+            "emit_shadow_decision_logged": (
+                bool(getattr(capture_cfg, "emit_shadow_decision_logged", False))
+                if capture_cfg is not None
+                else None
+            ),
+        }
+
     @property
     def deadline_ms(self) -> int:
         if self._config is None:

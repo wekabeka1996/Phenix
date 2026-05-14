@@ -1,0 +1,205 @@
+{
+  "generated_at_utc": "2026-05-13T23:14:46.414925+00:00",
+  "accepted_closed_summary": {
+    "trade_count": 12,
+    "exact_roundtrip_count": 11,
+    "gross_pnl": 171.06727,
+    "net_pnl": 139.18404117,
+    "fees": 31.88322883,
+    "fees_over_gross_profit_abs": 16.089237,
+    "fees_over_abs_net_pnl": 22.907245,
+    "win_count": 9,
+    "loss_count": 3,
+    "win_rate": 75.0,
+    "average_win": 19.6830278011,
+    "average_loss": -12.6544030133,
+    "profit_factor": 4.6662875634,
+    "max_winner": 48.93256879,
+    "max_loser": -27.86088972,
+    "median_pnl": 10.31507492,
+    "mean_pnl": 11.5986700975
+  },
+  "reject_summary": {
+    "reject_rows": 153,
+    "counterfactual_outcome": "counterfactual_unavailable",
+    "median_required_gross_tp_bps_floor": 26.0,
+    "median_gross_tp_bps": 79.375,
+    "median_min_rr": 1.2
+  },
+  "dimension_comparison": [
+    {
+      "dimension": "symbol:BNBUSDT",
+      "accepted_closed": {
+        "count": 5,
+        "share_pct": 41.666667
+      },
+      "nrr062_rejected": {
+        "count": 0,
+        "share_pct": 0.0
+      },
+      "notes": ""
+    },
+    {
+      "dimension": "symbol:BTCUSDT",
+      "accepted_closed": {
+        "count": 4,
+        "share_pct": 33.333333
+      },
+      "nrr062_rejected": {
+        "count": 47,
+        "share_pct": 30.718954
+      },
+      "notes": ""
+    },
+    {
+      "dimension": "symbol:ETHUSDT",
+      "accepted_closed": {
+        "count": 1,
+        "share_pct": 8.333333
+      },
+      "nrr062_rejected": {
+        "count": 76,
+        "share_pct": 49.673203
+      },
+      "notes": ""
+    },
+    {
+      "dimension": "symbol:XRPUSDT",
+      "accepted_closed": {
+        "count": 2,
+        "share_pct": 16.666667
+      },
+      "nrr062_rejected": {
+        "count": 30,
+        "share_pct": 19.607843
+      },
+      "notes": ""
+    },
+    {
+      "dimension": "side:LONG",
+      "accepted_closed": {
+        "count": 4,
+        "share_pct": 33.333333
+      },
+      "nrr062_rejected": {
+        "count": 39,
+        "share_pct": 25.490196
+      },
+      "notes": ""
+    },
+    {
+      "dimension": "side:SHORT",
+      "accepted_closed": {
+        "count": 8,
+        "share_pct": 66.666667
+      },
+      "nrr062_rejected": {
+        "count": 114,
+        "share_pct": 74.509804
+      },
+      "notes": ""
+    },
+    {
+      "dimension": "strategy_id:aurora",
+      "accepted_closed": {
+        "count": 12,
+        "share_pct": 100.0
+      },
+      "nrr062_rejected": {
+        "count": 153,
+        "share_pct": 100.0
+      },
+      "notes": ""
+    },
+    {
+      "dimension": "regime:LOW_VOLATILITY",
+      "accepted_closed": {
+        "count": 0,
+        "share_pct": 0.0
+      },
+      "nrr062_rejected": {
+        "count": 153,
+        "share_pct": 100.0
+      },
+      "notes": "no canonical accepted LOW_VOL closes in current realized cohort"
+    },
+    {
+      "dimension": "regime:MEAN_REVERSION",
+      "accepted_closed": {
+        "count": 6,
+        "share_pct": 50.0
+      },
+      "nrr062_rejected": {
+        "count": 0,
+        "share_pct": 0.0
+      },
+      "notes": ""
+    },
+    {
+      "dimension": "regime:TREND_DOWN",
+      "accepted_closed": {
+        "count": 4,
+        "share_pct": 33.333333
+      },
+      "nrr062_rejected": {
+        "count": 0,
+        "share_pct": 0.0
+      },
+      "notes": ""
+    },
+    {
+      "dimension": "regime:TREND_UP",
+      "accepted_closed": {
+        "count": 2,
+        "share_pct": 16.666667
+      },
+      "nrr062_rejected": {
+        "count": 0,
+        "share_pct": 0.0
+      },
+      "notes": ""
+    }
+  ],
+  "accepted_close_reason_distribution": [
+    {
+      "dimension": "accepted_close_reason:CLOSE",
+      "accepted_closed": {
+        "count": 2,
+        "share_pct": 16.666667
+      },
+      "nrr062_rejected": {
+        "count": 153,
+        "share_pct": 100.0
+      },
+      "notes": "counterfactual_unavailable for rejected rows; accepted outcome distribution shown for context only"
+    },
+    {
+      "dimension": "accepted_close_reason:SL",
+      "accepted_closed": {
+        "count": 1,
+        "share_pct": 8.333333
+      },
+      "nrr062_rejected": {
+        "count": 153,
+        "share_pct": 100.0
+      },
+      "notes": "counterfactual_unavailable for rejected rows; accepted outcome distribution shown for context only"
+    },
+    {
+      "dimension": "accepted_close_reason:TP",
+      "accepted_closed": {
+        "count": 9,
+        "share_pct": 75.0
+      },
+      "nrr062_rejected": {
+        "count": 153,
+        "share_pct": 100.0
+      },
+      "notes": "counterfactual_unavailable for rejected rows; accepted outcome distribution shown for context only"
+    }
+  ],
+  "low_vol_accepted_closes": {
+    "count": 0,
+    "summary": null
+  }
+}

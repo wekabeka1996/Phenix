@@ -329,6 +329,13 @@ registry:
   since: '2026-05-07'
   note: canonical protocol/schema surface for embedded and standalone decision evidence; legacy SHADOW listener delivery remains compatibility-only
 - op: EVT
+  verb: NEOCORTEX_AUTHORITY_SEAM_DECISION
+  owner: neocortex
+  status: experimental
+  schema: apps/reference/domains/neocortex/schemas/neocortex_authority_seam_decision_v1.json
+  since: '2026-05-13'
+  note: observability-only seam branch selection and request-response persistence proof emitted from embedded StrategyGateway authority seam
+- op: EVT
   verb: NEOCORTEX_SHADOW_INTENT
   owner: neocortex
   status: experimental

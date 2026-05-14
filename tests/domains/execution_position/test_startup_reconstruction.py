@@ -16,7 +16,11 @@ def fsm_stub():
     fsm.order_guardian = MagicMock()
     fsm._runtime_order_index.return_value = MagicMock()
     fsm.manage_flows = {}
+    fsm._symbol_brackets = {}
     fsm._startup_truth_orchestrator = MagicMock()
+    fsm._symbol_bracket_truth_source_for.return_value = "UNKNOWN"
+    fsm._manage_truth_source_for.return_value = "RUNTIME_LOCAL"
+    fsm._manage_state_value.return_value = "FLAT"
 
     # Track observational calls
     fsm._calls = []
@@ -123,6 +127,7 @@ def test_reconstruct_sl_tp_correctly_for_resolved_symbol(fsm_stub):
         if exchange_order_id == "111":
             return {
                 "bracket_role": "SL",
+                "parent_entry_order_id": "entry-btc-1",
                 "tracked_bracket_order_id": "111",
                 "tracked_client_order_id": "c1",
                 "order_type": "STOP_MARKET"
@@ -130,6 +135,7 @@ def test_reconstruct_sl_tp_correctly_for_resolved_symbol(fsm_stub):
         elif exchange_order_id == "222":
             return {
                 "bracket_role": "TP",
+                "parent_entry_order_id": "entry-btc-1",
                 "tracked_bracket_order_id": "222",
                 "tracked_client_order_id": "c2",
                 "order_type": "LIMIT"
@@ -199,6 +205,7 @@ def test_reconstruct_marks_unresolved_on_duplicate_roles(fsm_stub):
     def mock_resolve(*, client_order_id, exchange_order_id, symbol):
         return {
             "bracket_role": "SL",
+            "parent_entry_order_id": "entry-btc-1",
             "tracked_bracket_order_id": exchange_order_id,
             "tracked_client_order_id": f"c{exchange_order_id}",
         }
@@ -218,6 +225,145 @@ def test_reconstruct_marks_unresolved_on_duplicate_roles(fsm_stub):
     # Verify reason matches code string f"duplicate_{order_kind.lower()}:{existing_order_id},{tracked_order_id}"
     reasons = records[0][1]["unresolved_reasons"]
     assert any("duplicate_sl:111,222" in r for r in reasons)
+
+
+def test_reconstruct_rehydrates_order_index_from_restore_state_when_open_orders_empty(fsm_stub):
+    """reconstruct() rehydrates OrderIndex from already-restored runtime state."""
+    target = StartupReconstruction(fsm_stub)
+
+    fsm_stub._symbol_brackets = {
+        "BTC": {"sl_order_id": "111", "tp_order_id": "222"}
+    }
+    fsm_stub._symbol_bracket_truth_source_for.return_value = "RESTORE_ARTIFACT"
+    fsm_stub._manage_truth_source_for.return_value = "RESTORE_ARTIFACT"
+
+    manage_flow = MagicMock()
+    manage_flow.state = "BRACKETS_PENDING"
+    manage_flow.entry_order_id = "entry-btc-1"
+    manage_flow.entry_client_order_id = "aurora_BTCUSDT_1"
+    manage_flow.sl_algo_client_id = "SL-BTC-1"
+    manage_flow.tp_algo_client_id = "TP-BTC-1"
+    manage_flow.has_active_lifecycle.return_value = True
+    fsm_stub.manage_flows = {"BTC": manage_flow}
+    fsm_stub._manage_state_value.return_value = "BRACKETS_PENDING"
+
+    order_index = fsm_stub._runtime_order_index.return_value
+    order_index.get.return_value = None
+
+    result = target.reconstruct([])
+
+    assert order_index.register_bracket_child.call_count == 2
+    called_kinds = {
+        call.kwargs["order_kind"] for call in order_index.register_bracket_child.call_args_list
+    }
+    called_rids = {
+        call.kwargs["rid"] for call in order_index.register_bracket_child.call_args_list
+    }
+    assert called_kinds == {"SL", "TP"}
+    assert called_rids == {"aurora_BTCUSDT_1"}
+
+    sets = [c for c in fsm_stub._calls if c[0] == "set_snapshot"]
+    assert sets == []
+
+    records = [c for c in fsm_stub._calls if c[0] == "append_restart_truth"]
+    assert len(records) == 1
+    assert records[0][1]["event_type"] == "EXECUTION_RESTART_RUNTIME_TRUTH_RECONSTRUCTED"
+    assert records[0][1]["order_index_registrations"] == 2
+
+    assert result["summary"] == {
+        "symbols_reconstructed": 1,
+        "order_index_registrations": 2,
+        "unresolved_symbols": 0,
+    }
+    assert result["records"] == [
+        {
+            "symbol": "BTC",
+            "status": "reindexed_from_restore_state",
+            "sl_order_id": "111",
+            "tp_order_id": "222",
+            "bracket_truth_source": "RESTORE_ARTIFACT",
+            "manage_truth_source": "RESTORE_ARTIFACT",
+            "order_index_registrations": 2,
+            "unresolved_reasons": [],
+        }
+    ]
+
+
+def test_reconstruct_restore_state_fails_closed_without_parent_identity(fsm_stub):
+    """reconstruct() preserves restored snapshot but skips OrderIndex registration without parent identity."""
+    target = StartupReconstruction(fsm_stub)
+
+    fsm_stub._symbol_brackets = {
+        "BTC": {"sl_order_id": "111", "tp_order_id": "222"}
+    }
+    manage_flow = MagicMock()
+    manage_flow.state = "BRACKETS_PENDING"
+    manage_flow.entry_order_id = None
+    manage_flow.entry_client_order_id = None
+    manage_flow.sl_algo_client_id = "SL-BTC-1"
+    manage_flow.tp_algo_client_id = "TP-BTC-1"
+    manage_flow.has_active_lifecycle.return_value = True
+    fsm_stub.manage_flows = {"BTC": manage_flow}
+    fsm_stub._manage_state_value.return_value = "BRACKETS_PENDING"
+
+    order_index = fsm_stub._runtime_order_index.return_value
+    order_index.get.return_value = None
+
+    result = target.reconstruct([])
+
+    order_index.register_bracket_child.assert_not_called()
+    clears = [c for c in fsm_stub._calls if c[0] == "clear"]
+    assert clears == []
+
+    records = [c for c in fsm_stub._calls if c[0] == "append_restart_truth"]
+    assert len(records) == 1
+    assert records[0][1]["event_type"] == "EXECUTION_RESTART_RUNTIME_TRUTH_UNRESOLVED"
+    reasons = records[0][1]["unresolved_reasons"]
+    assert "missing_parent_identity:restore_sl:111" in reasons
+    assert "missing_parent_identity:restore_tp:222" in reasons
+
+    assert result["summary"] == {
+        "symbols_reconstructed": 0,
+        "order_index_registrations": 0,
+        "unresolved_symbols": 1,
+    }
+
+
+def test_reconstruct_restore_state_avoids_duplicate_registration_when_mapping_exists(fsm_stub):
+    """reconstruct() does not re-register bracket children already present in OrderIndex."""
+    target = StartupReconstruction(fsm_stub)
+
+    fsm_stub._symbol_brackets = {
+        "BTC": {"sl_order_id": "111", "tp_order_id": "222"}
+    }
+    fsm_stub._symbol_bracket_truth_source_for.return_value = "RESTORE_ARTIFACT"
+    manage_flow = MagicMock()
+    manage_flow.state = "BRACKETS_PENDING"
+    manage_flow.entry_order_id = "entry-btc-1"
+    manage_flow.entry_client_order_id = "aurora_BTCUSDT_1"
+    manage_flow.sl_algo_client_id = "SL-BTC-1"
+    manage_flow.tp_algo_client_id = "TP-BTC-1"
+    manage_flow.has_active_lifecycle.return_value = True
+    fsm_stub.manage_flows = {"BTC": manage_flow}
+    fsm_stub._manage_state_value.return_value = "BRACKETS_PENDING"
+
+    order_index = fsm_stub._runtime_order_index.return_value
+
+    def _get(*, exchangeOrderId=None, clientOrderId=None, **_kwargs):
+        if exchangeOrderId in {"111", "222"} or clientOrderId in {"SL-BTC-1", "TP-BTC-1"}:
+            return object()
+        return None
+
+    order_index.get.side_effect = _get
+
+    result = target.reconstruct([])
+
+    order_index.register_bracket_child.assert_not_called()
+    assert result["summary"] == {
+        "symbols_reconstructed": 1,
+        "order_index_registrations": 0,
+        "unresolved_symbols": 0,
+    }
 
 
 def test_reconstruct_observability_event_emitted(fsm_stub):

@@ -151,6 +151,35 @@ def _representative_t6_decision_trace_payload(
     }
 
 
+def _representative_t5c_anti_peak_observability() -> dict:
+    return {
+        "schema_version": "1.0.0",
+        "strategy_id": "aurora",
+        "symbol": "BTCUSDT",
+        "side": "SELL",
+        "tf_sec": 300,
+        "motion": {
+            "enabled": False,
+            "window_sec": 300,
+            "window_sec_value_source": "disabled_config_snapshot",
+            "motion_norm_sigma": None,
+            "anti_fomo_sigma": 10.0,
+            "anti_flat_sigma": 0.3,
+            "anti_fomo_sigma_value_source": "disabled_config_snapshot",
+            "anti_flat_sigma_value_source": "disabled_config_snapshot",
+            "anti_fomo_triggered": None,
+            "anti_flat_triggered": None,
+            "motion_available": False,
+            "missing_reason": "gate_disabled",
+        },
+        "score_path": {
+            "final_score": -0.00861416,
+            "signal_threshold": 0.00054566696,
+            "would_emit_signal_after_shields": True,
+        },
+    }
+
+
 @pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
 def test_strategy_signal_schema_accepts_tpsl_owner_ctx_additively() -> None:
     schema = _read_json(STRATEGY_SIGNAL_SCHEMA_PATH)
@@ -444,6 +473,17 @@ def test_decision_trace_schema_accepts_representative_t6_allow_payload_shape() -
 
 
 @pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_decision_trace_schema_accepts_representative_t6b_anti_peak_payload_shape() -> None:
+    schema = _read_json(DECISION_TRACE_SCHEMA_PATH)
+    payload = _representative_t6_decision_trace_payload(
+        accepted=True,
+        missing_signal_score=None,
+    )
+    payload["anti_peak_observability"] = _representative_t5c_anti_peak_observability()
+    validate(instance=payload, schema=schema)
+
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
 def test_decision_trace_schema_accepts_representative_t6_deny_payload_shape() -> None:
     schema = _read_json(DECISION_TRACE_SCHEMA_PATH)
     validate(
@@ -509,5 +549,24 @@ def test_decision_trace_schema_still_rejects_unknown_field() -> None:
         "why": "strictness check",
         "unexpected_field": "must_fail",
     }
+    with pytest.raises(ValidationError):
+        validate(instance=payload, schema=schema)
+
+
+@pytest.mark.skipif(not HAS_JSONSCHEMA, reason="jsonschema not installed")
+def test_decision_trace_schema_rejects_t5c_motion_fields_at_top_level() -> None:
+    schema = _read_json(DECISION_TRACE_SCHEMA_PATH)
+    payload = _representative_t6_decision_trace_payload(
+        accepted=True,
+        missing_signal_score=None,
+    )
+    payload.update(
+        {
+            "enabled": False,
+            "window_sec_value_source": "disabled_config_snapshot",
+            "anti_fomo_sigma_value_source": "disabled_config_snapshot",
+            "anti_flat_sigma_value_source": "disabled_config_snapshot",
+        }
+    )
     with pytest.raises(ValidationError):
         validate(instance=payload, schema=schema)

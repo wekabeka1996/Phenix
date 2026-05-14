@@ -452,7 +452,8 @@ class ExecutionPositionStartupTruthSymbolRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     symbol: str = Field(min_length=1)
-    status: Literal["reconstructed", "unresolved"]
+    status: Literal["reconstructed",
+                    "reindexed_from_restore_state", "unresolved"]
     sl_order_id: Optional[str] = Field(default=None, min_length=1)
     tp_order_id: Optional[str] = Field(default=None, min_length=1)
     bracket_truth_source: str = Field(

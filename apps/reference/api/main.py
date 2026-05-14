@@ -22,6 +22,96 @@ from apps.reference.domains.shadow_telemetry.trading_read_models import (
 LOG = logging.getLogger(__name__)
 
 
+def _metric_get(
+    txt: str, name: str, label_filter: str | None = None, default: float = 0.0
+) -> float:
+    import re
+
+    if not txt:
+        return default
+    if label_filter:
+        pat = rf"^{re.escape(name)}\{{[^}}]*{label_filter}[^}}]*\}}\s+([0-9eE\.\+\-]+)$"
+    else:
+        pat = rf"^{re.escape(name)}\s+([0-9eE\.\+\-]+)$"
+    for line in txt.splitlines():
+        m = re.match(pat, line)
+        if m:
+            try:
+                return float(m.group(1))
+            except Exception:
+                return default
+    return default
+
+
+def _build_statdump_payload() -> Dict[str, Any]:
+    from apps.reference.telemetry.metrics import generate_latest
+    from apps.reference.bootstrap.preflight import get_hybrid_coherence_state
+
+    txt = generate_latest().decode("utf-8", "replace")
+
+    equity = _metric_get(txt, "exposure_equity_usd")
+    pos_usd = _metric_get(txt, "exposure_positions_usd")
+    pend_usd = _metric_get(txt, "exposure_pending_usd")
+    limit_usd = _metric_get(txt, "exposure_limit_usd")
+    exp_rej = _metric_get(txt, "fsm_guard_rejects_total", 'guard="exposure"')
+    ttl_exp = _metric_get(txt, "pending_exposure_expired_total")
+    placed = _metric_get(txt, "orders_placed_total")
+    filled = _metric_get(txt, "orders_filled_total")
+
+    hybrid_state = get_hybrid_coherence_state()
+    hybrid_ok = hybrid_state["last_result"]["ok"]
+    hybrid_reasons = hybrid_state["last_result"]["reasons"]
+    risk_portfolio_source = hybrid_state["risk_portfolio_source"]
+    execution_mode = hybrid_state["execution_mode"]
+
+    panic = os.environ.get("OPS_PANIC", "false").lower() == "true"
+
+    data: Dict[str, Any] = {
+        "exposure": {
+            "equity_usd": equity,
+            "positions_usd": pos_usd,
+            "pending_usd": pend_usd,
+            "limit_usd": limit_usd,
+            "utilization_pct": ((pos_usd + pend_usd) / limit_usd * 100.0)
+            if limit_usd > 0
+            else 0.0,
+        },
+        "guards": {
+            "exposure_rejects_total": exp_rej,
+            "pending_expired_total": ttl_exp,
+        },
+        "orders": {"placed_total": placed, "filled_total": filled},
+        "ops": {"panic_killswitch": panic},
+        "hybrid": {
+            "ok": hybrid_ok,
+            "reasons": hybrid_reasons,
+            "risk_portfolio_source": risk_portfolio_source,
+            "execution_mode": execution_mode,
+        },
+    }
+
+    try:
+        from apps.reference.main import execution_position  # type: ignore
+
+        if execution_position:
+            data["execution_position"] = execution_position.get_metrics()
+            try:
+                og = getattr(execution_position, "order_guardian", None)
+                if og and hasattr(og, "_impl"):
+                    data["guardian"] = {
+                        "unified": True,
+                        "emit_tidy_event": True,
+                    }
+                else:
+                    data["guardian"] = {"note": "guardian metrics not available"}
+            except Exception:
+                data["guardian"] = {"note": "guardian metrics error"}
+    except Exception:
+        pass
+
+    return data
+
+
 class _ShadowTelemetryHttpSnapshotStore:
     source_name = "shadow_telemetry_api"
 
@@ -346,6 +436,19 @@ def _trading_read_models() -> TradingReadModelService:
     )
 
 
+def _register_statdump_route() -> None:
+    existing_paths = {getattr(route, "path", None)
+                      for route in getattr(app, "routes", [])}
+    if "/statdump" in existing_paths:
+        return
+
+    @app.get("/statdump")
+    def statdump():
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(_build_statdump_payload())
+
+
 def _register_trading_read_model_routes() -> None:
     existing_paths = {getattr(route, "path", None)
                       for route in getattr(app, "routes", [])}
@@ -417,4 +520,5 @@ def _register_trading_read_model_routes() -> None:
             raise HTTPException(status_code=503, detail=str(exc))
 
 
+_register_statdump_route()
 _register_trading_read_model_routes()

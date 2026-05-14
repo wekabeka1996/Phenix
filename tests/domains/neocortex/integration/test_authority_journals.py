@@ -46,6 +46,7 @@ class _BridgeStub:
         self,
         tmp_path: Path,
         *,
+        trust_enabled: bool = False,
         short_circuit_reason=None,
         authority_mode=AuthorityMode.SHADOW,
         responder=None,
@@ -57,7 +58,12 @@ class _BridgeStub:
         shadow_counterfactual_capture_enabled: bool = False,
         shadow_counterfactual_response_journal_enabled: bool = False,
         shadow_counterfactual_emit_shadow_decision_logged: bool = False,
+        evidence_capture_mode: str | None = None,
+        collect_authority_request: bool | None = None,
+        collect_authority_response: bool | None = None,
+        emit_shadow_decision_logged: bool | None = None,
     ):
+        self._trust_enabled = trust_enabled
         self.short_circuit_reason = short_circuit_reason
         self.authority_mode = authority_mode
         self.deadline_ms = 10
@@ -81,6 +87,10 @@ class _BridgeStub:
         self.shadow_counterfactual_emit_shadow_decision_logged = (
             shadow_counterfactual_emit_shadow_decision_logged
         )
+        self._evidence_capture_mode = evidence_capture_mode
+        self._collect_authority_request = collect_authority_request
+        self._collect_authority_response = collect_authority_response
+        self._emit_shadow_decision_logged = emit_shadow_decision_logged
         self.journal_only_calls: list[object] = []
         self.shadow_counterfactual_calls: list[object] = []
 
@@ -106,6 +116,53 @@ class _BridgeStub:
         self.shadow_counterfactual_calls.append(request)
         return self._shadow_counterfactual_responder(request)
 
+    def authority_seam_config_snapshot(self) -> dict[str, object]:
+        evidence_capture_mode = self._evidence_capture_mode
+        if evidence_capture_mode is None:
+            if self.shadow_counterfactual_capture_enabled:
+                evidence_capture_mode = "shadow_counterfactual"
+            elif self.journal_only_capture_enabled:
+                evidence_capture_mode = "journal_only"
+            else:
+                evidence_capture_mode = "disabled"
+
+        collect_authority_request = self._collect_authority_request
+        if collect_authority_request is None:
+            collect_authority_request = bool(
+                self.journal_only_capture_enabled or self.shadow_counterfactual_capture_enabled
+            )
+
+        collect_authority_response = self._collect_authority_response
+        if collect_authority_response is None:
+            if evidence_capture_mode == "shadow_counterfactual":
+                collect_authority_response = bool(
+                    self.shadow_counterfactual_response_journal_enabled
+                )
+            elif evidence_capture_mode == "journal_only":
+                collect_authority_response = bool(
+                    self.journal_only_response_journal_enabled
+                )
+
+        emit_shadow_decision_logged = self._emit_shadow_decision_logged
+        if emit_shadow_decision_logged is None:
+            if evidence_capture_mode == "shadow_counterfactual":
+                emit_shadow_decision_logged = bool(
+                    self.shadow_counterfactual_emit_shadow_decision_logged
+                )
+            elif evidence_capture_mode == "journal_only":
+                emit_shadow_decision_logged = bool(
+                    self.journal_only_emit_shadow_decision_logged
+                )
+
+        return {
+            "trust_enabled": self._trust_enabled,
+            "authority_mode": self.authority_mode.value,
+            "evidence_capture_mode": evidence_capture_mode,
+            "collect_authority_request": collect_authority_request,
+            "collect_authority_response": collect_authority_response,
+            "emit_shadow_decision_logged": emit_shadow_decision_logged,
+        }
+
 
 class _DMStub:
     def __init__(self, bridge, projection):
@@ -118,6 +175,17 @@ class _DMStub:
 
     def _record_blocked_intent(self, symbol: str) -> None:
         self.blocked_symbols.append(symbol)
+
+
+def _event_payloads(dm: _DMStub, event_name: str) -> list[dict[str, object]]:
+    payloads: list[dict[str, object]] = []
+    for call in dm.fsm.emit.call_args_list:
+        if not call.args or call.args[0] != event_name:
+            continue
+        payload = call.kwargs.get("payload")
+        if isinstance(payload, dict):
+            payloads.append(payload)
+    return payloads
 
 
 def _projection(**overrides) -> dict:
@@ -265,6 +333,19 @@ def test_trust_disabled_journal_only_capture_writes_journals_without_decide(
     assert response_rows[0]["authority_applied"] is False
     assert response_rows[0]["no_effect"] is True
 
+    seam_events = _event_payloads(dm, "EVT:NEOCORTEX_AUTHORITY_SEAM_DECISION")
+    assert len(seam_events) == 1
+    seam_payload = seam_events[0]
+    assert seam_payload["config_snapshot"]["evidence_capture_mode"] == "journal_only"
+    assert seam_payload["branch_selection"]["selected_branch"] == "journal_only"
+    assert seam_payload["branch_selection"]["selection_reason"] == "journal_only_mode_enabled"
+    assert seam_payload["request_response_persistence"]["authority_request_written"] is True
+    assert seam_payload["request_response_persistence"]["authority_response_written"] is True
+    assert seam_payload["no_effect_safety"]["returned_action"] == ControlDecisionAction.ALLOW.value
+    assert seam_payload["no_effect_safety"]["authority_applied"] is False
+    assert seam_payload["no_effect_safety"]["no_effect"] is True
+    assert seam_payload["result"]["model_action"] == ControlDecisionAction.ALLOW.value.upper()
+
 
 def test_trust_disabled_shadow_counterfactual_capture_writes_no_effect_evidence(
     tmp_path: Path,
@@ -334,6 +415,77 @@ def test_trust_disabled_shadow_counterfactual_capture_writes_no_effect_evidence(
     assert response_rows[0]["supports_counterfactual_join"] is True
     assert response_rows[0]["counterfactual_evaluation"] is True
 
+    seam_events = _event_payloads(dm, "EVT:NEOCORTEX_AUTHORITY_SEAM_DECISION")
+    assert len(seam_events) == 1
+    seam_payload = seam_events[0]
+    assert seam_payload["config_snapshot"]["evidence_capture_mode"] == "shadow_counterfactual"
+    assert seam_payload["branch_selection"]["selected_branch"] == "shadow_counterfactual"
+    assert seam_payload["branch_selection"]["selection_reason"] == "shadow_counterfactual_mode_enabled"
+    assert seam_payload["request_response_persistence"]["authority_request_written"] is True
+    assert seam_payload["request_response_persistence"]["authority_response_written"] is True
+    assert seam_payload["no_effect_safety"]["returned_action"] == ControlDecisionAction.ALLOW.value
+    assert seam_payload["no_effect_safety"]["authority_applied"] is False
+    assert seam_payload["no_effect_safety"]["no_effect"] is True
+    assert seam_payload["result"]["model_action"] == ControlDecisionAction.DENY.value.upper()
+
+
+def test_authority_seam_observability_records_shadow_counterfactual_routing_mismatch(
+    tmp_path: Path,
+) -> None:
+    def _journal_only(request):
+        return ControlDecisionResponse(
+            decision_id=request.decision_id,
+            action=ControlDecisionAction.ALLOW,
+            reason_code="JOURNAL_ONLY_CAPTURE",
+            reason_text="journal-only capture",
+            returned_at_ms=request.decision_basis_ts_ms + 1,
+            model_ref="journal_only_capture",
+            policy_ref="journal_only_capture",
+            idempotent_key=request.idempotent_key,
+            apply_result=ControlDecisionApplyResult.SHADOW_RECORDED,
+        )
+
+    bridge = _BridgeStub(
+        tmp_path,
+        trust_enabled=False,
+        short_circuit_reason="TRUST_DISABLED",
+        authority_mode=AuthorityMode.SHADOW,
+        journal_only_responder=_journal_only,
+        journal_only_capture_enabled=True,
+        journal_only_response_journal_enabled=False,
+        evidence_capture_mode="shadow_counterfactual",
+        collect_authority_request=True,
+        collect_authority_response=True,
+        emit_shadow_decision_logged=True,
+    )
+    dm = _DMStub(bridge, _projection())
+    gateway = StrategyGateway(dm)
+
+    authority_context, blocked = gateway._evaluate_neocortex_authority(
+        symbol="BTCUSDT",
+        side="BUY",
+        rid="rid-1",
+        strategy_id="aurora",
+        qty_dec=0.5,
+        entry_price_dec=50000.0,
+        decision_basis_ts_ms=1_700_000_000_000,
+        latest_risk=_latest_risk(),
+        gate_ctx=_gate_ctx(),
+        chain_result=_chain_result(),
+    )
+
+    assert blocked is False
+    assert authority_context["capture_mode"] == "journal_only"
+
+    seam_events = _event_payloads(dm, "EVT:NEOCORTEX_AUTHORITY_SEAM_DECISION")
+    assert len(seam_events) == 1
+    seam_payload = seam_events[0]
+    assert seam_payload["config_snapshot"]["evidence_capture_mode"] == "shadow_counterfactual"
+    assert seam_payload["branch_selection"]["selected_branch"] == "journal_only"
+    assert seam_payload["branch_selection"]["selection_reason"] == "shadow_counterfactual_configured_but_capture_unavailable"
+    assert seam_payload["request_response_persistence"]["authority_request_written"] is True
+    assert seam_payload["request_response_persistence"]["authority_response_written"] is False
+
 
 def test_gated_deny_writes_journals_and_blocks(tmp_path: Path) -> None:
     def _deny(request):
@@ -349,7 +501,7 @@ def test_gated_deny_writes_journals_and_blocks(tmp_path: Path) -> None:
         )
 
     bridge = _BridgeStub(
-        tmp_path, authority_mode=AuthorityMode.GATED, responder=_deny)
+        tmp_path, trust_enabled=True, authority_mode=AuthorityMode.GATED, responder=_deny)
     dm = _DMStub(bridge, _projection())
     gateway = StrategyGateway(dm)
     metric_before = _metric_value(
@@ -387,8 +539,14 @@ def test_gated_deny_writes_journals_and_blocks(tmp_path: Path) -> None:
         symbol="BTCUSDT",
         apply_result="GATED_DENY",
     ) == metric_before + 1.0
-    dm.fsm.emit.assert_called_once()
-    assert dm.fsm.emit.call_args.args[0] == "EVT:DECISION_BLOCKED"
+    seam_events = _event_payloads(dm, "EVT:NEOCORTEX_AUTHORITY_SEAM_DECISION")
+    assert len(seam_events) == 1
+    decision_blocked_calls = [
+        call
+        for call in dm.fsm.emit.call_args_list
+        if call.args and call.args[0] == "EVT:DECISION_BLOCKED"
+    ]
+    assert len(decision_blocked_calls) == 1
     assert all(not str(call.args[0]).startswith("CMD:")
                for call in dm.fsm.emit.call_args_list)
 

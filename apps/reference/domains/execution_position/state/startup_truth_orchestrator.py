@@ -50,7 +50,8 @@ RESTORE_PHASE_UNKNOWN = "UNKNOWN"
 BRACKET_STATE_UNKNOWN = "UNKNOWN"
 BRACKET_STATE_DEFERRED_PENDING_WAL = "DEFERRED_PENDING_WAL"
 STARTUP_TRUTH_ARTIFACT_WRITER_COMPONENT = "execution_position"
-_W5_REPLAY_SUMMARY_ARTIFACT_PATH = Path("ops/restore/w5_replay_startup_summary_v1.json")
+_W5_REPLAY_SUMMARY_ARTIFACT_PATH = Path(
+    "ops/restore/w5_replay_startup_summary_v1.json")
 
 
 class StartupTruthOrchestrator:
@@ -478,7 +479,12 @@ class StartupTruthOrchestrator:
                             "unresolved"
                             if str(item.get("status") or "").strip().lower()
                             == "unresolved"
-                            else "reconstructed"
+                            else (
+                                "reindexed_from_restore_state"
+                                if str(item.get("status") or "").strip().lower()
+                                == "reindexed_from_restore_state"
+                                else "reconstructed"
+                            )
                         ),
                         sl_order_id=str(item.get("sl_order_id")
                                         or "").strip() or None,
@@ -590,7 +596,8 @@ class StartupTruthOrchestrator:
         reconstructed_symbols = {
             str(item.get("symbol") or "").strip().upper()
             for item in runtime_truth_records
-            if str(item.get("status") or "").strip().lower() == "reconstructed"
+            if str(item.get("status") or "").strip().lower()
+            in {"reconstructed", "reindexed_from_restore_state"}
             and str(item.get("symbol") or "").strip()
         }
         portfolio_symbols = {
@@ -700,13 +707,15 @@ class StartupTruthOrchestrator:
             payload = summary.model_dump(mode="json")
             tmp_path = artifact_path.with_suffix(".tmp")
             tmp_path.write_text(
-                __import__("json").dumps(payload, indent=2, ensure_ascii=False),
+                __import__("json").dumps(
+                    payload, indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
             tmp_path.replace(artifact_path)
             LOG.debug(
                 "W5 replay summary persisted: path=%s completed=%s accepted=%s",
-                artifact_path, payload.get("completed"), payload.get("records_accepted"),
+                artifact_path, payload.get(
+                    "completed"), payload.get("records_accepted"),
             )
             self._fsm._emit_observability_event(
                 "RESTORE:EXECUTION_POSITION_W5_REPLAY_SUMMARY_PERSISTED",

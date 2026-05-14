@@ -10,6 +10,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+try:
+    from .config_snapshot import freeze_config_snapshot
+except ImportError:  # pragma: no cover - direct script execution
+    from config_snapshot import freeze_config_snapshot
+
 
 HORIZON_MS = 120 * 60 * 1000
 
@@ -259,6 +264,7 @@ def main() -> int:
         return 0
 
     capture_dir.mkdir(parents=True, exist_ok=False)
+    config_snapshot = freeze_config_snapshot(root, capture_dir)
 
     references = [
         root / 'reports' / 'nrr062_low_vol_cost_floor_observability_PROMPT4.md',
@@ -294,6 +300,11 @@ def main() -> int:
         'scan_ts': now.isoformat(),
         'probe': probe,
         'recorder_coverage': recorder_coverage,
+        'config_snapshot': {
+            'manifest_path': config_snapshot['manifest_path'],
+            'snapshot_root': config_snapshot['snapshot_root'],
+            'summary': config_snapshot['manifest']['summary'],
+        },
         'files': [],
     }
 
@@ -334,6 +345,7 @@ def main() -> int:
         'probe': probe,
         'freeze_path': str(capture_dir).replace('\\', '/'),
         'manifest_path': str(manifest_path).replace('\\', '/'),
+        'config_snapshot_manifest_path': config_snapshot['manifest_path'],
         'dataset_path': None,
         'summary_path': None,
     }

@@ -1,0 +1,66 @@
+{
+  "generated_at_utc": "2026-05-13T23:48:57.224513+00:00",
+  "comparison_status": "ACCEPTED_LOW_VOL_COMPARISON_BLOCKED",
+  "blocked_reason": "No accepted LOW_VOL close or accepted-decision evidence was found in canonical or runtime-adjacent surfaces.",
+  "accepted_low_vol_class_counts": {
+    "CANONICAL_ACCEPTED_LOW_VOL_CLOSE": 0,
+    "ACCEPTED_LOW_VOL_DECISION_NO_CLOSE": 0,
+    "LOW_VOL_CLOSE_NON_CANONICAL": 0,
+    "LOW_VOL_SIDE_CAR_CLOSE_ONLY": 0,
+    "LOW_VOL_DIAGNOSTIC_ONLY": 1,
+    "NO_LOW_VOL_ACCEPTED_EVIDENCE": 0
+  },
+  "rejected_replay_summary": {
+    "total_replay_rows": 153,
+    "valid_replay_rows": 153,
+    "invalid_rows": 0,
+    "tp_count": 33,
+    "sl_count": 13,
+    "timeout_count": 107,
+    "ambiguous_count": 0,
+    "no_market_path_count": 0,
+    "estimated_gross_pnl_quote": 966.9646780049,
+    "estimated_net_pnl_quote": 391.0476869715,
+    "estimated_fees_quote": 460.7335928272,
+    "estimated_win_rate": 51.633987,
+    "profit_factor": 1.4120756633,
+    "win_count": 79,
+    "loss_count": 74
+  },
+  "rejected_low_vol_sell_segment": {
+    "side": "SELL",
+    "rows": 114,
+    "tp_count": 33,
+    "sl_count": 6,
+    "timeout_count": 75,
+    "estimated_net_pnl_quote": 843.7659235853
+  },
+  "rejected_low_vol_buy_segment": {
+    "side": "BUY",
+    "rows": 39,
+    "tp_count": 0,
+    "sl_count": 7,
+    "timeout_count": 32,
+    "estimated_net_pnl_quote": -452.7182366138
+  },
+  "direction_only_failure_segment": {
+    "violation_pattern": "direction_confidence_below_threshold",
+    "rows": 101,
+    "tp_count": 25,
+    "sl_count": 4,
+    "timeout_count": 72,
+    "estimated_net_pnl_quote": 585.82653016
+  },
+  "dual_failure_segment": {
+    "violation_pattern": "regime_confidence_below_threshold+direction_confidence_below_threshold",
+    "rows": 52,
+    "tp_count": 8,
+    "sl_count": 9,
+    "timeout_count": 35,
+    "estimated_net_pnl_quote": -194.7788431885
+  },
+  "notes": [
+    "Package B rejected segments remain authoritative only for rejected LOW_VOL rows.",
+    "Accepted LOW_VOL comparison requires accepted LOW_VOL closes or accepted LOW_VOL decision evidence on the same regime surface."
+  ]
+}

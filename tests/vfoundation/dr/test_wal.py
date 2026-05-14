@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import multiprocessing as mp
+import os
 import pathlib
 import threading
 
@@ -60,6 +61,16 @@ class TestAppend:
         assert len(records) == 1
         assert "_hash" in records[0]
         assert "_prev" in records[0]
+
+    def test_appended_record_has_writer_metadata(self) -> None:
+        wal.append({"x": 1})
+        record = wal.read_all()[0]
+
+        assert record["_writer_pid"] == os.getpid()
+        assert record["_writer_process_name"]
+        assert record["_writer_host"]
+        assert record["_writer_lock_mode"]
+        assert record["_wal_writer_version"] == wal.WAL_WRITER_VERSION
 
     def test_two_appends_chain(self) -> None:
         h1 = wal.append({"a": 1})
@@ -148,6 +159,14 @@ class TestAppendCas:
         assert ok is True
         assert h is not None
 
+    def test_cas_appends_writer_metadata(self) -> None:
+        ok, _ = wal.append_cas({"first": True}, expected_prev_hash="0" * 64)
+
+        assert ok is True
+        record = wal.read_all()[0]
+        assert record["_writer_pid"] == os.getpid()
+        assert record["_wal_writer_version"] == wal.WAL_WRITER_VERSION
+
     def test_cas_malformed_tail_fails(self) -> None:
         path = wal._get_wal_file_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -170,6 +189,14 @@ class TestVerifyChain:
         for i in range(5):
             wal.append({"i": i})
         records = wal.read_all()
+        assert wal.verify_chain(records) is True
+
+    def test_writer_metadata_keeps_chain_valid(self) -> None:
+        wal.append({"rid": "r1"})
+        wal.append({"rid": "r2"})
+
+        records = wal.read_all()
+        assert all("_wal_writer_version" in record for record in records)
         assert wal.verify_chain(records) is True
 
     def test_tampered_hash_detected(self) -> None:

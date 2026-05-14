@@ -294,6 +294,7 @@ def test_current_aurora_config_loads_observability_contract() -> None:
     assert observability.shadow_journal.path == "logs/shadow_critical_event_journal_v1.jsonl"
     assert observability.shadow_journal.schema_version == "1.0.0"
     assert observability.shadow_journal.instrumentation_version == "1.0.0"
+    assert "EVT:NEOCORTEX_AUTHORITY_SEAM_DECISION" in observability.shadow_journal.critical_events
     assert "EVT:TRADE_INTENT_PROPOSED" in observability.shadow_journal.critical_events
     assert "CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_LOAD_FAILED" in observability.shadow_journal.critical_events
     assert "EVT:POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE" in observability.shadow_journal.critical_events

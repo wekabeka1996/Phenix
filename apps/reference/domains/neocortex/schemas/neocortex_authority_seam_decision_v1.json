@@ -1,0 +1,228 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/neocortex_authority_seam_decision_v1.json",
+  "title": "EVT:NEOCORTEX_AUTHORITY_SEAM_DECISION payload schema",
+  "description": "Observability-only payload emitted whenever the embedded StrategyGateway reaches the Neocortex authority seam and selects a capture or evaluation branch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "ts_ms",
+    "rid",
+    "decision_id",
+    "symbol",
+    "strategy_id",
+    "config_snapshot",
+    "branch_selection",
+    "request_response_persistence",
+    "no_effect_safety",
+    "result"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "ts_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "rid": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "decision_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "symbol": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "strategy_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "config_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "trust_enabled",
+        "authority_mode",
+        "evidence_capture_mode",
+        "collect_authority_request",
+        "collect_authority_response",
+        "emit_shadow_decision_logged"
+      ],
+      "properties": {
+        "trust_enabled": {
+          "type": "boolean"
+        },
+        "authority_mode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_capture_mode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "collect_authority_request": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "collect_authority_response": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "emit_shadow_decision_logged": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "branch_selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selected_branch",
+        "selection_reason",
+        "trust_disabled",
+        "journal_only_enabled",
+        "shadow_counterfactual_enabled"
+      ],
+      "properties": {
+        "selected_branch": {
+          "type": "string",
+          "enum": [
+            "journal_only",
+            "shadow_counterfactual",
+            "shadow",
+            "disabled",
+            "unknown"
+          ]
+        },
+        "selection_reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trust_disabled": {
+          "type": "boolean"
+        },
+        "journal_only_enabled": {
+          "type": "boolean"
+        },
+        "shadow_counterfactual_enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "request_response_persistence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authority_request_written",
+        "authority_response_written",
+        "request_write_error",
+        "response_write_error"
+      ],
+      "properties": {
+        "authority_request_written": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "authority_response_written": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "request_write_error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "response_write_error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "no_effect_safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "returned_action",
+        "authority_applied",
+        "no_effect"
+      ],
+      "properties": {
+        "returned_action": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "authority_applied": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "no_effect": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "apply_result",
+        "model_action",
+        "fallback_reason"
+      ],
+      "properties": {
+        "apply_result": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model_action": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fallback_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

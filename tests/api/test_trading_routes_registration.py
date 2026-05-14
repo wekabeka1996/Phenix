@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 MODULE_NAME = "apps.reference.api.main"
 REQUIRED_ROUTES = {
+    "/statdump",
     "/api/trading/context/latest",
     "/api/trading/positions/active",
     "/api/trading/rejections/recent",

@@ -1,0 +1,86 @@
+config_version: 1.0.1
+trading_mode: hybrid_live_data_testnet_exec
+system:
+  market_data:
+    queue_maxsize: 10000
+    local_queue_maxsize: 10000
+    emit_workers: 4
+    tick_ttl_ms: 2000
+    bar_ttl_ms: 10000
+    bar_event_age_mode: received
+    ws_heartbeat_sec: 20.0
+    ws_receive_timeout_sec: 60.0
+    trade_silence_reconnect_sec: 120.0
+    proxy_batch_size: 100
+    proxy_queue_get_timeout_sec: 0.01
+    proxy_idle_sleep_sec: 0.01
+  validate_instruments_on_startup: true
+  warn_only_filters: false
+  debug_event_listener_enabled: false
+# T-OPS-SSOT-2026-05-09: ops block removed. Canonical source: trading.yaml -> trading.ops.*
+# EX-REMOVE-ROOT-2026-05-09: execution block removed. Canonical source: trading.yaml -> trading.execution.*
+brackets: null
+trailing:
+  activation_pct: 0.003
+  trail_pct: 0.006
+  min_update_interval_sec: 5
+sequential_tests:
+  wald:
+    alpha: 0.05
+    beta: 0.2
+    mu0: 0.0
+    mu1: 0.5
+    sigma: 1.0
+  glr:
+    alpha: 0.05
+    beta: 0.2
+    min_samples: 5
+risk_core:
+  cvar_threshold_bps: 120
+  stress_scenarios:
+  - flash_crash
+  - volatility_spike
+  inventory_limits:
+    max_abs_position: 500
+    max_daily_notional: 10000000
+kelly:
+  fraction_cap: 0.85
+  decay_half_life_days: 5
+calibrator:
+  state_store:
+    backend: sqlite
+    path: data/calibrator/state.db
+    versioning: true
+    retention_days: 30
+hawkes:
+  enabled: true
+  kernel:
+    decay_beta_ms: 250.0
+  eta_max: 1.0
+  update_interval_ms: 100
+  window_ms: 1000
+  bivariate: false
+hardening:
+  ttl_config:
+    entry_place_ttl_ms: 5000
+    bracket_place_ttl_ms: 3000
+    cancel_ttl_ms: 2000
+  retry_config:
+    max_tries: 3
+    backoff_ms: 1000
+    jitter: true
+  circuit_breaker:
+    fail_max: 5
+    reset_timeout_sec: 30
+    exclude:
+    - binance.error.ClientError:.*-2010
+    - binance.error.ClientError:.*-1021
+    open_threshold_pct: 20
+    error_rate_window_sec: 60
+    half_open_attempts: 3
+  market_data:
+    max_allowed_lag_ms: 1000
+    sequence_check_enabled: true
+  wal:
+    integrity_check_enabled: true
+    hash_algorithm: sha256

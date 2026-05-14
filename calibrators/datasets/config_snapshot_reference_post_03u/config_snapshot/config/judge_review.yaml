@@ -1,0 +1,15 @@
+judge_review:
+  enabled: false
+  judge_simulator_config_path: "./config/judge_simulator.yaml"
+  output_dir: "./artifacts/judge_review"
+  segment_dimensions:
+    - symbol
+    - regime
+    - tf_sec
+    - source_file
+  confidence_bucket_edges:
+    - 0.0
+    - 0.25
+    - 0.5
+    - 0.75
+    - 1.0

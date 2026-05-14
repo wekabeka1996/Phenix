@@ -19,8 +19,8 @@ import json
 import sys
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-from collections import defaultdict
+from typing import Any, Dict, List, Mapping, Optional, Tuple
+from collections import Counter, defaultdict
 from dataclasses import dataclass, asdict
 import csv
 
@@ -29,6 +29,8 @@ logging.basicConfig(
     format='%(asctime)s [%(levelname)s] %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+OutcomeJoinKey = Tuple[str, str]
 
 
 @dataclass
@@ -49,6 +51,67 @@ class JoinMetrics:
     rows_with_outcome: int = 0
     rows_without_outcome: int = 0
     invalid_outcome_count: int = 0
+    outcome_join_integrity_error_count: int = 0
+    duplicate_canonical_outcome_key_count: int = 0
+    missing_canonical_outcome_key_rows: int = 0
+    duplicate_plan_id_count: int = 0
+    canonical_outcome_join: str = 'cycle_key+tier'
+    plan_id_usage: str = 'diagnostics_only'
+
+
+@dataclass
+class OutcomeIndexBuildResult:
+    canonical_index: Dict[OutcomeJoinKey, Dict[str, Any]]
+    duplicate_canonical_keys: set[OutcomeJoinKey]
+    missing_canonical_key_rows: int = 0
+    duplicate_plan_id_count: int = 0
+
+
+def canonical_outcome_key(record: Mapping[str, Any]) -> OutcomeJoinKey | None:
+    cycle_key = str(record.get('cycle_key') or '')
+    tier = str(record.get('tier') or record.get('confidence_tier') or '')
+    if not cycle_key or not tier:
+        return None
+    return cycle_key, tier
+
+
+def format_canonical_outcome_key(key: OutcomeJoinKey) -> str:
+    return f'{key[0]}::{key[1]}'
+
+
+def build_outcome_index_from_records(records: List[Dict[str, Any]]) -> OutcomeIndexBuildResult:
+    canonical_index: Dict[OutcomeJoinKey, Dict[str, Any]] = {}
+    duplicate_canonical_keys: set[OutcomeJoinKey] = set()
+    plan_id_counts: Counter[str] = Counter()
+    missing_canonical_key_rows = 0
+
+    for rec in records:
+        plan_id = str(rec.get('plan_id') or '')
+        if plan_id:
+            plan_id_counts[plan_id] += 1
+
+        key = canonical_outcome_key(rec)
+        if key is None:
+            missing_canonical_key_rows += 1
+            continue
+
+        if key in canonical_index:
+            duplicate_canonical_keys.add(key)
+            continue
+        if key in duplicate_canonical_keys:
+            continue
+        canonical_index[key] = rec
+
+    for key in duplicate_canonical_keys:
+        canonical_index.pop(key, None)
+
+    return OutcomeIndexBuildResult(
+        canonical_index=canonical_index,
+        duplicate_canonical_keys=duplicate_canonical_keys,
+        missing_canonical_key_rows=missing_canonical_key_rows,
+        duplicate_plan_id_count=sum(
+            1 for count in plan_id_counts.values() if count > 1),
+    )
 
 
 def discover_artifacts(root: Path) -> Dict[str, List[Path]]:
@@ -157,33 +220,37 @@ def build_shadow_index(artifacts: Dict[str, List[Path]]) -> Tuple[Dict[str, List
     return dict(shadow_index), total_records
 
 
-def build_outcome_index(artifacts: Dict[str, List[Path]]) -> Tuple[Dict[str, Dict], int]:
-    """Load simulation outcomes keyed by cycle_key + plan_id or plan_id."""
-    outcome_index = {}
+def build_outcome_index(artifacts: Dict[str, List[Path]]) -> Tuple[OutcomeIndexBuildResult, int]:
+    """Load simulation outcomes keyed canonically by cycle_key+tier."""
     total_records = 0
+    outcome_rows: List[Dict[str, Any]] = []
 
     if not artifacts['simulation_results']:
         logger.info("No simulation results found")
-        return outcome_index, 0
+        return build_outcome_index_from_records([]), 0
 
     logger.info(
         f"Loading simulation outcomes ({len(artifacts['simulation_results'])} files)...")
     for fpath in artifacts['simulation_results']:
         records = load_jsonl(fpath)
         total_records += len(records)
-        for rec in records:
-            plan_id = rec.get('plan_id')
-            cycle_key = rec.get('cycle_key')
+        outcome_rows.extend(records)
 
-            if plan_id:
-                # Index by plan_id (preferred)
-                outcome_index[plan_id] = rec
-            elif cycle_key:
-                # Index by cycle_key as fallback
-                outcome_index[cycle_key] = rec
+    outcome_index = build_outcome_index_from_records(outcome_rows)
 
     logger.info(
-        f"  Loaded {total_records} outcome records, {len(outcome_index)} indexed")
+        f"  Loaded {total_records} outcome records, {len(outcome_index.canonical_index)} canonical outcome keys")
+    logger.info("  Canonical outcome join: cycle_key+tier")
+    logger.info("  plan_id usage: diagnostics_only")
+    if outcome_index.missing_canonical_key_rows > 0:
+        logger.warning(
+            f"  Ignored {outcome_index.missing_canonical_key_rows} outcome rows missing cycle_key+tier")
+    if outcome_index.duplicate_canonical_keys:
+        logger.warning(
+            f"  Duplicate canonical outcome keys detected: {len(outcome_index.duplicate_canonical_keys)}")
+    if outcome_index.duplicate_plan_id_count > 0:
+        logger.info(
+            f"  Duplicate plan_id values retained as diagnostics only: {outcome_index.duplicate_plan_id_count}")
     return outcome_index, total_records
 
 
@@ -191,7 +258,7 @@ def build_joined_dataset(
     policy_index: Dict[str, Dict],
     verdict_index: Dict[str, Dict],
     shadow_index: Dict[str, List[Dict]],
-    outcome_index: Dict[str, Dict],
+    outcome_index: OutcomeIndexBuildResult,
 ) -> Tuple[List[Dict[str, Any]], JoinMetrics]:
     """Build one row per shadow plan tier, joined with policy/verdict/outcome."""
 
@@ -207,6 +274,10 @@ def build_joined_dataset(
 
     policy_verdict_joined = 0
     policy_shadow_joined = 0
+    metrics.duplicate_canonical_outcome_key_count = len(
+        outcome_index.duplicate_canonical_keys)
+    metrics.missing_canonical_outcome_key_rows = outcome_index.missing_canonical_key_rows
+    metrics.duplicate_plan_id_count = outcome_index.duplicate_plan_id_count
 
     logger.info("Building joined dataset...")
 
@@ -225,6 +296,8 @@ def build_joined_dataset(
             continue
 
         for shadow_plan in shadow_plans:
+            tier = shadow_plan.get(
+                'confidence_tier') or shadow_plan.get('tier')
             row = {
                 'cycle_key': cycle_key,
                 'verdict_id': verdict_rec.get('verdict_id') if verdict_rec else None,
@@ -256,7 +329,7 @@ def build_joined_dataset(
                 'suppression_reason': verdict_rec.get('suppression_reason') if verdict_rec else None,
 
                 # Shadow Plan fields
-                'tier': shadow_plan.get('confidence_tier'),
+                'tier': tier,
                 'actionable': shadow_plan.get('actionable'),
                 'entry_price_ref': shadow_plan.get('entry_price_ref'),
                 'limit_price': shadow_plan.get('limit_price'),
@@ -265,6 +338,9 @@ def build_joined_dataset(
                 'tp_offset_pct': shadow_plan.get('tp_offset_pct'),
                 'sl_offset_pct': shadow_plan.get('sl_offset_pct'),
                 'risk_reward': shadow_plan.get('risk_reward'),
+                'canonical_outcome_join': metrics.canonical_outcome_join,
+                'plan_id_usage': metrics.plan_id_usage,
+                'outcome_join_warning': None,
 
                 # Outcome fields (from simulator)
                 'outcome_available': False,
@@ -279,23 +355,34 @@ def build_joined_dataset(
                 'fees_paid_pct': None,
             }
 
-            # Try to join outcome by plan_id
-            plan_id = shadow_plan.get('plan_id')
-            if plan_id and plan_id in outcome_index:
-                outcome = outcome_index[plan_id]
-                row['outcome_available'] = True
-                row['outcome'] = outcome.get('outcome')
-                row['outcome_reason'] = outcome.get('outcome_reason')
-                row['fill_ts_ms'] = outcome.get('fill_ts_ms')
-                row['fill_price'] = outcome.get('fill_price')
-                row['exit_ts_ms'] = outcome.get('exit_ts_ms')
-                row['exit_price'] = outcome.get('exit_price')
-                row['gross_pnl_pct'] = outcome.get('gross_pnl_pct')
-                row['net_pnl_pct'] = outcome.get('net_pnl_pct')
-                row['fees_paid_pct'] = outcome.get('fees_paid_pct')
-                metrics.rows_with_outcome += 1
-            else:
+            join_key = canonical_outcome_key(
+                {'cycle_key': cycle_key, 'tier': tier})
+            if join_key is None:
+                row['outcome_join_warning'] = 'missing_cycle_key_or_tier'
                 metrics.rows_without_outcome += 1
+                metrics.invalid_outcome_count += 1
+            elif join_key in outcome_index.duplicate_canonical_keys:
+                row['outcome_join_warning'] = 'duplicate_cycle_key_tier_in_outcomes'
+                metrics.rows_without_outcome += 1
+                metrics.invalid_outcome_count += 1
+                metrics.outcome_join_integrity_error_count += 1
+            else:
+                outcome = outcome_index.canonical_index.get(join_key)
+                if outcome is None:
+                    row['outcome_join_warning'] = 'no_canonical_outcome_match'
+                    metrics.rows_without_outcome += 1
+                else:
+                    row['outcome_available'] = True
+                    row['outcome'] = outcome.get('outcome')
+                    row['outcome_reason'] = outcome.get('outcome_reason')
+                    row['fill_ts_ms'] = outcome.get('fill_ts_ms')
+                    row['fill_price'] = outcome.get('fill_price')
+                    row['exit_ts_ms'] = outcome.get('exit_ts_ms')
+                    row['exit_price'] = outcome.get('exit_price')
+                    row['gross_pnl_pct'] = outcome.get('gross_pnl_pct')
+                    row['net_pnl_pct'] = outcome.get('net_pnl_pct')
+                    row['fees_paid_pct'] = outcome.get('fees_paid_pct')
+                    metrics.rows_with_outcome += 1
 
             rows.append(row)
 
@@ -317,6 +404,8 @@ def build_joined_dataset(
         f"  Policy ↔ Shadow join: {policy_shadow_joined}/{len(policy_index)} ({metrics.policy_shadow_join_rate_pct:.1f}%)")
     logger.info(
         f"  Shadow ↔ Outcome join: {metrics.rows_with_outcome}/{len(rows)} ({metrics.shadow_outcome_join_rate_pct:.1f}%)")
+    logger.info(
+        f"  Canonical outcome join: {metrics.canonical_outcome_join}; plan_id usage: {metrics.plan_id_usage}")
 
     return rows, metrics
 

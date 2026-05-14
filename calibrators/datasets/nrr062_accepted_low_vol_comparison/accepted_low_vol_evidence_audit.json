@@ -1,0 +1,42 @@
+{
+  "generated_at_utc": "2026-05-13T23:48:57.133769+00:00",
+  "authority_caveat": "CURRENT_WORKSPACE_REFERENCE_ONLY_NOT_RUNTIME_AUTHORITY",
+  "accepted_low_vol_comparable_evidence_status": "LOW_VOL_DIAGNOSTIC_ONLY_ROWS_PRESENT",
+  "facts": {
+    "accepted_economics_low_vol_trade_count": 0,
+    "realized_rows_total": 12,
+    "objective_rows_total": 334,
+    "order_log_rows_total": 761,
+    "decision_ledger_rows_total": 334,
+    "regime_confidence_audit_low_vol_rows": 1684,
+    "trade_lifecycle_scanned_for_candidate_lifecycle_ids": false
+  },
+  "class_counts": {
+    "CANONICAL_ACCEPTED_LOW_VOL_CLOSE": 0,
+    "ACCEPTED_LOW_VOL_DECISION_NO_CLOSE": 0,
+    "LOW_VOL_CLOSE_NON_CANONICAL": 0,
+    "LOW_VOL_SIDE_CAR_CLOSE_ONLY": 0,
+    "LOW_VOL_DIAGNOSTIC_ONLY": 1,
+    "NO_LOW_VOL_ACCEPTED_EVIDENCE": 0
+  },
+  "rows": [
+    {
+      "audit_class": "LOW_VOL_DIAGNOSTIC_ONLY",
+      "rid": "aurora_BTCUSDT_1778669703907",
+      "symbol": "BTCUSDT",
+      "side": "short",
+      "strategy_id": "aurora",
+      "regime": "LOW_VOLATILITY",
+      "regime_confidence": null,
+      "decision_status": "CANONICAL_CLOSED",
+      "close_status": "CANONICAL_CLOSED",
+      "realized_pnl_net": 11.472228600000001,
+      "data_quality": "LOW_VOL_REFERENCE_INFERENCE_CONFLICTS_WITH_ACCEPTED_ECONOMICS_REGIME_SUMMARY"
+    }
+  ],
+  "notes": [
+    "Canonical realized rows were checked for explicit LOW_VOL evidence via rid joins into frozen order_log and decision_ledger.",
+    "Objective decision rows were checked for explicit LOW_VOL evidence via the same rid joins.",
+    "regime_confidence_audit confirms that LOW_VOL states existed in the frozen window, but by itself it does not provide accepted rid-level proof."
+  ]
+}

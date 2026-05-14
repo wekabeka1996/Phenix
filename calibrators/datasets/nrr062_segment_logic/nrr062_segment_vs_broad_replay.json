@@ -1,0 +1,138 @@
+{
+  "generated_at_utc": "2026-05-14T08:19:50.738877+00:00",
+  "candidate_name": "NRR062_LOW_VOL_SHORT_DIRECTION_ONLY_RAW_SIGNAL_CANDIDATE",
+  "broad_package_b": {
+    "total_replay_rows": 153,
+    "valid_replay_rows": 153,
+    "invalid_rows": 0,
+    "tp_count": 33,
+    "sl_count": 13,
+    "timeout_count": 107,
+    "ambiguous_count": 0,
+    "no_market_path_count": 0,
+    "estimated_gross_pnl_quote": 966.9646780049,
+    "estimated_net_pnl_quote": 391.0476869715,
+    "estimated_fees_quote": 460.7335928272,
+    "estimated_win_rate": 51.633987,
+    "profit_factor": 1.4120756633,
+    "win_count": 79,
+    "loss_count": 74
+  },
+  "candidate_segment": {
+    "row_count": 79,
+    "tp_count": 25,
+    "sl_count": 2,
+    "timeout_count": 52,
+    "ambiguous_count": 0,
+    "estimated_gross_pnl_quote": 1122.7695276632,
+    "estimated_net_pnl_quote": 825.2672997047,
+    "estimated_fees_quote": 238.0017823673,
+    "win_rate": 70.88607594936708,
+    "profit_factor": 4.92434390438585,
+    "timeout_share": 0.6582278481012658,
+    "median_direction_confidence": -0.00991948,
+    "median_regime_confidence": 0.6384541511,
+    "symbol_distribution": {
+      "XRPUSDT": 11,
+      "ETHUSDT": 37,
+      "BTCUSDT": 31
+    },
+    "side_distribution": {
+      "SELL": 79
+    },
+    "fee_drag_quote": 238.0017823673,
+    "fee_drag_share_of_gross": 0.21197741522487595,
+    "win_count": 56,
+    "loss_count": 23
+  },
+  "excluded_negative_surfaces": {
+    "buy_rows": {
+      "row_count": 39,
+      "tp_count": 0,
+      "sl_count": 7,
+      "timeout_count": 32,
+      "ambiguous_count": 0,
+      "estimated_gross_pnl_quote": -303.22736748479997,
+      "estimated_net_pnl_quote": -452.7182366138,
+      "estimated_fees_quote": 119.592695303,
+      "win_rate": 7.6923076923076925,
+      "profit_factor": 0.0323963298136789,
+      "timeout_share": 0.8205128205128205,
+      "median_direction_confidence": 0.01334765,
+      "median_regime_confidence": 0.4314369892,
+      "symbol_distribution": {
+        "ETHUSDT": 24,
+        "XRPUSDT": 9,
+        "BTCUSDT": 6
+      },
+      "side_distribution": {
+        "BUY": 39
+      },
+      "fee_drag_quote": 119.592695303,
+      "fee_drag_share_of_gross": 0.3943994115537572,
+      "win_count": 3,
+      "loss_count": 36
+    },
+    "dual_failure_rows": {
+      "row_count": 52,
+      "tp_count": 8,
+      "sl_count": 9,
+      "timeout_count": 35,
+      "ambiguous_count": 0,
+      "estimated_gross_pnl_quote": -2.499107258899999,
+      "estimated_net_pnl_quote": -194.77884318850002,
+      "estimated_fees_quote": 153.8237887437,
+      "win_rate": 42.30769230769231,
+      "profit_factor": 0.6008643344283967,
+      "timeout_share": 0.6730769230769231,
+      "median_direction_confidence": -0.005924975,
+      "median_regime_confidence": 0.30338711905,
+      "symbol_distribution": {
+        "ETHUSDT": 25,
+        "XRPUSDT": 16,
+        "BTCUSDT": 11
+      },
+      "side_distribution": {
+        "SELL": 35,
+        "BUY": 17
+      },
+      "fee_drag_quote": 153.8237887437,
+      "fee_drag_share_of_gross": 61.55149531733451,
+      "win_count": 22,
+      "loss_count": 30
+    }
+  },
+  "question_assessment": [
+    {
+      "question": "Does the candidate retain the positive replay signal?",
+      "answer": "yes",
+      "evidence": "candidate_net=825.2672997047"
+    },
+    {
+      "question": "Does it exclude most negative BUY exposure?",
+      "answer": "yes",
+      "evidence": "excluded_buy_net=-452.7182366138"
+    },
+    {
+      "question": "Does it exclude dual-failure negative exposure?",
+      "answer": "yes",
+      "evidence": "excluded_dual_failure_net=-194.77884318850002"
+    },
+    {
+      "question": "Is timeout share still too high?",
+      "answer": "no",
+      "evidence": "candidate_timeout_share=0.6582278481012658, broad_timeout_share=0.6993464052287581"
+    },
+    {
+      "question": "Is candidate row count large enough to matter?",
+      "answer": "yes",
+      "evidence": "candidate_rows=79, readiness_min_rows=20"
+    },
+    {
+      "question": "Would this be a reasonable future testnet implementation candidate?",
+      "answer": "yes",
+      "evidence": "candidate_rows=79, candidate_net=825.2672997047"
+    }
+  ],
+  "replay_result_row_count": 153
+}

@@ -34,11 +34,12 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TRADING_YAML = REPO_ROOT / "config" / "aurora" / "trading.yaml"
 SYSTEM_YAML = REPO_ROOT / "config" / "aurora" / "system.yaml"
-FSM_PY = REPO_ROOT / "apps" / "reference" / "domains" / "execution_position" / "fsm.py"
+FSM_PY = REPO_ROOT / "apps" / "reference" / \
+    "domains" / "execution_position" / "fsm.py"
 
-# Canonical values — DO NOT CHANGE
+# Canonical values — current calibrated watchdog SSOT
 CANONICAL_ACK_TTL_MS = 8_000
-CANONICAL_FILL_TTL_MS = 3_600_000
+CANONICAL_FILL_TTL_MS = 1_800_000
 CANONICAL_CHECK_INTERVAL_MS = 1_000
 CANONICAL_RPS_LIMIT = 10
 
@@ -55,7 +56,7 @@ class TestCanonicalTradingWatchdogExists:
 
         SSOT: config/aurora/trading.yaml -> trading.execution.watchdog.*
         All four keys (ack_ttl_ms, fill_ttl_ms, check_interval_ms, rps_limit) must
-        be present and match canonical values.  DO NOT change these values.
+        be present and match canonical values.
         """
         raw = yaml.safe_load(TRADING_YAML.read_text(encoding="utf-8"))
         watchdog = (
@@ -84,7 +85,7 @@ class TestCanonicalTradingWatchdogExists:
             )
             assert watchdog[key] == expected, (
                 f"trading.execution.watchdog.{key} = {watchdog[key]!r}, "
-                f"expected {expected!r}.  DO NOT change watchdog timer values."
+                f"expected {expected!r}."
             )
 
 
@@ -199,7 +200,8 @@ class TestNonDefaultTradingFillTtlPropagates:
         trading_path = cfg_dir / "trading.yaml"
         trading = yaml.safe_load(trading_path.read_text(encoding="utf-8"))
         trading["trading"]["execution"]["watchdog"]["fill_ttl_ms"] = 12345
-        trading_path.write_text(yaml.safe_dump(trading, sort_keys=False), encoding="utf-8")
+        trading_path.write_text(yaml.safe_dump(
+            trading, sort_keys=False), encoding="utf-8")
 
         loader = ConfigLoader(config_dir=cfg_dir)
         config = loader.load_config()
@@ -311,7 +313,8 @@ class TestMissingCanonicalWatchdogFailsClosed:
         trading = yaml.safe_load(trading_path.read_text(encoding="utf-8"))
         execution = trading["trading"]["execution"]
         del execution["watchdog"]
-        trading_path.write_text(yaml.safe_dump(trading, sort_keys=False), encoding="utf-8")
+        trading_path.write_text(yaml.safe_dump(
+            trading, sort_keys=False), encoding="utf-8")
 
         # Config load succeeds (Optional field allows None)
         loader = ConfigLoader(config_dir=cfg_dir)
@@ -345,7 +348,8 @@ class TestMissingCanonicalWatchdogFailsClosed:
         trading_path = cfg_dir / "trading.yaml"
         trading = yaml.safe_load(trading_path.read_text(encoding="utf-8"))
         del trading["trading"]["execution"]["watchdog"]["fill_ttl_ms"]
-        trading_path.write_text(yaml.safe_dump(trading, sort_keys=False), encoding="utf-8")
+        trading_path.write_text(yaml.safe_dump(
+            trading, sort_keys=False), encoding="utf-8")
 
         with pytest.raises((ValidationError, ValueError)) as exc_info:
             loader = ConfigLoader(config_dir=cfg_dir)

@@ -493,6 +493,9 @@ class LLMIntentIngressBridge:
     def _on_command(self, payload: Dict[str, Any]) -> None:
         request_id = str(payload.get("request_id") or "")
         request_kind = str(payload.get("request_kind") or "")
+        is_eze_open = request_kind == "eze_open"
+        is_eze_close = request_kind == "eze_close_position"
+        is_eze_amend = request_kind == "eze_amend_brackets"
         rid = str(
             payload.get("intent_id")
             or payload.get("action_id")
@@ -502,9 +505,11 @@ class LLMIntentIngressBridge:
         )
         mode, symbols_llm, allow = self._runtime_allowlist()
 
-        if request_kind == "close_position":
+        if request_kind in {"close_position", "eze_close_position"}:
+            normalized_payload = dict(payload)
+            normalized_payload["request_kind"] = "close_position"
             try:
-                cmd_close = CmdLlmPositionCloseV1.model_validate(payload)
+                cmd_close = CmdLlmPositionCloseV1.model_validate(normalized_payload)
             except Exception as e:
                 self._emit_bridge_reject(
                     event_name="EVT:LLM_CLOSE_REJECTED_V1",
@@ -523,7 +528,7 @@ class LLMIntentIngressBridge:
                 )
                 return
 
-            if self._reject_runtime_symbol(
+            if not is_eze_close and self._reject_runtime_symbol(
                 event_name="EVT:LLM_CLOSE_REJECTED_V1",
                 rid=cmd_close.action_id,
                 action_key="action_id",
@@ -545,21 +550,24 @@ class LLMIntentIngressBridge:
                 "ipc_endpoint": self._endpoint,
                 "queue_depth": 0,
                 "lifecycle_id": cmd_close.lifecycle_id,
+                "ingress_mode": "eze_direct" if is_eze_close else "guarded",
             }
             self.fsm.emit("EVT:LLM_CLOSE_ACCEPTED_V1",
-                          accepted_payload, "llm_close_ipc_accepted")
+                          accepted_payload, "eze_close_ipc_accepted" if is_eze_close else "llm_close_ipc_accepted")
             _append_wal_event("LLM_CLOSE_ACCEPTED_V1", cmd_close.action_id,
-                              accepted_payload, "llm_close_ipc_accepted")
+                              accepted_payload, "eze_close_ipc_accepted" if is_eze_close else "llm_close_ipc_accepted")
             self.fsm.emit(
                 "CMD:LLM_POSITION_CLOSE_V1",
                 payload=cmd_close.model_dump(),
-                why="llm_position_close",
+                why="eze_position_close" if is_eze_close else "llm_position_close",
             )
             return
 
-        if request_kind == "amend_brackets":
+        if request_kind in {"amend_brackets", "eze_amend_brackets"}:
+            normalized_payload = dict(payload)
+            normalized_payload["request_kind"] = "amend_brackets"
             try:
-                cmd_amend = CmdLlmBracketAmendV1.model_validate(payload)
+                cmd_amend = CmdLlmBracketAmendV1.model_validate(normalized_payload)
             except Exception as e:
                 self._emit_bridge_reject(
                     event_name="EVT:LLM_BRACKET_AMEND_REJECTED_V1",
@@ -578,7 +586,7 @@ class LLMIntentIngressBridge:
                 )
                 return
 
-            if self._reject_runtime_symbol(
+            if not is_eze_amend and self._reject_runtime_symbol(
                 event_name="EVT:LLM_BRACKET_AMEND_REJECTED_V1",
                 rid=cmd_amend.action_id,
                 action_key="action_id",
@@ -600,20 +608,23 @@ class LLMIntentIngressBridge:
                 "ipc_endpoint": self._endpoint,
                 "queue_depth": 0,
                 "lifecycle_id": cmd_amend.lifecycle_id,
+                "ingress_mode": "eze_direct" if is_eze_amend else "guarded",
             }
             self.fsm.emit("EVT:LLM_BRACKET_AMEND_ACCEPTED_V1",
-                          accepted_payload, "llm_bracket_amend_ipc_accepted")
+                          accepted_payload, "eze_bracket_amend_ipc_accepted" if is_eze_amend else "llm_bracket_amend_ipc_accepted")
             _append_wal_event("LLM_BRACKET_AMEND_ACCEPTED_V1", cmd_amend.action_id,
-                              accepted_payload, "llm_bracket_amend_ipc_accepted")
+                              accepted_payload, "eze_bracket_amend_ipc_accepted" if is_eze_amend else "llm_bracket_amend_ipc_accepted")
             self.fsm.emit(
                 "CMD:LLM_BRACKET_AMEND_V1",
                 payload=cmd_amend.model_dump(),
-                why="llm_bracket_amend",
+                why="eze_bracket_amend" if is_eze_amend else "llm_bracket_amend",
             )
             return
 
+        normalized_open_payload = dict(payload)
+        normalized_open_payload.pop("request_kind", None)
         try:
-            cmd = CmdLlmIntentSubmitV1.model_validate(payload)
+            cmd = CmdLlmIntentSubmitV1.model_validate(normalized_open_payload)
         except Exception as e:
             reject_payload = {
                 "intent_id": payload.get("intent_id"),
@@ -630,7 +641,7 @@ class LLMIntentIngressBridge:
                               reject_payload, "llm_intent_schema_invalid")
             return
 
-        if self._reject_runtime_symbol(
+        if not is_eze_open and self._reject_runtime_symbol(
             event_name="EVT:LLM_INTENT_REJECTED_V1",
             rid=cmd.intent_id,
             action_key="intent_id",
@@ -651,15 +662,16 @@ class LLMIntentIngressBridge:
             "enqueue_ts_ms": int(time.time() * 1000),
             "ipc_endpoint": self._endpoint,
             "queue_depth": 0,
+            "ingress_mode": "eze_direct" if is_eze_open else "guarded",
         }
         self.fsm.emit("EVT:LLM_INTENT_ACCEPTED_V1",
-                      accepted_payload, "llm_intent_ipc_accepted")
+                      accepted_payload, "eze_intent_ipc_accepted" if is_eze_open else "llm_intent_ipc_accepted")
         _append_wal_event("LLM_INTENT_ACCEPTED_V1", cmd.intent_id,
-                          accepted_payload, "llm_intent_ipc_accepted")
+                          accepted_payload, "eze_intent_ipc_accepted" if is_eze_open else "llm_intent_ipc_accepted")
         self.fsm.emit(
             "CMD:LLM_INTENT_SUBMIT_V1",
             payload=cmd.model_dump(),
-            why="llm_intent_submit",
+            why="eze_intent_submit" if is_eze_open else "llm_intent_submit",
         )
 
 
