@@ -117,6 +117,42 @@ def _allow_sg(*, regime: str = "LOW_VOLATILITY", regime_confidence: float = 0.8)
     )
 
 
+def _segment_candidate_evaluation(
+    *,
+    trading_mode: str = "testnet",
+    regime_confidence: float = 0.8,
+    side: str = "SELL",
+    signal_score: float | None = -0.2,
+    target_price: float | None = None,
+    stop_price: float | None = None,
+    strategy_trace=None,
+    gate_cfg=None,
+):
+    normalized_side = str(side).upper()
+    if normalized_side in {"SELL", "SHORT"}:
+        resolved_target_price = 99.50 if target_price is None else target_price
+        resolved_stop_price = 100.25 if stop_price is None else stop_price
+    else:
+        resolved_target_price = 100.50 if target_price is None else target_price
+        resolved_stop_price = 99.75 if stop_price is None else stop_price
+
+    return evaluate_low_vol_cost_floor_gate(
+        gate_cfg=_gate_config() if gate_cfg is None else gate_cfg,
+        trading_mode=trading_mode,
+        regime="LOW_VOLATILITY",
+        regime_confidence=regime_confidence,
+        strategy_id="aurora",
+        symbol="BTCUSDT",
+        side=side,
+        entry_price=100.0,
+        target_price=resolved_target_price,
+        stop_price=resolved_stop_price,
+        strategy_trace=strategy_trace,
+        signal_score=signal_score,
+        reduce_only=False,
+    )
+
+
 def test_valid_low_vol_cost_floor_config_accepted() -> None:
     cfg = _gate_config()
 
@@ -242,6 +278,93 @@ def test_gate_allows_in_testnet_when_fee_floor_rr_and_confidence_pass() -> None:
     assert evaluation.threshold_failed is False
     assert evaluation.details["tp_fee_coverage_ratio"] == 3.75
     assert evaluation.details["rr_ratio"] == 1.2
+
+
+def test_sell_direction_only_raw_signal_candidate_is_allowed_by_segment_override() -> None:
+    evaluation = _segment_candidate_evaluation()
+
+    assert evaluation.block is False
+    assert evaluation.threshold_failed is True
+    assert evaluation.reason == "LOW_VOL_COST_FLOOR_PASS"
+    assert evaluation.details["reason"] == "LOW_VOL_COST_FLOOR_SEGMENT_OVERRIDE_ALLOW"
+    assert evaluation.details["gate_reason"] == "LOW_VOL_COST_FLOOR_PASS"
+    assert evaluation.details["nrr062_segment_override_applied"] is True
+    assert evaluation.details["nrr062_segment_override_name"] == "LOW_VOL_SHORT_DIRECTION_ONLY_RAW_SIGNAL"
+    assert evaluation.details["nrr062_segment_override_no_production"] is True
+    assert evaluation.details["original_nrr062_reason"] == "LOW_VOL_COST_FLOOR_BLOCKED"
+    assert evaluation.details["original_low_vol_reason"] == "LOW_VOL_DIRECTION_CONFIDENCE_BLOCKED"
+    assert evaluation.details["selected_source"] == "signal_score"
+    assert evaluation.details["selected_scale"] == "raw_signed_score"
+    assert evaluation.details["threshold_family"] == "raw_signed_score"
+    assert evaluation.details["violations"] == [
+        "direction_confidence_below_threshold"]
+
+
+def test_buy_direction_only_raw_signal_remains_blocked() -> None:
+    evaluation = _segment_candidate_evaluation(side="BUY", signal_score=0.2)
+
+    assert evaluation.block is True
+    assert evaluation.details["nrr062_segment_override_applied"] is False
+    assert evaluation.details["selected_source"] == "signal_score"
+    assert evaluation.details["selected_scale"] == "raw_signed_score"
+    assert evaluation.details["threshold_family"] == "raw_signed_score"
+    assert evaluation.details["violations"] == [
+        "direction_confidence_below_threshold"]
+
+
+def test_sell_dual_regime_and_direction_failure_remains_blocked() -> None:
+    evaluation = _segment_candidate_evaluation(regime_confidence=0.3)
+
+    assert evaluation.block is True
+    assert evaluation.details["nrr062_segment_override_applied"] is False
+    assert evaluation.details["violations"] == [
+        "regime_confidence_below_threshold",
+        "direction_confidence_below_threshold",
+    ]
+
+
+def test_sell_geometry_failure_remains_blocked() -> None:
+    evaluation = _segment_candidate_evaluation(
+        signal_score=-0.8, target_price=99.90)
+
+    assert evaluation.block is True
+    assert evaluation.details["nrr062_segment_override_applied"] is False
+    assert "actual_tp_bps_below_required_gross_tp" in evaluation.details["violations"]
+
+
+@pytest.mark.parametrize("trading_mode", ["live", "production"])
+def test_live_and_production_candidate_remain_unmodified(trading_mode: str) -> None:
+    evaluation = _segment_candidate_evaluation(trading_mode=trading_mode)
+
+    assert evaluation.block is False
+    assert evaluation.gate_mode == "observe_only"
+    assert evaluation.details["would_block"] is True
+    assert evaluation.details["nrr062_segment_override_applied"] is False
+    assert evaluation.details["reason"] == "LOW_VOL_DIRECTION_CONFIDENCE_BLOCKED"
+
+
+def test_missing_selected_source_scale_and_family_fails_closed_for_override() -> None:
+    evaluation = _segment_candidate_evaluation(
+        signal_score=None, strategy_trace=None)
+
+    assert evaluation.block is True
+    assert evaluation.details["nrr062_segment_override_applied"] is False
+    assert evaluation.details["selected_source"] == "unavailable"
+    assert evaluation.details["selected_scale"] == "unknown"
+    assert evaluation.details["threshold_family"] == "unknown"
+
+
+def test_current_config_allows_segment_override_without_new_yaml_fields() -> None:
+    cfg = ConfigLoader(CONFIG_DIR).load_config()
+    gate_cfg = cfg.domains.decision_making.low_vol_cost_floor_gate
+
+    evaluation = _segment_candidate_evaluation(gate_cfg=gate_cfg)
+
+    assert evaluation.block is False
+    assert evaluation.details["nrr062_segment_override_applied"] is True
+    assert evaluation.details["selected_source"] == "signal_score"
+    assert evaluation.details["selected_scale"] == "raw_signed_score"
+    assert evaluation.details["threshold_family"] == "raw_signed_score"
 
 
 def test_regime_confidence_threshold_resolved_by_regime_map() -> None:
@@ -1283,6 +1406,49 @@ def test_propose_trade_intent_blocks_low_vol_cost_floor_in_testnet() -> None:
     assert metadata["low_vol_cost_floor"]["price_motion_context"]["ret_60s"] == 0.0015
     assert metadata["low_vol_cost_floor"]["price_motion_context"]["ret_300s"] == 0.0045
     assert metadata["low_vol_cost_floor"]["persistence_context"]["order_logger_event"] == "DECISION_INTENT_REJECTED"
+
+
+@pytest.mark.parametrize("trading_mode", ["testnet", "hybrid_live_data_testnet_exec"])
+def test_propose_trade_intent_allows_segment_override_in_enforced_runtime_modes(trading_mode: str) -> None:
+    dm = _make_dm(trading_mode=trading_mode)
+    sg = _allow_sg()
+    sg.intent_side = "SHORT"
+    sg.signal_score = -0.2
+
+    dm._propose_trade_intent(
+        symbol="BTCUSDT",
+        side="SELL",
+        qty=1,
+        price=100.0,
+        why_chain=["signal_score=-0.2"],
+        rid=f"rid-low-vol-segment-{trading_mode}",
+        reduce_only=False,
+        strategy_id="aurora",
+        decision_ts_ms=1_700_000_000_999,
+        stop_price=100.25,
+        target_price=99.50,
+        strategy_trace=None,
+        safety_gate_result=sg,
+    )
+
+    dm._emitter.emit_trade_intent_rejected.assert_not_called()
+    dm._builder.build_and_emit.assert_called_once()
+    kwargs = dm._builder.build_and_emit.call_args.kwargs
+    low_vol_details = kwargs["strategy_trace"]["low_vol_cost_floor"]
+
+    assert low_vol_details["gate_mode"] == "enforced"
+    assert low_vol_details["threshold_failed"] is True
+    assert low_vol_details["reason"] == "LOW_VOL_COST_FLOOR_SEGMENT_OVERRIDE_ALLOW"
+    assert low_vol_details["nrr062_segment_override_applied"] is True
+    assert low_vol_details["nrr062_segment_override_name"] == "LOW_VOL_SHORT_DIRECTION_ONLY_RAW_SIGNAL"
+    assert low_vol_details["nrr062_segment_override_no_production"] is True
+    assert low_vol_details["original_nrr062_reason"] == "LOW_VOL_COST_FLOOR_BLOCKED"
+    assert low_vol_details["original_low_vol_reason"] == "LOW_VOL_DIRECTION_CONFIDENCE_BLOCKED"
+    assert low_vol_details["selected_source"] == "signal_score"
+    assert low_vol_details["selected_scale"] == "raw_signed_score"
+    assert low_vol_details["threshold_family"] == "raw_signed_score"
+    assert kwargs["sg"].low_vol_cost_floor_details["nrr062_segment_override_applied"] is True
+    assert kwargs["sg"].low_vol_cost_floor_details["persistence_context"]["decision_outcome"] == "ALLOW"
 
 
 def test_propose_trade_intent_prior_safety_deny_attaches_low_vol_geometry_metadata() -> None:

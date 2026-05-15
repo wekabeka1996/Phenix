@@ -134,6 +134,10 @@ def test_shadow_telemetry_handles_tick_and_bar_feature_verbs(tmp_path: Path) -> 
     assert tick_snapshot["tf_sec"] == 0
     assert bar_snapshot["tf_sec"] == 180
     assert bar_snapshot["bar"] is not None
+    assert isinstance(tick_snapshot["inputs_digest"], str)
+    assert len(tick_snapshot["inputs_digest"]) >= 8
+    assert isinstance(bar_snapshot["inputs_digest"], str)
+    assert len(bar_snapshot["inputs_digest"]) >= 8
 
     # Old mixed-semantic bar verb should not be reinterpreted as tick traffic.
     store.ingest_event(

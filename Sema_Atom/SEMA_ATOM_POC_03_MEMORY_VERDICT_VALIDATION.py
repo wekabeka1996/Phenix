@@ -4,14 +4,33 @@ import argparse
 import json
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
+
+from jsonschema import Draft7Validator
 
 
 REPO_ROOT = Path(__file__).resolve().parent
 DEFAULT_SAF_PATH = REPO_ROOT / "aurora_real_logs_v02.saf.jsonl"
-DEFAULT_POC02_REPORT_PATH = REPO_ROOT / "SEMA_ATOM_POC_02_REAL_LOG_ADAPTER_REPORT.md"
-DEFAULT_REPORT_PATH = REPO_ROOT / "SEMA_ATOM_POC_03_MEMORY_VERDICT_VALIDATION_REPORT.md"
+DEFAULT_POC02_REPORT_PATH = REPO_ROOT / \
+    "SEMA_ATOM_POC_02_REAL_LOG_ADAPTER_REPORT.md"
+DEFAULT_REPORT_PATH = REPO_ROOT / \
+    "SEMA_ATOM_POC_03_MEMORY_VERDICT_VALIDATION_REPORT.md"
+DEFAULT_SIDECAR_PATH = REPO_ROOT / "SEMA_ATOM_POC_03_EVALUATION_SIDECAR_V01.json"
+DEFAULT_SCHEMA_PATH = REPO_ROOT / \
+    "SEMA_ATOM_POC_03_EVALUATION_SIDECAR_SCHEMA_V01.json"
+SIDECAR_SCHEMA_ID = "SemaAtomPoc03EvaluationSidecarV01"
+SIDECAR_SCHEMA_VERSION = "1.0.0"
+SPLIT_METHOD = "chronological_50_50"
+CANONICAL_OUTCOME_CODES = (
+    "GOOD_DECISION",
+    "CLEAN_LOSS",
+    "BAD_EXIT",
+    "POLICY_PROTECTED",
+    "POLICY_TOO_STRICT",
+    "NEUTRAL_SIGNAL",
+)
 
 CANONICAL_OUTCOME_MAP = {
     "ACCEPTED_WIN": "GOOD_DECISION",
@@ -51,6 +70,32 @@ def _text(value: Any) -> str | None:
 
 def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _utc_now_iso8601() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _context_key_text(parts: tuple[str, str, str, str, str]) -> str:
+    return "|".join(parts)
+
+
+def load_sidecar_schema(schema_path: Path = DEFAULT_SCHEMA_PATH) -> dict[str, Any]:
+    return json.loads(schema_path.read_text(encoding="utf-8"))
+
+
+def validate_sidecar_payload(payload: dict[str, Any], schema_path: Path = DEFAULT_SCHEMA_PATH) -> None:
+    schema = load_sidecar_schema(schema_path)
+    validator = Draft7Validator(schema)
+    errors = sorted(validator.iter_errors(payload),
+                    key=lambda item: list(item.path))
+    if not errors:
+        return
+    messages = []
+    for error in errors[:10]:
+        location = "/".join(str(part) for part in error.path) or "<root>"
+        messages.append(f"{location}: {error.message}")
+    raise ValueError("; ".join(messages))
 
 
 def normalize_outcome_code(outcome_code: str | None) -> str:
@@ -111,7 +156,14 @@ def load_atoms(path: Path) -> list[ValidationAtom]:
             if not line:
                 continue
             payload = json.loads(line)
-            context = payload.get("context") or {}
+            raw_context = payload.get("context") or {}
+            context = {
+                "symbol": _text(raw_context.get("symbol")),
+                "side": _text(raw_context.get("side")),
+                "strategy_id": _text(raw_context.get("strategy_id")),
+                "regime": _text(raw_context.get("regime")),
+                "confidence_bucket": _text(raw_context.get("confidence_bucket")),
+            }
             raw_contract = payload.get("raw_contract") or {}
             event_ts_ms = (
                 _safe_int(raw_contract.get("event_ts_ms"))
@@ -120,11 +172,11 @@ def load_atoms(path: Path) -> list[ValidationAtom]:
                 or line_number
             )
             context_key = (
-                str(context.get("symbol")),
-                str(context.get("side")),
-                str(context.get("strategy_id")),
-                str(context.get("regime")),
-                str(context.get("confidence_bucket")),
+                context.get("symbol") or "",
+                context.get("side") or "",
+                context.get("strategy_id") or "",
+                context.get("regime") or "",
+                context.get("confidence_bucket") or "",
             )
             atoms.append(
                 ValidationAtom(
@@ -133,7 +185,8 @@ def load_atoms(path: Path) -> list[ValidationAtom]:
                     context_key=context_key,
                     context=dict(context),
                     original_outcome_code=str(payload.get("outcome_code")),
-                    canonical_outcome_code=normalize_outcome_code(_text(payload.get("outcome_code"))),
+                    canonical_outcome_code=normalize_outcome_code(
+                        _text(payload.get("outcome_code"))),
                     net_score=float(payload.get("net_score") or 0.0),
                     reward_bps=float(payload.get("reward_bps") or 0.0),
                     threat_bps=float(payload.get("threat_bps") or 0.0),
@@ -145,19 +198,22 @@ def load_atoms(path: Path) -> list[ValidationAtom]:
 
 
 def split_atoms_by_context(atoms: Sequence[ValidationAtom]) -> list[ContextSplit]:
-    grouped: dict[tuple[str, str, str, str, str], list[ValidationAtom]] = defaultdict(list)
+    grouped: dict[tuple[str, str, str, str, str],
+                  list[ValidationAtom]] = defaultdict(list)
     for atom in atoms:
         grouped[atom.context_key].append(atom)
 
     splits: list[ContextSplit] = []
     for context_key in sorted(grouped):
-        context_atoms = sorted(grouped[context_key], key=lambda atom: (atom.event_ts_ms, atom.atom_id))
+        context_atoms = sorted(grouped[context_key], key=lambda atom: (
+            atom.event_ts_ms, atom.atom_id))
         pivot = len(context_atoms) // 2
         if len(context_atoms) >= 2 and pivot == 0:
             pivot = 1
         train_atoms = context_atoms[:pivot]
         validation_atoms = context_atoms[pivot:]
-        splits.append(ContextSplit(context_key=context_key, train_atoms=train_atoms, validation_atoms=validation_atoms))
+        splits.append(ContextSplit(context_key=context_key,
+                      train_atoms=train_atoms, validation_atoms=validation_atoms))
     return splits
 
 
@@ -272,7 +328,8 @@ def classify_validation_result(
             validation_net_score,
         )
     if verdict == "POLICY_TOO_STRICT_CANDIDATE":
-        confirmed = policy_too_strict_rate >= 0.50 and counts.get("POLICY_TOO_STRICT", 0) >= 1
+        confirmed = policy_too_strict_rate >= 0.50 and counts.get(
+            "POLICY_TOO_STRICT", 0) >= 1
         return (
             "CONFIRMED" if confirmed else "CONTRADICTED",
             "validation_high_missed_positive_rate" if confirmed else "validation_missing_missed_positive_pattern",
@@ -287,7 +344,8 @@ def classify_validation_result(
     if verdict == "MIXED_CONTEXT":
         strong_negative = validation_net_score < -10 or negative_rate >= 0.60
         strong_positive = validation_net_score > 10 or favorable_rate >= 0.60
-        strong_policy = policy_too_strict_rate >= 0.60 and counts.get("POLICY_TOO_STRICT", 0) >= 1
+        strong_policy = policy_too_strict_rate >= 0.60 and counts.get(
+            "POLICY_TOO_STRICT", 0) >= 1
         if strong_negative or strong_positive or strong_policy:
             return (
                 "CONTRADICTED",
@@ -332,8 +390,10 @@ def evaluate_contexts(
 ) -> list[ContextVerdict]:
     results: list[ContextVerdict] = []
     for split in splits:
-        context = dict(split.train_atoms[0].context if split.train_atoms else split.validation_atoms[0].context)
-        verdict, recommendation, train_metrics, train_counts = infer_memory_verdict(split.train_atoms)
+        context = dict(
+            split.train_atoms[0].context if split.train_atoms else split.validation_atoms[0].context)
+        verdict, recommendation, train_metrics, train_counts = infer_memory_verdict(
+            split.train_atoms)
         if len(split.train_atoms) < min_train_atoms or len(split.validation_atoms) < min_validation_atoms:
             validation_result = "SKIPPED_LOW_SUPPORT"
             validation_reason = "train_or_validation_support_below_threshold"
@@ -387,6 +447,185 @@ def final_verdict(contexts_tested: int, confirmation_rate: float) -> str:
     return "VALIDATION_INCONCLUSIVE"
 
 
+def _support_quality(
+    *,
+    train_count: int,
+    validation_count: int,
+    display_min_train_atoms: int,
+    display_min_validation_atoms: int,
+    primary_min_train_atoms: int,
+    primary_min_validation_atoms: int,
+) -> str:
+    if train_count < display_min_train_atoms or validation_count < display_min_validation_atoms:
+        return "INSUFFICIENT"
+    if train_count < primary_min_train_atoms or validation_count < primary_min_validation_atoms:
+        return "BORDERLINE"
+    if train_count >= primary_min_train_atoms * 2 and validation_count >= primary_min_validation_atoms * 2:
+        return "STRONG"
+    return "SUFFICIENT"
+
+
+def _low_power_reason(
+    *,
+    train_count: int,
+    validation_count: int,
+    display_min_train_atoms: int,
+    display_min_validation_atoms: int,
+    primary_min_train_atoms: int,
+    primary_min_validation_atoms: int,
+) -> str:
+    if train_count < display_min_train_atoms and validation_count < display_min_validation_atoms:
+        return "TRAIN_AND_VALIDATION_BELOW_DISPLAY_MINIMUM"
+    if train_count < display_min_train_atoms:
+        return "TRAIN_BELOW_DISPLAY_MINIMUM"
+    if validation_count < display_min_validation_atoms:
+        return "VALIDATION_BELOW_DISPLAY_MINIMUM"
+    if train_count < primary_min_train_atoms and validation_count < primary_min_validation_atoms:
+        return "TRAIN_AND_VALIDATION_BELOW_PRIMARY_MINIMUM"
+    if train_count < primary_min_train_atoms:
+        return "TRAIN_BELOW_PRIMARY_MINIMUM"
+    if validation_count < primary_min_validation_atoms:
+        return "VALIDATION_BELOW_PRIMARY_MINIMUM"
+    return "NONE"
+
+
+def _timestamp_range(split: ContextSplit) -> dict[str, int | None]:
+    all_atoms = [*split.train_atoms, *split.validation_atoms]
+    return {
+        "earliest_atom_ts_ms": all_atoms[0].event_ts_ms if all_atoms else None,
+        "latest_atom_ts_ms": all_atoms[-1].event_ts_ms if all_atoms else None,
+        "train_window_end_ts_ms": split.train_atoms[-1].event_ts_ms if split.train_atoms else None,
+        "validation_window_start_ts_ms": split.validation_atoms[0].event_ts_ms if split.validation_atoms else None,
+    }
+
+
+def _residual_status(contexts: Sequence[dict[str, Any]]) -> str:
+    if any(ctx["low_power_reason"] != "NONE" for ctx in contexts):
+        return "LOW_POWER_RESIDUALS"
+    if any(ctx["validation_result"] == "INCONCLUSIVE" for ctx in contexts):
+        return "MIXED_SIGNAL_RESIDUALS"
+    return "NONE"
+
+
+def build_sidecar(
+    *,
+    saf_path: Path,
+    atoms: Sequence[ValidationAtom],
+    splits: Sequence[ContextSplit],
+    context_results: Sequence[ContextVerdict],
+    final_status: str,
+    display_min_train_atoms: int,
+    display_min_validation_atoms: int,
+    primary_min_train_atoms: int,
+    primary_min_validation_atoms: int,
+) -> dict[str, Any]:
+    split_by_key = {split.context_key: split for split in splits}
+    sidecar_contexts: list[dict[str, Any]] = []
+    for item in context_results:
+        split = split_by_key[item.context_key]
+        support_quality = _support_quality(
+            train_count=item.train_count,
+            validation_count=item.validation_count,
+            display_min_train_atoms=display_min_train_atoms,
+            display_min_validation_atoms=display_min_validation_atoms,
+            primary_min_train_atoms=primary_min_train_atoms,
+            primary_min_validation_atoms=primary_min_validation_atoms,
+        )
+        low_power_reason = _low_power_reason(
+            train_count=item.train_count,
+            validation_count=item.validation_count,
+            display_min_train_atoms=display_min_train_atoms,
+            display_min_validation_atoms=display_min_validation_atoms,
+            primary_min_train_atoms=primary_min_train_atoms,
+            primary_min_validation_atoms=primary_min_validation_atoms,
+        )
+        context_payload = {
+            "context_key": _context_key_text(item.context_key),
+            "symbol": item.context.get("symbol") or "",
+            "side": item.context.get("side") or "",
+            "strategy_id": item.context.get("strategy_id") or "",
+            "regime": item.context.get("regime") or "",
+            "confidence_bucket": item.context.get("confidence_bucket") or "",
+            "verdict": item.verdict,
+            "recommendation": item.recommendation,
+            "validation_result": item.validation_result,
+            "validation_reason": item.validation_reason,
+            "train_count": item.train_count,
+            "validation_count": item.validation_count,
+            "train_outcomes": dict(item.train_outcome_counts),
+            "validation_outcomes": dict(item.validation_outcome_counts),
+            "train_net_score": round(item.train_net_score, 6),
+            "validation_net_score": round(item.validation_net_score, 6),
+            "train_rates": {
+                "policy_too_strict_rate": round(item.policy_too_strict_rate_train, 6),
+                "negative_rate": round(item.negative_rate_train, 6),
+                "favorable_rate": round(item.favorable_rate_train, 6),
+            },
+            "validation_rates": {
+                "policy_too_strict_rate": round(item.policy_too_strict_rate_validation, 6),
+                "negative_rate": round(item.negative_rate_validation, 6),
+                "favorable_rate": round(item.favorable_rate_validation, 6),
+            },
+            "support_quality": support_quality,
+            "support_counts": {
+                "raw_total_count": item.train_count + item.validation_count,
+                "train_count": item.train_count,
+                "validation_count": item.validation_count,
+                "effective_total_count": None,
+                "decay_applied": False,
+            },
+            "low_power_reason": low_power_reason,
+            "timestamp_range": _timestamp_range(split),
+        }
+        sidecar_contexts.append(context_payload)
+
+    contexts_tested = [item for item in sidecar_contexts if item["validation_result"] in {
+        "CONFIRMED", "CONTRADICTED"}]
+    confirmations = [
+        item for item in sidecar_contexts if item["validation_result"] == "CONFIRMED"]
+    contradictions = [
+        item for item in sidecar_contexts if item["validation_result"] == "CONTRADICTED"]
+    false_positive_verdicts = [
+        item for item in contradictions if item["verdict"] in {"TOXIC_CONTEXT", "FAVORABLE_CONTEXT", "POLICY_TOO_STRICT_CANDIDATE"}
+    ]
+    false_negative_verdicts = [
+        item for item in contradictions if item["verdict"] == "MIXED_CONTEXT"]
+    confirmation_rate = (len(confirmations) /
+                         len(contexts_tested)) if contexts_tested else 0.0
+    residual_status = _residual_status(sidecar_contexts)
+
+    return {
+        "schema_id": SIDECAR_SCHEMA_ID,
+        "schema_version": SIDECAR_SCHEMA_VERSION,
+        "generated_at_utc": _utc_now_iso8601(),
+        "saf_path": str(saf_path),
+        "total_atoms": len(atoms),
+        "contexts_total": len(sidecar_contexts),
+        "split_config": {
+            "split_method": SPLIT_METHOD,
+            "min_train_atoms": primary_min_train_atoms,
+            "min_validation_atoms": primary_min_validation_atoms,
+            "display_min_train_atoms": display_min_train_atoms,
+            "display_min_validation_atoms": display_min_validation_atoms,
+        },
+        "final_verdict": final_status,
+        "residual_status": residual_status,
+        "summary": {
+            "contexts_total": len(sidecar_contexts),
+            "contexts_tested": len(contexts_tested),
+            "contexts_skipped_low_support": sum(1 for item in sidecar_contexts if item["validation_result"] == "SKIPPED_LOW_SUPPORT"),
+            "contexts_confirmed": len(confirmations),
+            "contexts_contradicted": len(contradictions),
+            "contexts_inconclusive": sum(1 for item in sidecar_contexts if item["validation_result"] == "INCONCLUSIVE"),
+            "confirmation_rate": round(confirmation_rate, 6),
+            "false_positive_verdicts": len(false_positive_verdicts),
+            "false_negative_verdicts": len(false_negative_verdicts),
+            "residual_status": residual_status,
+        },
+        "contexts": sidecar_contexts,
+    }
+
+
 def build_report(
     *,
     saf_path: Path,
@@ -396,25 +635,33 @@ def build_report(
     context_results: Sequence[ContextVerdict],
     final_status: str,
 ) -> str:
-    contexts_tested = [item for item in context_results if item.validation_result in {"CONFIRMED", "CONTRADICTED"}]
-    contexts_skipped = [item for item in context_results if item.validation_result == "SKIPPED_LOW_SUPPORT"]
-    confirmations = [item for item in context_results if item.validation_result == "CONFIRMED"]
-    contradictions = [item for item in context_results if item.validation_result == "CONTRADICTED"]
+    contexts_tested = [item for item in context_results if item.validation_result in {
+        "CONFIRMED", "CONTRADICTED"}]
+    contexts_skipped = [
+        item for item in context_results if item.validation_result == "SKIPPED_LOW_SUPPORT"]
+    confirmations = [
+        item for item in context_results if item.validation_result == "CONFIRMED"]
+    contradictions = [
+        item for item in context_results if item.validation_result == "CONTRADICTED"]
     false_positive_verdicts = [
         item for item in contradictions if item.verdict in {"TOXIC_CONTEXT", "FAVORABLE_CONTEXT", "POLICY_TOO_STRICT_CANDIDATE"}
     ]
     false_negative_verdicts = [
         item for item in contradictions if item.verdict == "MIXED_CONTEXT"
     ]
-    confirmation_rate = (len(confirmations) / len(contexts_tested)) if contexts_tested else 0.0
+    confirmation_rate = (len(confirmations) /
+                         len(contexts_tested)) if contexts_tested else 0.0
 
     def _ranked(verdict_name: str, key_name: str, reverse: bool = True) -> list[ContextVerdict]:
-        matched = [item for item in context_results if item.verdict == verdict_name]
+        matched = [
+            item for item in context_results if item.verdict == verdict_name]
         return sorted(matched, key=lambda item: getattr(item, key_name), reverse=reverse)[:5]
 
     top_toxic = _ranked("TOXIC_CONTEXT", "train_net_score", reverse=False)
-    top_favorable = _ranked("FAVORABLE_CONTEXT", "train_net_score", reverse=True)
-    top_policy = _ranked("POLICY_TOO_STRICT_CANDIDATE", "policy_too_strict_rate_train", reverse=True)
+    top_favorable = _ranked("FAVORABLE_CONTEXT",
+                            "train_net_score", reverse=True)
+    top_policy = _ranked("POLICY_TOO_STRICT_CANDIDATE",
+                         "policy_too_strict_rate_train", reverse=True)
 
     lines = [
         "# SEMA_ATOM_POC_03_MEMORY_VERDICT_VALIDATION_REPORT",
@@ -434,6 +681,7 @@ def build_report(
         f"- total atoms: {len(atoms)}",
         f"- contexts tested: {len(contexts_tested)}",
         f"- contexts skipped due to low support: {len(contexts_skipped)}",
+        f"- total context evaluations: {len(context_results)}",
         f"- verdict confirmation rate: {confirmation_rate:.4f}",
         f"- false positive verdicts: {len(false_positive_verdicts)}",
         f"- false negative verdicts: {len(false_negative_verdicts)}",
@@ -465,7 +713,8 @@ def build_report(
 
     _emit_ranked("Top Toxic Candidates", top_toxic, "train_net_score")
     _emit_ranked("Top Favorable Candidates", top_favorable, "train_net_score")
-    _emit_ranked("Top Policy-Too-Strict Candidates", top_policy, "policy_too_strict_rate_train")
+    _emit_ranked("Top Policy-Too-Strict Candidates",
+                 top_policy, "policy_too_strict_rate_train")
 
     lines.extend(
         [
@@ -516,15 +765,21 @@ def run_validation(
     saf_path: Path = DEFAULT_SAF_PATH,
     poc02_report_path: Path = DEFAULT_POC02_REPORT_PATH,
     output_path: Path = DEFAULT_REPORT_PATH,
+    output_sidecar_path: Path = DEFAULT_SIDECAR_PATH,
     min_train_atoms: int = 2,
     min_validation_atoms: int = 1,
+    primary_min_train_atoms: int = 5,
+    primary_min_validation_atoms: int = 5,
 ) -> dict[str, Any]:
     atoms = load_atoms(saf_path)
     splits = split_atoms_by_context(atoms)
-    context_results = evaluate_contexts(splits, min_train_atoms=min_train_atoms, min_validation_atoms=min_validation_atoms)
-    contexts_tested = [item for item in context_results if item.validation_result in {"CONFIRMED", "CONTRADICTED"}]
+    context_results = evaluate_contexts(
+        splits, min_train_atoms=min_train_atoms, min_validation_atoms=min_validation_atoms)
+    contexts_tested = [item for item in context_results if item.validation_result in {
+        "CONFIRMED", "CONTRADICTED"}]
     confirmation_rate = (
-        sum(1 for item in context_results if item.validation_result == "CONFIRMED") / len(contexts_tested)
+        sum(1 for item in context_results if item.validation_result ==
+            "CONFIRMED") / len(contexts_tested)
         if contexts_tested
         else 0.0
     )
@@ -537,24 +792,52 @@ def run_validation(
         context_results=context_results,
         final_status=status,
     )
+    sidecar_payload = build_sidecar(
+        saf_path=saf_path,
+        atoms=atoms,
+        splits=splits,
+        context_results=context_results,
+        final_status=status,
+        display_min_train_atoms=min_train_atoms,
+        display_min_validation_atoms=min_validation_atoms,
+        primary_min_train_atoms=primary_min_train_atoms,
+        primary_min_validation_atoms=primary_min_validation_atoms,
+    )
+    validate_sidecar_payload(sidecar_payload)
     output_path.write_text(report_text, encoding="utf-8")
+    output_sidecar_path.write_text(json.dumps(
+        sidecar_payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return {
         "status": status,
         "output_path": output_path,
+        "output_sidecar_path": output_sidecar_path,
         "total_atoms": len(atoms),
         "contexts": [asdict(item) for item in context_results],
+        "contexts_total": len(context_results),
         "confirmation_rate": confirmation_rate,
         "contexts_tested": len(contexts_tested),
     }
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Read-only POC_03 memory verdict validation.")
-    parser.add_argument("--saf", type=Path, default=DEFAULT_SAF_PATH, help="Path to aurora_real_logs_v02.saf.jsonl")
-    parser.add_argument("--poc02-report", type=Path, default=DEFAULT_POC02_REPORT_PATH, help="Path to POC_02 report")
-    parser.add_argument("--output-report", type=Path, default=DEFAULT_REPORT_PATH, help="Output report path")
-    parser.add_argument("--min-train-atoms", type=int, default=2, help="Minimum train atoms per tested context")
-    parser.add_argument("--min-validation-atoms", type=int, default=1, help="Minimum validation atoms per tested context")
+    parser = argparse.ArgumentParser(
+        description="Read-only POC_03 memory verdict validation.")
+    parser.add_argument("--saf", type=Path, default=DEFAULT_SAF_PATH,
+                        help="Path to aurora_real_logs_v02.saf.jsonl")
+    parser.add_argument("--poc02-report", type=Path,
+                        default=DEFAULT_POC02_REPORT_PATH, help="Path to POC_02 report")
+    parser.add_argument("--output-report", type=Path,
+                        default=DEFAULT_REPORT_PATH, help="Output report path")
+    parser.add_argument("--output-sidecar", type=Path,
+                        default=DEFAULT_SIDECAR_PATH, help="Output JSON sidecar path")
+    parser.add_argument("--min-train-atoms", type=int, default=2,
+                        help="Display/scoring minimum train atoms per tested context")
+    parser.add_argument("--min-validation-atoms", type=int, default=1,
+                        help="Display/scoring minimum validation atoms per tested context")
+    parser.add_argument("--primary-min-train-atoms", type=int, default=5,
+                        help="Primary readiness minimum train atoms per context")
+    parser.add_argument("--primary-min-validation-atoms", type=int, default=5,
+                        help="Primary readiness minimum validation atoms per context")
     return parser.parse_args(argv)
 
 
@@ -564,11 +847,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         saf_path=args.saf,
         poc02_report_path=args.poc02_report,
         output_path=args.output_report,
+        output_sidecar_path=args.output_sidecar,
         min_train_atoms=args.min_train_atoms,
         min_validation_atoms=args.min_validation_atoms,
+        primary_min_train_atoms=args.primary_min_train_atoms,
+        primary_min_validation_atoms=args.primary_min_validation_atoms,
     )
     print(f"status={result['status']}")
     print(f"report={result['output_path']}")
+    print(f"sidecar={result['output_sidecar_path']}")
     print(f"total_atoms={result['total_atoms']}")
     print(f"contexts_tested={result['contexts_tested']}")
     print(f"confirmation_rate={result['confirmation_rate']:.4f}")

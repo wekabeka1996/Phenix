@@ -167,18 +167,24 @@ class TestRegimeConfidenceBoundary:
     """regime_confidence == min_threshold must be DENIED after the <= fix."""
 
     def _call_gates(self, *, confidence: float, min_conf_by_regime: float,
-                    regime: str = "TREND_UP") -> object:
+                    regime: str = "TREND_UP",
+                    enable_nrr026: bool = True,
+                    min_conf_mapping: dict[str, float] | None = None) -> object:
         cfg = ConfigLoader(Path("config/aurora")).load_config()
         cfg.strategies.aurora.safety_gates.enabled = True
         cfg.domains.decision_making.directional_sanity.enabled = True
-        cfg.domains.decision_making.directional_sanity.nrr026_enabled = True
+        cfg.domains.decision_making.directional_sanity.nrr026_enabled = enable_nrr026
         cfg.domains.decision_making.directional_sanity.min_abs_delta_price = 0.0
         cfg.domains.decision_making.directional_sanity.min_confidence = 0.0
         cfg.domains.decision_making.directional_sanity.consecutive_bars = 1
-        cfg.domains.decision_making.directional_sanity.min_regime_confidence_by_regime = {
-            "DEFAULT": min_conf_by_regime,
-            regime: min_conf_by_regime,
-        }
+        cfg.domains.decision_making.directional_sanity.min_regime_confidence_by_regime = (
+            min_conf_mapping
+            if min_conf_mapping is not None
+            else {
+                "DEFAULT": min_conf_by_regime,
+                regime: min_conf_by_regime,
+            }
+        )
         cfg.domains.decision_making.directional_sanity.min_regime_confidence = min_conf_by_regime
         cfg.domains.decision_making.price_motion_sanity.enabled = False
 
@@ -225,3 +231,83 @@ class TestRegimeConfidenceBoundary:
         """Verify the threshold_reason string reflects the <= semantics."""
         result = self._call_gates(confidence=0.15, min_conf_by_regime=0.15)
         assert "<=" in result.threshold_reason
+
+    def test_confidence_at_threshold_is_denied_even_when_nrr026_disabled(self):
+        result = self._call_gates(
+            confidence=0.20,
+            min_conf_by_regime=0.20,
+            enable_nrr026=False,
+        )
+        assert result.nrr026_enabled is False
+        assert result.outcome == "DENY"
+        assert result.threshold_applied is True
+        assert result.threshold_verdict == "BLOCK"
+        assert result.regime_confidence_gate_verdict == "DENY"
+        assert result.regime_confidence_breach_kind == "below_min"
+        assert result.threshold_reason.startswith(
+            "REGIME_CONFIDENCE_AT_OR_BELOW_MINIMUM:"
+        )
+        assert "regime=TREND_UP" in result.threshold_reason
+        assert "strategy=aurora" in result.threshold_reason
+        assert "symbol=BTCUSDT" in result.threshold_reason
+        assert "source=domain_regime_specific" in result.threshold_reason
+
+    def test_confidence_below_threshold_is_denied_even_when_nrr026_disabled(self):
+        result = self._call_gates(
+            confidence=0.19,
+            min_conf_by_regime=0.20,
+            enable_nrr026=False,
+        )
+        assert result.outcome == "DENY"
+        assert result.threshold_applied is True
+        assert result.threshold_verdict == "BLOCK"
+        assert result.regime_confidence_gate_verdict == "DENY"
+
+    def test_confidence_above_threshold_is_allowed_even_when_nrr026_disabled(self):
+        result = self._call_gates(
+            confidence=0.21,
+            min_conf_by_regime=0.20,
+            enable_nrr026=False,
+        )
+        assert result.nrr026_enabled is False
+        assert result.outcome == "ALLOW"
+        assert result.threshold_verdict == "PASS"
+        assert result.regime_confidence_gate_verdict == "ALLOW"
+
+    @pytest.mark.parametrize("regime, confidence", [
+        ("TREND_UP", 0.20),
+        ("TREND_DOWN", 0.19),
+    ])
+    def test_regime_specific_thresholds_apply_even_when_nrr026_disabled(
+        self,
+        regime: str,
+        confidence: float,
+    ):
+        result = self._call_gates(
+            confidence=confidence,
+            min_conf_by_regime=0.35,
+            regime=regime,
+            enable_nrr026=False,
+            min_conf_mapping={
+                "DEFAULT": 0.35,
+                "TREND_UP": 0.20,
+                "TREND_DOWN": 0.20,
+            },
+        )
+        assert result.outcome == "DENY"
+        assert result.resolved_min_regime_confidence == 0.20
+        assert result.resolved_min_regime_confidence_source == "domain_regime_specific"
+        assert result.resolved_min_regime_confidence_regime_key == regime
+
+    def test_default_threshold_applies_when_regime_specific_key_missing_and_nrr026_disabled(self):
+        result = self._call_gates(
+            confidence=0.35,
+            min_conf_by_regime=0.35,
+            regime="MEAN_REVERSION",
+            enable_nrr026=False,
+            min_conf_mapping={"DEFAULT": 0.35},
+        )
+        assert result.outcome == "DENY"
+        assert result.resolved_min_regime_confidence == 0.35
+        assert result.resolved_min_regime_confidence_source == "domain_default"
+        assert result.resolved_min_regime_confidence_regime_key == "DEFAULT"

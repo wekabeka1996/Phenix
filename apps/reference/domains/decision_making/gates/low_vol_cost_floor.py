@@ -28,6 +28,10 @@ _DIRECTION_CONFIDENCE_FAILURE_REASONS = frozenset(
         "signed_score_not_allowed_as_direction_confidence",
     }
 )
+_NRR062_TESTNET_SEGMENT_OVERRIDE_NAME = "LOW_VOL_SHORT_DIRECTION_ONLY_RAW_SIGNAL"
+_NRR062_TESTNET_SEGMENT_OVERRIDE_MODES = frozenset(
+    {"testnet", "hybrid_live_data_testnet_exec"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -631,6 +635,67 @@ def _resolve_direction_confidence_status(
     if direction_passed:
         return "present_passed"
     return "present_below_threshold"
+
+
+def _is_nrr062_testnet_short_direction_only_candidate(
+    *,
+    trading_mode: str,
+    gate_mode: str,
+    regime: str | None,
+    side: str,
+    direction_confidence_source: str,
+    direction_confidence_scale: str,
+    threshold_family: str,
+    regime_confidence: float | None,
+    resolved_min_regime_confidence: float | None,
+    direction_confidence: float | None,
+    resolved_min_direction_confidence: float | None,
+    actual_tp_bps: Decimal | None,
+    required_gross_tp_bps: Decimal | None,
+    tp_fee_coverage_ratio: Decimal | None,
+    min_tp_fee_coverage: float,
+    rr_ratio: Decimal | None,
+    min_rr: float,
+    violations: list[str],
+) -> bool:
+    normalized_mode = str(trading_mode).strip()
+    normalized_side = _normalize_side_scope(side)
+
+    if normalized_mode not in _NRR062_TESTNET_SEGMENT_OVERRIDE_MODES:
+        return False
+    if gate_mode != "enforced":
+        return False
+    if regime != "LOW_VOLATILITY":
+        return False
+    if normalized_side != "SELL":
+        return False
+    if direction_confidence_source != "signal_score":
+        return False
+    if direction_confidence_scale != "raw_signed_score":
+        return False
+    if threshold_family != "raw_signed_score":
+        return False
+    if regime_confidence is None or resolved_min_regime_confidence is None:
+        return False
+    if float(regime_confidence) < float(resolved_min_regime_confidence):
+        return False
+    if direction_confidence is None or resolved_min_direction_confidence is None:
+        return False
+    if float(direction_confidence) >= float(resolved_min_direction_confidence):
+        return False
+    if actual_tp_bps is None or required_gross_tp_bps is None:
+        return False
+    if actual_tp_bps <= 0 or required_gross_tp_bps <= 0:
+        return False
+    if actual_tp_bps < required_gross_tp_bps:
+        return False
+    if tp_fee_coverage_ratio is None or tp_fee_coverage_ratio < Decimal(str(min_tp_fee_coverage)):
+        return False
+    if rr_ratio is None or rr_ratio < Decimal(str(min_rr)):
+        return False
+    if list(violations) != ["direction_confidence_below_threshold"]:
+        return False
+    return True
 
 
 def _compute_tp_sl_bps(*, side: str, entry_price: Decimal, target_price: Decimal, stop_price: Decimal) -> tuple[Decimal | None, Decimal | None]:
@@ -1358,16 +1423,44 @@ def evaluate_low_vol_cost_floor_gate(
             if rr_ratio is not None and rr_ratio < Decimal(str(gate_cfg.thresholds.min_rr)):
                 violations.append("rr_ratio_below_min")
 
-    threshold_failed = bool(violations)
-    block = threshold_failed and gate_mode == "enforced"
-    gate_reason = "LOW_VOL_COST_FLOOR_BLOCKED" if block else (
-        "LOW_VOL_COST_FLOOR_OBSERVED" if gate_mode == "observe_only" else "LOW_VOL_COST_FLOOR_PASS"
-    )
     direction_confidence_reason, direction_confidence_failure_reason = _resolve_direction_confidence_reason(
         direction_failure_reason=direction_resolution.failure_reason,
         violations=violations,
     )
-    reason = direction_confidence_reason or gate_reason
+    threshold_failed = bool(violations)
+    original_gate_reason = "LOW_VOL_COST_FLOOR_BLOCKED" if threshold_failed and gate_mode == "enforced" else (
+        "LOW_VOL_COST_FLOOR_OBSERVED" if gate_mode == "observe_only" else "LOW_VOL_COST_FLOOR_PASS"
+    )
+    original_reason = direction_confidence_reason or original_gate_reason
+    nrr062_segment_override_applied = _is_nrr062_testnet_short_direction_only_candidate(
+        trading_mode=str(trading_mode),
+        gate_mode=gate_mode,
+        regime=regime,
+        side=side,
+        direction_confidence_source=direction_confidence_source,
+        direction_confidence_scale=direction_confidence_scale,
+        threshold_family=threshold_family,
+        regime_confidence=regime_confidence,
+        resolved_min_regime_confidence=resolved_min_regime_confidence,
+        direction_confidence=direction_confidence,
+        resolved_min_direction_confidence=resolved_min_direction_confidence,
+        actual_tp_bps=actual_tp_bps,
+        required_gross_tp_bps=required_gross_tp_bps,
+        tp_fee_coverage_ratio=tp_fee_coverage_ratio,
+        min_tp_fee_coverage=float(gate_cfg.thresholds.min_tp_fee_coverage),
+        rr_ratio=rr_ratio,
+        min_rr=float(gate_cfg.thresholds.min_rr),
+        violations=violations,
+    )
+    block = threshold_failed and gate_mode == "enforced" and not nrr062_segment_override_applied
+    gate_reason = "LOW_VOL_COST_FLOOR_BLOCKED" if block else (
+        "LOW_VOL_COST_FLOOR_OBSERVED" if gate_mode == "observe_only" else "LOW_VOL_COST_FLOOR_PASS"
+    )
+    reason = (
+        "LOW_VOL_COST_FLOOR_SEGMENT_OVERRIDE_ALLOW"
+        if nrr062_segment_override_applied
+        else original_reason
+    )
     observation_blocks = _build_low_vol_observation_blocks(
         strategy_trace=strategy_trace,
         gate_cfg=gate_cfg,
@@ -1449,6 +1542,17 @@ def evaluate_low_vol_cost_floor_gate(
             "strategy_id": str(strategy_id) if strategy_id is not None else None,
             "symbol": str(symbol).upper() if symbol is not None else None,
             "gate_mode": gate_mode,
+            "nrr062_segment_override_applied": nrr062_segment_override_applied,
+            "nrr062_segment_override_name": _NRR062_TESTNET_SEGMENT_OVERRIDE_NAME
+            if nrr062_segment_override_applied else None,
+            "nrr062_segment_override_no_production": nrr062_segment_override_applied,
+            "original_nrr062_reason": original_gate_reason if nrr062_segment_override_applied else None,
+            "original_low_vol_reason": original_reason if nrr062_segment_override_applied else None,
+            "original_direction_confidence": direction_confidence if nrr062_segment_override_applied else None,
+            "original_regime_confidence": regime_confidence if nrr062_segment_override_applied else None,
+            "selected_source": direction_confidence_source,
+            "selected_scale": direction_confidence_scale,
+            "threshold_family": threshold_family,
             "would_block": threshold_failed and gate_mode == "observe_only",
             "would_block_direction_confidence": gate_mode == "observe_only"
             and direction_confidence_reason is not None,

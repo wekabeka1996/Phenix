@@ -4,6 +4,7 @@ import json
 import logging
 import threading
 import uuid
+from hashlib import sha256
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +21,43 @@ def _truncate_why(text: Optional[str], limit: int = 80) -> Optional[str]:
     if len(text) <= limit:
         return text
     return text[:limit]
+
+
+def _stable_payload_hash(value: Dict[str, Any]) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return sha256(encoded).hexdigest()
+
+
+def _inputs_digest(frame: Dict[str, Any], payload: Dict[str, Any]) -> str:
+    explicit = (
+        payload.get("inputs_digest")
+        or payload.get("inputsDigest")
+        or frame.get("inputs_digest")
+        or frame.get("inputsDigest")
+    )
+    if isinstance(explicit, str) and len(explicit.strip()) >= 8:
+        return explicit.strip()
+
+    basis = {
+        "event_name": frame.get("event_name"),
+        "symbol": payload.get("symbol"),
+        "tf_sec": payload.get("tf_sec"),
+        "ts": payload.get("ts"),
+        "warmup": payload.get("warmup"),
+        "bar": payload.get("bar"),
+        "features": payload.get("features"),
+        "price_motion": payload.get("price_motion"),
+        "source_mode": payload.get("source_mode"),
+        "diagnostics": payload.get("diagnostics"),
+        "why": frame.get("why"),
+    }
+    return _stable_payload_hash(basis)
 
 
 BAR_FEATURE_EVENT = "EVT:FEATURES_CALCULATED"
@@ -181,6 +219,7 @@ class SnapshotStore:
         with self._lock:
             snapshot = {
                 "snapshot_id": str(uuid.uuid4()),
+                "inputs_digest": _inputs_digest(frame, payload),
                 "ts_ms": ts_ms,
                 "ts_human": _iso_utc(ts_ms),
                 "symbol": symbol,

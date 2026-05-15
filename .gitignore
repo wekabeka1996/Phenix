@@ -86,7 +86,7 @@ Pipfile.lock
 
 # poetry
 poetry.lock
-
+frozen/*
 # pdm
 .pdm.toml
 

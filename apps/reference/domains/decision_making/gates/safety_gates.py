@@ -1136,28 +1136,26 @@ def apply_safety_gates(
             result.regime_confidence_gate_verdict = "BYPASS"
             result.threshold_reason = "nrr026_disabled:regime_confidence_missing"
     elif result.regime_confidence <= resolved_min_regime_conf:
-        if nrr026_enabled:
-            result.threshold_applied = True
-            result.threshold_verdict = "BLOCK"
-            result.regime_confidence_gate_verdict = "DENY"
-            result.regime_confidence_breach_kind = "below_min"
-            result.threshold_reason = (
-                f"REGIME_CONFIDENCE_AT_OR_BELOW_UNCERTAIN_CUTOFF:"
-                f"regime_confidence={result.regime_confidence} <= min={resolved_min_regime_conf} "
-                f"source={threshold_resolution.source} key={threshold_resolution.regime_key}"
-            )
-            result.outcome = "DENY"
-            result.deny_reason = NormalizedRejectReasons.INSUFFICIENT_TREND_CONFIRMATION
-            result.why_short = f"FIX-CONF-GATE-01: {result.threshold_reason}"
-            return result
-        else:
-            result.threshold_applied = False
-            result.threshold_verdict = "BYPASS"
-            result.regime_confidence_gate_verdict = "BYPASS"
-            result.threshold_reason = (
-                f"nrr026_disabled:regime_confidence={result.regime_confidence}"
-                f"<=min={resolved_min_regime_conf}"
-            )
+        regime_label = normalize_structural_regime_label(result.regime)
+        strategy_label = result.strategy_id or (
+            str(strategy_id) if strategy_id is not None else "unknown"
+        )
+        symbol_label = str(symbol).strip().upper(
+        ) if symbol is not None else "unknown"
+        result.threshold_applied = True
+        result.threshold_verdict = "BLOCK"
+        result.regime_confidence_gate_verdict = "DENY"
+        result.regime_confidence_breach_kind = "below_min"
+        result.threshold_reason = (
+            "REGIME_CONFIDENCE_AT_OR_BELOW_MINIMUM:"
+            f"regime_confidence={result.regime_confidence} <= min={resolved_min_regime_conf} "
+            f"regime={regime_label or 'UNKNOWN'} strategy={strategy_label} "
+            f"symbol={symbol_label} source={threshold_resolution.source or 'unknown'}"
+        )
+        result.outcome = "DENY"
+        result.deny_reason = NormalizedRejectReasons.INSUFFICIENT_TREND_CONFIRMATION
+        result.why_short = f"FIX-CONF-GATE-01: {result.threshold_reason}"
+        return result
     elif (
         result.resolved_max_regime_confidence is not None
         and result.regime_confidence > result.resolved_max_regime_confidence

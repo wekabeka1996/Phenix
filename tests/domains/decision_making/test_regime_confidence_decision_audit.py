@@ -95,13 +95,12 @@ def _regime_cache_snapshot(*, confidence: str, regime: str = "TREND_UP") -> dict
 
 
 def _configured_dm(*, enable_nrr026: bool = False) -> DecisionMaking:
-    cfg = get_config()
+    cfg = _fresh_config()
     cfg.strategies.aurora.safety_gates.enabled = True
     cfg.domains.decision_making.directional_sanity.enabled = True
     cfg.domains.decision_making.directional_sanity.min_abs_delta_price = 0.0
     cfg.domains.decision_making.directional_sanity.min_confidence = 0.0
-    if enable_nrr026:
-        cfg.domains.decision_making.directional_sanity.nrr026_enabled = True
+    cfg.domains.decision_making.directional_sanity.nrr026_enabled = enable_nrr026
     cfg.domains.decision_making.directional_sanity.consecutive_bars = 1
     cfg.domains.decision_making.price_motion_sanity.enabled = False
     cfg.strategies.aurora.safety_gates.regime_confidence = None
@@ -338,8 +337,62 @@ def test_deny_path_writes_regime_decision_audit_for_threshold_block(
     assert decision["bar_close_ts_ms"] == 1_700_000_000_000
 
 
+def test_deny_path_writes_block_metadata_for_minimum_guard_when_nrr026_disabled(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    audit_path = tmp_path / "regime_confidence_audit_v1.jsonl"
+    monkeypatch.setenv("REGIME_CONFIDENCE_AUDIT_LOG_FILE", str(audit_path))
+
+    dm = _configured_dm(enable_nrr026=False)
+    dm.symbol_states["BTCUSDT"] = {
+        "_delta_price_hist": deque([1.0], maxlen=20)}
+    dm._builder._warmup_gate = lambda **_kw: False
+    dm._per_symbol_regimes["BTCUSDT"] = _regime_cache_snapshot(
+        confidence="0.20")
+
+    with patch(
+        "apps.reference.domains.decision_making.core.facade.order_logger.write"
+    ) as mock_order_write:
+        dm._propose_trade_intent(
+            symbol="BTCUSDT",
+            side="BUY",
+            qty=Decimal("0.01"),
+            price=Decimal("50000"),
+            why_chain=["regime_confidence_audit",
+                       "nrr026_disabled_minimum_guard"],
+            rid="rid-block-audit-nrr026-disabled",
+            reduce_only=False,
+            strategy_id="aurora",
+            decision_ts_ms=1_700_000_000_999,
+        )
+
+    records = _read_jsonl(audit_path)
+    decision_records = [
+        record for record in records if record["record_type"] == "decision"]
+    assert len(decision_records) == 1
+
+    decision = decision_records[0]
+    assert decision["outcome"] == "DENY"
+    assert decision["threshold_applied"] is True
+    assert decision["threshold_verdict"] == "BLOCK"
+    assert decision["regime_confidence_gate_verdict"] == "DENY"
+    assert decision["threshold_reason"].startswith(
+        "REGIME_CONFIDENCE_AT_OR_BELOW_MINIMUM:"
+    )
+
+    logged_row = mock_order_write.call_args[0][0]
+    assert "REGIME_CONFIDENCE_AT_OR_BELOW_MINIMUM" in logged_row["why"]
+    assert logged_row["metadata"]["threshold_applied"] is True
+    assert logged_row["metadata"]["threshold_verdict"] == "BLOCK"
+    assert logged_row["metadata"]["regime_confidence_gate_verdict"] == "DENY"
+    assert logged_row["metadata"]["threshold_reason"].startswith(
+        "REGIME_CONFIDENCE_AT_OR_BELOW_MINIMUM:"
+    )
+
+
 def test_apply_safety_gates_marks_threshold_bypass_when_strategy_gate_disabled() -> None:
-    cfg = get_config()
+    cfg = _fresh_config()
     expected_trend_up_max = _current_domain_max_regime_confidence_by_regime()[
         "TREND_UP"]
     cfg.strategies.aurora.safety_gates.enabled = False
@@ -441,7 +494,7 @@ def test_regime_decision_audit_records_threshold_resolution_source_metadata(
 
 
 def test_apply_safety_gates_uses_regime_specific_confidence_threshold() -> None:
-    cfg = get_config()
+    cfg = _fresh_config()
     cfg.strategies.aurora.safety_gates.enabled = True
     cfg.domains.decision_making.directional_sanity.enabled = True
     cfg.domains.decision_making.directional_sanity.min_abs_delta_price = 0.0
