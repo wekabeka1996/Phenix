@@ -1,0 +1,27 @@
+{
+  "package_j_freeze_counts": {
+    "canonical_closed": 1,
+    "closed_non_canonical_evidence": 0,
+    "filled_position_still_open": 1,
+    "submitted_not_filled": 0,
+    "inconclusive": 24
+  },
+  "package_j_latest_counts": {
+    "canonical_closed": 1,
+    "closed_non_canonical_evidence": 1,
+    "filled_position_still_open": 0,
+    "submitted_not_filled": 0,
+    "inconclusive": 24
+  },
+  "classification_answer": {
+    "primary_driver": "one still-open filled position at freeze plus twenty-four diagnostics-only no-effect rows with no downstream execution evidence",
+    "open_positions_at_freeze": 1,
+    "unfilled_orders_at_freeze": 0,
+    "same_window_noncanonical_close_gap": 0,
+    "short_horizon_cases": 1,
+    "latest_known_noncanonical_closes_after_freeze": 1,
+    "actual_weak_economic_cases_latest_known": 2,
+    "decision_ledger_rows_are_no_effect": true
+  },
+  "verdict": "J_LOW_CLOSE_COUNT_NOT_PRIMARILY_FROM_MANY_OPEN_POSITIONS_OR_SUBMITTED_UNFILLED_ORDERS"
+}

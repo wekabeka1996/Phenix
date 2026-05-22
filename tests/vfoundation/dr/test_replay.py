@@ -41,6 +41,25 @@ def _write_chained_records(
             prev_hash = record_hash
 
 
+def _valid_order_state_changed_record() -> Dict[str, Any]:
+    return {
+        "op": "EVT",
+        "verb": "ORDER_STATE_CHANGED",
+        "ts": 3000,
+        "src": "execution_position",
+        "dst": "monitoring",
+        "pld": {
+            "symbol": "BTCUSDT",
+            "event_ts_ms": 3000,
+            "status": "CANCELED",
+            "canonical_identity_key": (
+                "evt:order_state_changed:symbol=BTCUSDT:order_id=oid-2:terminal_state=CANCELED"
+            ),
+            "order_id": "oid-2",
+        },
+    }
+
+
 # ─── replay_for_rid ──────────────────────────────────────────────────
 
 class TestReplayForRid:
@@ -120,6 +139,7 @@ class TestReplayWithIntegrity:
 
 class TestReplayW5BoundedStartupSubset:
     def test_filters_to_w5_subset_and_symbol_scope(self, tmp_wal: pathlib.Path) -> None:
+        order_state_changed = _valid_order_state_changed_record()
         _write_chained_records(
             tmp_wal,
             [
@@ -141,15 +161,7 @@ class TestReplayW5BoundedStartupSubset:
                     "source": "bus",
                     "why": "close",
                 },
-                {
-                    "rid": "r3",
-                    "op": "EVT",
-                    "verb": "ORDER_STATE_CHANGED",
-                    "ts": 3000,
-                    "symbol": "BTCUSDT",
-                    "status": "FILLED",
-                    "order_id": "oid-2",
-                },
+                order_state_changed,
                 {
                     "rid": "r4",
                     "op": "EVT",
@@ -173,15 +185,162 @@ class TestReplayW5BoundedStartupSubset:
         assert summary.completed is True
         assert summary.scan_state == "completed"
         assert summary.symbols_considered == ["BTCUSDT"]
-        assert summary.records_seen == 2
+        assert summary.records_seen == 3
+        assert summary.records_accepted == 2
+        assert summary.records_duplicate == 0
+        assert summary.records_unresolved == 0
+        assert summary.records_ignored_by_boundary == 2
+        assert summary.event_counts == {
+            "EVT:ORDER_PLACED": 1,
+            "EVT:ORDER_STATE_CHANGED": 1,
+        }
+        assert len(summary.symbol_records) == 1
+        assert summary.symbol_records[0].symbol == "BTCUSDT"
+        assert summary.symbol_records[0].accepted_records == 2
+        assert order_state_changed["pld"]["canonical_identity_key"] in summary.symbol_records[0].identity_keys
+
+    @pytest.mark.parametrize("identity_kind", ["order_id", "client_order_id", "rid"])
+    def test_accepts_valid_order_state_changed_with_supported_identity_fields(
+        self,
+        tmp_wal: pathlib.Path,
+        identity_kind: str,
+    ) -> None:
+        record = _valid_order_state_changed_record()
+        payload = record["pld"]
+
+        payload.pop("order_id", None)
+        payload.pop("client_order_id", None)
+        payload.pop("clientOrderId", None)
+        record.pop("rid", None)
+
+        if identity_kind == "order_id":
+            payload["order_id"] = "oid-2"
+        elif identity_kind == "client_order_id":
+            payload["client_order_id"] = "cid-2"
+        elif identity_kind == "rid":
+            record["rid"] = "rid-2"
+        else:
+            raise AssertionError(f"Unexpected identity_kind: {identity_kind}")
+
+        _write_chained_records(tmp_wal, [record])
+
+        summary = replay.replay_w5_bounded_startup_subset(
+            symbols_considered=["BTCUSDT"],
+        )
+
+        assert summary.records_seen == 1
         assert summary.records_accepted == 1
         assert summary.records_duplicate == 0
         assert summary.records_unresolved == 0
-        assert summary.records_ignored_by_boundary == 3
-        assert summary.event_counts == {"EVT:ORDER_PLACED": 1}
-        assert len(summary.symbol_records) == 1
-        assert summary.symbol_records[0].symbol == "BTCUSDT"
-        assert summary.symbol_records[0].accepted_records == 1
+        assert summary.event_counts == {"EVT:ORDER_STATE_CHANGED": 1}
+        assert summary.restore_boundary_separation == "report_only"
+        assert summary.authoritative_mutation_attempted is False
+        assert summary.symbol_records[0].identity_keys == [
+            record["pld"]["canonical_identity_key"]
+        ]
+
+    def test_order_state_changed_uses_canonical_identity_key_for_dedupe(self, tmp_wal: pathlib.Path) -> None:
+        first = _valid_order_state_changed_record()
+        first["rid"] = "rid-1"
+        second = _valid_order_state_changed_record()
+        second["rid"] = "rid-2"
+
+        _write_chained_records(tmp_wal, [first, second])
+
+        summary = replay.replay_w5_bounded_startup_subset(
+            symbols_considered=["BTCUSDT"],
+        )
+
+        assert summary.records_seen == 2
+        assert summary.records_accepted == 1
+        assert summary.records_duplicate == 1
+        assert summary.records_unresolved == 0
+        assert summary.event_counts == {"EVT:ORDER_STATE_CHANGED": 1}
+        assert summary.symbol_records[0].identity_keys == [
+            first["pld"]["canonical_identity_key"]
+        ]
+
+    def test_order_state_changed_fails_closed_on_missing_symbol(self, tmp_wal: pathlib.Path) -> None:
+        record = _valid_order_state_changed_record()
+        record["pld"].pop("symbol")
+
+        _write_chained_records(tmp_wal, [record])
+
+        summary = replay.replay_w5_bounded_startup_subset(
+            symbols_considered=["BTCUSDT"],
+        )
+
+        assert summary.records_seen == 1
+        assert summary.records_accepted == 0
+        assert summary.records_duplicate == 0
+        assert summary.records_unresolved == 1
+        assert summary.event_counts == {}
+        assert summary.unresolved_reasons == [
+            "EVT:ORDER_STATE_CHANGED:missing_symbol"]
+        assert summary.symbol_records == []
+
+    @pytest.mark.parametrize(
+        ("failure_case", "expected_reason"),
+        [
+            (
+                "missing_canonical_identity_key",
+                "EVT:ORDER_STATE_CHANGED:missing_canonical_identity_key",
+            ),
+            (
+                "empty_canonical_identity_key",
+                "EVT:ORDER_STATE_CHANGED:missing_canonical_identity_key",
+            ),
+            ("missing_status", "EVT:ORDER_STATE_CHANGED:missing_status"),
+            ("missing_event_ts_ms", "EVT:ORDER_STATE_CHANGED:missing_event_ts_ms"),
+            (
+                "missing_all_identity",
+                "EVT:ORDER_STATE_CHANGED:missing_order_id_or_client_order_id_or_rid",
+            ),
+        ],
+    )
+    def test_order_state_changed_fails_closed_when_required_contract_fields_are_missing(
+        self,
+        tmp_wal: pathlib.Path,
+        failure_case: str,
+        expected_reason: str,
+    ) -> None:
+        record = _valid_order_state_changed_record()
+        payload = record["pld"]
+
+        if failure_case == "missing_canonical_identity_key":
+            payload.pop("canonical_identity_key")
+        elif failure_case == "empty_canonical_identity_key":
+            payload["canonical_identity_key"] = "   "
+        elif failure_case == "missing_status":
+            payload.pop("status")
+        elif failure_case == "missing_event_ts_ms":
+            payload.pop("event_ts_ms")
+        elif failure_case == "missing_all_identity":
+            payload.pop("order_id", None)
+            payload.pop("orderId", None)
+            payload.pop("client_order_id", None)
+            payload.pop("clientOrderId", None)
+            payload.pop("rid", None)
+            record.pop("rid", None)
+        else:
+            raise AssertionError(f"Unexpected failure_case: {failure_case}")
+
+        _write_chained_records(tmp_wal, [record])
+
+        summary = replay.replay_w5_bounded_startup_subset(
+            symbols_considered=["BTCUSDT"],
+        )
+
+        assert summary.records_seen == 1
+        assert summary.records_accepted == 0
+        assert summary.records_duplicate == 0
+        assert summary.records_unresolved == 1
+        assert summary.event_counts == {}
+        assert summary.unresolved_reasons == [expected_reason]
+        assert summary.restore_boundary_separation == "report_only"
+        assert summary.authoritative_mutation_attempted is False
+        assert summary.symbol_records[0].unresolved_reasons == [
+            expected_reason]
 
     def test_is_idempotent_for_duplicate_identity(self, tmp_wal: pathlib.Path) -> None:
         _write_chained_records(

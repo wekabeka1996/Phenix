@@ -1,0 +1,72 @@
+{
+  "bundle_root": "logs/frozen/nrr062_fresh_capture_20260515_180927",
+  "observation_scope": "post_last_boot_before_override",
+  "observation_boot_boundary": {
+    "line": 1734,
+    "ts_ms": 1778842508184
+  },
+  "trade_lifecycle_invalid_json_lines": [
+    {
+      "line": 230729,
+      "head": "hot\": {}}"
+    },
+    {
+      "line": 429732,
+      "head": "cumbent_owner\": null, \"score_snapshot\": {}}"
+    },
+    {
+      "line": 430100,
+      "head": "\"fee_source_confidence\": \"unavailable\", \"optional_pct_floor\": {\"candidate_pct\": 0.05, \"required_edge_usd\": null}, \"requi"
+    },
+    {
+      "line": 430997,
+      "head": "hot\": {}}"
+    },
+    {
+      "line": 430998,
+      "head": "wner\": null, \"score_snapshot\": {}}"
+    },
+    {
+      "line": 430999,
+      "head": "pshot\": {}}"
+    },
+    {
+      "line": 431004,
+      "head": "fidence\": \"unavailable\", \"optional_pct_floor\": {\"candidate_pct\": 0.05, \"required_edge_usd\": null}, \"required_edge_usd\": "
+    }
+  ],
+  "nrr062_total_rows": 298,
+  "post_boot_nrr062_surface_rows": 1,
+  "historical_pre_boot_candidate_contract_rows_excluded": 121,
+  "override_applied_rows": 1,
+  "candidate_contract_rows": 1,
+  "candidate_contract_without_override": 0,
+  "boundary_sets": {
+    "buy_or_long_direction_only": {
+      "rows": 0,
+      "override_applied_rows": 0,
+      "verdict": "PASS"
+    },
+    "dual_failure": {
+      "rows": 0,
+      "override_applied_rows": 0,
+      "verdict": "PASS"
+    },
+    "geometry_invalid": {
+      "rows": 0,
+      "override_applied_rows": 0,
+      "verdict": "PASS"
+    },
+    "sell_direction_only_noncandidate": {
+      "rows": 0,
+      "override_applied_rows": 0,
+      "verdict": "PASS"
+    }
+  },
+  "test_contracts_to_rerun": [
+    "tests/domains/decision_making/test_low_vol_cost_floor_gate.py",
+    "tests/domains/decision_making/test_low_vol_direction_confidence_contract.py",
+    "tests/config/test_decision_making_contracts.py",
+    "tests/test_calibrators_import_boundary.py"
+  ]
+}

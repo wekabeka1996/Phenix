@@ -882,6 +882,17 @@ class DecisionMaking:
                     sg.deny_family = "LOW_VOL_COST_FLOOR"
                     sg.deny_reason = NormalizedRejectReasons.LOW_VOL_COST_FLOOR_BLOCKED
                     sg.why_short = "low_vol_cost_floor_blocked"
+                    reject_details = dict(enriched_low_vol_details)
+                    anti_peak_observability = None
+                    if isinstance(strategy_trace, dict):
+                        anti_peak_observability = strategy_trace.get(
+                            "anti_peak_observability"
+                        )
+                    if isinstance(anti_peak_observability, dict):
+                        reject_details.setdefault(
+                            "anti_peak_observability",
+                            dict(anti_peak_observability),
+                        )
                     self._emit_trade_intent_rejected(
                         symbol=symbol,
                         strategy_id=str(strategy_id),
@@ -891,7 +902,7 @@ class DecisionMaking:
                         reason="DECISION",
                         context="LOW_VOL_COST_FLOOR_BLOCKED",
                         why_chain=why_chain,
-                        details=dict(enriched_low_vol_details),
+                        details=reject_details,
                     )
                     self._handle_safety_deny(
                         symbol,

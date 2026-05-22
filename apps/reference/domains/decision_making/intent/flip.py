@@ -7,7 +7,8 @@ Its responsibilities are intentionally narrow:
 - distinguish same-side add vs. true opposite-side flip;
 - enforce per-strategy position_mode on same-side intents;
 - optionally require stronger opposite signals via per-symbol hysteresis;
-- emit the close-and-retry side effects for proven flips.
+- emit the close-and-retry side effects for proven flips;
+- evaluate PyramidingPolicyV1 to allow narrow scoped same-side add exceptions.
 
 The actual position queries, trade-intent proposal, deferred-event emission, and
 FSM access remain injected from the DecisionMaking facade so this module does
@@ -25,6 +26,11 @@ if TYPE_CHECKING:
 OPPOSITE_ENTRY_REQUIRES_EXPLICIT_FLIP_CONTRACT = (
     "OPPOSITE_ENTRY_REQUIRES_EXPLICIT_FLIP_CONTRACT"
 )
+
+_PYRAMIDING_TESTNET_MODES = frozenset({
+    "testnet",
+    "hybrid_live_data_testnet_exec",
+})
 
 
 class FlipOrchestrator:
@@ -61,6 +67,10 @@ class FlipOrchestrator:
         self._propose_trade_intent = propose_trade_intent
         self._emit_intent_deferred_v1 = emit_intent_deferred_v1
         self.logger = logger
+        # Per-symbol pyramiding state: {symbol: {"adds_count": int, "pending_add_rid": str|None}}
+        self._pyramiding_state: dict[str, dict] = {}
+        # Metadata from the last pyramiding add evaluation (cleared on each call)
+        self._last_pyramiding_add_info: dict | None = None
 
     # -- Utility ------------------------------------------------------------
 
@@ -129,6 +139,142 @@ class FlipOrchestrator:
             return None
         except Exception:
             return None
+
+    # -- Pyramiding Policy V1 -----------------------------------------------
+
+    def _reset_pyramiding_state(self, symbol: str) -> None:
+        """Reset per-symbol pyramiding state when position reaches FLAT."""
+        if symbol in self._pyramiding_state:
+            del self._pyramiding_state[symbol]
+
+    def _record_pyramiding_add(self, symbol: str, rid: str | None) -> None:
+        """Record that a pyramiding add was allowed for this symbol."""
+        state = self._pyramiding_state.setdefault(
+            symbol, {"adds_count": 0, "pending_add_rid": None}
+        )
+        state["adds_count"] = state.get("adds_count", 0) + 1
+        state["pending_add_rid"] = rid
+
+    def _evaluate_pyramiding_policy(
+        self,
+        symbol: str,
+        intent_side: str,
+        original_pld: Dict[str, Any],
+        source: str,
+    ) -> str | None:
+        """Evaluate PyramidingPolicyV1 for a same-side add candidate.
+
+        Returns None if the policy allows the add, or a reason_code string if
+        the add should be blocked.  Returns None (no opinion) if the policy is
+        absent or disabled — the caller then falls through to ANTI_PYRAMIDING_BLOCK.
+        """
+        try:
+            aurora_cfg = getattr(getattr(self.config, "strategies", None), "aurora", None)
+            decision_cfg = getattr(aurora_cfg, "decision", None)
+            policy = getattr(decision_cfg, "pyramiding_policy", None)
+        except Exception:
+            return None
+
+        if policy is None or not policy.enabled:
+            return "PYRAMIDING_BLOCKED_NO_MATCHING_RULE"
+
+        # mode must be testnet_enforced
+        if policy.mode != "testnet_enforced":
+            self.logger.warning(
+                "[%s] PYRAMIDING_POLICY_EVALUATED: unknown mode=%r, blocking",
+                symbol, policy.mode,
+            )
+            return "PYRAMIDING_BLOCKED_UNKNOWN_MODE"
+
+        # trading_mode must be testnet or hybrid_live_data_testnet_exec
+        trading_mode = getattr(self.config, "trading_mode", None)
+        if trading_mode not in _PYRAMIDING_TESTNET_MODES:
+            self.logger.info(
+                "[%s] PYRAMIDING_ADD_BLOCKED: mode=%r not in testnet modes", symbol, trading_mode,
+            )
+            return "PYRAMIDING_BLOCKED_NON_TESTNET_MODE"
+
+        if policy.order_type != "LIMIT":
+            return "PYRAMIDING_BLOCKED_NON_LIMIT_ORDER_TYPE"
+
+        regime_ctx = original_pld.get("regime_ctx") or {}
+        regime = str(regime_ctx.get("regime") or "").upper()
+        side_upper = str(intent_side).upper()
+        strategy_id_lower = str(source).lower()
+
+        if not regime:
+            self.logger.warning(
+                "[%s] PYRAMIDING_ADD_BLOCKED: regime missing from payload (fail-closed)", symbol,
+            )
+            return "PYRAMIDING_BLOCKED_REGIME_MISSING"
+
+        matched_rule = None
+        for rule in policy.rules:
+            if not rule.enabled:
+                continue
+            if str(rule.strategy_id).lower() != strategy_id_lower:
+                continue
+            if regime not in {r.upper() for r in rule.regimes}:
+                continue
+            if side_upper not in {s.upper() for s in rule.sides}:
+                continue
+            if rule.symbols is not None and symbol not in rule.symbols:
+                continue
+            matched_rule = rule
+            break
+
+        if matched_rule is None:
+            self.logger.info(
+                "[%s] PYRAMIDING_ADD_BLOCKED: no matching rule for "
+                "strategy=%r regime=%r side=%r",
+                symbol, source, regime, side_upper,
+            )
+            return "PYRAMIDING_BLOCKED_NO_MATCHING_RULE"
+
+        sym_state = self._pyramiding_state.get(symbol, {})
+        current_adds = sym_state.get("adds_count", 0)
+        if current_adds >= policy.max_adds_per_lifecycle:
+            self.logger.info(
+                "[%s] PYRAMIDING_ADD_BLOCKED: max_adds_per_lifecycle reached (%d/%d)",
+                symbol, current_adds, policy.max_adds_per_lifecycle,
+            )
+            return "PYRAMIDING_BLOCKED_MAX_ADDS_EXCEEDED"
+
+        if sym_state.get("pending_add_rid") is not None:
+            self.logger.info(
+                "[%s] PYRAMIDING_ADD_BLOCKED: pending add exists (pending_rid=%r)",
+                symbol, sym_state.get("pending_add_rid"),
+            )
+            return "PYRAMIDING_BLOCKED_PENDING_ADD_EXISTS"
+
+        regime_confidence = regime_ctx.get("confidence")
+        self.logger.info(
+            "[%s] PYRAMIDING_ADD_ALLOWED: rule=%r strategy=%r regime=%r side=%r "
+            "trading_mode=%r regime_confidence=%s adds_count=%d",
+            symbol, matched_rule.id, source, regime, side_upper,
+            trading_mode, regime_confidence, current_adds,
+        )
+        if policy.telemetry.emit_trace:
+            self.logger.info(
+                "[%s] PYRAMIDING_POLICY_EVALUATED: outcome=ALLOW rule=%r "
+                "regime=%r side=%r strategy=%r trading_mode=%r",
+                symbol, matched_rule.id, regime, side_upper, source, trading_mode,
+            )
+        # Store metadata for the gate chain to pick up
+        rid = original_pld.get("rid") if isinstance(original_pld, dict) else None
+        self._last_pyramiding_add_info = {
+            "pyramiding_policy_applied": True,
+            "pyramiding_rule_id": matched_rule.id,
+            "parent_symbol": symbol,
+            "parent_lifecycle_id": rid,
+            "add_index": current_adds,
+            "strategy_id": source,
+            "regime": regime,
+            "side": side_upper,
+            "order_role": "PYRAMIDING_ADD",
+            "trading_mode": trading_mode,
+        }
+        return None
 
     # -- Reduce-Only Close --------------------------------------------------
 
@@ -220,6 +366,8 @@ class FlipOrchestrator:
         # Flip config is mandatory SSOT for active instruments even if the final
         # branch turns out to be FLAT or a same-side block.
         flip_enabled, flip_mult = self._get_flip_config(symbol)
+        # Clear any stale pyramiding add metadata from previous evaluation
+        self._last_pyramiding_add_info = None
 
         pos_state = self._get_position_state(symbol)
 
@@ -230,6 +378,7 @@ class FlipOrchestrator:
             return "NRR-PORTFOLIO-UNKNOWN"
 
         if pos_state == "FLAT":
+            self._reset_pyramiding_state(symbol)
             self.logger.debug(
                 f"[{symbol}] FLIP_ORCHESTRATION: FLAT, allowing OPEN {intent_side}")
             return None
@@ -254,6 +403,20 @@ class FlipOrchestrator:
                 f"[{symbol}] FLIP_ORCHESTRATION: BLOCK - Same-side pyramiding not allowed "
                 f"(state={pos_state}, intent={intent_side})"
             )
+            # PyramidingPolicyV1: check if a scoped allow-exception applies
+            pyramiding_result = self._evaluate_pyramiding_policy(
+                symbol=symbol,
+                intent_side=intent_side,
+                original_pld=original_pld,
+                source=source,
+            )
+            if pyramiding_result is None:
+                # Policy allows this add
+                self._record_pyramiding_add(symbol, original_pld.get("rid") if isinstance(original_pld, dict) else None)
+                return None
+            if pyramiding_result != "PYRAMIDING_BLOCKED_NO_MATCHING_RULE":
+                # Non-default block reason from policy — return it for diagnostics
+                return pyramiding_result
             return "ANTI_PYRAMIDING_BLOCK"
 
         if not flip_enabled:

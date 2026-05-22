@@ -30,6 +30,9 @@ def test_run_backtest_all_scenarios(tmp_path: Path) -> None:
         "nrr030_only",
         "nrr027_030_no_regime_flip",
         "sidecar_only",
+        "pyramiding_enabled_tp_sl_only",
+        "regime_confidence_disabled_tp_sl_only",
+        "quadratic_regime_trend_down_sell_actual_forensics",
     }
     baseline = manifest["scenario_summaries"]["tp_sl_only"]
     assert baseline["trades"] == 3
@@ -39,8 +42,19 @@ def test_run_backtest_all_scenarios(tmp_path: Path) -> None:
     sidecar = manifest["scenario_summaries"]["sidecar_only"]
     assert sidecar["trades"] == 3
     assert sidecar["unresolved"] == 1
+    pyramiding = manifest["scenario_summaries"]["pyramiding_enabled_tp_sl_only"]
+    assert pyramiding["trades"] == 5
+    assert pyramiding["wins"] == 3
+    assert pyramiding["losses"] == 2
+    confidence = manifest["scenario_summaries"]["regime_confidence_disabled_tp_sl_only"]
+    assert confidence["trades"] == 5
+    assert confidence["wins"] == 3
+    assert confidence["losses"] == 2
     assert (report_root / "tp_sl_only" / "report.md").exists()
     assert (report_root / "sidecar_only" / "request_join_audit.csv").exists()
+    assert (report_root / "pyramiding_candidate_audit.csv").exists()
+    assert (report_root / "regime_confidence_disabled_tp_sl_only" / "candidate_audit.csv").exists()
+    assert (report_root / "quadratic_regime_trend_down_sell_actual_forensics" / "QUADRATIC_REGIME_FORENSIC_REPORT.md").exists()
     scenario_summary = json.loads((report_root / "nrr027_only" / "scenario_summary.json").read_text(encoding="utf-8"))
     assert scenario_summary["blocked_entries"] == 2
 

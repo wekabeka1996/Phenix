@@ -24,6 +24,8 @@ from apps.reference.utils.accessors import dget
 
 LOG = logging.getLogger("apps.reference.domains.execution_position.watchdog")
 
+WATCHDOG_ORDER_STATE_CHANGED_WAL_WHY = "watchdog_rest_terminal_non_fill"
+
 
 class OrderTimeoutType(str, Enum):
     """Types of order timeouts"""
@@ -44,6 +46,9 @@ class OrderDeadline:
     side: Optional[str] = None
     # EP-01.3-INT: Per-order fill TTL override (ms). If set, used instead of global fill_ttl_ms.
     fill_ttl_override_ms: Optional[int] = None
+
+    def effective_fill_ttl_ms(self, fallback_fill_ttl_ms: int) -> int:
+        return self.fill_ttl_override_ms or fallback_fill_ttl_ms
 
 
 class OrderTimeoutWatchdog:
@@ -193,6 +198,56 @@ class OrderTimeoutWatchdog:
             status,
             qty,
         )
+
+    def _append_watchdog_order_state_changed_wal(
+        self,
+        *,
+        payload: Dict[str, Any],
+        symbol: str,
+        order_id: str,
+        status: str,
+        rid: Optional[str],
+    ) -> None:
+        client_order_id = dget(payload, "client_order_id", None) or dget(
+            payload, "clientOrderId", None
+        )
+        try:
+            from vfoundation.core.protocol import Message
+            from vfoundation.dr import wal
+
+            msg_kwargs = {
+                "op": "EVT",
+                "verb": "ORDER_STATE_CHANGED",
+                "src": "execution_position",
+                "dst": "monitoring",
+                "pld": payload,
+                "why": WATCHDOG_ORDER_STATE_CHANGED_WAL_WHY,
+            }
+            if rid not in (None, ""):
+                msg_kwargs["rid"] = str(rid)
+
+            record_hash = wal.append(Message(**msg_kwargs).model_dump())
+            if record_hash is None:
+                LOG.warning(
+                    "WATCHDOG_ORDER_STATE_CHANGED_WAL_APPEND_FAILED: symbol=%s order_id=%s status=%s rid=%s client_order_id=%s why=%s",
+                    symbol,
+                    order_id,
+                    status,
+                    rid,
+                    client_order_id,
+                    WATCHDOG_ORDER_STATE_CHANGED_WAL_WHY,
+                )
+        except Exception as exc:
+            LOG.warning(
+                "WATCHDOG_ORDER_STATE_CHANGED_WAL_APPEND_FAILED: symbol=%s order_id=%s status=%s rid=%s client_order_id=%s why=%s error=%s",
+                symbol,
+                order_id,
+                status,
+                rid,
+                client_order_id,
+                WATCHDOG_ORDER_STATE_CHANGED_WAL_WHY,
+                exc,
+            )
 
     def _check_rps_limit(self) -> bool:
         """
@@ -345,7 +400,7 @@ class OrderTimeoutWatchdog:
         deadline = self.pending_orders.pop(order_id)
 
         # EP-01.3-INT: Use per-order fill TTL if provided, else global
-        fill_ttl = deadline.fill_ttl_override_ms if deadline.fill_ttl_override_ms else self.fill_ttl_ms
+        fill_ttl = deadline.effective_fill_ttl_ms(self.fill_ttl_ms)
         fill_deadline_ms = get_clock().now_ms() + fill_ttl
         deadline.deadline_ms = fill_deadline_ms
         deadline.timeout_type = OrderTimeoutType.FILL_TIMEOUT
@@ -537,9 +592,11 @@ class OrderTimeoutWatchdog:
                                 meta['terminal'] = True
                             else:
                                 # Extend deadline so watchdog doesn't timeout mid-fill-sequence
-                                if order_id in self.acked_orders:
-                                    self.acked_orders[order_id].deadline_ms = current_time_ms + \
+                                deadline = self.acked_orders.get(order_id)
+                                if deadline is not None:
+                                    deadline.deadline_ms = current_time_ms + deadline.effective_fill_ttl_ms(
                                         self.fill_ttl_ms
+                                    )
                                 LOG.info(
                                     "PARTIAL_FILL_TRACKING_RETAINED: %s still tracked (qty=%s)",
                                     order_id, executed_qty)
@@ -559,6 +616,12 @@ class OrderTimeoutWatchdog:
                                 f"🔧 POLLING DETECTED CANCEL: {order_id} ({symbol}) status={status}")
                             self._rest_detected_cancels_total += 1
 
+                            deadline = None
+                            if order_id in self.pending_orders:
+                                deadline = self.pending_orders.get(order_id)
+                            elif order_id in self.acked_orders:
+                                deadline = self.acked_orders.get(order_id)
+
                             # Emit ORDER_STATE_CHANGED event for symmetry with TRADE_EXECUTED
                             cancel_payload = normalize_order_state_changed_payload({
                                 "orderId": order_id,
@@ -569,6 +632,13 @@ class OrderTimeoutWatchdog:
                             }, fallback_ts_ms=get_clock().now_ms())
 
                             if self.emit_fn:
+                                self._append_watchdog_order_state_changed_wal(
+                                    payload=cancel_payload,
+                                    symbol=symbol,
+                                    order_id=order_id,
+                                    status=status,
+                                    rid=getattr(deadline, "rid", None),
+                                )
                                 await self.emit_fn("EVT:ORDER_STATE_CHANGED", cancel_payload)
 
                             self.on_order_cancel(order_id)

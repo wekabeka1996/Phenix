@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import apps.reference.config.domains.decision_making as domain_dm
 from apps.reference.config_loader import ConfigLoader, get_config
 from apps.reference.domains.decision_making.core.facade import DecisionMaking
 from apps.reference.domains.decision_making.gates.safety_gates import apply_safety_gates
@@ -901,6 +902,322 @@ def test_apply_safety_gates_rejects_above_max_regime_confidence() -> None:
     assert result.resolved_max_regime_confidence == 0.70
     assert result.resolved_max_regime_confidence_source == "strategy_regime_specific"
     assert result.resolved_regime_confidence_band_active is True
+
+
+def test_apply_safety_gates_strategy_symbol_regime_side_min_override_is_exact_side_only() -> None:
+    cfg = _fresh_config()
+    cfg.strategies.aurora.safety_gates.enabled = True
+    cfg.strategies.aurora.safety_gates.regime_confidence = domain_dm.RegimeConfidenceGateConfig(
+        min_by_regime={"DEFAULT": 0.45, "TREND_DOWN": 0.55},
+        min_by_symbol={"ETHUSDT": {"DEFAULT": 0.60, "TREND_DOWN": 0.70}},
+        min_by_symbol_regime_side={
+            "ETHUSDT": {
+                "TREND_DOWN": {
+                    "SELL": 0.81,
+                }
+            }
+        },
+    )
+    cfg.domains.decision_making.directional_sanity.enabled = True
+    cfg.domains.decision_making.directional_sanity.min_abs_delta_price = 0.0
+    cfg.domains.decision_making.directional_sanity.min_confidence = 0.0
+    _enable_regime_confidence_floor_gate(cfg)
+    cfg.domains.decision_making.directional_sanity.min_regime_confidence = 0.45
+    cfg.domains.decision_making.directional_sanity.min_regime_confidence_by_regime = {
+        "DEFAULT": 0.45,
+        "TREND_DOWN": 0.52,
+    }
+    cfg.domains.decision_making.directional_sanity.max_regime_confidence_by_regime = None
+    cfg.domains.decision_making.directional_sanity.consecutive_bars = 1
+    cfg.domains.decision_making.price_motion_sanity.enabled = False
+
+    sell_result = apply_safety_gates(
+        symbol="ETHUSDT",
+        side="SELL",
+        reduce_only=False,
+        strategy_id="aurora",
+        decision_ts_ms=1_700_000_000_999,
+        why_chain=["regime_confidence_audit"],
+        config=cfg,
+        clock=MagicMock(now_ms=MagicMock(return_value=1_700_000_000_999)),
+        symbol_states={"ETHUSDT": {"_delta_price_hist": deque([1.0], maxlen=20)}},
+        per_symbol_regimes={
+            "ETHUSDT": _regime_cache_snapshot(confidence="0.79", regime="TREND_DOWN")
+        },
+        system_stress_states={},
+    )
+    buy_result = apply_safety_gates(
+        symbol="ETHUSDT",
+        side="BUY",
+        reduce_only=False,
+        strategy_id="aurora",
+        decision_ts_ms=1_700_000_000_999,
+        why_chain=["regime_confidence_audit"],
+        config=cfg,
+        clock=MagicMock(now_ms=MagicMock(return_value=1_700_000_000_999)),
+        symbol_states={"ETHUSDT": {"_delta_price_hist": deque([1.0], maxlen=20)}},
+        per_symbol_regimes={
+            "ETHUSDT": _regime_cache_snapshot(confidence="0.79", regime="TREND_DOWN")
+        },
+        system_stress_states={},
+    )
+
+    assert sell_result.outcome == "DENY"
+    assert sell_result.resolved_min_regime_confidence == 0.81
+    assert sell_result.resolved_min_regime_confidence_source == "strategy_symbol_regime_side_specific"
+    assert sell_result.resolved_min_regime_confidence_strategy_id == "aurora"
+    assert sell_result.regime_confidence_breach_kind == "below_min"
+
+    assert buy_result.outcome == "ALLOW"
+    assert buy_result.resolved_min_regime_confidence == 0.70
+    assert buy_result.resolved_min_regime_confidence_source == "strategy_symbol_regime_specific"
+    assert buy_result.regime_confidence_gate_verdict == "ALLOW"
+
+
+def test_apply_safety_gates_strategy_symbol_regime_side_max_disable_skips_above_max_only_for_exact_side() -> None:
+    cfg = _fresh_config()
+    cfg.strategies.aurora.safety_gates.enabled = True
+    cfg.strategies.aurora.safety_gates.regime_confidence = domain_dm.RegimeConfidenceGateConfig(
+        min_by_regime={"DEFAULT": 0.45, "TREND_DOWN": 0.52},
+        max_by_symbol_regime_side={
+            "ETHUSDT": {
+                "TREND_DOWN": {
+                    "SELL": {
+                        "enabled": False,
+                    }
+                }
+            }
+        },
+    )
+    cfg.domains.decision_making.directional_sanity.enabled = True
+    cfg.domains.decision_making.directional_sanity.min_abs_delta_price = 0.0
+    cfg.domains.decision_making.directional_sanity.min_confidence = 0.0
+    _enable_regime_confidence_floor_gate(cfg)
+    cfg.domains.decision_making.directional_sanity.min_regime_confidence = 0.45
+    cfg.domains.decision_making.directional_sanity.min_regime_confidence_by_regime = {
+        "DEFAULT": 0.45,
+        "TREND_DOWN": 0.52,
+    }
+    cfg.domains.decision_making.directional_sanity.max_regime_confidence_by_regime = {
+        "TREND_DOWN": 0.70,
+    }
+    cfg.domains.decision_making.directional_sanity.consecutive_bars = 1
+    cfg.domains.decision_making.price_motion_sanity.enabled = False
+
+    sell_result = apply_safety_gates(
+        symbol="ETHUSDT",
+        side="SELL",
+        reduce_only=False,
+        strategy_id="aurora",
+        decision_ts_ms=1_700_000_000_999,
+        why_chain=["regime_confidence_audit"],
+        config=cfg,
+        clock=MagicMock(now_ms=MagicMock(return_value=1_700_000_000_999)),
+        symbol_states={"ETHUSDT": {"_delta_price_hist": deque([1.0], maxlen=20)}},
+        per_symbol_regimes={
+            "ETHUSDT": _regime_cache_snapshot(confidence="0.80", regime="TREND_DOWN")
+        },
+        system_stress_states={},
+    )
+    buy_result = apply_safety_gates(
+        symbol="ETHUSDT",
+        side="BUY",
+        reduce_only=False,
+        strategy_id="aurora",
+        decision_ts_ms=1_700_000_000_999,
+        why_chain=["regime_confidence_audit"],
+        config=cfg,
+        clock=MagicMock(now_ms=MagicMock(return_value=1_700_000_000_999)),
+        symbol_states={"ETHUSDT": {"_delta_price_hist": deque([1.0], maxlen=20)}},
+        per_symbol_regimes={
+            "ETHUSDT": _regime_cache_snapshot(confidence="0.80", regime="TREND_DOWN")
+        },
+        system_stress_states={},
+    )
+    bnb_result = apply_safety_gates(
+        symbol="BNBUSDT",
+        side="SELL",
+        reduce_only=False,
+        strategy_id="aurora",
+        decision_ts_ms=1_700_000_000_999,
+        why_chain=["regime_confidence_audit"],
+        config=cfg,
+        clock=MagicMock(now_ms=MagicMock(return_value=1_700_000_000_999)),
+        symbol_states={"BNBUSDT": {"_delta_price_hist": deque([1.0], maxlen=20)}},
+        per_symbol_regimes={
+            "BNBUSDT": _regime_cache_snapshot(confidence="0.80", regime="TREND_DOWN")
+        },
+        system_stress_states={},
+    )
+
+    assert sell_result.outcome == "ALLOW"
+    assert sell_result.resolved_max_regime_confidence is None
+    assert sell_result.resolved_max_regime_confidence_source == "strategy_symbol_regime_side_specific_disabled"
+    assert sell_result.nrr063_enabled is False
+    assert sell_result.regime_confidence_gate_verdict == "ALLOW"
+
+    assert buy_result.outcome == "DENY"
+    assert buy_result.deny_reason == "NRR-063"
+    assert buy_result.resolved_max_regime_confidence == 0.70
+    assert buy_result.resolved_max_regime_confidence_source == "domain_regime_specific"
+    assert buy_result.regime_confidence_breach_kind == "above_max"
+
+    assert bnb_result.outcome == "DENY"
+    assert bnb_result.deny_reason == "NRR-063"
+    assert bnb_result.resolved_max_regime_confidence == 0.70
+    assert bnb_result.resolved_max_regime_confidence_source == "domain_regime_specific"
+
+
+def test_apply_safety_gates_strategy_regime_side_max_raise_is_exact_side_only() -> None:
+    cfg = _fresh_config()
+    cfg.strategies.aurora.safety_gates.enabled = True
+    cfg.strategies.aurora.safety_gates.regime_confidence = domain_dm.RegimeConfidenceGateConfig(
+        min_by_regime={"DEFAULT": 0.45, "TREND_DOWN": 0.52},
+        max_by_regime={"TREND_DOWN": 0.70},
+        max_by_regime_side={
+            "TREND_DOWN": {
+                "SELL": {
+                    "enabled": True,
+                    "threshold": 0.95,
+                }
+            }
+        },
+    )
+    cfg.domains.decision_making.directional_sanity.enabled = True
+    cfg.domains.decision_making.directional_sanity.min_abs_delta_price = 0.0
+    cfg.domains.decision_making.directional_sanity.min_confidence = 0.0
+    _enable_regime_confidence_floor_gate(cfg)
+    cfg.domains.decision_making.directional_sanity.min_regime_confidence = 0.45
+    cfg.domains.decision_making.directional_sanity.min_regime_confidence_by_regime = {
+        "DEFAULT": 0.45,
+        "TREND_DOWN": 0.52,
+    }
+    cfg.domains.decision_making.directional_sanity.max_regime_confidence_by_regime = {
+        "TREND_DOWN": 0.70,
+    }
+    cfg.domains.decision_making.directional_sanity.consecutive_bars = 1
+    cfg.domains.decision_making.price_motion_sanity.enabled = False
+
+    sell_result = apply_safety_gates(
+        symbol="ETHUSDT",
+        side="SELL",
+        reduce_only=False,
+        strategy_id="aurora",
+        decision_ts_ms=1_700_000_000_999,
+        why_chain=["regime_confidence_audit"],
+        config=cfg,
+        clock=MagicMock(now_ms=MagicMock(return_value=1_700_000_000_999)),
+        symbol_states={"ETHUSDT": {"_delta_price_hist": deque([1.0], maxlen=20)}},
+        per_symbol_regimes={
+            "ETHUSDT": _regime_cache_snapshot(confidence="0.80", regime="TREND_DOWN")
+        },
+        system_stress_states={},
+    )
+    buy_result = apply_safety_gates(
+        symbol="ETHUSDT",
+        side="BUY",
+        reduce_only=False,
+        strategy_id="aurora",
+        decision_ts_ms=1_700_000_000_999,
+        why_chain=["regime_confidence_audit"],
+        config=cfg,
+        clock=MagicMock(now_ms=MagicMock(return_value=1_700_000_000_999)),
+        symbol_states={"ETHUSDT": {"_delta_price_hist": deque([1.0], maxlen=20)}},
+        per_symbol_regimes={
+            "ETHUSDT": _regime_cache_snapshot(confidence="0.80", regime="TREND_DOWN")
+        },
+        system_stress_states={},
+    )
+
+    assert sell_result.outcome == "ALLOW"
+    assert sell_result.resolved_max_regime_confidence == 0.95
+    assert sell_result.resolved_max_regime_confidence_source == "strategy_regime_side_specific"
+    assert sell_result.regime_confidence_gate_verdict == "ALLOW"
+
+    assert buy_result.outcome == "DENY"
+    assert buy_result.deny_reason == "NRR-063"
+    assert buy_result.resolved_max_regime_confidence == 0.70
+    assert buy_result.resolved_max_regime_confidence_source == "strategy_regime_specific"
+
+
+def test_current_aurora_yaml_activates_only_eth_trend_down_sell_nrr063_exception() -> None:
+    cfg = _fresh_config()
+    assert cfg.domains.decision_making.directional_sanity.nrr026_enabled is False
+    assert cfg.strategies.aurora.assets["XRPUSDT"].enabled is False
+    assert cfg.strategies.aurora.safety_gates.regime_confidence is not None
+    assert "DOGEUSDT" not in cfg.strategies.aurora.safety_gates.regime_confidence.max_by_symbol_regime_side
+
+    common_kwargs = dict(
+        reduce_only=False,
+        strategy_id="aurora",
+        decision_ts_ms=1_700_000_000_999,
+        why_chain=["regime_confidence_audit", "variant_b_testnet_activation"],
+        config=cfg,
+        clock=MagicMock(now_ms=MagicMock(return_value=1_700_000_000_999)),
+        system_stress_states={},
+    )
+
+    eth_sell = apply_safety_gates(
+        symbol="ETHUSDT",
+        side="SELL",
+        symbol_states={"ETHUSDT": {"_delta_price_hist": deque([1.0], maxlen=20)}},
+        per_symbol_regimes={
+            "ETHUSDT": _regime_cache_snapshot(confidence="0.41", regime="TREND_DOWN")
+        },
+        **common_kwargs,
+    )
+    eth_buy = apply_safety_gates(
+        symbol="ETHUSDT",
+        side="BUY",
+        symbol_states={"ETHUSDT": {"_delta_price_hist": deque([1.0], maxlen=20)}},
+        per_symbol_regimes={
+            "ETHUSDT": _regime_cache_snapshot(confidence="0.41", regime="TREND_DOWN")
+        },
+        **common_kwargs,
+    )
+    bnb_sell = apply_safety_gates(
+        symbol="BNBUSDT",
+        side="SELL",
+        symbol_states={"BNBUSDT": {"_delta_price_hist": deque([1.0], maxlen=20)}},
+        per_symbol_regimes={
+            "BNBUSDT": _regime_cache_snapshot(confidence="0.41", regime="TREND_DOWN")
+        },
+        **common_kwargs,
+    )
+    btc_sell = apply_safety_gates(
+        symbol="BTCUSDT",
+        side="SELL",
+        symbol_states={"BTCUSDT": {"_delta_price_hist": deque([1.0], maxlen=20)}},
+        per_symbol_regimes={
+            "BTCUSDT": _regime_cache_snapshot(confidence="0.41", regime="TREND_DOWN")
+        },
+        **common_kwargs,
+    )
+
+    assert eth_sell.outcome == "ALLOW"
+    assert eth_sell.resolved_min_regime_confidence == 0.20
+    assert eth_sell.resolved_min_regime_confidence_source == "domain_regime_specific"
+    assert eth_sell.resolved_max_regime_confidence is None
+    assert eth_sell.resolved_max_regime_confidence_source == "strategy_symbol_regime_side_specific_disabled"
+    assert eth_sell.nrr063_enabled is False
+    assert eth_sell.regime_confidence_gate_verdict == "ALLOW"
+
+    assert eth_buy.outcome == "DENY"
+    assert eth_buy.deny_reason == "NRR-063"
+    assert eth_buy.resolved_min_regime_confidence == 0.20
+    assert eth_buy.resolved_max_regime_confidence == 0.40
+    assert eth_buy.resolved_max_regime_confidence_source == "domain_regime_specific"
+    assert eth_buy.regime_confidence_breach_kind == "above_max"
+
+    assert bnb_sell.outcome == "DENY"
+    assert bnb_sell.deny_reason == "NRR-063"
+    assert bnb_sell.resolved_max_regime_confidence == 0.40
+    assert bnb_sell.resolved_max_regime_confidence_source == "domain_regime_specific"
+
+    assert btc_sell.outcome == "DENY"
+    assert btc_sell.deny_reason == "NRR-063"
+    assert btc_sell.resolved_max_regime_confidence == 0.40
+    assert btc_sell.resolved_max_regime_confidence_source == "domain_regime_specific"
 
 
 def test_apply_safety_gates_allows_confidence_inside_band() -> None:

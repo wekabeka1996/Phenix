@@ -1,0 +1,124 @@
+{
+  "task": "AURORA_R7W_FEE_AWARE_SHADOW_POST_PATCH_RUNTIME_CONFIRMATION",
+  "boundary": {
+    "method": "git_commit",
+    "timestamp": "2026-05-14T22:44:42Z",
+    "timestamp_ms": 1778798682000,
+    "confidence": "high"
+  },
+  "matching_basis": "Best-effort join by symbol plus shadow journal payload_fragment.ts_ms. Journal payload_fragment does not retain transitions, candidate_key, fee_source, rid, or lifecycle_id, so candidate-level proof is not possible.",
+  "row_level_classification_counts": {
+    "BOTH_SINKS_OK": 8,
+    "TIMESTAMP_MISMATCH_BUT_JOINABLE": 28,
+    "TRADE_LIFECYCLE_ONLY": 0,
+    "CRITICAL_JOURNAL_ONLY": 0,
+    "UNJOINABLE": 0,
+    "MALFORMED": 0
+  },
+  "timestamp_delta_ms": {
+    "min": 0,
+    "max": 10
+  },
+  "clusters": [
+    {
+      "symbol": "XRPUSDT",
+      "event_ts_utc": "2026-05-16T12:16:06.923000Z",
+      "transition": "ARMED",
+      "trade_rows": 6,
+      "journal_rows": 6,
+      "exact_top_level_ts_matches": 1,
+      "joinable_timestamp_mismatches": 5,
+      "classification": "TIMESTAMP_MISMATCH_BUT_JOINABLE"
+    },
+    {
+      "symbol": "XRPUSDT",
+      "event_ts_utc": "2026-05-16T12:17:50.519000Z",
+      "transition": "TRIGGERED",
+      "trade_rows": 6,
+      "journal_rows": 6,
+      "exact_top_level_ts_matches": 1,
+      "joinable_timestamp_mismatches": 5,
+      "classification": "TIMESTAMP_MISMATCH_BUT_JOINABLE"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "event_ts_utc": "2026-05-16T14:36:07.149000Z",
+      "transition": "ARMED",
+      "trade_rows": 2,
+      "journal_rows": 2,
+      "exact_top_level_ts_matches": 1,
+      "joinable_timestamp_mismatches": 1,
+      "classification": "TIMESTAMP_MISMATCH_BUT_JOINABLE"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "event_ts_utc": "2026-05-16T14:36:30.037000Z",
+      "transition": "ARMED",
+      "trade_rows": 2,
+      "journal_rows": 2,
+      "exact_top_level_ts_matches": 1,
+      "joinable_timestamp_mismatches": 1,
+      "classification": "TIMESTAMP_MISMATCH_BUT_JOINABLE"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "event_ts_utc": "2026-05-16T14:36:41.477000Z",
+      "transition": "ARMED",
+      "trade_rows": 2,
+      "journal_rows": 2,
+      "exact_top_level_ts_matches": 1,
+      "joinable_timestamp_mismatches": 1,
+      "classification": "TIMESTAMP_MISMATCH_BUT_JOINABLE"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "event_ts_utc": "2026-05-16T14:37:21.526000Z",
+      "transition": "TRIGGERED",
+      "trade_rows": 6,
+      "journal_rows": 6,
+      "exact_top_level_ts_matches": 0,
+      "joinable_timestamp_mismatches": 6,
+      "classification": "TIMESTAMP_MISMATCH_BUT_JOINABLE"
+    },
+    {
+      "symbol": "DOGEUSDT",
+      "event_ts_utc": "2026-05-17T06:58:59.611000Z",
+      "transition": "ARMED",
+      "trade_rows": 2,
+      "journal_rows": 2,
+      "exact_top_level_ts_matches": 1,
+      "joinable_timestamp_mismatches": 1,
+      "classification": "TIMESTAMP_MISMATCH_BUT_JOINABLE"
+    },
+    {
+      "symbol": "DOGEUSDT",
+      "event_ts_utc": "2026-05-17T06:59:22.451000Z",
+      "transition": "ARMED",
+      "trade_rows": 2,
+      "journal_rows": 2,
+      "exact_top_level_ts_matches": 0,
+      "joinable_timestamp_mismatches": 2,
+      "classification": "TIMESTAMP_MISMATCH_BUT_JOINABLE"
+    },
+    {
+      "symbol": "DOGEUSDT",
+      "event_ts_utc": "2026-05-17T06:59:28.164000Z",
+      "transition": "ARMED",
+      "trade_rows": 2,
+      "journal_rows": 2,
+      "exact_top_level_ts_matches": 1,
+      "joinable_timestamp_mismatches": 1,
+      "classification": "TIMESTAMP_MISMATCH_BUT_JOINABLE"
+    },
+    {
+      "symbol": "DOGEUSDT",
+      "event_ts_utc": "2026-05-17T07:01:11.432000Z",
+      "transition": "TRIGGERED",
+      "trade_rows": 6,
+      "journal_rows": 6,
+      "exact_top_level_ts_matches": 1,
+      "joinable_timestamp_mismatches": 5,
+      "classification": "TIMESTAMP_MISMATCH_BUT_JOINABLE"
+    }
+  ]
+}

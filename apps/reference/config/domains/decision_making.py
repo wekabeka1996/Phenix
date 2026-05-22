@@ -33,6 +33,7 @@ _REGIME_CONFIDENCE_GATE_KEYS = frozenset({
     "MEAN_REVERSION",
     "UNCERTAIN",
 })
+_REGIME_CONFIDENCE_SIDE_KEYS = frozenset({"BUY", "SELL"})
 
 _LOW_VOL_COST_FLOOR_RUNTIME_MODES = frozenset(
     {"testnet", "hybrid_live_data_testnet_exec", "live", "production"}
@@ -139,6 +140,99 @@ def _normalize_symbol_regime_confidence_threshold_mapping(
     return normalized
 
 
+def _validate_regime_confidence_side_threshold_mapping_shape(value, *, field_name: str):
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError(f'{field_name} must be a mapping')
+    allowed = ', '.join(
+        sorted(key for key in _REGIME_CONFIDENCE_GATE_KEYS if key != 'DEFAULT')
+    )
+    for raw_key, raw_mapping in value.items():
+        if not isinstance(raw_key, str):
+            raise ValueError(f'{field_name} keys must be strings')
+        key = raw_key.strip()
+        if raw_key != key or key != key.upper():
+            raise ValueError(
+                f'{field_name} keys must be canonical uppercase regime labels'
+            )
+        if key == 'DEFAULT' or key not in _REGIME_CONFIDENCE_GATE_KEYS:
+            raise ValueError(
+                f"unsupported {field_name} key '{raw_key}'; allowed: {allowed}"
+            )
+        if raw_mapping is None:
+            raise ValueError(f'{field_name}.{key} must be a side mapping')
+    return value
+
+
+def _normalize_regime_confidence_side_threshold_mapping(
+    mapping,
+    *,
+    field_name: str,
+):
+    if not mapping:
+        raise ValueError(f'{field_name} must not be empty when provided')
+    normalized = {}
+    allowed = ', '.join(
+        sorted(key for key in _REGIME_CONFIDENCE_GATE_KEYS if key != 'DEFAULT')
+    )
+    for raw_key, raw_mapping in mapping.items():
+        key = str(raw_key)
+        canonical = key.strip()
+        if key != canonical or canonical != canonical.upper():
+            raise ValueError(
+                f'{field_name} keys must be canonical uppercase regime labels'
+            )
+        if canonical == 'DEFAULT' or canonical not in _REGIME_CONFIDENCE_GATE_KEYS:
+            raise ValueError(
+                f"unsupported {field_name} key '{raw_key}'; allowed: {allowed}"
+            )
+        normalized[canonical] = raw_mapping
+    return normalized
+
+
+def _validate_symbol_regime_confidence_side_threshold_mapping_shape(value, *, field_name: str):
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError(f'{field_name} must be a mapping')
+    for raw_symbol, raw_mapping in value.items():
+        if not isinstance(raw_symbol, str):
+            raise ValueError(f'{field_name} keys must be strings')
+        symbol = raw_symbol.strip()
+        if not symbol or raw_symbol != symbol or symbol != symbol.upper():
+            raise ValueError(
+                f'{field_name} keys must be canonical uppercase symbols'
+            )
+        _validate_regime_confidence_side_threshold_mapping_shape(
+            raw_mapping,
+            field_name=f'{field_name}.{symbol}',
+        )
+    return value
+
+
+def _normalize_symbol_regime_confidence_side_threshold_mapping(
+    mapping,
+    *,
+    field_name: str,
+):
+    if not mapping:
+        raise ValueError(f'{field_name} must not be empty when provided')
+    normalized = {}
+    for raw_symbol, raw_mapping in mapping.items():
+        symbol = str(raw_symbol)
+        canonical = symbol.strip()
+        if symbol != canonical or canonical != canonical.upper():
+            raise ValueError(
+                f'{field_name} keys must be canonical uppercase symbols'
+            )
+        normalized[canonical] = _normalize_regime_confidence_side_threshold_mapping(
+            raw_mapping,
+            field_name=f'{field_name}.{canonical}',
+        )
+    return normalized
+
+
 def _validate_regime_confidence_band_contract(
     *,
     min_value: Optional[float],
@@ -181,6 +275,150 @@ def _validate_regime_confidence_band_symbol_contract(
     common_symbols = set(min_mapping).intersection(max_mapping)
     for symbol in common_symbols:
         _validate_regime_confidence_band_mapping_contract(
+            min_mapping=min_mapping.get(symbol),
+            max_mapping=max_mapping.get(symbol),
+            field_name=f'{field_name}.{symbol}',
+        )
+
+
+def _validate_regime_confidence_side_threshold_value(value, *, field_name: str):
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError(
+            f'{field_name} values must be numeric thresholds in [0.0, 1.0]'
+        )
+    try:
+        threshold = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f'{field_name} values must be numeric thresholds in [0.0, 1.0]'
+        ) from exc
+    if threshold < 0.0 or threshold > 1.0:
+        raise ValueError(f'{field_name} values must be in [0.0, 1.0]')
+    return threshold
+
+
+class RegimeConfidenceSideMinThresholdConfig(BaseModel):
+    """Side-aware strategy-local min regime-confidence override."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    BUY: Optional[float] = Field(default=None)
+    SELL: Optional[float] = Field(default=None)
+
+    @field_validator('BUY', 'SELL', mode='before')
+    @classmethod
+    def validate_side_threshold(cls, value, info):
+        return _validate_regime_confidence_side_threshold_value(
+            value,
+            field_name=f'side_min_threshold.{info.field_name}',
+        )
+
+    @model_validator(mode='after')
+    def validate_presence(self) -> 'RegimeConfidenceSideMinThresholdConfig':
+        explicit_null = [
+            side for side in self.model_fields_set if getattr(self, side) is None
+        ]
+        if explicit_null:
+            raise ValueError(
+                f"side_min_threshold does not support explicit null for {', '.join(sorted(explicit_null))}"
+            )
+        if all(getattr(self, side) is None for side in _REGIME_CONFIDENCE_SIDE_KEYS):
+            raise ValueError('side_min_threshold requires at least one side')
+        return self
+
+
+class RegimeConfidenceMaxSideOverrideConfig(BaseModel):
+    """Side-aware strategy-local max regime-confidence override."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(...)
+    threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+
+    @field_validator('threshold', mode='before')
+    @classmethod
+    def validate_threshold_shape(cls, value):
+        if value is None:
+            return None
+        return _validate_regime_confidence_side_threshold_value(
+            value,
+            field_name='side_max_override.threshold',
+        )
+
+    @model_validator(mode='after')
+    def validate_contract(self) -> 'RegimeConfidenceMaxSideOverrideConfig':
+        if self.enabled and self.threshold is None:
+            raise ValueError(
+                'side_max_override enabled=true requires threshold'
+            )
+        if not self.enabled and self.threshold is not None:
+            raise ValueError(
+                'side_max_override enabled=false requires threshold to be omitted'
+            )
+        return self
+
+
+class RegimeConfidenceSideMaxOverrideMapConfig(BaseModel):
+    """Per-side map of max regime-confidence overrides."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    BUY: Optional[RegimeConfidenceMaxSideOverrideConfig] = Field(default=None)
+    SELL: Optional[RegimeConfidenceMaxSideOverrideConfig] = Field(default=None)
+
+    @model_validator(mode='after')
+    def validate_presence(self) -> 'RegimeConfidenceSideMaxOverrideMapConfig':
+        explicit_null = [
+            side for side in self.model_fields_set if getattr(self, side) is None
+        ]
+        if explicit_null:
+            raise ValueError(
+                f"side_max_override_map does not support explicit null for {', '.join(sorted(explicit_null))}"
+            )
+        if all(getattr(self, side) is None for side in _REGIME_CONFIDENCE_SIDE_KEYS):
+            raise ValueError(
+                'side_max_override_map requires at least one side'
+            )
+        return self
+
+
+def _validate_regime_confidence_side_band_mapping_contract(
+    *,
+    min_mapping: Optional[Dict[str, RegimeConfidenceSideMinThresholdConfig]],
+    max_mapping: Optional[Dict[str, RegimeConfidenceSideMaxOverrideMapConfig]],
+    field_name: str,
+) -> None:
+    if not min_mapping or not max_mapping:
+        return
+    common_regimes = set(min_mapping).intersection(max_mapping)
+    for regime_key in common_regimes:
+        min_side_cfg = min_mapping.get(regime_key)
+        max_side_cfg = max_mapping.get(regime_key)
+        for side in _REGIME_CONFIDENCE_SIDE_KEYS:
+            min_value = getattr(min_side_cfg, side, None)
+            max_override = getattr(max_side_cfg, side, None)
+            if min_value is None or max_override is None or not max_override.enabled:
+                continue
+            _validate_regime_confidence_band_contract(
+                min_value=min_value,
+                max_value=max_override.threshold,
+                field_name=f'{field_name}.{regime_key}.{side}',
+            )
+
+
+def _validate_regime_confidence_side_band_symbol_contract(
+    *,
+    min_mapping: Optional[Dict[str, Dict[str, RegimeConfidenceSideMinThresholdConfig]]],
+    max_mapping: Optional[Dict[str, Dict[str, RegimeConfidenceSideMaxOverrideMapConfig]]],
+    field_name: str,
+) -> None:
+    if not min_mapping or not max_mapping:
+        return
+    common_symbols = set(min_mapping).intersection(max_mapping)
+    for symbol in common_symbols:
+        _validate_regime_confidence_side_band_mapping_contract(
             min_mapping=min_mapping.get(symbol),
             max_mapping=max_mapping.get(symbol),
             field_name=f'{field_name}.{symbol}',
@@ -352,6 +590,20 @@ class RegimeConfidenceGateConfig(BaseModel):
             'When provided, each symbol mapping requires DEFAULT and overrides strategy/domain defaults for that symbol.'
         ),
     )
+    min_by_regime_side: Optional[Dict[str, RegimeConfidenceSideMinThresholdConfig]] = Field(
+        default=None,
+        description=(
+            'Optional strategy-local per-regime, per-side regime_confidence floors. '
+            'Exact regime+side matches override legacy strategy/domain thresholds. DEFAULT+side is not supported.'
+        ),
+    )
+    min_by_symbol_regime_side: Optional[Dict[str, Dict[str, RegimeConfidenceSideMinThresholdConfig]]] = Field(
+        default=None,
+        description=(
+            'Optional strategy-local per-symbol, per-regime, per-side regime_confidence floors. '
+            'Exact symbol+regime+side matches override all other strategy/domain thresholds.'
+        ),
+    )
     max_by_regime: Optional[Dict[str, float]] = Field(
         default=None,
         description=(
@@ -364,6 +616,20 @@ class RegimeConfidenceGateConfig(BaseModel):
         description=(
             'Optional strategy-local per-symbol regime_confidence upper bounds. '
             'When provided, each symbol mapping may be partial and overrides strategy/domain defaults for the listed keys.'
+        ),
+    )
+    max_by_regime_side: Optional[Dict[str, RegimeConfidenceSideMaxOverrideMapConfig]] = Field(
+        default=None,
+        description=(
+            'Optional strategy-local per-regime, per-side regime_confidence ceilings. '
+            'Exact regime+side matches may raise the ceiling or disable it explicitly with enabled=false.'
+        ),
+    )
+    max_by_symbol_regime_side: Optional[Dict[str, Dict[str, RegimeConfidenceSideMaxOverrideMapConfig]]] = Field(
+        default=None,
+        description=(
+            'Optional strategy-local per-symbol, per-regime, per-side regime_confidence ceilings. '
+            'Exact symbol+regime+side matches may raise the ceiling or disable it explicitly with enabled=false.'
         ),
     )
 
@@ -383,6 +649,22 @@ class RegimeConfidenceGateConfig(BaseModel):
             field_name='safety_gates.regime_confidence.min_by_symbol',
         )
 
+    @field_validator('min_by_regime_side', mode='before')
+    @classmethod
+    def validate_min_by_regime_side_shape(cls, value):
+        return _validate_regime_confidence_side_threshold_mapping_shape(
+            value,
+            field_name='safety_gates.regime_confidence.min_by_regime_side',
+        )
+
+    @field_validator('min_by_symbol_regime_side', mode='before')
+    @classmethod
+    def validate_min_by_symbol_regime_side_shape(cls, value):
+        return _validate_symbol_regime_confidence_side_threshold_mapping_shape(
+            value,
+            field_name='safety_gates.regime_confidence.min_by_symbol_regime_side',
+        )
+
     @field_validator('max_by_regime', mode='before')
     @classmethod
     def validate_max_by_regime_shape(cls, value):
@@ -399,6 +681,22 @@ class RegimeConfidenceGateConfig(BaseModel):
             field_name='safety_gates.regime_confidence.max_by_symbol',
         )
 
+    @field_validator('max_by_regime_side', mode='before')
+    @classmethod
+    def validate_max_by_regime_side_shape(cls, value):
+        return _validate_regime_confidence_side_threshold_mapping_shape(
+            value,
+            field_name='safety_gates.regime_confidence.max_by_regime_side',
+        )
+
+    @field_validator('max_by_symbol_regime_side', mode='before')
+    @classmethod
+    def validate_max_by_symbol_regime_side_shape(cls, value):
+        return _validate_symbol_regime_confidence_side_threshold_mapping_shape(
+            value,
+            field_name='safety_gates.regime_confidence.max_by_symbol_regime_side',
+        )
+
     @model_validator(mode='after')
     def validate_threshold_contract(self) -> 'RegimeConfidenceGateConfig':
         min_by_regime = _normalize_regime_confidence_threshold_mapping(
@@ -409,6 +707,14 @@ class RegimeConfidenceGateConfig(BaseModel):
             self.min_by_symbol,
             field_name='safety_gates.regime_confidence.min_by_symbol',
         ) if self.min_by_symbol is not None else None
+        min_by_regime_side = _normalize_regime_confidence_side_threshold_mapping(
+            self.min_by_regime_side,
+            field_name='safety_gates.regime_confidence.min_by_regime_side',
+        ) if self.min_by_regime_side is not None else None
+        min_by_symbol_regime_side = _normalize_symbol_regime_confidence_side_threshold_mapping(
+            self.min_by_symbol_regime_side,
+            field_name='safety_gates.regime_confidence.min_by_symbol_regime_side',
+        ) if self.min_by_symbol_regime_side is not None else None
         max_by_regime = _normalize_regime_confidence_threshold_mapping(
             self.max_by_regime,
             field_name='safety_gates.regime_confidence.max_by_regime',
@@ -419,6 +725,14 @@ class RegimeConfidenceGateConfig(BaseModel):
             field_name='safety_gates.regime_confidence.max_by_symbol',
             require_default=False,
         ) if self.max_by_symbol is not None else None
+        max_by_regime_side = _normalize_regime_confidence_side_threshold_mapping(
+            self.max_by_regime_side,
+            field_name='safety_gates.regime_confidence.max_by_regime_side',
+        ) if self.max_by_regime_side is not None else None
+        max_by_symbol_regime_side = _normalize_symbol_regime_confidence_side_threshold_mapping(
+            self.max_by_symbol_regime_side,
+            field_name='safety_gates.regime_confidence.max_by_symbol_regime_side',
+        ) if self.max_by_symbol_regime_side is not None else None
 
         _validate_regime_confidence_band_mapping_contract(
             min_mapping=min_by_regime,
@@ -430,11 +744,25 @@ class RegimeConfidenceGateConfig(BaseModel):
             max_mapping=max_by_symbol,
             field_name='safety_gates.regime_confidence',
         )
+        _validate_regime_confidence_side_band_mapping_contract(
+            min_mapping=min_by_regime_side,
+            max_mapping=max_by_regime_side,
+            field_name='safety_gates.regime_confidence',
+        )
+        _validate_regime_confidence_side_band_symbol_contract(
+            min_mapping=min_by_symbol_regime_side,
+            max_mapping=max_by_symbol_regime_side,
+            field_name='safety_gates.regime_confidence',
+        )
 
         self.min_by_regime = min_by_regime
         self.min_by_symbol = min_by_symbol
+        self.min_by_regime_side = min_by_regime_side
+        self.min_by_symbol_regime_side = min_by_symbol_regime_side
         self.max_by_regime = max_by_regime
         self.max_by_symbol = max_by_symbol
+        self.max_by_regime_side = max_by_regime_side
+        self.max_by_symbol_regime_side = max_by_symbol_regime_side
         return self
 
 
@@ -602,6 +930,122 @@ class RegimeSmoothingConfig(BaseModel):
                              description='EMA decay factor (0.3 = ~5-bar half-life)')
     ramp_bars: int = Field(
         ..., ge=1, le=20, description='Linear ramp duration in bars (used when method=linear_ramp)')
+
+
+class PyramidingRuleV1Config(BaseModel):
+    """A single scoped allow-exception rule for pyramiding policy V1."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(..., description="Unique rule identifier")
+    strategy_id: str = Field(..., description="Strategy this rule applies to (e.g. aurora)")
+    regimes: List[str] = Field(..., description="Regimes where this rule activates (e.g. [LOW_VOLATILITY])")
+    sides: List[str] = Field(..., description="Sides where this rule activates (BUY or SELL)")
+    symbols: Optional[List[str]] = Field(
+        None, description="Symbol allowlist. None = all symbols for the strategy.",
+    )
+    enabled: bool = Field(..., description="Enable this specific rule")
+
+    @field_validator("sides", mode="before")
+    @classmethod
+    def _validate_sides(cls, v: Any) -> Any:
+        if isinstance(v, list):
+            for s in v:
+                if str(s).upper() not in {"BUY", "SELL"}:
+                    raise ValueError(f"Invalid side {s!r}. Must be BUY or SELL.")
+        return v
+
+    @field_validator("regimes", mode="before")
+    @classmethod
+    def _validate_regimes(cls, v: Any) -> Any:
+        _valid = {
+            "LOW_VOLATILITY", "HIGH_VOLATILITY", "TREND_UP", "TREND_DOWN",
+            "MEAN_REVERSION", "UNCERTAIN", "FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH",
+        }
+        if isinstance(v, list):
+            for r in v:
+                if str(r).upper() not in _valid:
+                    raise ValueError(f"Invalid regime {r!r}. Valid: {sorted(_valid)}")
+        return v
+
+
+class PyramidingGuardsV1Config(BaseModel):
+    """Guard flags that control fail-closed behaviour of the pyramiding gate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    require_same_side_position: bool = Field(
+        ..., description="Block if there is no existing position on the same side",
+    )
+    require_position_mode_strict_base: bool = Field(
+        ..., description="Base position_mode must be STRICT (the policy is the narrow exception)",
+    )
+    block_if_close_in_progress: bool = Field(
+        ..., description="Block new pyramiding adds if a close is in progress",
+    )
+    block_if_pending_add_exists: bool = Field(
+        ..., description="Block if a pending pyramiding LIMIT add already exists for the symbol",
+    )
+    block_if_sidecar_live_authority_active: bool = Field(
+        ..., description="Block if sidecar has live close authority (shadow mode bypasses)",
+    )
+    require_regime_confidence: bool = Field(
+        ..., description="Block if regime_confidence is unavailable (reserved, currently unused)",
+    )
+
+
+class PyramidingTelemetryV1Config(BaseModel):
+    """Telemetry settings for pyramiding policy V1."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    emit_trace: bool = Field(..., description="Emit PYRAMIDING_POLICY_EVALUATED trace on every evaluation")
+
+
+class PyramidingPolicyV1Config(BaseModel):
+    """Regime/side-scoped pyramiding policy V1.
+
+    Default disabled. The first enabled slice is aurora + LOW_VOLATILITY + SELL
+    in testnet modes only.  All adds are LIMIT-only.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(
+        ..., description="Enable pyramiding policy. False = same-side adds blocked (original STRICT behavior).",
+    )
+    mode: Literal["testnet_enforced"] = Field(
+        ..., description="Policy enforcement mode. testnet_enforced = active only in testnet/hybrid modes.",
+    )
+    default_action: Literal["block"] = Field(
+        ..., description="Action when no rule matches. Must be block (fail-closed).",
+    )
+    order_type: Literal["LIMIT"] = Field(
+        ..., description="Add orders must be LIMIT. MARKET pyramiding is prohibited.",
+    )
+    max_adds_per_lifecycle: int = Field(
+        ..., ge=0, le=5,
+        description="Maximum pyramiding adds allowed per position lifecycle (per symbol)",
+    )
+    max_pending_add_orders_per_symbol: int = Field(
+        ..., ge=0, le=5,
+        description="Maximum concurrent pending pyramiding LIMIT add orders per symbol",
+    )
+    rules: List[PyramidingRuleV1Config] = Field(
+        ..., description="Ordered list of scoped allow-exception rules",
+    )
+    guards: PyramidingGuardsV1Config = Field(
+        ..., description="Guard flags controlling fail-closed behaviour",
+    )
+    telemetry: PyramidingTelemetryV1Config = Field(
+        ..., description="Telemetry settings",
+    )
+
+    @model_validator(mode="after")
+    def _validate_rules_not_empty_when_enabled(self) -> "PyramidingPolicyV1Config":
+        if self.enabled and not self.rules:
+            raise ValueError("pyramiding_policy.enabled=true requires at least one rule in rules[]")
+        return self
 
 
 class QuadraticRolloutConfig(BaseModel):
@@ -791,6 +1235,15 @@ class DecisionConfig(BaseModel):
     )
     dashboard: Optional["DashboardConfig"] = Field(
         ..., description="Phase 6: Dashboard metrics configuration"
+    )
+
+    pyramiding_policy: Optional[PyramidingPolicyV1Config] = Field(
+        None,
+        description=(
+            "Pyramiding Policy V1: regime/side-scoped same-side add exception. "
+            "Default None = disabled (original STRICT behavior preserved). "
+            "First enabled slice: aurora + LOW_VOLATILITY + SELL in testnet modes."
+        ),
     )
 
     @model_validator(mode="after")

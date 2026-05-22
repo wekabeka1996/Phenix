@@ -53,7 +53,13 @@ async def test_collect_limit_submit_trace_includes_book_context():
     executor = OpenExecutor(fsm)
     decision = MagicMock(
         rid="RID-TRACE-1",
-        pld={},
+        pld={
+            "resolved_min_regime_confidence": 0.45,
+            "threshold_applied": True,
+            "threshold_verdict": "PASS",
+            "threshold_reason": "regime_confidence=0.81 within band min=0.45",
+            "regime_confidence_gate_verdict": "ALLOW",
+        },
         data_ref=[
             "obs://execution_position/limit_rounding?before=100.26&after=100.3&tick=0.1&mode=ceil"
         ],
@@ -75,6 +81,11 @@ async def test_collect_limit_submit_trace_includes_book_context():
     assert metadata["price_before_rounding"] == "100.26"
     assert metadata["price_after_rounding"] == "100.3"
     assert metadata["rounding_mode"] == "ceil"
+    assert metadata["resolved_min_regime_confidence"] == 0.45
+    assert metadata["threshold_applied"] is True
+    assert metadata["threshold_verdict"] == "PASS"
+    assert metadata["threshold_reason"] == "regime_confidence=0.81 within band min=0.45"
+    assert metadata["regime_confidence_gate_verdict"] == "ALLOW"
     assert metadata["best_bid"] == "100.10"
     assert metadata["best_ask"] == "100.30"
     assert metadata["spread"] == "0.20"

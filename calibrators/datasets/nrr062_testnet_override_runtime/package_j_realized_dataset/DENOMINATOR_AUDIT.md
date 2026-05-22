@@ -1,0 +1,19 @@
+# DENOMINATOR_AUDIT
+
+Generated at UTC: 2026-05-17T08:07:39.877204+00:00
+Coverage denominator kind: close_expected_rows
+
+| metric | value |
+| --- | --- |
+| total_decision_rows | 588 |
+| rejected_or_not_executed_rows | 446 |
+| execution_eligible_rows | 142 |
+| entry_filled_rows | 7 |
+| close_expected_rows | 31 |
+| close_matched_rows | 4 |
+| exact_roundtrip_rows | 3 |
+| decision_to_execution_rate | 1.1905 |
+| execution_to_close_coverage_pct | 12.9032 |
+| close_to_exact_roundtrip_pct | 75.0 |
+| total_decision_to_exact_roundtrip_pct | 0.5102 |
+| legacy_total_decision_close_coverage_pct | 0.6803 |

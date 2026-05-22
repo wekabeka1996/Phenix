@@ -300,6 +300,35 @@ async def test_order_placed_wal_record_carries_open_submission_success_trace() -
 
 
 @pytest.mark.asyncio
+async def test_order_placed_log_metadata_carries_admission_threshold_proof() -> None:
+    fsm = _build_open_executor_fsm()
+    executor = OpenExecutor(fsm)
+    decision = _dec_open_message(
+        rid="RID-ORDER-PLACED-ADMISSION-1",
+        order_type="MARKET",
+        resolved_min_regime_confidence=0.45,
+        threshold_applied=True,
+        threshold_verdict="PASS",
+        threshold_reason="regime_confidence=0.81 within band min=0.45",
+        regime_confidence_gate_verdict="ALLOW",
+    )
+
+    with patch(
+        "apps.reference.domains.execution_position.flows.open.open_executor.order_logger.write"
+    ) as mock_order_logger:
+        await executor.execute_open(decision)
+
+    logged_entry = mock_order_logger.call_args.args[0]
+    assert logged_entry["event_type"] == "ORDER_PLACED"
+    metadata = logged_entry["metadata"]
+    assert metadata["resolved_min_regime_confidence"] == 0.45
+    assert metadata["threshold_applied"] is True
+    assert metadata["threshold_verdict"] == "PASS"
+    assert metadata["threshold_reason"] == "regime_confidence=0.81 within band min=0.45"
+    assert metadata["regime_confidence_gate_verdict"] == "ALLOW"
+
+
+@pytest.mark.asyncio
 async def test_gtx_price_adjustment_propagates_seam_flag_into_wal_record() -> None:
     fsm = _build_open_executor_fsm()
     # Crossing book: submit price 10000.05 is above best_ask 10000.04 → pinned to best_bid.

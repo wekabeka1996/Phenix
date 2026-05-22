@@ -179,7 +179,6 @@ def build_calibration_records(
 ) -> list[dict[str, object]]:
     """Build deterministic calibration records from existing simulator outputs."""
 
-    disagreement_verdict_ids = _build_disagreement_index(disagreements)
     records: list[dict[str, object]] = []
 
     for correlation in correlations:
@@ -194,13 +193,14 @@ def build_calibration_records(
             fee_per_cycle_bps=config.fee_per_cycle_bps,
             slippage_pct=config.slippage_pct,
         )
+        entry_verdict = correlation.verdict.entry_verdict
         record = CalibrationRecordModel(
             strategy_id=correlation.verdict.correlation_key.strategy_id,
             symbol=correlation.verdict.correlation_key.symbol,
             tf_sec=correlation.verdict.correlation_key.tf_sec,
             bar_close_ts=correlation.verdict.correlation_key.bar_close_ts,
             verdict_id=correlation.verdict.verdict_id,
-            entry_verdict=correlation.verdict.entry_verdict,
+            entry_verdict=entry_verdict,
             confidence=correlation.verdict.confidence,
             dissent_noted=correlation.verdict.dissent_noted,
             matched_trade=outcome.matched_trade,
@@ -209,7 +209,11 @@ def build_calibration_records(
             slippage_cost=correlation.slippage_cost,
             net_return=correlation.net_return,
             optimal_action=optimal_action,
-            has_disagreement=correlation.verdict.verdict_id in disagreement_verdict_ids,
+            has_disagreement=(
+                entry_verdict != optimal_action
+                if entry_verdict in {"OPEN_LONG", "OPEN_SHORT", "NO_ENTRY"}
+                else False
+            ),
             cohort=_classify_cohort(
                 entry_verdict=correlation.verdict.entry_verdict,
                 optimal_action=optimal_action,

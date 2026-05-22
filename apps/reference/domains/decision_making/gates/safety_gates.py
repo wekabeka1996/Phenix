@@ -31,6 +31,7 @@ _REGIME_CONFIDENCE_GATE_KEYS = frozenset({
     "MEAN_REVERSION",
     "UNCERTAIN",
 })
+_REGIME_CONFIDENCE_SIDE_KEYS = frozenset({"BUY", "SELL"})
 
 
 @dataclass
@@ -120,6 +121,7 @@ class ResolvedRegimeConfidenceThreshold:
     regime_key: Optional[str]
     mapping_present: bool
     strategy_id: Optional[str] = None
+    disabled: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +246,123 @@ def _runtime_threshold_mapping_or_none(
     return value
 
 
+def _normalize_trade_side_key(side: Optional[str]) -> Optional[str]:
+    if side is None:
+        return None
+    normalized = str(side).strip().upper()
+    if normalized in {"BUY", "LONG"}:
+        return "BUY"
+    if normalized in {"SELL", "SHORT"}:
+        return "SELL"
+    return None
+
+
+def _runtime_regime_side_mapping_or_none(
+    value: Any,
+    *,
+    path: str,
+) -> Mapping[str, Any] | None:
+    if value is None or type(value).__name__ == "MagicMock":
+        return None
+    if not isinstance(value, Mapping):
+        raise ConfigContractError(
+            path=path,
+            why="Expected mapping with canonical regime keys for side-aware override",
+        )
+    allowed = ", ".join(
+        sorted(key for key in _REGIME_CONFIDENCE_GATE_KEYS if key != "DEFAULT")
+    )
+    for raw_key, raw_value in value.items():
+        if not isinstance(raw_key, str):
+            raise ConfigContractError(
+                path=path,
+                why="Side-aware override keys must be strings",
+            )
+        key = raw_key.strip()
+        if (
+            key != raw_key
+            or key != key.upper()
+            or key == "DEFAULT"
+            or key not in _REGIME_CONFIDENCE_GATE_KEYS
+        ):
+            raise ConfigContractError(
+                path=path,
+                why=(
+                    f"Side-aware override key {raw_key!r} must be canonical uppercase "
+                    f"regime label; DEFAULT+side is not supported; allowed: {allowed}"
+                ),
+            )
+        if raw_value is None:
+            raise ConfigContractError(
+                path=f"{path}.{raw_key}",
+                why="Expected side-aware override object",
+            )
+    return value
+
+
+def _extract_side_min_threshold(
+    side_mapping: Any,
+    *,
+    side_key: Optional[str],
+    path: str,
+) -> Optional[float]:
+    if side_key is None or side_mapping is None or type(side_mapping).__name__ == "MagicMock":
+        return None
+    raw_value = (
+        side_mapping.get(side_key)
+        if isinstance(side_mapping, Mapping)
+        else getattr(side_mapping, side_key, None)
+    )
+    if raw_value is None or type(raw_value).__name__ == "MagicMock":
+        return None
+    return _coerce_runtime_threshold(raw_value, path=f"{path}.{side_key}")
+
+
+def _extract_side_max_override(
+    side_mapping: Any,
+    *,
+    side_key: Optional[str],
+    path: str,
+) -> tuple[Optional[float], bool, bool]:
+    if side_key is None or side_mapping is None or type(side_mapping).__name__ == "MagicMock":
+        return None, False, False
+    raw_override = (
+        side_mapping.get(side_key)
+        if isinstance(side_mapping, Mapping)
+        else getattr(side_mapping, side_key, None)
+    )
+    if raw_override is None or type(raw_override).__name__ == "MagicMock":
+        return None, False, False
+    if isinstance(raw_override, Mapping):
+        enabled = raw_override.get("enabled")
+        threshold = raw_override.get("threshold")
+    else:
+        enabled = getattr(raw_override, "enabled", None)
+        threshold = getattr(raw_override, "threshold", None)
+    if not isinstance(enabled, bool):
+        raise ConfigContractError(
+            path=f"{path}.{side_key}.enabled",
+            why="Expected boolean enabled flag for side-aware max override",
+        )
+    if not enabled:
+        if threshold is not None and type(threshold).__name__ != "MagicMock":
+            raise ConfigContractError(
+                path=f"{path}.{side_key}.threshold",
+                why="Disabled side-aware max override must omit threshold",
+            )
+        return None, True, True
+    if threshold is None or type(threshold).__name__ == "MagicMock":
+        raise ConfigContractError(
+            path=f"{path}.{side_key}.threshold",
+            why="Enabled side-aware max override requires threshold",
+        )
+    return (
+        _coerce_runtime_threshold(threshold, path=f"{path}.{side_key}.threshold"),
+        True,
+        False,
+    )
+
+
 def _strategy_regime_confidence_threshold_by_regime(
     config: "AuroraConfig",
     strategy_id: Optional[str],
@@ -307,17 +426,73 @@ def _resolve_regime_confidence_threshold(
     threshold_kind: str,
     strategy_id: Optional[str] = None,
     symbol: Optional[str] = None,
+    side: Optional[str] = None,
     strategy_by_regime: Mapping[str, Any] | None = None,
     strategy_symbol_by_regime: Mapping[str, Any] | None = None,
+    strategy_by_regime_side: Mapping[str, Any] | None = None,
+    strategy_symbol_by_regime_side: Mapping[str, Any] | None = None,
 ) -> ResolvedRegimeConfidenceThreshold:
     require_default = threshold_kind != "max"
     normalized_strategy_id = str(
         strategy_id).strip() if strategy_id is not None else ""
     normalized_symbol = str(symbol).strip(
     ).upper() if symbol is not None else ""
+    side_key = _normalize_trade_side_key(side)
     regime_key = normalize_structural_regime_label(regime)
 
     if normalized_strategy_id:
+        strategy_symbol_side_mapping = _runtime_regime_side_mapping_or_none(
+            strategy_symbol_by_regime_side,
+            path=(
+                f"strategies.{normalized_strategy_id}.safety_gates."
+                f"regime_confidence.{threshold_kind}_by_symbol_regime_side.{normalized_symbol}"
+            ),
+        ) if normalized_symbol else None
+        if (
+            strategy_symbol_side_mapping is not None
+            and regime_key
+            and side_key
+            and regime_key in strategy_symbol_side_mapping
+        ):
+            path_prefix = (
+                f"strategies.{normalized_strategy_id}.safety_gates."
+                f"regime_confidence.{threshold_kind}_by_symbol_regime_side."
+                f"{normalized_symbol}.{regime_key}"
+            )
+            side_mapping = strategy_symbol_side_mapping[regime_key]
+            if threshold_kind == "max":
+                threshold, override_present, disabled = _extract_side_max_override(
+                    side_mapping,
+                    side_key=side_key,
+                    path=path_prefix,
+                )
+                if override_present:
+                    return ResolvedRegimeConfidenceThreshold(
+                        threshold=threshold,
+                        source=(
+                            "strategy_symbol_regime_side_specific_disabled"
+                            if disabled else "strategy_symbol_regime_side_specific"
+                        ),
+                        regime_key=regime_key,
+                        mapping_present=True,
+                        strategy_id=normalized_strategy_id,
+                        disabled=disabled,
+                    )
+            else:
+                threshold = _extract_side_min_threshold(
+                    side_mapping,
+                    side_key=side_key,
+                    path=path_prefix,
+                )
+                if threshold is not None:
+                    return ResolvedRegimeConfidenceThreshold(
+                        threshold=threshold,
+                        source="strategy_symbol_regime_side_specific",
+                        regime_key=regime_key,
+                        mapping_present=True,
+                        strategy_id=normalized_strategy_id,
+                    )
+
         strategy_symbol_mapping = _runtime_threshold_mapping_or_none(
             strategy_symbol_by_regime,
             path=(
@@ -363,6 +538,57 @@ def _resolve_regime_confidence_threshold(
                     ),
                     why="DEFAULT threshold is required when per-regime mapping is provided",
                 )
+
+        strategy_side_mapping = _runtime_regime_side_mapping_or_none(
+            strategy_by_regime_side,
+            path=(
+                f"strategies.{normalized_strategy_id}.safety_gates."
+                f"regime_confidence.{threshold_kind}_by_regime_side"
+            ),
+        )
+        if (
+            strategy_side_mapping is not None
+            and regime_key
+            and side_key
+            and regime_key in strategy_side_mapping
+        ):
+            path_prefix = (
+                f"strategies.{normalized_strategy_id}.safety_gates."
+                f"regime_confidence.{threshold_kind}_by_regime_side.{regime_key}"
+            )
+            side_mapping = strategy_side_mapping[regime_key]
+            if threshold_kind == "max":
+                threshold, override_present, disabled = _extract_side_max_override(
+                    side_mapping,
+                    side_key=side_key,
+                    path=path_prefix,
+                )
+                if override_present:
+                    return ResolvedRegimeConfidenceThreshold(
+                        threshold=threshold,
+                        source=(
+                            "strategy_regime_side_specific_disabled"
+                            if disabled else "strategy_regime_side_specific"
+                        ),
+                        regime_key=regime_key,
+                        mapping_present=True,
+                        strategy_id=normalized_strategy_id,
+                        disabled=disabled,
+                    )
+            else:
+                threshold = _extract_side_min_threshold(
+                    side_mapping,
+                    side_key=side_key,
+                    path=path_prefix,
+                )
+                if threshold is not None:
+                    return ResolvedRegimeConfidenceThreshold(
+                        threshold=threshold,
+                        source="strategy_regime_side_specific",
+                        regime_key=regime_key,
+                        mapping_present=True,
+                        strategy_id=normalized_strategy_id,
+                    )
 
         strategy_mapping = _runtime_threshold_mapping_or_none(
             strategy_by_regime,
@@ -485,8 +711,11 @@ def resolve_min_regime_confidence(
     *,
     strategy_id: Optional[str] = None,
     symbol: Optional[str] = None,
+    side: Optional[str] = None,
     strategy_by_regime: Mapping[str, Any] | None = None,
     strategy_symbol_by_regime: Mapping[str, Any] | None = None,
+    strategy_by_regime_side: Mapping[str, Any] | None = None,
+    strategy_symbol_by_regime_side: Mapping[str, Any] | None = None,
 ) -> ResolvedRegimeConfidenceThreshold:
     return _resolve_regime_confidence_threshold(
         regime,
@@ -495,8 +724,11 @@ def resolve_min_regime_confidence(
         threshold_kind="min",
         strategy_id=strategy_id,
         symbol=symbol,
+        side=side,
         strategy_by_regime=strategy_by_regime,
         strategy_symbol_by_regime=strategy_symbol_by_regime,
+        strategy_by_regime_side=strategy_by_regime_side,
+        strategy_symbol_by_regime_side=strategy_symbol_by_regime_side,
     )
 
 
@@ -506,8 +738,11 @@ def resolve_max_regime_confidence(
     *,
     strategy_id: Optional[str] = None,
     symbol: Optional[str] = None,
+    side: Optional[str] = None,
     strategy_by_regime: Mapping[str, Any] | None = None,
     strategy_symbol_by_regime: Mapping[str, Any] | None = None,
+    strategy_by_regime_side: Mapping[str, Any] | None = None,
+    strategy_symbol_by_regime_side: Mapping[str, Any] | None = None,
 ) -> ResolvedRegimeConfidenceThreshold:
     return _resolve_regime_confidence_threshold(
         regime,
@@ -516,8 +751,11 @@ def resolve_max_regime_confidence(
         threshold_kind="max",
         strategy_id=strategy_id,
         symbol=symbol,
+        side=side,
         strategy_by_regime=strategy_by_regime,
         strategy_symbol_by_regime=strategy_symbol_by_regime,
+        strategy_by_regime_side=strategy_by_regime_side,
+        strategy_symbol_by_regime_side=strategy_symbol_by_regime_side,
     )
 
 
@@ -974,6 +1212,7 @@ def apply_safety_gates(
         raw_by_regime,
         strategy_id=strategy_id,
         symbol=symbol,
+        side=side,
         strategy_by_regime=_strategy_regime_confidence_threshold_by_regime(
             config,
             strategy_id,
@@ -984,6 +1223,17 @@ def apply_safety_gates(
             strategy_id,
             symbol,
             threshold_attr="min_by_symbol",
+        ),
+        strategy_by_regime_side=_strategy_regime_confidence_threshold_by_regime(
+            config,
+            strategy_id,
+            threshold_attr="min_by_regime_side",
+        ),
+        strategy_symbol_by_regime_side=_strategy_symbol_regime_confidence_threshold_by_regime(
+            config,
+            strategy_id,
+            symbol,
+            threshold_attr="min_by_symbol_regime_side",
         ),
     )
     resolved_min_regime_conf = threshold_resolution.threshold
@@ -998,6 +1248,7 @@ def apply_safety_gates(
         raw_max_by_regime,
         strategy_id=strategy_id,
         symbol=symbol,
+        side=side,
         strategy_by_regime=_strategy_regime_confidence_threshold_by_regime(
             config,
             strategy_id,
@@ -1008,6 +1259,17 @@ def apply_safety_gates(
             strategy_id,
             symbol,
             threshold_attr="max_by_symbol",
+        ),
+        strategy_by_regime_side=_strategy_regime_confidence_threshold_by_regime(
+            config,
+            strategy_id,
+            threshold_attr="max_by_regime_side",
+        ),
+        strategy_symbol_by_regime_side=_strategy_symbol_regime_confidence_threshold_by_regime(
+            config,
+            strategy_id,
+            symbol,
+            threshold_attr="max_by_symbol_regime_side",
         ),
     )
     result.resolved_max_regime_confidence = max_threshold_resolution.threshold
@@ -1037,12 +1299,16 @@ def apply_safety_gates(
         and ds_enabled
         and nrr027_enabled
     )
-    result.nrr063_enabled = result.resolved_max_regime_confidence is not None
+    result.nrr063_enabled = (
+        result.resolved_max_regime_confidence is not None
+        and not max_threshold_resolution.disabled
+    )
     result.nrr063_effective_enforced = bool(
         apply_flag
         and not reduce_only
         and ds_enabled
         and result.resolved_max_regime_confidence is not None
+        and not max_threshold_resolution.disabled
     )
     consecutive = int(ds_cfg.consecutive_bars)
     raw_hard_veto = getattr(ds_cfg, 'hard_veto_consecutive_bars', None)

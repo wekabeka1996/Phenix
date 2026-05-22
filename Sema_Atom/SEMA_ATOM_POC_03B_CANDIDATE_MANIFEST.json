@@ -1,112 +1,99 @@
 {
-  "CONFIRMED_BUT_UNCLASSIFIED": [],
-  "CONFIRMED_BUT_UNSTABLE": [
+  "CONFIRMED_BUT_UNCLASSIFIED": [
     {
-      "confidence_bucket": "0.25..0.50",
-      "context_id": "ETHUSDT|SELL|aurora|LOW_VOLATILITY|0.25..0.50",
-      "recommendation": "retain_or_promote",
+      "confidence_bucket": "0.75..1.00",
+      "context_id": "ETHUSDT|SELL|aurora|LOW_VOLATILITY|0.75..1.00",
+      "context_key": "ETHUSDT|SELL|aurora|LOW_VOLATILITY|0.75..1.00",
+      "low_power_reason": "NONE",
+      "recommendation": "monitor",
       "regime": "LOW_VOLATILITY",
       "side": "SELL",
-      "source_lines": [
-        "- context: ETHUSDT SELL aurora LOW_VOLATILITY 0.25..0.50",
-        "  train_count=9 validation_count=10 verdict=FAVORABLE_CONTEXT recommendation=retain_or_promote",
-        "  train_net_score=0.365491 validation_net_score=-1.074598",
-        "  train_outcomes={\"POLICY_PROTECTED\": 5, \"POLICY_TOO_STRICT\": 4} validation_outcomes={\"POLICY_PROTECTED\": 6, \"POLICY_TOO_STRICT\": 4}",
-        "  validation_result=CONFIRMED reason=validation_positive_profile"
-      ],
       "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 15,
+        "train_count": 7,
+        "validation_count": 8
+      },
+      "support_quality": "SUFFICIENT",
       "symbol": "ETHUSDT",
-      "train_count": 9,
-      "train_net_score": 0.365491,
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778535005572,
+        "latest_atom_ts_ms": 1778915582037,
+        "train_window_end_ts_ms": 1778546404644,
+        "validation_window_start_ts_ms": 1778565602397
+      },
+      "train_count": 7,
+      "train_net_score": -4.815017,
       "train_outcomes": {
-        "POLICY_PROTECTED": 5,
+        "POLICY_PROTECTED": 3,
         "POLICY_TOO_STRICT": 4
       },
-      "validation_count": 10,
-      "validation_net_score": -1.074598,
+      "train_rates": {
+        "favorable_rate": 0.428571,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.571429
+      },
+      "validation_count": 8,
+      "validation_net_score": 0.304782,
       "validation_outcomes": {
-        "POLICY_PROTECTED": 6,
+        "GOOD_DECISION": 1,
+        "POLICY_PROTECTED": 3,
         "POLICY_TOO_STRICT": 4
       },
-      "validation_reason": "validation_positive_profile",
+      "validation_rates": {
+        "favorable_rate": 0.5,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.5
+      },
+      "validation_reason": "validation_remained_inconclusive",
       "validation_result": "CONFIRMED",
-      "verdict": "FAVORABLE_CONTEXT"
+      "verdict": "MIXED_CONTEXT"
     }
   ],
+  "CONFIRMED_BUT_UNSTABLE": [],
   "INCONCLUSIVE_LOW_POWER": [
-    {
-      "confidence_bucket": "0.00..0.25",
-      "context_id": "BNBUSDT|BUY|aurora|MEAN_REVERSION|0.00..0.25",
-      "recommendation": "collect_more_atoms",
-      "regime": "MEAN_REVERSION",
-      "side": "BUY",
-      "source_lines": [
-        "- context: BNBUSDT BUY aurora MEAN_REVERSION 0.00..0.25",
-        "  train_count=1 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=29.225054 validation_net_score=-39.133978",
-        "  train_outcomes={\"GOOD_DECISION\": 1} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
-      "strategy_id": "aurora",
-      "symbol": "BNBUSDT",
-      "train_count": 1,
-      "train_net_score": 29.225054,
-      "train_outcomes": {
-        "GOOD_DECISION": 1
-      },
-      "validation_count": 1,
-      "validation_net_score": -39.133978,
-      "validation_outcomes": {},
-      "validation_reason": "train_or_validation_support_below_threshold",
-      "validation_result": "SKIPPED_LOW_SUPPORT",
-      "verdict": "LOW_SUPPORT"
-    },
     {
       "confidence_bucket": "0.25..0.50",
       "context_id": "BNBUSDT|BUY|aurora|MEAN_REVERSION|0.25..0.50",
+      "context_key": "BNBUSDT|BUY|aurora|MEAN_REVERSION|0.25..0.50",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
       "recommendation": "collect_more_atoms",
       "regime": "MEAN_REVERSION",
       "side": "BUY",
-      "source_lines": [
-        "- context: BNBUSDT BUY aurora MEAN_REVERSION 0.25..0.50",
-        "  train_count=0 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=0.000000 validation_net_score=15.827284",
-        "  train_outcomes={} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
       "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 1,
+        "train_count": 0,
+        "validation_count": 1
+      },
+      "support_quality": "INSUFFICIENT",
       "symbol": "BNBUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778589646412,
+        "latest_atom_ts_ms": 1778589646412,
+        "train_window_end_ts_ms": null,
+        "validation_window_start_ts_ms": 1778589646412
+      },
       "train_count": 0,
       "train_net_score": 0.0,
       "train_outcomes": {},
+      "train_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_count": 1,
-      "validation_net_score": 15.827284,
+      "validation_net_score": 32.909634,
       "validation_outcomes": {},
-      "validation_reason": "train_or_validation_support_below_threshold",
-      "validation_result": "SKIPPED_LOW_SUPPORT",
-      "verdict": "LOW_SUPPORT"
-    },
-    {
-      "confidence_bucket": "0.00..0.25",
-      "context_id": "BNBUSDT|BUY|aurora|TREND_UP|0.00..0.25",
-      "recommendation": "collect_more_atoms",
-      "regime": "TREND_UP",
-      "side": "BUY",
-      "source_lines": [
-        "- context: BNBUSDT BUY aurora TREND_UP 0.00..0.25",
-        "  train_count=0 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=0.000000 validation_net_score=0.000000",
-        "  train_outcomes={} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
-      "strategy_id": "aurora",
-      "symbol": "BNBUSDT",
-      "train_count": 0,
-      "train_net_score": 0.0,
-      "train_outcomes": {},
-      "validation_count": 1,
-      "validation_net_score": 0.0,
-      "validation_outcomes": {},
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_reason": "train_or_validation_support_below_threshold",
       "validation_result": "SKIPPED_LOW_SUPPORT",
       "verdict": "LOW_SUPPORT"
@@ -114,49 +101,45 @@
     {
       "confidence_bucket": "0.25..0.50",
       "context_id": "BNBUSDT|BUY|aurora|TREND_UP|0.25..0.50",
+      "context_key": "BNBUSDT|BUY|aurora|TREND_UP|0.25..0.50",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
       "recommendation": "collect_more_atoms",
       "regime": "TREND_UP",
       "side": "BUY",
-      "source_lines": [
-        "- context: BNBUSDT BUY aurora TREND_UP 0.25..0.50",
-        "  train_count=0 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=0.000000 validation_net_score=59.517628",
-        "  train_outcomes={} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
       "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 3,
+        "train_count": 1,
+        "validation_count": 2
+      },
+      "support_quality": "INSUFFICIENT",
       "symbol": "BNBUSDT",
-      "train_count": 0,
-      "train_net_score": 0.0,
-      "train_outcomes": {},
-      "validation_count": 1,
-      "validation_net_score": 59.517628,
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778539967451,
+        "latest_atom_ts_ms": 1778846706947,
+        "train_window_end_ts_ms": 1778539967451,
+        "validation_window_start_ts_ms": 1778808697557
+      },
+      "train_count": 1,
+      "train_net_score": 59.94896,
+      "train_outcomes": {
+        "GOOD_DECISION": 1
+      },
+      "train_rates": {
+        "favorable_rate": 1.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
+      "validation_count": 2,
+      "validation_net_score": -28.026722,
       "validation_outcomes": {},
-      "validation_reason": "train_or_validation_support_below_threshold",
-      "validation_result": "SKIPPED_LOW_SUPPORT",
-      "verdict": "LOW_SUPPORT"
-    },
-    {
-      "confidence_bucket": "0.00..0.25",
-      "context_id": "BNBUSDT|SELL|aurora|MEAN_REVERSION|0.00..0.25",
-      "recommendation": "collect_more_atoms",
-      "regime": "MEAN_REVERSION",
-      "side": "SELL",
-      "source_lines": [
-        "- context: BNBUSDT SELL aurora MEAN_REVERSION 0.00..0.25",
-        "  train_count=0 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=0.000000 validation_net_score=-1.541283",
-        "  train_outcomes={} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
-      "strategy_id": "aurora",
-      "symbol": "BNBUSDT",
-      "train_count": 0,
-      "train_net_score": 0.0,
-      "train_outcomes": {},
-      "validation_count": 1,
-      "validation_net_score": -1.541283,
-      "validation_outcomes": {},
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_reason": "train_or_validation_support_below_threshold",
       "validation_result": "SKIPPED_LOW_SUPPORT",
       "verdict": "LOW_SUPPORT"
@@ -164,26 +147,89 @@
     {
       "confidence_bucket": "0.25..0.50",
       "context_id": "BNBUSDT|SELL|aurora|MEAN_REVERSION|0.25..0.50",
+      "context_key": "BNBUSDT|SELL|aurora|MEAN_REVERSION|0.25..0.50",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
       "recommendation": "collect_more_atoms",
       "regime": "MEAN_REVERSION",
       "side": "SELL",
-      "source_lines": [
-        "- context: BNBUSDT SELL aurora MEAN_REVERSION 0.25..0.50",
-        "  train_count=1 validation_count=2 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=-41.073298 validation_net_score=-28.193598",
-        "  train_outcomes={\"CLEAN_LOSS\": 1} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
       "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 2,
+        "train_count": 1,
+        "validation_count": 1
+      },
+      "support_quality": "INSUFFICIENT",
       "symbol": "BNBUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778560820798,
+        "latest_atom_ts_ms": 1778823104605,
+        "train_window_end_ts_ms": 1778560820798,
+        "validation_window_start_ts_ms": 1778823104605
+      },
       "train_count": 1,
-      "train_net_score": -41.073298,
+      "train_net_score": -2.260943,
       "train_outcomes": {
         "CLEAN_LOSS": 1
       },
-      "validation_count": 2,
-      "validation_net_score": -28.193598,
+      "train_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 1.0,
+        "policy_too_strict_rate": 0.0
+      },
+      "validation_count": 1,
+      "validation_net_score": -26.324304,
       "validation_outcomes": {},
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
+      "validation_reason": "train_or_validation_support_below_threshold",
+      "validation_result": "SKIPPED_LOW_SUPPORT",
+      "verdict": "LOW_SUPPORT"
+    },
+    {
+      "confidence_bucket": "0.50..0.75",
+      "context_id": "BNBUSDT|SELL|aurora|MEAN_REVERSION|0.50..0.75",
+      "context_key": "BNBUSDT|SELL|aurora|MEAN_REVERSION|0.50..0.75",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
+      "recommendation": "collect_more_atoms",
+      "regime": "MEAN_REVERSION",
+      "side": "SELL",
+      "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 1,
+        "train_count": 0,
+        "validation_count": 1
+      },
+      "support_quality": "INSUFFICIENT",
+      "symbol": "BNBUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778568668254,
+        "latest_atom_ts_ms": 1778568668254,
+        "train_window_end_ts_ms": null,
+        "validation_window_start_ts_ms": 1778568668254
+      },
+      "train_count": 0,
+      "train_net_score": 0.0,
+      "train_outcomes": {},
+      "train_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
+      "validation_count": 1,
+      "validation_net_score": 13.188436,
+      "validation_outcomes": {},
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_reason": "train_or_validation_support_below_threshold",
       "validation_result": "SKIPPED_LOW_SUPPORT",
       "verdict": "LOW_SUPPORT"
@@ -191,49 +237,45 @@
     {
       "confidence_bucket": "0.00..0.25",
       "context_id": "BNBUSDT|SELL|aurora|TREND_DOWN|0.00..0.25",
+      "context_key": "BNBUSDT|SELL|aurora|TREND_DOWN|0.00..0.25",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
       "recommendation": "collect_more_atoms",
       "regime": "TREND_DOWN",
       "side": "SELL",
-      "source_lines": [
-        "- context: BNBUSDT SELL aurora TREND_DOWN 0.00..0.25",
-        "  train_count=0 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=0.000000 validation_net_score=0.000000",
-        "  train_outcomes={} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
       "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 2,
+        "train_count": 1,
+        "validation_count": 1
+      },
+      "support_quality": "INSUFFICIENT",
       "symbol": "BNBUSDT",
-      "train_count": 0,
-      "train_net_score": 0.0,
-      "train_outcomes": {},
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778595375706,
+        "latest_atom_ts_ms": 1778826429582,
+        "train_window_end_ts_ms": 1778595375706,
+        "validation_window_start_ts_ms": 1778826429582
+      },
+      "train_count": 1,
+      "train_net_score": -17.353488,
+      "train_outcomes": {
+        "CLEAN_LOSS": 1
+      },
+      "train_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 1.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_count": 1,
-      "validation_net_score": 0.0,
+      "validation_net_score": -35.459945,
       "validation_outcomes": {},
-      "validation_reason": "train_or_validation_support_below_threshold",
-      "validation_result": "SKIPPED_LOW_SUPPORT",
-      "verdict": "LOW_SUPPORT"
-    },
-    {
-      "confidence_bucket": "0.25..0.50",
-      "context_id": "BNBUSDT|SELL|aurora|TREND_DOWN|0.25..0.50",
-      "recommendation": "collect_more_atoms",
-      "regime": "TREND_DOWN",
-      "side": "SELL",
-      "source_lines": [
-        "- context: BNBUSDT SELL aurora TREND_DOWN 0.25..0.50",
-        "  train_count=0 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=0.000000 validation_net_score=-3.797213",
-        "  train_outcomes={} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
-      "strategy_id": "aurora",
-      "symbol": "BNBUSDT",
-      "train_count": 0,
-      "train_net_score": 0.0,
-      "train_outcomes": {},
-      "validation_count": 1,
-      "validation_net_score": -3.797213,
-      "validation_outcomes": {},
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_reason": "train_or_validation_support_below_threshold",
       "validation_result": "SKIPPED_LOW_SUPPORT",
       "verdict": "LOW_SUPPORT"
@@ -241,51 +283,89 @@
     {
       "confidence_bucket": "0.00..0.25",
       "context_id": "BTCUSDT|BUY|aurora|LOW_VOLATILITY|0.00..0.25",
+      "context_key": "BTCUSDT|BUY|aurora|LOW_VOLATILITY|0.00..0.25",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
       "recommendation": "collect_more_atoms",
       "regime": "LOW_VOLATILITY",
       "side": "BUY",
-      "source_lines": [
-        "- context: BTCUSDT BUY aurora LOW_VOLATILITY 0.00..0.25",
-        "  train_count=1 validation_count=2 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=37.282120 validation_net_score=-16.303586",
-        "  train_outcomes={\"POLICY_PROTECTED\": 1} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
       "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 3,
+        "train_count": 1,
+        "validation_count": 2
+      },
+      "support_quality": "INSUFFICIENT",
       "symbol": "BTCUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778590200970,
+        "latest_atom_ts_ms": 1778724002020,
+        "train_window_end_ts_ms": 1778590200970,
+        "validation_window_start_ts_ms": 1778706303706
+      },
       "train_count": 1,
-      "train_net_score": 37.28212,
+      "train_net_score": 31.1946,
       "train_outcomes": {
         "POLICY_PROTECTED": 1
       },
+      "train_rates": {
+        "favorable_rate": 1.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_count": 2,
-      "validation_net_score": -16.303586,
+      "validation_net_score": 6.398809,
       "validation_outcomes": {},
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_reason": "train_or_validation_support_below_threshold",
       "validation_result": "SKIPPED_LOW_SUPPORT",
       "verdict": "LOW_SUPPORT"
     },
     {
-      "confidence_bucket": "0.00..0.25",
-      "context_id": "BTCUSDT|BUY|aurora|MEAN_REVERSION|0.00..0.25",
+      "confidence_bucket": "0.50..0.75",
+      "context_id": "BTCUSDT|BUY|aurora|MEAN_REVERSION|0.50..0.75",
+      "context_key": "BTCUSDT|BUY|aurora|MEAN_REVERSION|0.50..0.75",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
       "recommendation": "collect_more_atoms",
       "regime": "MEAN_REVERSION",
       "side": "BUY",
-      "source_lines": [
-        "- context: BTCUSDT BUY aurora MEAN_REVERSION 0.00..0.25",
-        "  train_count=0 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=0.000000 validation_net_score=-18.670379",
-        "  train_outcomes={} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
       "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 1,
+        "train_count": 0,
+        "validation_count": 1
+      },
+      "support_quality": "INSUFFICIENT",
       "symbol": "BTCUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778635260283,
+        "latest_atom_ts_ms": 1778635260283,
+        "train_window_end_ts_ms": null,
+        "validation_window_start_ts_ms": 1778635260283
+      },
       "train_count": 0,
       "train_net_score": 0.0,
       "train_outcomes": {},
+      "train_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_count": 1,
-      "validation_net_score": -18.670379,
+      "validation_net_score": 1.81125,
       "validation_outcomes": {},
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_reason": "train_or_validation_support_below_threshold",
       "validation_result": "SKIPPED_LOW_SUPPORT",
       "verdict": "LOW_SUPPORT"
@@ -293,105 +373,45 @@
     {
       "confidence_bucket": "0.00..0.25",
       "context_id": "BTCUSDT|BUY|aurora|TREND_UP|0.00..0.25",
+      "context_key": "BTCUSDT|BUY|aurora|TREND_UP|0.00..0.25",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
       "recommendation": "collect_more_atoms",
       "regime": "TREND_UP",
       "side": "BUY",
-      "source_lines": [
-        "- context: BTCUSDT BUY aurora TREND_UP 0.00..0.25",
-        "  train_count=1 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=0.000000 validation_net_score=27.173964",
-        "  train_outcomes={\"GOOD_DECISION\": 1} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
       "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 2,
+        "train_count": 1,
+        "validation_count": 1
+      },
+      "support_quality": "INSUFFICIENT",
       "symbol": "BTCUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778770509647,
+        "latest_atom_ts_ms": 1778777975096,
+        "train_window_end_ts_ms": 1778770509647,
+        "validation_window_start_ts_ms": 1778777975096
+      },
       "train_count": 1,
-      "train_net_score": 0.0,
+      "train_net_score": 40.676595,
       "train_outcomes": {
         "GOOD_DECISION": 1
       },
-      "validation_count": 1,
-      "validation_net_score": 27.173964,
-      "validation_outcomes": {},
-      "validation_reason": "train_or_validation_support_below_threshold",
-      "validation_result": "SKIPPED_LOW_SUPPORT",
-      "verdict": "LOW_SUPPORT"
-    },
-    {
-      "confidence_bucket": "0.25..0.50",
-      "context_id": "BTCUSDT|BUY|aurora|TREND_UP|0.25..0.50",
-      "recommendation": "collect_more_atoms",
-      "regime": "TREND_UP",
-      "side": "BUY",
-      "source_lines": [
-        "- context: BTCUSDT BUY aurora TREND_UP 0.25..0.50",
-        "  train_count=1 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=-5.315347 validation_net_score=-51.683620",
-        "  train_outcomes={\"GOOD_DECISION\": 1} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
-      "strategy_id": "aurora",
-      "symbol": "BTCUSDT",
-      "train_count": 1,
-      "train_net_score": -5.315347,
-      "train_outcomes": {
-        "GOOD_DECISION": 1
+      "train_rates": {
+        "favorable_rate": 1.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
       },
       "validation_count": 1,
-      "validation_net_score": -51.68362,
+      "validation_net_score": 30.83768,
       "validation_outcomes": {},
-      "validation_reason": "train_or_validation_support_below_threshold",
-      "validation_result": "SKIPPED_LOW_SUPPORT",
-      "verdict": "LOW_SUPPORT"
-    },
-    {
-      "confidence_bucket": "0.50..0.75",
-      "context_id": "BTCUSDT|SELL|aurora|LOW_VOLATILITY|0.50..0.75",
-      "recommendation": "collect_more_atoms",
-      "regime": "LOW_VOLATILITY",
-      "side": "SELL",
-      "source_lines": [
-        "- context: BTCUSDT SELL aurora LOW_VOLATILITY 0.50..0.75",
-        "  train_count=1 validation_count=2 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=-2.720323 validation_net_score=27.181375",
-        "  train_outcomes={\"POLICY_TOO_STRICT\": 1} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
-      "strategy_id": "aurora",
-      "symbol": "BTCUSDT",
-      "train_count": 1,
-      "train_net_score": -2.720323,
-      "train_outcomes": {
-        "POLICY_TOO_STRICT": 1
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
       },
-      "validation_count": 2,
-      "validation_net_score": 27.181375,
-      "validation_outcomes": {},
-      "validation_reason": "train_or_validation_support_below_threshold",
-      "validation_result": "SKIPPED_LOW_SUPPORT",
-      "verdict": "LOW_SUPPORT"
-    },
-    {
-      "confidence_bucket": "0.75..1.00",
-      "context_id": "BTCUSDT|SELL|aurora|LOW_VOLATILITY|0.75..1.00",
-      "recommendation": "collect_more_atoms",
-      "regime": "LOW_VOLATILITY",
-      "side": "SELL",
-      "source_lines": [
-        "- context: BTCUSDT SELL aurora LOW_VOLATILITY 0.75..1.00",
-        "  train_count=0 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=0.000000 validation_net_score=7.806895",
-        "  train_outcomes={} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
-      "strategy_id": "aurora",
-      "symbol": "BTCUSDT",
-      "train_count": 0,
-      "train_net_score": 0.0,
-      "train_outcomes": {},
-      "validation_count": 1,
-      "validation_net_score": 7.806895,
-      "validation_outcomes": {},
       "validation_reason": "train_or_validation_support_below_threshold",
       "validation_result": "SKIPPED_LOW_SUPPORT",
       "verdict": "LOW_SUPPORT"
@@ -399,130 +419,133 @@
     {
       "confidence_bucket": "0.00..0.25",
       "context_id": "BTCUSDT|SELL|aurora|MEAN_REVERSION|0.00..0.25",
+      "context_key": "BTCUSDT|SELL|aurora|MEAN_REVERSION|0.00..0.25",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
       "recommendation": "collect_more_atoms",
       "regime": "MEAN_REVERSION",
       "side": "SELL",
-      "source_lines": [
-        "- context: BTCUSDT SELL aurora MEAN_REVERSION 0.00..0.25",
-        "  train_count=1 validation_count=2 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=20.131715 validation_net_score=-2.733550",
-        "  train_outcomes={\"GOOD_DECISION\": 1} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
       "strategy_id": "aurora",
-      "symbol": "BTCUSDT",
-      "train_count": 1,
-      "train_net_score": 20.131715,
-      "train_outcomes": {
-        "GOOD_DECISION": 1
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 1,
+        "train_count": 0,
+        "validation_count": 1
       },
-      "validation_count": 2,
-      "validation_net_score": -2.73355,
-      "validation_outcomes": {},
-      "validation_reason": "train_or_validation_support_below_threshold",
-      "validation_result": "SKIPPED_LOW_SUPPORT",
-      "verdict": "LOW_SUPPORT"
-    },
-    {
-      "confidence_bucket": "0.25..0.50",
-      "context_id": "BTCUSDT|SELL|aurora|TREND_DOWN|0.25..0.50",
-      "recommendation": "collect_more_atoms",
-      "regime": "TREND_DOWN",
-      "side": "SELL",
-      "source_lines": [
-        "- context: BTCUSDT SELL aurora TREND_DOWN 0.25..0.50",
-        "  train_count=0 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=0.000000 validation_net_score=-22.219186",
-        "  train_outcomes={} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
-      "strategy_id": "aurora",
+      "support_quality": "INSUFFICIENT",
       "symbol": "BTCUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778816094551,
+        "latest_atom_ts_ms": 1778816094551,
+        "train_window_end_ts_ms": null,
+        "validation_window_start_ts_ms": 1778816094551
+      },
       "train_count": 0,
       "train_net_score": 0.0,
       "train_outcomes": {},
+      "train_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_count": 1,
-      "validation_net_score": -22.219186,
+      "validation_net_score": 20.42162,
       "validation_outcomes": {},
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_reason": "train_or_validation_support_below_threshold",
       "validation_result": "SKIPPED_LOW_SUPPORT",
       "verdict": "LOW_SUPPORT"
     },
     {
       "confidence_bucket": "0.00..0.25",
-      "context_id": "ETHUSDT|BUY|aurora|LOW_VOLATILITY|0.00..0.25",
+      "context_id": "BTCUSDT|SELL|aurora|TREND_DOWN|0.00..0.25",
+      "context_key": "BTCUSDT|SELL|aurora|TREND_DOWN|0.00..0.25",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
       "recommendation": "collect_more_atoms",
-      "regime": "LOW_VOLATILITY",
-      "side": "BUY",
-      "source_lines": [
-        "- context: ETHUSDT BUY aurora LOW_VOLATILITY 0.00..0.25",
-        "  train_count=1 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=13.716633 validation_net_score=-31.179324",
-        "  train_outcomes={\"POLICY_PROTECTED\": 1} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
+      "regime": "TREND_DOWN",
+      "side": "SELL",
       "strategy_id": "aurora",
-      "symbol": "ETHUSDT",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 2,
+        "train_count": 1,
+        "validation_count": 1
+      },
+      "support_quality": "INSUFFICIENT",
+      "symbol": "BTCUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778685535914,
+        "latest_atom_ts_ms": 1778731708086,
+        "train_window_end_ts_ms": 1778685535914,
+        "validation_window_start_ts_ms": 1778731708086
+      },
       "train_count": 1,
-      "train_net_score": 13.716633,
+      "train_net_score": 52.507045,
       "train_outcomes": {
-        "POLICY_PROTECTED": 1
+        "GOOD_DECISION": 1
+      },
+      "train_rates": {
+        "favorable_rate": 1.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
       },
       "validation_count": 1,
-      "validation_net_score": -31.179324,
+      "validation_net_score": 0.0,
       "validation_outcomes": {},
-      "validation_reason": "train_or_validation_support_below_threshold",
-      "validation_result": "SKIPPED_LOW_SUPPORT",
-      "verdict": "LOW_SUPPORT"
-    },
-    {
-      "confidence_bucket": "0.50..0.75",
-      "context_id": "ETHUSDT|BUY|aurora|LOW_VOLATILITY|0.50..0.75",
-      "recommendation": "collect_more_atoms",
-      "regime": "LOW_VOLATILITY",
-      "side": "BUY",
-      "source_lines": [
-        "- context: ETHUSDT BUY aurora LOW_VOLATILITY 0.50..0.75",
-        "  train_count=1 validation_count=2 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=24.329139 validation_net_score=-36.462428",
-        "  train_outcomes={\"POLICY_PROTECTED\": 1} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
-      "strategy_id": "aurora",
-      "symbol": "ETHUSDT",
-      "train_count": 1,
-      "train_net_score": 24.329139,
-      "train_outcomes": {
-        "POLICY_PROTECTED": 1
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
       },
-      "validation_count": 2,
-      "validation_net_score": -36.462428,
-      "validation_outcomes": {},
       "validation_reason": "train_or_validation_support_below_threshold",
       "validation_result": "SKIPPED_LOW_SUPPORT",
       "verdict": "LOW_SUPPORT"
     },
     {
-      "confidence_bucket": "0.75..1.00",
-      "context_id": "ETHUSDT|BUY|aurora|LOW_VOLATILITY|0.75..1.00",
+      "confidence_bucket": "0.00..0.25",
+      "context_id": "DOGEUSDT|SELL|aurora|TREND_DOWN|0.00..0.25",
+      "context_key": "DOGEUSDT|SELL|aurora|TREND_DOWN|0.00..0.25",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
       "recommendation": "collect_more_atoms",
-      "regime": "LOW_VOLATILITY",
-      "side": "BUY",
-      "source_lines": [
-        "- context: ETHUSDT BUY aurora LOW_VOLATILITY 0.75..1.00",
-        "  train_count=0 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=0.000000 validation_net_score=-72.065533",
-        "  train_outcomes={} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
+      "regime": "TREND_DOWN",
+      "side": "SELL",
       "strategy_id": "aurora",
-      "symbol": "ETHUSDT",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 1,
+        "train_count": 0,
+        "validation_count": 1
+      },
+      "support_quality": "INSUFFICIENT",
+      "symbol": "DOGEUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778823462580,
+        "latest_atom_ts_ms": 1778823462580,
+        "train_window_end_ts_ms": null,
+        "validation_window_start_ts_ms": 1778823462580
+      },
       "train_count": 0,
       "train_net_score": 0.0,
       "train_outcomes": {},
+      "train_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_count": 1,
-      "validation_net_score": -72.065533,
+      "validation_net_score": 97.266036,
       "validation_outcomes": {},
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_reason": "train_or_validation_support_below_threshold",
       "validation_result": "SKIPPED_LOW_SUPPORT",
       "verdict": "LOW_SUPPORT"
@@ -530,76 +553,179 @@
     {
       "confidence_bucket": "0.00..0.25",
       "context_id": "ETHUSDT|BUY|aurora|TREND_UP|0.00..0.25",
+      "context_key": "ETHUSDT|BUY|aurora|TREND_UP|0.00..0.25",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
       "recommendation": "collect_more_atoms",
       "regime": "TREND_UP",
       "side": "BUY",
-      "source_lines": [
-        "- context: ETHUSDT BUY aurora TREND_UP 0.00..0.25",
-        "  train_count=1 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=-29.469712 validation_net_score=-23.088604",
-        "  train_outcomes={\"CLEAN_LOSS\": 1} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
       "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 1,
+        "train_count": 0,
+        "validation_count": 1
+      },
+      "support_quality": "INSUFFICIENT",
       "symbol": "ETHUSDT",
-      "train_count": 1,
-      "train_net_score": -29.469712,
-      "train_outcomes": {
-        "CLEAN_LOSS": 1
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778774990670,
+        "latest_atom_ts_ms": 1778774990670,
+        "train_window_end_ts_ms": null,
+        "validation_window_start_ts_ms": 1778774990670
+      },
+      "train_count": 0,
+      "train_net_score": 0.0,
+      "train_outcomes": {},
+      "train_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
       },
       "validation_count": 1,
-      "validation_net_score": -23.088604,
+      "validation_net_score": 39.718993,
       "validation_outcomes": {},
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
+      "validation_reason": "train_or_validation_support_below_threshold",
+      "validation_result": "SKIPPED_LOW_SUPPORT",
+      "verdict": "LOW_SUPPORT"
+    },
+    {
+      "confidence_bucket": "0.00..0.25",
+      "context_id": "ETHUSDT|SELL|aurora|TREND_DOWN|0.00..0.25",
+      "context_key": "ETHUSDT|SELL|aurora|TREND_DOWN|0.00..0.25",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
+      "recommendation": "collect_more_atoms",
+      "regime": "TREND_DOWN",
+      "side": "SELL",
+      "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 2,
+        "train_count": 1,
+        "validation_count": 1
+      },
+      "support_quality": "INSUFFICIENT",
+      "symbol": "ETHUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778559288520,
+        "latest_atom_ts_ms": 1778818950557,
+        "train_window_end_ts_ms": 1778559288520,
+        "validation_window_start_ts_ms": 1778818950557
+      },
+      "train_count": 1,
+      "train_net_score": 27.628725,
+      "train_outcomes": {
+        "GOOD_DECISION": 1
+      },
+      "train_rates": {
+        "favorable_rate": 1.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
+      "validation_count": 1,
+      "validation_net_score": 23.565515,
+      "validation_outcomes": {},
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_reason": "train_or_validation_support_below_threshold",
       "validation_result": "SKIPPED_LOW_SUPPORT",
       "verdict": "LOW_SUPPORT"
     },
     {
       "confidence_bucket": "0.25..0.50",
-      "context_id": "XRPUSDT|BUY|aurora|LOW_VOLATILITY|0.25..0.50",
+      "context_id": "ETHUSDT|SELL|aurora|TREND_DOWN|0.25..0.50",
+      "context_key": "ETHUSDT|SELL|aurora|TREND_DOWN|0.25..0.50",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
+      "recommendation": "collect_more_atoms",
+      "regime": "TREND_DOWN",
+      "side": "SELL",
+      "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 1,
+        "train_count": 0,
+        "validation_count": 1
+      },
+      "support_quality": "INSUFFICIENT",
+      "symbol": "ETHUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778821219553,
+        "latest_atom_ts_ms": 1778821219553,
+        "train_window_end_ts_ms": null,
+        "validation_window_start_ts_ms": 1778821219553
+      },
+      "train_count": 0,
+      "train_net_score": 0.0,
+      "train_outcomes": {},
+      "train_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
+      "validation_count": 1,
+      "validation_net_score": 28.071938,
+      "validation_outcomes": {},
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
+      "validation_reason": "train_or_validation_support_below_threshold",
+      "validation_result": "SKIPPED_LOW_SUPPORT",
+      "verdict": "LOW_SUPPORT"
+    },
+    {
+      "confidence_bucket": "0.00..0.25",
+      "context_id": "XRPUSDT|BUY|aurora|LOW_VOLATILITY|0.00..0.25",
+      "context_key": "XRPUSDT|BUY|aurora|LOW_VOLATILITY|0.00..0.25",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
       "recommendation": "collect_more_atoms",
       "regime": "LOW_VOLATILITY",
       "side": "BUY",
-      "source_lines": [
-        "- context: XRPUSDT BUY aurora LOW_VOLATILITY 0.25..0.50",
-        "  train_count=0 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=0.000000 validation_net_score=-13.564463",
-        "  train_outcomes={} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
       "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 2,
+        "train_count": 1,
+        "validation_count": 1
+      },
+      "support_quality": "INSUFFICIENT",
       "symbol": "XRPUSDT",
-      "train_count": 0,
-      "train_net_score": 0.0,
-      "train_outcomes": {},
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778612704795,
+        "latest_atom_ts_ms": 1778720702378,
+        "train_window_end_ts_ms": 1778612704795,
+        "validation_window_start_ts_ms": 1778720702378
+      },
+      "train_count": 1,
+      "train_net_score": -29.060029,
+      "train_outcomes": {
+        "POLICY_TOO_STRICT": 1
+      },
+      "train_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 1.0
+      },
       "validation_count": 1,
-      "validation_net_score": -13.564463,
+      "validation_net_score": 35.256365,
       "validation_outcomes": {},
-      "validation_reason": "train_or_validation_support_below_threshold",
-      "validation_result": "SKIPPED_LOW_SUPPORT",
-      "verdict": "LOW_SUPPORT"
-    },
-    {
-      "confidence_bucket": "0.25..0.50",
-      "context_id": "XRPUSDT|BUY|aurora|MEAN_REVERSION|0.25..0.50",
-      "recommendation": "collect_more_atoms",
-      "regime": "MEAN_REVERSION",
-      "side": "BUY",
-      "source_lines": [
-        "- context: XRPUSDT BUY aurora MEAN_REVERSION 0.25..0.50",
-        "  train_count=0 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=0.000000 validation_net_score=-34.244157",
-        "  train_outcomes={} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
-      "strategy_id": "aurora",
-      "symbol": "XRPUSDT",
-      "train_count": 0,
-      "train_net_score": 0.0,
-      "train_outcomes": {},
-      "validation_count": 1,
-      "validation_net_score": -34.244157,
-      "validation_outcomes": {},
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_reason": "train_or_validation_support_below_threshold",
       "validation_result": "SKIPPED_LOW_SUPPORT",
       "verdict": "LOW_SUPPORT"
@@ -607,24 +733,45 @@
     {
       "confidence_bucket": "0.25..0.50",
       "context_id": "XRPUSDT|BUY|aurora|TREND_UP|0.25..0.50",
+      "context_key": "XRPUSDT|BUY|aurora|TREND_UP|0.25..0.50",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
       "recommendation": "collect_more_atoms",
       "regime": "TREND_UP",
       "side": "BUY",
-      "source_lines": [
-        "- context: XRPUSDT BUY aurora TREND_UP 0.25..0.50",
-        "  train_count=0 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=0.000000 validation_net_score=48.894114",
-        "  train_outcomes={} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
       "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 2,
+        "train_count": 1,
+        "validation_count": 1
+      },
+      "support_quality": "INSUFFICIENT",
       "symbol": "XRPUSDT",
-      "train_count": 0,
-      "train_net_score": 0.0,
-      "train_outcomes": {},
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778549654217,
+        "latest_atom_ts_ms": 1778767174678,
+        "train_window_end_ts_ms": 1778549654217,
+        "validation_window_start_ts_ms": 1778767174678
+      },
+      "train_count": 1,
+      "train_net_score": -38.299892,
+      "train_outcomes": {
+        "CLEAN_LOSS": 1
+      },
+      "train_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 1.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_count": 1,
-      "validation_net_score": 48.894114,
+      "validation_net_score": -28.99151,
       "validation_outcomes": {},
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_reason": "train_or_validation_support_below_threshold",
       "validation_result": "SKIPPED_LOW_SUPPORT",
       "verdict": "LOW_SUPPORT"
@@ -632,26 +779,45 @@
     {
       "confidence_bucket": "0.00..0.25",
       "context_id": "XRPUSDT|SELL|aurora|LOW_VOLATILITY|0.00..0.25",
+      "context_key": "XRPUSDT|SELL|aurora|LOW_VOLATILITY|0.00..0.25",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
       "recommendation": "collect_more_atoms",
       "regime": "LOW_VOLATILITY",
       "side": "SELL",
-      "source_lines": [
-        "- context: XRPUSDT SELL aurora LOW_VOLATILITY 0.00..0.25",
-        "  train_count=1 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=37.437080 validation_net_score=38.787232",
-        "  train_outcomes={\"POLICY_PROTECTED\": 1} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
       "strategy_id": "aurora",
-      "symbol": "XRPUSDT",
-      "train_count": 1,
-      "train_net_score": 37.43708,
-      "train_outcomes": {
-        "POLICY_PROTECTED": 1
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 3,
+        "train_count": 1,
+        "validation_count": 2
       },
-      "validation_count": 1,
-      "validation_net_score": 38.787232,
+      "support_quality": "INSUFFICIENT",
+      "symbol": "XRPUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778671203287,
+        "latest_atom_ts_ms": 1778821204168,
+        "train_window_end_ts_ms": 1778671203287,
+        "validation_window_start_ts_ms": 1778820001772
+      },
+      "train_count": 1,
+      "train_net_score": -26.611581,
+      "train_outcomes": {
+        "POLICY_TOO_STRICT": 1
+      },
+      "train_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 1.0
+      },
+      "validation_count": 2,
+      "validation_net_score": -70.512512,
       "validation_outcomes": {},
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_reason": "train_or_validation_support_below_threshold",
       "validation_result": "SKIPPED_LOW_SUPPORT",
       "verdict": "LOW_SUPPORT"
@@ -659,24 +825,43 @@
     {
       "confidence_bucket": "0.00..0.25",
       "context_id": "XRPUSDT|SELL|aurora|MEAN_REVERSION|0.00..0.25",
+      "context_key": "XRPUSDT|SELL|aurora|MEAN_REVERSION|0.00..0.25",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
       "recommendation": "collect_more_atoms",
       "regime": "MEAN_REVERSION",
       "side": "SELL",
-      "source_lines": [
-        "- context: XRPUSDT SELL aurora MEAN_REVERSION 0.00..0.25",
-        "  train_count=0 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=0.000000 validation_net_score=37.115134",
-        "  train_outcomes={} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
       "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 1,
+        "train_count": 0,
+        "validation_count": 1
+      },
+      "support_quality": "INSUFFICIENT",
       "symbol": "XRPUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778816198585,
+        "latest_atom_ts_ms": 1778816198585,
+        "train_window_end_ts_ms": null,
+        "validation_window_start_ts_ms": 1778816198585
+      },
       "train_count": 0,
       "train_net_score": 0.0,
       "train_outcomes": {},
+      "train_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_count": 1,
-      "validation_net_score": 37.115134,
+      "validation_net_score": 30.225685,
       "validation_outcomes": {},
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_reason": "train_or_validation_support_below_threshold",
       "validation_result": "SKIPPED_LOW_SUPPORT",
       "verdict": "LOW_SUPPORT"
@@ -684,53 +869,87 @@
     {
       "confidence_bucket": "0.25..0.50",
       "context_id": "XRPUSDT|SELL|aurora|MEAN_REVERSION|0.25..0.50",
+      "context_key": "XRPUSDT|SELL|aurora|MEAN_REVERSION|0.25..0.50",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
       "recommendation": "collect_more_atoms",
       "regime": "MEAN_REVERSION",
       "side": "SELL",
-      "source_lines": [
-        "- context: XRPUSDT SELL aurora MEAN_REVERSION 0.25..0.50",
-        "  train_count=1 validation_count=2 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=30.665903 validation_net_score=-27.032805",
-        "  train_outcomes={\"GOOD_DECISION\": 1} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
       "strategy_id": "aurora",
-      "symbol": "XRPUSDT",
-      "train_count": 1,
-      "train_net_score": 30.665903,
-      "train_outcomes": {
-        "GOOD_DECISION": 1
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 1,
+        "train_count": 0,
+        "validation_count": 1
       },
-      "validation_count": 2,
-      "validation_net_score": -27.032805,
+      "support_quality": "INSUFFICIENT",
+      "symbol": "XRPUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778819853580,
+        "latest_atom_ts_ms": 1778819853580,
+        "train_window_end_ts_ms": null,
+        "validation_window_start_ts_ms": 1778819853580
+      },
+      "train_count": 0,
+      "train_net_score": 0.0,
+      "train_outcomes": {},
+      "train_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
+      "validation_count": 1,
+      "validation_net_score": 10.76861,
       "validation_outcomes": {},
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_reason": "train_or_validation_support_below_threshold",
       "validation_result": "SKIPPED_LOW_SUPPORT",
       "verdict": "LOW_SUPPORT"
     },
     {
-      "confidence_bucket": "0.50..0.75",
-      "context_id": "XRPUSDT|SELL|aurora|MEAN_REVERSION|0.50..0.75",
+      "confidence_bucket": "0.25..0.50",
+      "context_id": "XRPUSDT|SELL|aurora|TREND_DOWN|0.25..0.50",
+      "context_key": "XRPUSDT|SELL|aurora|TREND_DOWN|0.25..0.50",
+      "low_power_reason": "TRAIN_BELOW_DISPLAY_MINIMUM",
       "recommendation": "collect_more_atoms",
-      "regime": "MEAN_REVERSION",
+      "regime": "TREND_DOWN",
       "side": "SELL",
-      "source_lines": [
-        "- context: XRPUSDT SELL aurora MEAN_REVERSION 0.50..0.75",
-        "  train_count=1 validation_count=1 verdict=LOW_SUPPORT recommendation=collect_more_atoms",
-        "  train_net_score=27.393798 validation_net_score=9.156211",
-        "  train_outcomes={\"GOOD_DECISION\": 1} validation_outcomes={}",
-        "  validation_result=SKIPPED_LOW_SUPPORT reason=train_or_validation_support_below_threshold"
-      ],
       "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 1,
+        "train_count": 0,
+        "validation_count": 1
+      },
+      "support_quality": "INSUFFICIENT",
       "symbol": "XRPUSDT",
-      "train_count": 1,
-      "train_net_score": 27.393798,
-      "train_outcomes": {
-        "GOOD_DECISION": 1
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778594115323,
+        "latest_atom_ts_ms": 1778594115323,
+        "train_window_end_ts_ms": null,
+        "validation_window_start_ts_ms": 1778594115323
+      },
+      "train_count": 0,
+      "train_net_score": 0.0,
+      "train_outcomes": {},
+      "train_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
       },
       "validation_count": 1,
-      "validation_net_score": 9.156211,
+      "validation_net_score": 70.770922,
       "validation_outcomes": {},
+      "validation_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
       "validation_reason": "train_or_validation_support_below_threshold",
       "validation_result": "SKIPPED_LOW_SUPPORT",
       "verdict": "LOW_SUPPORT"
@@ -740,28 +959,46 @@
     {
       "confidence_bucket": "0.50..0.75",
       "context_id": "BTCUSDT|BUY|aurora|LOW_VOLATILITY|0.50..0.75",
+      "context_key": "BTCUSDT|BUY|aurora|LOW_VOLATILITY|0.50..0.75",
+      "low_power_reason": "TRAIN_AND_VALIDATION_BELOW_PRIMARY_MINIMUM",
       "recommendation": "retain_or_promote",
       "regime": "LOW_VOLATILITY",
       "side": "BUY",
-      "source_lines": [
-        "- context: BTCUSDT BUY aurora LOW_VOLATILITY 0.50..0.75",
-        "  train_count=4 validation_count=5 verdict=FAVORABLE_CONTEXT recommendation=retain_or_promote",
-        "  train_net_score=15.522118 validation_net_score=-0.703415",
-        "  train_outcomes={\"POLICY_PROTECTED\": 4} validation_outcomes={\"POLICY_PROTECTED\": 3, \"POLICY_TOO_STRICT\": 2}",
-        "  validation_result=CONFIRMED reason=validation_positive_profile"
-      ],
       "strategy_id": "aurora",
-      "symbol": "BTCUSDT",
-      "train_count": 4,
-      "train_net_score": 15.522118,
-      "train_outcomes": {
-        "POLICY_PROTECTED": 4
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 5,
+        "train_count": 2,
+        "validation_count": 3
       },
-      "validation_count": 5,
-      "validation_net_score": -0.703415,
+      "support_quality": "BORDERLINE",
+      "symbol": "BTCUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778533503127,
+        "latest_atom_ts_ms": 1778836801497,
+        "train_window_end_ts_ms": 1778534104394,
+        "validation_window_start_ts_ms": 1778726104642
+      },
+      "train_count": 2,
+      "train_net_score": 11.367413,
+      "train_outcomes": {
+        "POLICY_PROTECTED": 2
+      },
+      "train_rates": {
+        "favorable_rate": 1.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
+      "validation_count": 3,
+      "validation_net_score": 28.611986,
       "validation_outcomes": {
-        "POLICY_PROTECTED": 3,
-        "POLICY_TOO_STRICT": 2
+        "POLICY_PROTECTED": 3
+      },
+      "validation_rates": {
+        "favorable_rate": 1.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
       },
       "validation_reason": "validation_positive_profile",
       "validation_result": "CONFIRMED",
@@ -769,29 +1006,48 @@
     },
     {
       "confidence_bucket": "0.25..0.50",
-      "context_id": "ETHUSDT|BUY|aurora|LOW_VOLATILITY|0.25..0.50",
+      "context_id": "BTCUSDT|SELL|aurora|MEAN_REVERSION|0.25..0.50",
+      "context_key": "BTCUSDT|SELL|aurora|MEAN_REVERSION|0.25..0.50",
+      "low_power_reason": "TRAIN_AND_VALIDATION_BELOW_PRIMARY_MINIMUM",
       "recommendation": "retain_or_promote",
-      "regime": "LOW_VOLATILITY",
-      "side": "BUY",
-      "source_lines": [
-        "- context: ETHUSDT BUY aurora LOW_VOLATILITY 0.25..0.50",
-        "  train_count=3 validation_count=3 verdict=FAVORABLE_CONTEXT recommendation=retain_or_promote",
-        "  train_net_score=17.533576 validation_net_score=47.664485",
-        "  train_outcomes={\"POLICY_PROTECTED\": 2, \"POLICY_TOO_STRICT\": 1} validation_outcomes={\"POLICY_PROTECTED\": 3}",
-        "  validation_result=CONFIRMED reason=validation_positive_profile"
-      ],
+      "regime": "MEAN_REVERSION",
+      "side": "SELL",
       "strategy_id": "aurora",
-      "symbol": "ETHUSDT",
-      "train_count": 3,
-      "train_net_score": 17.533576,
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 5,
+        "train_count": 2,
+        "validation_count": 3
+      },
+      "support_quality": "BORDERLINE",
+      "symbol": "BTCUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778569572308,
+        "latest_atom_ts_ms": 1778823085578,
+        "train_window_end_ts_ms": 1778673461905,
+        "validation_window_start_ts_ms": 1778727913031
+      },
+      "train_count": 2,
+      "train_net_score": 31.105787,
       "train_outcomes": {
-        "POLICY_PROTECTED": 2,
-        "POLICY_TOO_STRICT": 1
+        "GOOD_DECISION": 2
+      },
+      "train_rates": {
+        "favorable_rate": 1.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
       },
       "validation_count": 3,
-      "validation_net_score": 47.664485,
+      "validation_net_score": 16.100746,
       "validation_outcomes": {
-        "POLICY_PROTECTED": 3
+        "CLEAN_LOSS": 1,
+        "GOOD_DECISION": 2
+      },
+      "validation_rates": {
+        "favorable_rate": 0.666667,
+        "negative_rate": 0.333333,
+        "policy_too_strict_rate": 0.0
       },
       "validation_reason": "validation_positive_profile",
       "validation_result": "CONFIRMED",
@@ -800,89 +1056,146 @@
     {
       "confidence_bucket": "0.00..0.25",
       "context_id": "ETHUSDT|SELL|aurora|LOW_VOLATILITY|0.00..0.25",
-      "recommendation": "review_policy_thresholds",
-      "regime": "LOW_VOLATILITY",
-      "side": "SELL",
-      "source_lines": [
-        "- context: ETHUSDT SELL aurora LOW_VOLATILITY 0.00..0.25",
-        "  train_count=3 validation_count=4 verdict=POLICY_TOO_STRICT_CANDIDATE recommendation=review_policy_thresholds",
-        "  train_net_score=-0.358196 validation_net_score=-21.005237",
-        "  train_outcomes={\"POLICY_PROTECTED\": 1, \"POLICY_TOO_STRICT\": 2} validation_outcomes={\"POLICY_PROTECTED\": 1, \"POLICY_TOO_STRICT\": 3}",
-        "  validation_result=CONFIRMED reason=validation_high_missed_positive_rate"
-      ],
-      "strategy_id": "aurora",
-      "symbol": "ETHUSDT",
-      "train_count": 3,
-      "train_net_score": -0.358196,
-      "train_outcomes": {
-        "POLICY_PROTECTED": 1,
-        "POLICY_TOO_STRICT": 2
-      },
-      "validation_count": 4,
-      "validation_net_score": -21.005237,
-      "validation_outcomes": {
-        "POLICY_PROTECTED": 1,
-        "POLICY_TOO_STRICT": 3
-      },
-      "validation_reason": "validation_high_missed_positive_rate",
-      "validation_result": "CONFIRMED",
-      "verdict": "POLICY_TOO_STRICT_CANDIDATE"
-    },
-    {
-      "confidence_bucket": "0.00..0.25",
-      "context_id": "ETHUSDT|SELL|aurora|TREND_DOWN|0.00..0.25",
-      "recommendation": "avoid_or_review",
-      "regime": "TREND_DOWN",
-      "side": "SELL",
-      "source_lines": [
-        "- context: ETHUSDT SELL aurora TREND_DOWN 0.00..0.25",
-        "  train_count=3 validation_count=3 verdict=TOXIC_CONTEXT recommendation=avoid_or_review",
-        "  train_net_score=-22.481593 validation_net_score=-2.589772",
-        "  train_outcomes={\"CLEAN_LOSS\": 3} validation_outcomes={\"CLEAN_LOSS\": 2, \"GOOD_DECISION\": 1}",
-        "  validation_result=CONFIRMED reason=validation_negative_profile"
-      ],
-      "strategy_id": "aurora",
-      "symbol": "ETHUSDT",
-      "train_count": 3,
-      "train_net_score": -22.481593,
-      "train_outcomes": {
-        "CLEAN_LOSS": 3
-      },
-      "validation_count": 3,
-      "validation_net_score": -2.589772,
-      "validation_outcomes": {
-        "CLEAN_LOSS": 2,
-        "GOOD_DECISION": 1
-      },
-      "validation_reason": "validation_negative_profile",
-      "validation_result": "CONFIRMED",
-      "verdict": "TOXIC_CONTEXT"
-    },
-    {
-      "confidence_bucket": "0.25..0.50",
-      "context_id": "XRPUSDT|SELL|aurora|LOW_VOLATILITY|0.25..0.50",
+      "context_key": "ETHUSDT|SELL|aurora|LOW_VOLATILITY|0.00..0.25",
+      "low_power_reason": "TRAIN_AND_VALIDATION_BELOW_PRIMARY_MINIMUM",
       "recommendation": "retain_or_promote",
       "regime": "LOW_VOLATILITY",
       "side": "SELL",
-      "source_lines": [
-        "- context: XRPUSDT SELL aurora LOW_VOLATILITY 0.25..0.50",
-        "  train_count=4 validation_count=4 verdict=FAVORABLE_CONTEXT recommendation=retain_or_promote",
-        "  train_net_score=13.040321 validation_net_score=-4.028049",
-        "  train_outcomes={\"POLICY_PROTECTED\": 4} validation_outcomes={\"POLICY_PROTECTED\": 2, \"POLICY_TOO_STRICT\": 2}",
-        "  validation_result=CONFIRMED reason=validation_positive_profile"
-      ],
       "strategy_id": "aurora",
-      "symbol": "XRPUSDT",
-      "train_count": 4,
-      "train_net_score": 13.040321,
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 6,
+        "train_count": 3,
+        "validation_count": 3
+      },
+      "support_quality": "BORDERLINE",
+      "symbol": "ETHUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778629203164,
+        "latest_atom_ts_ms": 1778823300184,
+        "train_window_end_ts_ms": 1778751603980,
+        "validation_window_start_ts_ms": 1778761200519
+      },
+      "train_count": 3,
+      "train_net_score": 18.898485,
       "train_outcomes": {
-        "POLICY_PROTECTED": 4
+        "POLICY_PROTECTED": 2,
+        "POLICY_TOO_STRICT": 1
+      },
+      "train_rates": {
+        "favorable_rate": 0.666667,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.333333
+      },
+      "validation_count": 3,
+      "validation_net_score": 11.185508,
+      "validation_outcomes": {
+        "POLICY_PROTECTED": 1,
+        "POLICY_TOO_STRICT": 2
+      },
+      "validation_rates": {
+        "favorable_rate": 0.333333,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.666667
+      },
+      "validation_reason": "validation_positive_profile",
+      "validation_result": "CONFIRMED",
+      "verdict": "FAVORABLE_CONTEXT"
+    },
+    {
+      "confidence_bucket": "0.25..0.50",
+      "context_id": "XRPUSDT|BUY|aurora|LOW_VOLATILITY|0.25..0.50",
+      "context_key": "XRPUSDT|BUY|aurora|LOW_VOLATILITY|0.25..0.50",
+      "low_power_reason": "TRAIN_AND_VALIDATION_BELOW_PRIMARY_MINIMUM",
+      "recommendation": "retain_or_promote",
+      "regime": "LOW_VOLATILITY",
+      "side": "BUY",
+      "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 7,
+        "train_count": 3,
+        "validation_count": 4
+      },
+      "support_quality": "BORDERLINE",
+      "symbol": "XRPUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778523904151,
+        "latest_atom_ts_ms": 1778744104330,
+        "train_window_end_ts_ms": 1778616305156,
+        "validation_window_start_ts_ms": 1778619304635
+      },
+      "train_count": 3,
+      "train_net_score": 11.75859,
+      "train_outcomes": {
+        "POLICY_PROTECTED": 2,
+        "POLICY_TOO_STRICT": 1
+      },
+      "train_rates": {
+        "favorable_rate": 0.666667,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.333333
       },
       "validation_count": 4,
-      "validation_net_score": -4.028049,
+      "validation_net_score": 8.163019,
       "validation_outcomes": {
-        "POLICY_PROTECTED": 2,
-        "POLICY_TOO_STRICT": 2
+        "POLICY_PROTECTED": 3,
+        "POLICY_TOO_STRICT": 1
+      },
+      "validation_rates": {
+        "favorable_rate": 0.75,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.25
+      },
+      "validation_reason": "validation_positive_profile",
+      "validation_result": "CONFIRMED",
+      "verdict": "FAVORABLE_CONTEXT"
+    },
+    {
+      "confidence_bucket": "0.50..0.75",
+      "context_id": "XRPUSDT|BUY|aurora|LOW_VOLATILITY|0.50..0.75",
+      "context_key": "XRPUSDT|BUY|aurora|LOW_VOLATILITY|0.50..0.75",
+      "low_power_reason": "TRAIN_AND_VALIDATION_BELOW_PRIMARY_MINIMUM",
+      "recommendation": "retain_or_promote",
+      "regime": "LOW_VOLATILITY",
+      "side": "BUY",
+      "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 5,
+        "train_count": 2,
+        "validation_count": 3
+      },
+      "support_quality": "BORDERLINE",
+      "symbol": "XRPUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778617501884,
+        "latest_atom_ts_ms": 1778726104850,
+        "train_window_end_ts_ms": 1778619904575,
+        "validation_window_start_ts_ms": 1778665504176
+      },
+      "train_count": 2,
+      "train_net_score": 6.000884,
+      "train_outcomes": {
+        "POLICY_PROTECTED": 2
+      },
+      "train_rates": {
+        "favorable_rate": 1.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
+      "validation_count": 3,
+      "validation_net_score": 44.733583,
+      "validation_outcomes": {
+        "POLICY_PROTECTED": 3
+      },
+      "validation_rates": {
+        "favorable_rate": 1.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
       },
       "validation_reason": "validation_positive_profile",
       "validation_result": "CONFIRMED",
@@ -893,29 +1206,299 @@
     {
       "confidence_bucket": "0.25..0.50",
       "context_id": "BTCUSDT|BUY|aurora|LOW_VOLATILITY|0.25..0.50",
-      "recommendation": "review_policy_thresholds",
+      "context_key": "BTCUSDT|BUY|aurora|LOW_VOLATILITY|0.25..0.50",
+      "low_power_reason": "NONE",
+      "recommendation": "retain_or_promote",
       "regime": "LOW_VOLATILITY",
       "side": "BUY",
-      "source_lines": [
-        "- context: BTCUSDT BUY aurora LOW_VOLATILITY 0.25..0.50",
-        "  train_count=10 validation_count=11 verdict=POLICY_TOO_STRICT_CANDIDATE recommendation=review_policy_thresholds",
-        "  train_net_score=-16.461044 validation_net_score=-11.844887",
-        "  train_outcomes={\"POLICY_PROTECTED\": 2, \"POLICY_TOO_STRICT\": 8} validation_outcomes={\"POLICY_PROTECTED\": 3, \"POLICY_TOO_STRICT\": 8}",
-        "  validation_result=CONFIRMED reason=validation_high_missed_positive_rate"
-      ],
       "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 12,
+        "train_count": 6,
+        "validation_count": 6
+      },
+      "support_quality": "SUFFICIENT",
       "symbol": "BTCUSDT",
-      "train_count": 10,
-      "train_net_score": -16.461044,
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778531701297,
+        "latest_atom_ts_ms": 1778837402783,
+        "train_window_end_ts_ms": 1778722204486,
+        "validation_window_start_ts_ms": 1778722800105
+      },
+      "train_count": 6,
+      "train_net_score": 5.773558,
       "train_outcomes": {
-        "POLICY_PROTECTED": 2,
-        "POLICY_TOO_STRICT": 8
+        "POLICY_PROTECTED": 5,
+        "POLICY_TOO_STRICT": 1
+      },
+      "train_rates": {
+        "favorable_rate": 0.833333,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.166667
+      },
+      "validation_count": 6,
+      "validation_net_score": 3.948269,
+      "validation_outcomes": {
+        "POLICY_PROTECTED": 4,
+        "POLICY_TOO_STRICT": 2
+      },
+      "validation_rates": {
+        "favorable_rate": 0.666667,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.333333
+      },
+      "validation_reason": "validation_positive_profile",
+      "validation_result": "CONFIRMED",
+      "verdict": "FAVORABLE_CONTEXT"
+    },
+    {
+      "confidence_bucket": "0.25..0.50",
+      "context_id": "BTCUSDT|SELL|aurora|LOW_VOLATILITY|0.25..0.50",
+      "context_key": "BTCUSDT|SELL|aurora|LOW_VOLATILITY|0.25..0.50",
+      "low_power_reason": "NONE",
+      "recommendation": "review_policy_thresholds",
+      "regime": "LOW_VOLATILITY",
+      "side": "SELL",
+      "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 35,
+        "train_count": 17,
+        "validation_count": 18
+      },
+      "support_quality": "STRONG",
+      "symbol": "BTCUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778538601368,
+        "latest_atom_ts_ms": 1778914502852,
+        "train_window_end_ts_ms": 1778714400409,
+        "validation_window_start_ts_ms": 1778715001471
+      },
+      "train_count": 17,
+      "train_net_score": -9.274239,
+      "train_outcomes": {
+        "POLICY_PROTECTED": 5,
+        "POLICY_TOO_STRICT": 12
+      },
+      "train_rates": {
+        "favorable_rate": 0.294118,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.705882
+      },
+      "validation_count": 18,
+      "validation_net_score": 7.277411,
+      "validation_outcomes": {
+        "GOOD_DECISION": 2,
+        "POLICY_PROTECTED": 7,
+        "POLICY_TOO_STRICT": 9
+      },
+      "validation_rates": {
+        "favorable_rate": 0.5,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.5
+      },
+      "validation_reason": "validation_high_missed_positive_rate",
+      "validation_result": "CONFIRMED",
+      "verdict": "POLICY_TOO_STRICT_CANDIDATE"
+    },
+    {
+      "confidence_bucket": "0.50..0.75",
+      "context_id": "BTCUSDT|SELL|aurora|LOW_VOLATILITY|0.50..0.75",
+      "context_key": "BTCUSDT|SELL|aurora|LOW_VOLATILITY|0.50..0.75",
+      "low_power_reason": "NONE",
+      "recommendation": "review_policy_thresholds",
+      "regime": "LOW_VOLATILITY",
+      "side": "SELL",
+      "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 19,
+        "train_count": 9,
+        "validation_count": 10
+      },
+      "support_quality": "SUFFICIENT",
+      "symbol": "BTCUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778534404545,
+        "latest_atom_ts_ms": 1778799601444,
+        "train_window_end_ts_ms": 1778539802905,
+        "validation_window_start_ts_ms": 1778541004826
+      },
+      "train_count": 9,
+      "train_net_score": -0.249928,
+      "train_outcomes": {
+        "POLICY_PROTECTED": 3,
+        "POLICY_TOO_STRICT": 6
+      },
+      "train_rates": {
+        "favorable_rate": 0.333333,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.666667
+      },
+      "validation_count": 10,
+      "validation_net_score": -6.135459,
+      "validation_outcomes": {
+        "POLICY_PROTECTED": 4,
+        "POLICY_TOO_STRICT": 6
+      },
+      "validation_rates": {
+        "favorable_rate": 0.4,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.6
+      },
+      "validation_reason": "validation_high_missed_positive_rate",
+      "validation_result": "CONFIRMED",
+      "verdict": "POLICY_TOO_STRICT_CANDIDATE"
+    },
+    {
+      "confidence_bucket": "0.25..0.50",
+      "context_id": "ETHUSDT|BUY|aurora|LOW_VOLATILITY|0.25..0.50",
+      "context_key": "ETHUSDT|BUY|aurora|LOW_VOLATILITY|0.25..0.50",
+      "low_power_reason": "NONE",
+      "recommendation": "retain_or_promote",
+      "regime": "LOW_VOLATILITY",
+      "side": "BUY",
+      "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 21,
+        "train_count": 10,
+        "validation_count": 11
+      },
+      "support_quality": "STRONG",
+      "symbol": "ETHUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778520903030,
+        "latest_atom_ts_ms": 1778837402096,
+        "train_window_end_ts_ms": 1778625903430,
+        "validation_window_start_ts_ms": 1778668802676
+      },
+      "train_count": 10,
+      "train_net_score": 0.493415,
+      "train_outcomes": {
+        "POLICY_PROTECTED": 7,
+        "POLICY_TOO_STRICT": 3
+      },
+      "train_rates": {
+        "favorable_rate": 0.7,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.3
       },
       "validation_count": 11,
-      "validation_net_score": -11.844887,
+      "validation_net_score": 12.991174,
       "validation_outcomes": {
-        "POLICY_PROTECTED": 3,
-        "POLICY_TOO_STRICT": 8
+        "POLICY_PROTECTED": 9,
+        "POLICY_TOO_STRICT": 2
+      },
+      "validation_rates": {
+        "favorable_rate": 0.818182,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.181818
+      },
+      "validation_reason": "validation_positive_profile",
+      "validation_result": "CONFIRMED",
+      "verdict": "FAVORABLE_CONTEXT"
+    },
+    {
+      "confidence_bucket": "0.50..0.75",
+      "context_id": "ETHUSDT|BUY|aurora|LOW_VOLATILITY|0.50..0.75",
+      "context_key": "ETHUSDT|BUY|aurora|LOW_VOLATILITY|0.50..0.75",
+      "low_power_reason": "NONE",
+      "recommendation": "retain_or_promote",
+      "regime": "LOW_VOLATILITY",
+      "side": "BUY",
+      "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 16,
+        "train_count": 8,
+        "validation_count": 8
+      },
+      "support_quality": "SUFFICIENT",
+      "symbol": "ETHUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778527203140,
+        "latest_atom_ts_ms": 1778873102291,
+        "train_window_end_ts_ms": 1778705702968,
+        "validation_window_start_ts_ms": 1778714100054
+      },
+      "train_count": 8,
+      "train_net_score": 6.1106,
+      "train_outcomes": {
+        "POLICY_PROTECTED": 5,
+        "POLICY_TOO_STRICT": 3
+      },
+      "train_rates": {
+        "favorable_rate": 0.625,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.375
+      },
+      "validation_count": 8,
+      "validation_net_score": 5.113279,
+      "validation_outcomes": {
+        "POLICY_PROTECTED": 7,
+        "POLICY_TOO_STRICT": 1
+      },
+      "validation_rates": {
+        "favorable_rate": 0.875,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.125
+      },
+      "validation_reason": "validation_positive_profile",
+      "validation_result": "CONFIRMED",
+      "verdict": "FAVORABLE_CONTEXT"
+    },
+    {
+      "confidence_bucket": "0.25..0.50",
+      "context_id": "ETHUSDT|SELL|aurora|LOW_VOLATILITY|0.25..0.50",
+      "context_key": "ETHUSDT|SELL|aurora|LOW_VOLATILITY|0.25..0.50",
+      "low_power_reason": "NONE",
+      "recommendation": "review_policy_thresholds",
+      "regime": "LOW_VOLATILITY",
+      "side": "SELL",
+      "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 53,
+        "train_count": 26,
+        "validation_count": 27
+      },
+      "support_quality": "STRONG",
+      "symbol": "ETHUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778520603041,
+        "latest_atom_ts_ms": 1778836500854,
+        "train_window_end_ts_ms": 1778718899771,
+        "validation_window_start_ts_ms": 1778727000852
+      },
+      "train_count": 26,
+      "train_net_score": -6.998836,
+      "train_outcomes": {
+        "POLICY_PROTECTED": 8,
+        "POLICY_TOO_STRICT": 18
+      },
+      "train_rates": {
+        "favorable_rate": 0.307692,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.692308
+      },
+      "validation_count": 27,
+      "validation_net_score": -4.383504,
+      "validation_outcomes": {
+        "POLICY_PROTECTED": 8,
+        "POLICY_TOO_STRICT": 19
+      },
+      "validation_rates": {
+        "favorable_rate": 0.296296,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.703704
       },
       "validation_reason": "validation_high_missed_positive_rate",
       "validation_result": "CONFIRMED",
@@ -924,60 +1507,195 @@
   ],
   "REJECTED_FALSE_POSITIVE": [
     {
-      "confidence_bucket": "0.25..0.50",
-      "context_id": "BTCUSDT|SELL|aurora|LOW_VOLATILITY|0.25..0.50",
+      "confidence_bucket": "0.00..0.25",
+      "context_id": "BTCUSDT|SELL|aurora|LOW_VOLATILITY|0.00..0.25",
+      "context_key": "BTCUSDT|SELL|aurora|LOW_VOLATILITY|0.00..0.25",
+      "low_power_reason": "NONE",
       "recommendation": "review_policy_thresholds",
       "regime": "LOW_VOLATILITY",
       "side": "SELL",
-      "source_lines": [
-        "- context: BTCUSDT SELL aurora LOW_VOLATILITY 0.25..0.50",
-        "  train_count=8 validation_count=8 verdict=POLICY_TOO_STRICT_CANDIDATE recommendation=review_policy_thresholds",
-        "  train_net_score=-8.130135 validation_net_score=10.475059",
-        "  train_outcomes={\"POLICY_PROTECTED\": 3, \"POLICY_TOO_STRICT\": 5} validation_outcomes={\"POLICY_PROTECTED\": 6, \"POLICY_TOO_STRICT\": 2}",
-        "  validation_result=CONTRADICTED reason=validation_missing_missed_positive_pattern"
-      ],
       "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 18,
+        "train_count": 9,
+        "validation_count": 9
+      },
+      "support_quality": "SUFFICIENT",
       "symbol": "BTCUSDT",
-      "train_count": 8,
-      "train_net_score": -8.130135,
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778542503245,
+        "latest_atom_ts_ms": 1778835003516,
+        "train_window_end_ts_ms": 1778797201684,
+        "validation_window_start_ts_ms": 1778801403963
+      },
+      "train_count": 9,
+      "train_net_score": -0.816258,
       "train_outcomes": {
         "POLICY_PROTECTED": 3,
-        "POLICY_TOO_STRICT": 5
+        "POLICY_TOO_STRICT": 6
       },
-      "validation_count": 8,
-      "validation_net_score": 10.475059,
+      "train_rates": {
+        "favorable_rate": 0.333333,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.666667
+      },
+      "validation_count": 9,
+      "validation_net_score": 1.616235,
       "validation_outcomes": {
-        "POLICY_PROTECTED": 6,
-        "POLICY_TOO_STRICT": 2
+        "POLICY_PROTECTED": 5,
+        "POLICY_TOO_STRICT": 4
+      },
+      "validation_rates": {
+        "favorable_rate": 0.555556,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.444444
       },
       "validation_reason": "validation_missing_missed_positive_pattern",
       "validation_result": "CONTRADICTED",
       "verdict": "POLICY_TOO_STRICT_CANDIDATE"
     },
     {
-      "confidence_bucket": "0.25..0.50",
-      "context_id": "BTCUSDT|SELL|aurora|MEAN_REVERSION|0.25..0.50",
-      "recommendation": "monitor",
-      "regime": "MEAN_REVERSION",
+      "confidence_bucket": "0.75..1.00",
+      "context_id": "BTCUSDT|SELL|aurora|LOW_VOLATILITY|0.75..1.00",
+      "context_key": "BTCUSDT|SELL|aurora|LOW_VOLATILITY|0.75..1.00",
+      "low_power_reason": "NONE",
+      "recommendation": "review_policy_thresholds",
+      "regime": "LOW_VOLATILITY",
       "side": "SELL",
-      "source_lines": [
-        "- context: BTCUSDT SELL aurora MEAN_REVERSION 0.25..0.50",
-        "  train_count=2 validation_count=3 verdict=MIXED_CONTEXT recommendation=monitor",
-        "  train_net_score=-11.375384 validation_net_score=1.453925",
-        "  train_outcomes={\"GOOD_DECISION\": 2} validation_outcomes={\"GOOD_DECISION\": 3}",
-        "  validation_result=CONTRADICTED reason=validation_became_directional"
-      ],
       "strategy_id": "aurora",
-      "symbol": "BTCUSDT",
-      "train_count": 2,
-      "train_net_score": -11.375384,
-      "train_outcomes": {
-        "GOOD_DECISION": 2
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 10,
+        "train_count": 5,
+        "validation_count": 5
       },
-      "validation_count": 3,
-      "validation_net_score": 1.453925,
+      "support_quality": "SUFFICIENT",
+      "symbol": "BTCUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778540404349,
+        "latest_atom_ts_ms": 1778589304472,
+        "train_window_end_ts_ms": 1778549104549,
+        "validation_window_start_ts_ms": 1778586905703
+      },
+      "train_count": 5,
+      "train_net_score": -33.904731,
+      "train_outcomes": {
+        "POLICY_TOO_STRICT": 5
+      },
+      "train_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 1.0
+      },
+      "validation_count": 5,
+      "validation_net_score": 10.848701,
       "validation_outcomes": {
-        "GOOD_DECISION": 3
+        "POLICY_PROTECTED": 5
+      },
+      "validation_rates": {
+        "favorable_rate": 1.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
+      "validation_reason": "validation_missing_missed_positive_pattern",
+      "validation_result": "CONTRADICTED",
+      "verdict": "POLICY_TOO_STRICT_CANDIDATE"
+    },
+    {
+      "confidence_bucket": "0.00..0.25",
+      "context_id": "ETHUSDT|BUY|aurora|LOW_VOLATILITY|0.00..0.25",
+      "context_key": "ETHUSDT|BUY|aurora|LOW_VOLATILITY|0.00..0.25",
+      "low_power_reason": "TRAIN_AND_VALIDATION_BELOW_PRIMARY_MINIMUM",
+      "recommendation": "review_policy_thresholds",
+      "regime": "LOW_VOLATILITY",
+      "side": "BUY",
+      "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 4,
+        "train_count": 2,
+        "validation_count": 2
+      },
+      "support_quality": "BORDERLINE",
+      "symbol": "ETHUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778522701242,
+        "latest_atom_ts_ms": 1778750102545,
+        "train_window_end_ts_ms": 1778703900160,
+        "validation_window_start_ts_ms": 1778741100452
+      },
+      "train_count": 2,
+      "train_net_score": -5.306854,
+      "train_outcomes": {
+        "POLICY_TOO_STRICT": 2
+      },
+      "train_rates": {
+        "favorable_rate": 0.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 1.0
+      },
+      "validation_count": 2,
+      "validation_net_score": 25.242908,
+      "validation_outcomes": {
+        "POLICY_PROTECTED": 2
+      },
+      "validation_rates": {
+        "favorable_rate": 1.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
+      "validation_reason": "validation_missing_missed_positive_pattern",
+      "validation_result": "CONTRADICTED",
+      "verdict": "POLICY_TOO_STRICT_CANDIDATE"
+    },
+    {
+      "confidence_bucket": "0.75..1.00",
+      "context_id": "ETHUSDT|BUY|aurora|LOW_VOLATILITY|0.75..1.00",
+      "context_key": "ETHUSDT|BUY|aurora|LOW_VOLATILITY|0.75..1.00",
+      "low_power_reason": "TRAIN_AND_VALIDATION_BELOW_PRIMARY_MINIMUM",
+      "recommendation": "monitor",
+      "regime": "LOW_VOLATILITY",
+      "side": "BUY",
+      "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 8,
+        "train_count": 4,
+        "validation_count": 4
+      },
+      "support_quality": "BORDERLINE",
+      "symbol": "ETHUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778538004811,
+        "latest_atom_ts_ms": 1778873704368,
+        "train_window_end_ts_ms": 1778723400815,
+        "validation_window_start_ts_ms": 1778724602628
+      },
+      "train_count": 4,
+      "train_net_score": -0.672024,
+      "train_outcomes": {
+        "POLICY_PROTECTED": 2,
+        "POLICY_TOO_STRICT": 2
+      },
+      "train_rates": {
+        "favorable_rate": 0.5,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.5
+      },
+      "validation_count": 4,
+      "validation_net_score": 30.72548,
+      "validation_outcomes": {
+        "POLICY_PROTECTED": 4
+      },
+      "validation_rates": {
+        "favorable_rate": 1.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
       },
       "validation_reason": "validation_became_directional",
       "validation_result": "CONTRADICTED",
@@ -986,33 +1704,202 @@
     {
       "confidence_bucket": "0.50..0.75",
       "context_id": "ETHUSDT|SELL|aurora|LOW_VOLATILITY|0.50..0.75",
+      "context_key": "ETHUSDT|SELL|aurora|LOW_VOLATILITY|0.50..0.75",
+      "low_power_reason": "NONE",
       "recommendation": "review_policy_thresholds",
       "regime": "LOW_VOLATILITY",
       "side": "SELL",
-      "source_lines": [
-        "- context: ETHUSDT SELL aurora LOW_VOLATILITY 0.50..0.75",
-        "  train_count=5 validation_count=5 verdict=POLICY_TOO_STRICT_CANDIDATE recommendation=review_policy_thresholds",
-        "  train_net_score=6.828617 validation_net_score=12.356725",
-        "  train_outcomes={\"POLICY_PROTECTED\": 2, \"POLICY_TOO_STRICT\": 3} validation_outcomes={\"POLICY_PROTECTED\": 4, \"POLICY_TOO_STRICT\": 1}",
-        "  validation_result=CONTRADICTED reason=validation_missing_missed_positive_pattern"
-      ],
       "strategy_id": "aurora",
-      "symbol": "ETHUSDT",
-      "train_count": 5,
-      "train_net_score": 6.828617,
-      "train_outcomes": {
-        "POLICY_PROTECTED": 2,
-        "POLICY_TOO_STRICT": 3
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 29,
+        "train_count": 14,
+        "validation_count": 15
       },
-      "validation_count": 5,
-      "validation_net_score": 12.356725,
+      "support_quality": "STRONG",
+      "symbol": "ETHUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778534404358,
+        "latest_atom_ts_ms": 1778752800693,
+        "train_window_end_ts_ms": 1778569502898,
+        "validation_window_start_ts_ms": 1778586004007
+      },
+      "train_count": 14,
+      "train_net_score": -20.33215,
+      "train_outcomes": {
+        "POLICY_PROTECTED": 5,
+        "POLICY_TOO_STRICT": 9
+      },
+      "train_rates": {
+        "favorable_rate": 0.357143,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.642857
+      },
+      "validation_count": 15,
+      "validation_net_score": 6.544638,
       "validation_outcomes": {
-        "POLICY_PROTECTED": 4,
-        "POLICY_TOO_STRICT": 1
+        "POLICY_PROTECTED": 9,
+        "POLICY_TOO_STRICT": 6
+      },
+      "validation_rates": {
+        "favorable_rate": 0.6,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.4
       },
       "validation_reason": "validation_missing_missed_positive_pattern",
       "validation_result": "CONTRADICTED",
       "verdict": "POLICY_TOO_STRICT_CANDIDATE"
+    },
+    {
+      "confidence_bucket": "0.25..0.50",
+      "context_id": "XRPUSDT|SELL|aurora|LOW_VOLATILITY|0.25..0.50",
+      "context_key": "XRPUSDT|SELL|aurora|LOW_VOLATILITY|0.25..0.50",
+      "low_power_reason": "NONE",
+      "recommendation": "review_policy_thresholds",
+      "regime": "LOW_VOLATILITY",
+      "side": "SELL",
+      "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 18,
+        "train_count": 9,
+        "validation_count": 9
+      },
+      "support_quality": "SUFFICIENT",
+      "symbol": "XRPUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778526904999,
+        "latest_atom_ts_ms": 1778922600820,
+        "train_window_end_ts_ms": 1778673001867,
+        "validation_window_start_ts_ms": 1778674202573
+      },
+      "train_count": 9,
+      "train_net_score": -10.1949,
+      "train_outcomes": {
+        "POLICY_PROTECTED": 3,
+        "POLICY_TOO_STRICT": 6
+      },
+      "train_rates": {
+        "favorable_rate": 0.333333,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.666667
+      },
+      "validation_count": 9,
+      "validation_net_score": -3.059604,
+      "validation_outcomes": {
+        "POLICY_PROTECTED": 6,
+        "POLICY_TOO_STRICT": 3
+      },
+      "validation_rates": {
+        "favorable_rate": 0.666667,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.333333
+      },
+      "validation_reason": "validation_missing_missed_positive_pattern",
+      "validation_result": "CONTRADICTED",
+      "verdict": "POLICY_TOO_STRICT_CANDIDATE"
+    },
+    {
+      "confidence_bucket": "0.50..0.75",
+      "context_id": "XRPUSDT|SELL|aurora|LOW_VOLATILITY|0.50..0.75",
+      "context_key": "XRPUSDT|SELL|aurora|LOW_VOLATILITY|0.50..0.75",
+      "low_power_reason": "NONE",
+      "recommendation": "monitor",
+      "regime": "LOW_VOLATILITY",
+      "side": "SELL",
+      "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 14,
+        "train_count": 7,
+        "validation_count": 7
+      },
+      "support_quality": "SUFFICIENT",
+      "symbol": "XRPUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778526302889,
+        "latest_atom_ts_ms": 1778832601486,
+        "train_window_end_ts_ms": 1778674803256,
+        "validation_window_start_ts_ms": 1778707801543
+      },
+      "train_count": 7,
+      "train_net_score": -6.918364,
+      "train_outcomes": {
+        "POLICY_PROTECTED": 4,
+        "POLICY_TOO_STRICT": 3
+      },
+      "train_rates": {
+        "favorable_rate": 0.571429,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.428571
+      },
+      "validation_count": 7,
+      "validation_net_score": 12.610443,
+      "validation_outcomes": {
+        "POLICY_PROTECTED": 6,
+        "POLICY_TOO_STRICT": 1
+      },
+      "validation_rates": {
+        "favorable_rate": 0.857143,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.142857
+      },
+      "validation_reason": "validation_became_directional",
+      "validation_result": "CONTRADICTED",
+      "verdict": "MIXED_CONTEXT"
+    },
+    {
+      "confidence_bucket": "0.75..1.00",
+      "context_id": "XRPUSDT|SELL|aurora|LOW_VOLATILITY|0.75..1.00",
+      "context_key": "XRPUSDT|SELL|aurora|LOW_VOLATILITY|0.75..1.00",
+      "low_power_reason": "TRAIN_AND_VALIDATION_BELOW_PRIMARY_MINIMUM",
+      "recommendation": "monitor",
+      "regime": "LOW_VOLATILITY",
+      "side": "SELL",
+      "strategy_id": "aurora",
+      "support_counts": {
+        "decay_applied": false,
+        "effective_total_count": null,
+        "raw_total_count": 4,
+        "train_count": 2,
+        "validation_count": 2
+      },
+      "support_quality": "BORDERLINE",
+      "symbol": "XRPUSDT",
+      "timestamp_range": {
+        "earliest_atom_ts_ms": 1778535301159,
+        "latest_atom_ts_ms": 1778906007524,
+        "train_window_end_ts_ms": 1778537103735,
+        "validation_window_start_ts_ms": 1778537705390
+      },
+      "train_count": 2,
+      "train_net_score": -3.843237,
+      "train_outcomes": {
+        "POLICY_PROTECTED": 1,
+        "POLICY_TOO_STRICT": 1
+      },
+      "train_rates": {
+        "favorable_rate": 0.5,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.5
+      },
+      "validation_count": 2,
+      "validation_net_score": 8.536337,
+      "validation_outcomes": {
+        "GOOD_DECISION": 1,
+        "POLICY_PROTECTED": 1
+      },
+      "validation_rates": {
+        "favorable_rate": 1.0,
+        "negative_rate": 0.0,
+        "policy_too_strict_rate": 0.0
+      },
+      "validation_reason": "validation_became_directional",
+      "validation_result": "CONTRADICTED",
+      "verdict": "MIXED_CONTEXT"
     }
   ],
   "UNKNOWN": []

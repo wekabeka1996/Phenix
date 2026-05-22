@@ -395,7 +395,7 @@ def test_anti_peak_observability_uses_admission_pre_shield_without_stage_reconst
     assert anti_peak["score_path"]["score_before_shields"] == 0.44
     assert anti_peak["score_path"]["score_after_danger_zone"] is None
     assert anti_peak["score_path"]["score_after_context_shield"] is None
-    assert anti_peak["classification"]["attenuated_below_threshold"] is None
+    assert anti_peak["classification"]["attenuated_below_threshold"] is False
 
 
 def test_anti_peak_observability_disabled_vol_gate_snapshot_is_non_authoritative() -> None:

@@ -169,22 +169,16 @@ trading:
     - DOGEUSDT
     - BTCUSDT
     - ETHUSDT
-    - XRPUSDT
-    - BNBUSDT
     - SOLUSDT
     allowlist_symbols:
     - DOGEUSDT
     - BTCUSDT
     - ETHUSDT
-    - XRPUSDT
-    - BNBUSDT
     - SOLUSDT
     context_symbols:
     - DOGEUSDT
     - BTCUSDT
     - ETHUSDT
-    - XRPUSDT
-    - BNBUSDT
     - SOLUSDT
     fast_cycle_sec: 300
     deep_cycle_sec: 900

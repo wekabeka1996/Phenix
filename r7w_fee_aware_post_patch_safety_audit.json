@@ -1,0 +1,47 @@
+{
+  "task": "AURORA_R7W_FEE_AWARE_SHADOW_POST_PATCH_RUNTIME_CONFIRMATION",
+  "boundary": {
+    "method": "git_commit",
+    "timestamp": "2026-05-14T22:44:42Z",
+    "timestamp_ms": 1778798682000,
+    "confidence": "high"
+  },
+  "authority_leak_detected": false,
+  "event_storm_detected": false,
+  "payload_safety_flags_preserved": true,
+  "payload_identity_weak_detected": true,
+  "journal_row_count": 36,
+  "row_classification_counts": {
+    "JOURNAL_PAYLOAD_OK": 0,
+    "JOURNAL_PAYLOAD_MISSING_SAFETY_FLAGS": 0,
+    "JOURNAL_PAYLOAD_MALFORMED": 0,
+    "JOURNAL_PAYLOAD_IDENTITY_WEAK": 36,
+    "UNKNOWN": 0
+  },
+  "exact_event_name_count": 36,
+  "parseable_json_row_count": 36,
+  "flags_observed": {
+    "shadow_only_true": 36,
+    "authority_applied_false": 36,
+    "no_effect_true": 36
+  },
+  "payload_keys_observed": [
+    "authority_applied",
+    "no_effect",
+    "shadow_only",
+    "symbol",
+    "ts_ms"
+  ],
+  "identity_fields_observed": {
+    "symbol_present": 36,
+    "lifecycle_id_present": 0,
+    "rid_present": 0,
+    "transitions_present": 0,
+    "fee_source_present": 0,
+    "null_reasons_present": 0
+  },
+  "fee_aware_close_hits": [],
+  "domain_execution_position_text_hits": [],
+  "aurora_core_text_hits": [],
+  "note": "The post-patch journal sink preserves the three safety flags but does not retain audit-grade candidate identity fields from trade_lifecycle for this event surface."
+}

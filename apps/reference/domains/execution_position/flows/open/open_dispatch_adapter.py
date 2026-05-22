@@ -43,6 +43,15 @@ class OpenDispatchPayload(BaseModel):
     regime_epoch_ref: Optional[str] = Field(default=None)
     regime: Optional[str] = Field(default=None)
     regime_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    resolved_min_regime_confidence: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+    )
+    threshold_applied: Optional[bool] = Field(default=None)
+    threshold_verdict: Optional[str] = Field(default=None)
+    threshold_reason: Optional[str] = Field(default=None)
+    regime_confidence_gate_verdict: Optional[str] = Field(default=None)
     regime_provenance: Optional[Dict[str, Any]] = Field(default=None)
 
     @model_validator(mode="after")
@@ -77,6 +86,11 @@ class OpenDispatchPayload(BaseModel):
         regime_epoch_ref: Optional[str],
         regime: Optional[str],
         regime_confidence: Optional[float],
+        resolved_min_regime_confidence: Optional[float],
+        threshold_applied: Optional[bool],
+        threshold_verdict: Optional[str],
+        threshold_reason: Optional[str],
+        regime_confidence_gate_verdict: Optional[str],
         regime_provenance: Optional[Dict[str, Any]],
     ) -> "OpenDispatchPayload":
         try:
@@ -96,6 +110,11 @@ class OpenDispatchPayload(BaseModel):
                 regime_epoch_ref=regime_epoch_ref,
                 regime=regime,
                 regime_confidence=regime_confidence,
+                resolved_min_regime_confidence=resolved_min_regime_confidence,
+                threshold_applied=threshold_applied,
+                threshold_verdict=threshold_verdict,
+                threshold_reason=threshold_reason,
+                regime_confidence_gate_verdict=regime_confidence_gate_verdict,
                 regime_provenance=regime_provenance,
             )
         except Exception as exc:
@@ -110,6 +129,11 @@ class OpenDispatchPayload(BaseModel):
             "regime_epoch_ref": self.regime_epoch_ref,
             "regime": self.regime,
             "regime_confidence": self.regime_confidence,
+            "resolved_min_regime_confidence": self.resolved_min_regime_confidence,
+            "threshold_applied": self.threshold_applied,
+            "threshold_verdict": self.threshold_verdict,
+            "threshold_reason": self.threshold_reason,
+            "regime_confidence_gate_verdict": self.regime_confidence_gate_verdict,
             "regime_provenance": self.regime_provenance,
         }
         if self.tif is not None:

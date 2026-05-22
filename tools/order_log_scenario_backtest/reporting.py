@@ -77,6 +77,7 @@ def write_scenario_artifacts(
         "entry_id",
         "symbol",
         "side",
+        "entry_origin",
         "regime_at_entry",
         "entry_ts_ms",
         "entry_price",
@@ -128,6 +129,7 @@ def write_scenario_artifacts(
     summary["breakdown_by_symbol"] = _breakdown(trade_rows, "symbol")
     summary["breakdown_by_regime"] = _breakdown(trade_rows, "regime_at_entry")
     summary["breakdown_by_side"] = _breakdown(trade_rows, "side")
+    summary["breakdown_by_entry_origin"] = _breakdown(trade_rows, "entry_origin")
     summary["breakdown_by_exit_reason"] = _breakdown(trade_rows, "exit_reason")
     if baseline_summary is not None:
         summary["delta_vs_tp_sl_only"] = {
@@ -179,6 +181,9 @@ def write_scenario_artifacts(
         "",
         "## Breakdown By Side",
         *_markdown_table(summary["breakdown_by_side"], "side"),
+        "",
+        "## Breakdown By Entry Origin",
+        *_markdown_table(summary["breakdown_by_entry_origin"], "entry_origin"),
         "",
         "## Breakdown By Exit Reason",
         *_markdown_table(summary["breakdown_by_exit_reason"], "exit_reason"),

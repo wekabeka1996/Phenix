@@ -33,22 +33,15 @@ assignments:
 
   # Calibrated 2026-04-14: XRPUSDT added to aurora (priority 1) + md_amr (priority 3)
   # Aurora gets arbitration priority; md_amr runs as fallback within window_ms.
-  XRPUSDT:
-    - aurora
-    - md_amr
-    - llm_microstructure
-
+  XRPUSDT: []
   BTCUSDT:
     - aurora
     - llm_microstructure
 
   # Calibrated 2026-04-14: BNBUSDT added to aurora
   # md_amr removed 2026-04-15: loss-making in ALL regimes (PF 0.65-0.68)
-  BNBUSDT:
-    - aurora
-    - llm_microstructure
+  BNBUSDT: []
 
-  # 2026-05-13: llm_microstructure enabled for DOGE alongside existing strategies.
   DOGEUSDT:
     - aurora
     - mean_reversion

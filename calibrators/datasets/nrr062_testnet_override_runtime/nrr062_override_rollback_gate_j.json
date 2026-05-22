@@ -1,0 +1,39 @@
+{
+  "verdict": "NO_ROLLBACK_SIGNAL_SAMPLE_GATE_REACHED_KEEP_TESTNET_ONLY",
+  "trade_lifecycle_invalid_json_lines": [
+    {
+      "line": 2134,
+      "head": "wner\": null, \"score_snapshot\": {}}"
+    }
+  ],
+  "conditions": {
+    "override_observed": true,
+    "boundary_leak_detected": false,
+    "override_outside_testnet_hybrid": false,
+    "realized_positive": false,
+    "current_total_realized_positive": true,
+    "sl_or_adverse_close_dominates": false,
+    "j_window_negative_close_observed": true,
+    "sidecar_fee_drag_spike": false,
+    "metadata_missing_blocks_audit": false,
+    "sample_size_sufficient_for_promotion": false,
+    "sample_gate_reached_current_total": true,
+    "objective_rows_preserve_override_token": false,
+    "decision_ledger_preserves_override_token": false,
+    "sidecar_authority_changed": false,
+    "production_scope_changed": false
+  },
+  "recommended_action": "Keep the Package G override unchanged in hybrid_live_data_testnet_exec only; do not promote, do not tune thresholds, and run a short post-sample-gate stability review because Package J adds one canonical override loss while the cumulative I+J sample only just reaches the 31 admitted / 5 canonical-close gate.",
+  "rationale": [
+    "Observed override-applied distinct rid rows in Package J: 26",
+    "Observed canonical override closes in Package J: 1",
+    "Observed Package J net quote across canonical override closes: -13.08771079",
+    "Observed combined I+J override count: 31",
+    "Observed combined I+J canonical closes: 5",
+    "Observed combined I+J net quote: 57.25202672",
+    "Boundary leakage rows observed in the retained J window: 0",
+    "Skipped malformed trade_lifecycle lines: 1",
+    "Objective dataset override token preserved: false",
+    "Decision ledger override token preserved: false"
+  ]
+}

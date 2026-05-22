@@ -67,6 +67,10 @@ def bool_from_any(value: Any) -> bool:
 def normalize_int(value: Any) -> int | None:
     if value in (None, "", "null"):
         return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
 
 
 def utc_date_from_ts_ms(ts_ms: int | None) -> str | None:
@@ -79,10 +83,6 @@ def pct(numerator: int, denominator: int) -> float:
     if denominator <= 0:
         return 0.0
     return round((numerator / denominator) * 100.0, 4)
-    try:
-        return int(float(value))
-    except (TypeError, ValueError):
-        return None
 
 
 def duplicate_key_count(counts: Mapping[str, int]) -> int:

@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-05-13T23:00:14.126524+00:00",
+  "generated_at_utc": "2026-05-21T09:44:21.164167+00:00",
   "inputs": {
     "accepted_closed_trade_economics_json": "calibrators/datasets/economics_post_03t_multiday/accepted_closed_trade_economics.json",
     "sidecar_close_usefulness_readonly_json": "calibrators/datasets/economics_post_03t_multiday/sidecar_close_usefulness_readonly.json",

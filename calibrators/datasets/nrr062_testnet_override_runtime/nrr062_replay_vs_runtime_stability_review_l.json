@@ -1,0 +1,18 @@
+{
+  "classification": "REPLAY_THESIS_WEAKENED_NOT_CONTRADICTED_DIAGNOSTICS_ONLY_NO_EFFECT_CONFIRMED",
+  "why": [
+    "Package F replay candidate remained strongly positive on the offline authority surface.",
+    "The latest-known resolved runtime sample stays net positive on both the occurrence-based and deduped unique-rid views.",
+    "The previously unresolved 24 Package J diagnostics-only rows are now uniformly classified as downstream no-effect confirmed, and Package L adds seven more rows with the same signature rather than hidden executed losses.",
+    "A sidecar-mode config drift occurred between the J and L snapshots, so post-J runtime comparability remains contaminated for promotion-grade interpretation."
+  ],
+  "supporting_metrics": {
+    "replay_candidate_net_quote": 825.2672997047,
+    "replay_profit_factor": 4.92434390438585,
+    "combined_occurrence_latest_net_quote": 51.34178925,
+    "combined_unique_latest_net_quote": 28.667527650000004,
+    "package_j_downstream_no_effect_confirmed": 24,
+    "package_l_downstream_no_effect_confirmed": 7,
+    "sidecar_mode_drift_detected": true
+  }
+}

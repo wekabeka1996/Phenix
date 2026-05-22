@@ -621,31 +621,30 @@ def resolve_join_method(
 
     if plan_id:
         matches = outcome_indexes["plan_id"].get(plan_id, [])
-        if dataset_counts["plan_id"][plan_id] == 1 and len(matches) == 1:
-            return "plan_id", matches[0], anomalies
         if dataset_counts["plan_id"][plan_id] > 1 and matches:
             anomalies.append("plan_id_not_unique_in_dataset")
         if len(matches) > 1:
             anomalies.append("plan_id_duplicate_in_outcomes")
 
-    if cycle_tier_key:
-        matches = outcome_indexes["cycle_tier"].get(cycle_tier_key, [])
-        if dataset_counts["cycle_tier"][cycle_tier_key] == 1 and len(matches) == 1:
-            return "cycle_key+tier", matches[0], anomalies
-        if dataset_counts["cycle_tier"][cycle_tier_key] > 1 and matches:
-            anomalies.append("cycle_tier_not_unique_in_dataset")
-        if len(matches) > 1:
-            anomalies.append("cycle_tier_duplicate_in_outcomes")
-
     if cycle_tier_symbol_tf_key:
         matches = outcome_indexes["cycle_tier_symbol_tf"].get(
             cycle_tier_symbol_tf_key, [])
-        if dataset_counts["cycle_tier_symbol_tf"][cycle_tier_symbol_tf_key] == 1 and len(matches) == 1:
-            return "cycle_key+tier+symbol+tf_sec", matches[0], anomalies
         if dataset_counts["cycle_tier_symbol_tf"][cycle_tier_symbol_tf_key] > 1 and matches:
             anomalies.append("cycle_tier_symbol_tf_not_unique_in_dataset")
         if len(matches) > 1:
             anomalies.append("cycle_tier_symbol_tf_duplicate_in_outcomes")
+
+    if not cycle_tier_key:
+        anomalies.append("missing_cycle_key_or_tier")
+        return None, None, anomalies
+
+    matches = outcome_indexes["cycle_tier"].get(cycle_tier_key, [])
+    if dataset_counts["cycle_tier"][cycle_tier_key] > 1 and matches:
+        anomalies.append("cycle_tier_not_unique_in_dataset")
+    if len(matches) > 1:
+        anomalies.append("cycle_tier_duplicate_in_outcomes")
+    if dataset_counts["cycle_tier"][cycle_tier_key] == 1 and len(matches) == 1:
+        return "cycle_key+tier", matches[0], anomalies
 
     return None, None, anomalies
 
@@ -684,10 +683,8 @@ def augment_dataset_with_outcomes(base_rows: list[dict[str, str]], outcome_rows:
     }
     basic_outcome_distribution: Counter[str] = Counter()
 
-    duplicate_outcome_key_count = 0
-    for index in outcome_indexes.values():
-        duplicate_outcome_key_count += sum(
-            1 for matches in index.values() if len(matches) > 1)
+    duplicate_outcome_key_count = sum(
+        1 for matches in outcome_indexes["cycle_tier"].values() if len(matches) > 1)
 
     for base_row in base_rows:
         join_method, outcome_row, anomalies = resolve_join_method(
@@ -840,8 +837,9 @@ def augment_dataset_with_outcomes(base_rows: list[dict[str, str]], outcome_rows:
         "outcome_join_rate_pct": round((rows_with_outcome / dataset_total) * 100.0, 4) if dataset_total else 0.0,
         "duplicate_outcome_key_count": duplicate_outcome_key_count,
         "missing_outcome_key_count": invalid_reason_counter.get("missing_outcome_key_match", 0),
-        "many_to_one_anomalies": sum(count for anomaly, count in anomaly_counter.items() if anomaly.endswith("not_unique_in_dataset")),
-        "one_to_many_anomalies": sum(count for anomaly, count in anomaly_counter.items() if anomaly.endswith("duplicate_in_outcomes")),
+        "many_to_one_anomalies": anomaly_counter.get("cycle_tier_not_unique_in_dataset", 0),
+        "one_to_many_anomalies": anomaly_counter.get("cycle_tier_duplicate_in_outcomes", 0),
+        "diagnostic_anomaly_counts": dict(sorted(anomaly_counter.items())),
         "join_method_counts": dict(sorted(join_method_counter.items())),
         "invalid_outcome_reason_counts": dict(sorted(invalid_reason_counter.items())),
         "skipped_reason_counts": dict(sorted(skipped_reason_counter.items())),

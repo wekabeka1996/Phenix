@@ -1,0 +1,54 @@
+{
+  "bundle_root": "logs/frozen/nrr062_fresh_capture_20260515_180927",
+  "trade_lifecycle_invalid_json_lines": [
+    {
+      "line": 230729,
+      "head": "hot\": {}}"
+    },
+    {
+      "line": 429732,
+      "head": "cumbent_owner\": null, \"score_snapshot\": {}}"
+    },
+    {
+      "line": 430100,
+      "head": "\"fee_source_confidence\": \"unavailable\", \"optional_pct_floor\": {\"candidate_pct\": 0.05, \"required_edge_usd\": null}, \"requi"
+    },
+    {
+      "line": 430997,
+      "head": "hot\": {}}"
+    },
+    {
+      "line": 430998,
+      "head": "wner\": null, \"score_snapshot\": {}}"
+    },
+    {
+      "line": 430999,
+      "head": "pshot\": {}}"
+    },
+    {
+      "line": 431004,
+      "head": "fidence\": \"unavailable\", \"optional_pct_floor\": {\"candidate_pct\": 0.05, \"required_edge_usd\": null}, \"required_edge_usd\": "
+    }
+  ],
+  "override_rids": [
+    "aurora_BTCUSDT_1778845805903"
+  ],
+  "override_rows_order_log": 1,
+  "realized_rows": 1,
+  "wins": 1,
+  "losses": 0,
+  "unresolved": 0,
+  "exact_roundtrip_rows": 1,
+  "net_pnl_quote": 22.6742616,
+  "gross_pnl_quote": 24.6,
+  "fees_quote": 1.9257384,
+  "mean_net_pnl_quote": 22.6742616,
+  "symbol_distribution": {
+    "BTCUSDT": 1
+  },
+  "side_distribution": {
+    "short": 1
+  },
+  "sidecar_observed_rids": 1,
+  "verdict": "POSITIVE_BUT_SAMPLE_TOO_SMALL"
+}

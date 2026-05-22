@@ -9,6 +9,7 @@ Proves that anti_peak_observability is:
 - present in EVT:STRATEGY_DECISION_BLOCKED payload at details.anti_peak_observability
 - present in EVT:QUADRATIC_DECISION_TRACE payload at top-level anti_peak_observability
 - present in EVT:DECISION_TRACE_EMITTED payload via trace_context passthrough
+- present in EVT:TRADE_INTENT_REJECTED payload at details.anti_peak_observability
 - preserved in shadow journal payload_fragment after build_payload_fragment
 - disabled config truth (gate_disabled / non-authoritative) survives persistence
 """
@@ -18,10 +19,11 @@ import decimal
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
+from apps.reference.domains.decision_making.gateway.strategy_gateway import StrategyGateway
 from apps.reference.domains.strategies.runtimes.aurora.handler import AuroraHandler
 from apps.reference.shared.decision_primitives.scoring_kernel import ScoringResult
 from apps.reference.telemetry.shadow_journal import build_payload_fragment
@@ -189,6 +191,11 @@ def test_anti_peak_builder_produces_block() -> None:
     )
 
     assert isinstance(block, dict), "block must be a dict"
+    assert block["enabled"] is False
+    assert block["gate_disabled"] is True
+    assert block["motion_classification"] == "gate_disabled"
+    assert block["disabled_config_snapshot"] is not None
+    assert block["reason"] == "gate_disabled"
     assert "motion" in block, "motion key must be present"
     assert "score_path" in block, "score_path key must be present"
     assert "enabled" in block["motion"], "motion.enabled must be present"
@@ -223,7 +230,49 @@ def test_anti_peak_builder_produces_block_with_gates_enabled() -> None:
     assert block["motion"]["motion_norm_sigma"] == 2.5
     assert block["motion"]["anti_fomo_sigma"] == 10.0
     assert block["motion"]["anti_flat_sigma"] == 0.3
+    assert block["enabled"] is True
+    assert block["gate_disabled"] is False
+    assert block["active_config"]["anti_fomo_sigma"] == 10.0
+    assert block["motion_classification"] == "within_band"
+    assert block["motion_norm_sigma"] == 2.5
+    assert block["consumed_by_gate"] is None
     assert block["score_path"] is not None
+
+
+def test_anti_peak_builder_marks_insufficient_motion_without_neutral_defaults() -> None:
+    emitted: list = []
+    handler = _build_handler(
+        emit_fn=lambda name, payload: emitted.append((name, payload)),
+        scoring_result=_neutral_result(),
+    )
+    handler.vol_gates_enabled = True
+    handler.anti_fomo_sigma = 10.0
+    handler.anti_flat_sigma = 0.3
+    handler.motion_window_sec = 300
+    handler.vol_gates_config_state = {
+        "enabled": True,
+        "anti_flat_sigma": 0.3,
+        "anti_fomo_sigma": 10.0,
+        "motion_window_sec": 300,
+        "anti_flat_sigma_value_source": "active_config",
+        "anti_fomo_sigma_value_source": "active_config",
+        "motion_window_sec_value_source": "active_config",
+        "missing_reason": None,
+    }
+
+    block = handler._build_anti_peak_observability(
+        symbol="BTCUSDT",
+        features={},
+        result=_neutral_result(),
+        state=handler._symbol_states["BTCUSDT"],
+        pillar_sum=0.2,
+        raw_exposure=0.05,
+    )
+
+    assert block["motion_classification"] == "insufficient_motion_data"
+    assert block["motion_norm_sigma"] is None
+    assert block["missing_inputs"]["motion_norm_sigma"] == "price_motion_block_missing"
+    assert block["reason"] == "missing_from_features"
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +302,9 @@ def test_strategy_signal_payload_preserves_anti_peak_observability() -> None:
     )
     aps = scoring["anti_peak_observability"]
     assert isinstance(aps, dict), "anti_peak_observability must be a dict"
+    assert aps["score_before_shields"] == 0.44
+    assert aps["score_after_shields"] == 0.36
+    assert aps["signal_threshold"] == 0.1
     assert "motion" in aps
     assert "score_path" in aps
 
@@ -299,7 +351,8 @@ def test_strategy_blocked_payload_preserves_anti_peak_observability() -> None:
     )
     aps = details["anti_peak_observability"]
     assert isinstance(aps, dict)
-    assert "motion" in aps
+    assert aps["source"] == "missing"
+    assert aps["consumed_by_gate"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -327,8 +380,9 @@ def test_quadratic_decision_trace_payload_preserves_anti_peak_observability() ->
     )
     aps = trace["anti_peak_observability"]
     assert isinstance(aps, dict)
-    assert "motion" in aps
-    assert "score_path" in aps
+    assert aps["source"] == "missing"
+    assert aps["consumed_by_gate"] is None
+    assert aps["motion"]["enabled"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -443,6 +497,65 @@ def test_decision_trace_payload_assembler_propagates_anti_peak_observability() -
     assert aps["motion"]["missing_reason"] == "gate_disabled"
 
 
+def test_trade_intent_rejected_payload_preserves_anti_peak_observability() -> None:
+    anti_peak_block = {
+        "schema_version": "1.0.0",
+        "enabled": True,
+        "gate_disabled": False,
+        "motion_classification": "within_band",
+        "missing_inputs": {},
+        "active_config": {"enabled": True, "anti_fomo_sigma": 10.0},
+        "disabled_config_snapshot": None,
+        "anti_fomo_sigma": 10.0,
+        "anti_flat_sigma": 0.3,
+        "window_sec": 300,
+        "anti_fomo_sigma_value_source": "active_config",
+        "anti_flat_sigma_value_source": "active_config",
+        "window_sec_value_source": "active_config",
+        "motion_norm_sigma": 2.5,
+        "score_before_shields": 0.44,
+        "score_after_shields": 0.36,
+        "final_score": 0.36,
+        "signal_threshold": 0.1,
+        "danger_zone_applied": False,
+        "context_shield_applied": None,
+        "attenuated_below_threshold": False,
+        "consumed_by_gate": True,
+        "source": "cmd_typed",
+        "ready": True,
+        "reason": "not_applied:motion_within_allowed_band",
+    }
+    dm = SimpleNamespace(
+        _emit_trade_intent_rejected=Mock(),
+        _record_blocked_intent=lambda _symbol: None,
+        logger=SimpleNamespace(error=lambda *args, **kwargs: None),
+    )
+    gateway = StrategyGateway(dm)
+
+    gateway._reject(
+        symbol="BTCUSDT",
+        strategy_id="aurora",
+        side="BUY",
+        rid="rid-reject-1",
+        reason_code="NRR-TEST",
+        reason="DECISION",
+        context="test_context",
+        why_chain=["TEST"],
+        details={"origin": "unit"},
+        signal_payload={
+            "scoring": {"anti_peak_observability": anti_peak_block}
+        },
+    )
+
+    rejected = dm._emit_trade_intent_rejected.call_args.kwargs
+    assert rejected["details"]["anti_peak_observability"]["enabled"] is True
+    fragment = build_payload_fragment(
+        {"symbol": "BTCUSDT", "details": rejected["details"]},
+        event_name="EVT:TRADE_INTENT_REJECTED",
+    )
+    assert fragment["anti_peak_observability"]["consumed_by_gate"] is True
+
+
 # ---------------------------------------------------------------------------
 # Test 6 — shadow journal payload_fragment preserves block
 # ---------------------------------------------------------------------------
@@ -483,10 +596,59 @@ def test_shadow_journal_payload_fragment_preserves_anti_peak_observability() -> 
         "build_payload_fragment must preserve anti_peak_observability in output fragment"
     )
     aps = fragment["anti_peak_observability"]
-    assert isinstance(aps, dict), "anti_peak_observability in fragment must be a dict"
+    assert isinstance(
+        aps, dict), "anti_peak_observability in fragment must be a dict"
     assert aps["motion"]["enabled"] is False
     assert aps["motion"]["missing_reason"] == "gate_disabled"
     assert aps["score_path"]["final_score"] == 0.36
+
+
+def test_shadow_journal_hoists_anti_peak_from_strategy_signal_scoring() -> None:
+    anti_peak_block = {
+        "enabled": False,
+        "gate_disabled": True,
+        "motion_classification": "gate_disabled",
+        "missing_inputs": {},
+        "disabled_config_snapshot": {"enabled": False},
+        "source": "missing",
+        "ready": False,
+        "reason": "gate_disabled",
+    }
+    payload = {
+        "symbol": "BTCUSDT",
+        "strategy_id": "aurora",
+        "scoring": {"anti_peak_observability": anti_peak_block},
+    }
+
+    fragment = build_payload_fragment(
+        payload,
+        event_name="EVT:STRATEGY_SIGNAL_PRODUCED",
+    )
+
+    assert fragment["anti_peak_observability"]["gate_disabled"] is True
+
+
+def test_shadow_journal_hoists_anti_peak_from_blocked_details() -> None:
+    anti_peak_block = {
+        "enabled": True,
+        "gate_disabled": False,
+        "motion_classification": "anti_flat_triggered",
+        "missing_inputs": {},
+        "source": "cmd_typed",
+        "ready": True,
+        "reason": "anti_flat_threshold_breached",
+    }
+    payload = {
+        "symbol": "BTCUSDT",
+        "details": {"anti_peak_observability": anti_peak_block},
+    }
+
+    fragment = build_payload_fragment(
+        payload,
+        event_name="EVT:STRATEGY_DECISION_BLOCKED",
+    )
+
+    assert fragment["anti_peak_observability"]["motion_classification"] == "anti_flat_triggered"
 
 
 def test_shadow_journal_payload_fragment_preserves_anti_peak_for_quadratic_trace() -> None:
@@ -566,6 +728,8 @@ def test_disabled_config_truth_survives_persistence() -> None:
     aps = signal["scoring"]["anti_peak_observability"]
 
     # Verify disabled state in live payload
+    assert aps["gate_disabled"] is True
+    assert aps["disabled_config_snapshot"]["enabled"] is False
     assert aps["motion"]["enabled"] is False, "motion.enabled must be False when disabled"
     assert aps["motion"]["missing_reason"] == "gate_disabled", (
         "missing_reason must be gate_disabled when vol gates are disabled"
@@ -575,7 +739,8 @@ def test_disabled_config_truth_survives_persistence() -> None:
     )
 
     # Verify disabled state survives payload_fragment
-    fragment = build_payload_fragment({"anti_peak_observability": aps, "symbol": "BTCUSDT"})
+    fragment = build_payload_fragment(
+        {"anti_peak_observability": aps, "symbol": "BTCUSDT"})
 
     assert "anti_peak_observability" in fragment, "fragment must preserve anti_peak_observability"
     frag_aps = fragment["anti_peak_observability"]
@@ -602,7 +767,8 @@ def test_disabled_config_no_active_authoritative_threshold_in_fragment() -> None
         },
     }
 
-    fragment = build_payload_fragment({"anti_peak_observability": anti_peak_block})
+    fragment = build_payload_fragment(
+        {"anti_peak_observability": anti_peak_block})
     aps = fragment["anti_peak_observability"]
 
     assert aps["motion"]["anti_fomo_sigma_value_source"] != "active_config", (

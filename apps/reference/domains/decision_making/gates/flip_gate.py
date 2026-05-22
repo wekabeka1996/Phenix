@@ -41,4 +41,11 @@ def check(ctx: GateContext) -> GateResult:
             context="strategy_signal_gateway:flip_unknown_state",
         )
 
+    # Gate passed — check if this was a pyramiding add and carry forward metadata
+    pyramiding_info = getattr(
+        getattr(dm, "_flip", None), "_last_pyramiding_add_info", None
+    )
+    if pyramiding_info:
+        return GateResult.passed(GATE_NAME, pyramiding_add_info=dict(pyramiding_info))
+
     return GateResult.passed(GATE_NAME)

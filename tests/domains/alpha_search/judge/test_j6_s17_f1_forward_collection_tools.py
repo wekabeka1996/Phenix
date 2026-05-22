@@ -6,6 +6,7 @@ from tools.alpha_search.j6_s17_f1_common import (
     build_threshold_results,
     classify_health_verdict,
     evaluate_readiness,
+    normalize_int,
     scan_join_policy_script,
 )
 
@@ -70,6 +71,10 @@ def test_classify_health_keeps_duplicate_keys_as_residuals() -> None:
         "duplicate_policy_cycle_keys_detected",
         "duplicate_plan_id_values_detected",
     ]
+
+
+def test_normalize_int_accepts_stringified_timestamp_ms() -> None:
+    assert normalize_int("1778511779999") == 1778511779999
 
 
 def test_build_threshold_results_marks_failures() -> None:

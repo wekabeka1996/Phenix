@@ -748,6 +748,13 @@ class IntentBuilder:
             entry_plan_trace=entry_plan_trace,
             regime=sg.regime,
             regime_confidence=sg.regime_confidence,
+            resolved_min_regime_confidence=getattr(
+                sg, "resolved_min_regime_confidence", None),
+            threshold_applied=getattr(sg, "threshold_applied", None),
+            threshold_verdict=getattr(sg, "threshold_verdict", None),
+            threshold_reason=getattr(sg, "threshold_reason", None),
+            regime_confidence_gate_verdict=getattr(
+                sg, "regime_confidence_gate_verdict", None),
             regime_provenance=regime_provenance,
             regime_epoch_ref=self._get_regime_epoch_ref(symbol),
             tpsl_owner_ctx=tpsl_payload.owner_ctx,

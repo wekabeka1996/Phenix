@@ -36,7 +36,8 @@ from ...contract_layer.terminal_order_contracts import (
 if TYPE_CHECKING:
     from vfoundation.core.fsm_emit_compat import Message
 
-LOG = logging.getLogger("apps.reference.domains.execution_position.open_executor")
+LOG = logging.getLogger(
+    "apps.reference.domains.execution_position.open_executor")
 
 
 class UncertainSubmitRecoveryError(Exception):
@@ -277,6 +278,11 @@ class OpenExecutor:
                 "price_after_rounding": rounding_trace.get("price_after_rounding") or str(price),
                 "tick_size": rounding_trace.get("tick_size"),
                 "rounding_mode": rounding_trace.get("rounding_mode"),
+                "resolved_min_regime_confidence": (decision.pld or {}).get("resolved_min_regime_confidence"),
+                "threshold_applied": (decision.pld or {}).get("threshold_applied"),
+                "threshold_verdict": (decision.pld or {}).get("threshold_verdict"),
+                "threshold_reason": (decision.pld or {}).get("threshold_reason"),
+                "regime_confidence_gate_verdict": (decision.pld or {}).get("regime_confidence_gate_verdict"),
                 "book_context": "UNAVAILABLE",
             },
         }
@@ -1096,6 +1102,15 @@ class OpenExecutor:
         # Order logger
         _open_regime = (decision.pld or {}).get("regime")
         _open_regime_confidence = (decision.pld or {}).get("regime_confidence")
+        _open_resolved_min_regime_confidence = (decision.pld or {}).get(
+            "resolved_min_regime_confidence"
+        )
+        _open_threshold_applied = (decision.pld or {}).get("threshold_applied")
+        _open_threshold_verdict = (decision.pld or {}).get("threshold_verdict")
+        _open_threshold_reason = (decision.pld or {}).get("threshold_reason")
+        _open_regime_confidence_gate_verdict = (decision.pld or {}).get(
+            "regime_confidence_gate_verdict"
+        )
         _open_regime_provenance = (decision.pld or {}).get("regime_provenance")
         _open_regime_epoch_ref = (decision.pld or {}).get("regime_epoch_ref")
         order_logger.write({
@@ -1107,6 +1122,11 @@ class OpenExecutor:
             "regime_confidence": _open_regime_confidence,
             "regime_provenance": _open_regime_provenance,
             "metadata": {"order_type": "MARKET_ENTRY", "corr_id": decision.corr_id,
+                         "resolved_min_regime_confidence": _open_resolved_min_regime_confidence,
+                         "threshold_applied": _open_threshold_applied,
+                         "threshold_verdict": _open_threshold_verdict,
+                         "threshold_reason": _open_threshold_reason,
+                         "regime_confidence_gate_verdict": _open_regime_confidence_gate_verdict,
                          "fill_ttl_override_ms": valid_for_ms,
                          "fill_ttl_source": fill_ttl_source}})
 

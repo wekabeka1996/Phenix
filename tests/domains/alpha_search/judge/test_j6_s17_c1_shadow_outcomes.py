@@ -137,7 +137,81 @@ def test_join_falls_back_when_plan_id_not_unique() -> None:
         _ = augment_dataset_with_outcomes(dataset_rows, outcome_rows)
     assert augmented_rows[0]["join_match_method"] == "cycle_key+tier"
     assert augmented_rows[1]["join_match_method"] == "cycle_key+tier"
-    assert join_summary["many_to_one_anomalies"] >= 1
+    assert join_summary["many_to_one_anomalies"] == 0
+    assert join_summary["diagnostic_anomaly_counts"]["plan_id_not_unique_in_dataset"] >= 1
+
+
+def test_unique_plan_id_does_not_override_canonical_cycle_tier_join() -> None:
+    dataset_rows = [
+        {
+            "cycle_key": "ENTRY:BTCUSDT:300:1",
+            "plan_id": "sep_low_BTCUSDT_1",
+            "tier": "low",
+            "symbol": "BTCUSDT",
+            "tf_sec": "300",
+        }
+    ]
+    outcome_rows = [
+        {
+            "cycle_key": "ENTRY:BTCUSDT:300:1",
+            "plan_id": "sep_low_BTCUSDT_1",
+            "tier": "low",
+            "symbol": "BTCUSDT",
+            "tf_sec": 300,
+            "outcome_available": True,
+            "simulation_status": "success",
+            "terminal_reason": "FILLED_TP",
+        }
+    ]
+
+    augmented_rows, join_summary, * \
+        _ = augment_dataset_with_outcomes(dataset_rows, outcome_rows)
+
+    assert augmented_rows[0]["join_match_method"] == "cycle_key+tier"
+    assert join_summary["join_method_counts"] == {"cycle_key+tier": 1}
+
+
+def test_duplicate_canonical_outcome_key_fails_closed_without_plan_id_fallback() -> None:
+    dataset_rows = [
+        {
+            "cycle_key": "ENTRY:BTCUSDT:300:1",
+            "plan_id": "sep_low_BTCUSDT_1",
+            "tier": "low",
+            "symbol": "BTCUSDT",
+            "tf_sec": "300",
+        }
+    ]
+    outcome_rows = [
+        {
+            "cycle_key": "ENTRY:BTCUSDT:300:1",
+            "plan_id": "sep_low_BTCUSDT_1",
+            "tier": "low",
+            "symbol": "BTCUSDT",
+            "tf_sec": 300,
+            "outcome_available": True,
+            "simulation_status": "success",
+            "terminal_reason": "FILLED_TP",
+        },
+        {
+            "cycle_key": "ENTRY:BTCUSDT:300:1",
+            "plan_id": "sep_low_BTCUSDT_2",
+            "tier": "low",
+            "symbol": "BTCUSDT",
+            "tf_sec": 300,
+            "outcome_available": True,
+            "simulation_status": "success",
+            "terminal_reason": "FILLED_SL",
+        },
+    ]
+
+    augmented_rows, join_summary, * \
+        _ = augment_dataset_with_outcomes(dataset_rows, outcome_rows)
+
+    assert augmented_rows[0]["join_match_method"] is None
+    assert augmented_rows[0]["outcome_available"] is False
+    assert augmented_rows[0]["invalid_outcome_reason"] == "missing_outcome_key_match"
+    assert join_summary["duplicate_outcome_key_count"] == 1
+    assert join_summary["one_to_many_anomalies"] == 1
 
 
 def test_augment_marks_missing_outcomes_explicitly() -> None:

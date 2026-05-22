@@ -1,0 +1,15 @@
+{
+  "classification": "REPLAY_THESIS_WEAKENED_BY_J",
+  "why": [
+    "Package F replay candidate remained strongly positive, but latest-known Package J closes are both losses.",
+    "Combined I+J latest-known runtime remains net positive, so the runtime does not yet contradict the replay thesis.",
+    "The unresolved bulk of J is dominated by diagnostics-only no-effect rows, so the data quality caveat remains real but not fully blocking."
+  ],
+  "supporting_metrics": {
+    "replay_candidate_net_quote": 825.2672997047,
+    "replay_profit_factor": 4.92434390438585,
+    "combined_i_plus_j_freeze_net_quote": 57.25202672,
+    "combined_i_plus_j_latest_known_net_quote": 28.66752765000001,
+    "combined_h_i_j_latest_known_net_quote": 51.34178925000002
+  }
+}

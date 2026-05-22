@@ -3,10 +3,13 @@ from __future__ import annotations
 import time
 import decimal
 
+import pytest
+
 from vfoundation.core.fsm_core import FSMCore
 from types import SimpleNamespace
 
 from apps.reference.config_loader import ConfigLoader
+import apps.reference.domains.decision_making.core.facade as decision_making_facade
 from apps.reference.domains.decision_making.core.facade import DecisionMaking
 from apps.reference.config_models import create_aurora_config
 
@@ -27,7 +30,8 @@ def _seed_common_state(fsm: FSMCore, symbol: str) -> int:
     # Portfolio must exist for flip/exposure gates.
     fsm.emit(
         "EVT:PORTFOLIO_STATE_UPDATED",
-        {"equity": "1000", "equity_free_usdt": "1000", "positions": [], "positions_last_ts_ms": now_ms},
+        {"equity": "1000", "equity_free_usdt": "1000",
+            "positions": [], "positions_last_ts_ms": now_ms},
         why="test",
     )
 
@@ -53,6 +57,28 @@ def _seed_common_state(fsm: FSMCore, symbol: str) -> int:
     )
 
     return now_ms
+
+
+@pytest.fixture(autouse=True)
+def _isolate_neocortex_test_data_dir(tmp_path, monkeypatch) -> None:
+    original_load_neocortex_config = decision_making_facade.load_neocortex_config
+
+    def _load_neocortex_config(config_dir):
+        config = original_load_neocortex_config(config_dir)
+        data_dir = tmp_path / "data"
+        system = config.system.model_copy(
+            update={
+                "data_dir": data_dir,
+                "checkpoint_dir": data_dir / "checkpoints",
+            }
+        )
+        return config.model_copy(update={"system": system})
+
+    monkeypatch.setattr(
+        decision_making_facade,
+        "load_neocortex_config",
+        _load_neocortex_config,
+    )
 
 
 def test_qos_is_applied_only_for_allowlisted_strategies_in_strategy_gateway() -> None:

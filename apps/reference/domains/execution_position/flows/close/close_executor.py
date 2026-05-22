@@ -1561,6 +1561,23 @@ class CloseExecutor:
         if not symbol:
             LOG.error("DEC:CLOSE missing symbol; cannot execute")
             return
+
+        # PRE-CLOSE: Cancel any pending entry orders (incl. pyramiding LIMIT adds)
+        # before the close submission to prevent open-after-close races.
+        try:
+            cancel_fn = getattr(self._fsm, "_cancel_pending_entries_for_symbol", None)
+            if callable(cancel_fn):
+                cancel_fn(
+                    str(symbol),
+                    "PRE_CLOSE_CANCEL",
+                    context="close_executor:execute_close",
+                )
+        except Exception as _pre_close_exc:
+            LOG.warning(
+                "[%s] PRE_CLOSE_CANCEL: failed to cancel pending entries: %s",
+                symbol, _pre_close_exc,
+            )
+
         self._clear_close_submission_restore_truth(
             symbol=str(symbol),
             trigger="close_executor:clear_contour",

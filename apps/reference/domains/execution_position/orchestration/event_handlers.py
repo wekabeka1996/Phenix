@@ -1072,9 +1072,11 @@ class EPEventHandlers:
                     self._fsm.watchdog.on_order_fill(_oid)
                 else:
                     # Extend fill deadline for partially filled orders
-                    if _oid in self._fsm.watchdog.acked_orders:
-                        self._fsm.watchdog.acked_orders[_oid].deadline_ms = (
-                            get_clock().now_ms() + self._fsm.watchdog.fill_ttl_ms)
+                    _deadline = self._fsm.watchdog.acked_orders.get(_oid)
+                    if _deadline is not None:
+                        _deadline.deadline_ms = get_clock().now_ms() + _deadline.effective_fill_ttl_ms(
+                            self._fsm.watchdog.fill_ttl_ms
+                        )
                     LOG.info(
                         "PARTIAL_FILL_WATCHDOG_RETAINED: %s still tracked", _oid)
         except Exception as e:

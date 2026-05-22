@@ -1,0 +1,141 @@
+{
+  "bundle_root": "logs/frozen/nrr062_fresh_capture_20260517_080431",
+  "total_decision_rows": 588,
+  "nrr062_reject_rows_order_log": 25,
+  "override_rows_order_log": 26,
+  "accepted_low_vol_order_intents": 26,
+  "canonical_override_closes": 1,
+  "exact_roundtrip_override_rows": 1,
+  "diagnostics_only": {
+    "realized_dataset": true,
+    "objective_dataset": true
+  },
+  "promotion_grade": {
+    "realized_dataset": false,
+    "objective_dataset": false
+  },
+  "objective_rows_for_override_rids": 26,
+  "objective_rows_preserve_override_token": false,
+  "decision_ledger_preserves_override_token": false,
+  "realized_dataset_manifest": {
+    "builder_valid": true,
+    "schema_valid": true,
+    "has_rows": true,
+    "rows_emitted": 4,
+    "rows_valid": 4,
+    "rows_invalid": 0,
+    "has_realized_outcomes": true,
+    "exact_roundtrip_count": 3,
+    "eligible_input_rows": 31,
+    "matched_rows": 4,
+    "unmatched_rows": 27,
+    "match_coverage_pct": 12.9032,
+    "exact_roundtrip_coverage_pct": 9.6774,
+    "min_required_rows": 30,
+    "min_required_coverage_pct": 50.0,
+    "coverage_grade": "SPARSE_DIAGNOSTIC",
+    "coverage_blockers": [
+      "INSUFFICIENT_REALIZED_ROWS",
+      "INSUFFICIENT_REALIZED_COVERAGE"
+    ],
+    "diagnostics_only": true,
+    "promotion_grade": false,
+    "promotion_blockers": [
+      "PARTIAL_EXACT_ROUNDTRIPS",
+      "INSUFFICIENT_REALIZED_ROWS",
+      "INSUFFICIENT_REALIZED_COVERAGE"
+    ],
+    "warnings": [
+      "TRADE_LIFECYCLE_JSON_ERRORS:1"
+    ],
+    "total_rows": 4,
+    "blockers": [
+      "PARTIAL_EXACT_ROUNDTRIPS",
+      "INSUFFICIENT_REALIZED_ROWS",
+      "INSUFFICIENT_REALIZED_COVERAGE"
+    ],
+    "blocker_count": 3,
+    "warning_count": 1,
+    "coverage_denominator_kind": "close_expected_rows",
+    "coverage_denominator_rows": 31,
+    "total_decision_rows": 588,
+    "rejected_or_not_executed_rows": 446,
+    "execution_eligible_rows": 142,
+    "entry_filled_rows": 7,
+    "close_expected_rows": 31,
+    "close_matched_rows": 4,
+    "exact_roundtrip_rows": 3,
+    "decision_to_execution_rate": 1.1905,
+    "execution_to_close_coverage_pct": 12.9032,
+    "close_to_exact_roundtrip_pct": 75.0,
+    "total_decision_to_exact_roundtrip_pct": 0.5102,
+    "accepted_unresolved_rows": 0,
+    "exact_identity_join_count": 4,
+    "duplicate_close_candidates": 0,
+    "blocker_duplicate_ambiguity_count": 0
+  },
+  "objective_dataset_manifest": {
+    "builder_valid": true,
+    "schema_valid": true,
+    "has_rows": true,
+    "rows_emitted": 592,
+    "rows_valid": 592,
+    "rows_invalid": 0,
+    "has_realized_outcomes": true,
+    "exact_roundtrip_count": 3,
+    "eligible_input_rows": 31,
+    "matched_rows": 4,
+    "unmatched_rows": 27,
+    "match_coverage_pct": 12.9032,
+    "exact_roundtrip_coverage_pct": 9.6774,
+    "min_required_rows": 30,
+    "min_required_coverage_pct": 50.0,
+    "coverage_grade": "SPARSE_DIAGNOSTIC",
+    "coverage_blockers": [
+      "INSUFFICIENT_REALIZED_ROWS",
+      "INSUFFICIENT_REALIZED_COVERAGE"
+    ],
+    "diagnostics_only": true,
+    "promotion_grade": false,
+    "promotion_blockers": [
+      "SOURCE_REALIZED_DATASET_NOT_PROMOTION_GRADE",
+      "INSUFFICIENT_REALIZED_ROWS",
+      "INSUFFICIENT_REALIZED_COVERAGE",
+      "PARTIAL_EXACT_ROUNDTRIPS"
+    ],
+    "warnings": [
+      "Authority request journal not found: c:\\Users\\user\\Music\\Phenix\\logs\\frozen\\nrr062_fresh_capture_20260517_080431\\data\\authority_request_journal_v1.jsonl",
+      "Authority response journal not found: c:\\Users\\user\\Music\\Phenix\\logs\\frozen\\nrr062_fresh_capture_20260517_080431\\data\\authority_response_journal_v1.jsonl"
+    ],
+    "total_rows": 592,
+    "blockers": [
+      "SOURCE_REALIZED_DATASET_NOT_PROMOTION_GRADE",
+      "INSUFFICIENT_REALIZED_ROWS",
+      "INSUFFICIENT_REALIZED_COVERAGE",
+      "PARTIAL_EXACT_ROUNDTRIPS"
+    ],
+    "blocker_count": 4,
+    "warning_count": 2,
+    "decision_rows_count": 588,
+    "decision_rows_valid": 588,
+    "realized_rows_count": 4,
+    "realized_rows_valid": 4,
+    "realized_source_coverage_pct": 12.9032,
+    "source_promotion_grade": false,
+    "source_coverage_grade": "SPARSE_DIAGNOSTIC",
+    "source_promotion_blockers": [
+      "INSUFFICIENT_REALIZED_ROWS",
+      "INSUFFICIENT_REALIZED_COVERAGE",
+      "PARTIAL_EXACT_ROUNDTRIPS"
+    ],
+    "source_authority": "CANONICAL_REALIZED_OUTCOME_DATASET",
+    "authority_requests_count": 0,
+    "authority_responses_count": 0,
+    "decision_ledger_count": 588,
+    "executed_trades_count": 0,
+    "canonical_realized_rows_count": 4,
+    "realized_source": "canonical_realized_outcome_dataset",
+    "realized_source_path": "c:\\Users\\user\\Music\\Phenix\\calibrators\\datasets\\nrr062_testnet_override_runtime\\package_j_realized_dataset\\realized_trades.jsonl",
+    "realized_source_authority": "CANONICAL_REALIZED_OUTCOME_DATASET"
+  }
+}

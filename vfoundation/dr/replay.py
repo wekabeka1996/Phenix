@@ -69,6 +69,14 @@ _REPLAY_IDENTITY_FIELDS: Dict[str, Tuple[str, ...]] = {
     ),
 }
 
+_ORDER_STATE_CHANGED_IDENTITY_FIELDS: Tuple[str, ...] = (
+    "order_id",
+    "orderId",
+    "client_order_id",
+    "clientOrderId",
+    "rid",
+)
+
 
 def _normalize_text(value: Any) -> str:
     if value is None:
@@ -118,7 +126,62 @@ def _record_ts_ms(record: Dict[str, Any]) -> int:
     return 0
 
 
+def _record_event_ts_ms(record: Dict[str, Any]) -> int:
+    value = _record_value(record, "event_ts_ms")
+    if isinstance(value, int):
+        return value if value > 0 else 0
+    if isinstance(value, float):
+        return int(value) if value > 0 else 0
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdigit():
+            parsed = int(stripped)
+            return parsed if parsed > 0 else 0
+    return 0
+
+
+def _order_state_changed_identity_key(record: Dict[str, Any]) -> tuple[Optional[str], List[str]]:
+    reasons: List[str] = []
+
+    if _normalize_text(record.get("op")).upper() != "EVT" or _normalize_text(
+        record.get("verb")
+    ).upper() != "ORDER_STATE_CHANGED":
+        reasons.append("unexpected_op_verb")
+
+    symbol = _normalize_symbol(record)
+    if not symbol:
+        reasons.append("missing_symbol")
+
+    if _record_event_ts_ms(record) <= 0:
+        reasons.append("missing_event_ts_ms")
+
+    status = _normalize_text(_record_value(record, "status")).upper()
+    if not status:
+        reasons.append("missing_status")
+
+    canonical_identity_key = _normalize_text(
+        _record_value(record, "canonical_identity_key")
+    )
+    if not canonical_identity_key:
+        reasons.append("missing_canonical_identity_key")
+
+    has_identity = any(
+        _normalize_text(_record_value(record, field))
+        for field in _ORDER_STATE_CHANGED_IDENTITY_FIELDS
+    )
+    if not has_identity:
+        reasons.append("missing_order_id_or_client_order_id_or_rid")
+
+    if reasons:
+        return None, reasons
+
+    return canonical_identity_key, []
+
+
 def _identity_key_for_record(event_name: str, record: Dict[str, Any]) -> tuple[Optional[str], List[str]]:
+    if event_name == "EVT:ORDER_STATE_CHANGED":
+        return _order_state_changed_identity_key(record)
+
     identity_fields = _REPLAY_IDENTITY_FIELDS.get(event_name, ())
     reasons: List[str] = []
 

@@ -396,6 +396,11 @@ def test_build_and_emit_preserves_trade_intent_payload_contract() -> None:
         "entry_plan": {"plan": "maker_pullback"},
         "regime": "TREND_UP",
         "regime_confidence": 0.82,
+        "resolved_min_regime_confidence": 0.45,
+        "threshold_applied": True,
+        "threshold_verdict": "PASS",
+        "threshold_reason": "regime_confidence=0.82 within band min=0.45 min_source=scalar_legacy max=None max_source=None",
+        "regime_confidence_gate_verdict": "ALLOW",
         "regime_provenance": REGIME_PROVENANCE,
         "regime_epoch_ref": "epoch:BTCUSDT:123",
         "tpsl_owner_ctx": OWNER_CTX,
@@ -415,6 +420,30 @@ def test_build_and_emit_preserves_trade_intent_payload_contract() -> None:
             "kelly_provenance": _expected_kelly_provenance(),
         },
     }
+
+
+def test_build_and_emit_persists_order_intent_admission_threshold_metadata() -> None:
+    builder = _make_builder()
+
+    with (
+        patch("apps.reference.domains.decision_making.intent.builder.wal.append",
+              return_value="wal-ok"),
+        patch("apps.reference.domains.decision_making.intent.builder.order_logger.write") as mock_order_logger,
+        patch("apps.reference.domains.decision_making.intent.builder.print"),
+        patch("apps.reference.domains.decision_making.intent.builder.emit_regime_decision_audit"),
+        patch(
+            "apps.reference.domains.decision_making.intent.builder._trade_lifecycle", None),
+    ):
+        builder.build_and_emit(**_build_kwargs())
+
+    logged_entry = mock_order_logger.call_args.args[0]
+    assert logged_entry["event_type"] == "ORDER_INTENT"
+    metadata = logged_entry["metadata"]
+    assert metadata["resolved_min_regime_confidence"] == 0.45
+    assert metadata["threshold_applied"] is True
+    assert metadata["threshold_verdict"] == "PASS"
+    assert metadata["threshold_reason"] == "regime_confidence=0.82 within band min=0.45 min_source=scalar_legacy max=None max_source=None"
+    assert metadata["regime_confidence_gate_verdict"] == "ALLOW"
 
 
 def test_build_and_emit_preserves_decision_trace_payload_contract() -> None:

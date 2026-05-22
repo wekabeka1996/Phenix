@@ -1,0 +1,150 @@
+{
+  "task": "AURORA_R7W_FEE_AWARE_SHADOW_POST_PATCH_RUNTIME_CONFIRMATION",
+  "verdict_candidate": "POST_PATCH_JOURNAL_PAYLOAD_DEFECT",
+  "boundary": {
+    "method": "git_commit",
+    "timestamp": "2026-05-14T22:44:42Z",
+    "timestamp_ms": 1778798682000,
+    "confidence": "high",
+    "first_runtime_log_ts_ms_after_boundary": 1778927360216,
+    "first_runtime_log_ts_utc_after_boundary": "2026-05-16T10:29:20.216000Z",
+    "first_fee_aware_trade_ts_ms": 1778933766923,
+    "first_fee_aware_trade_ts_utc": "2026-05-16T12:16:06.923000Z"
+  },
+  "trade_lifecycle": {
+    "count": 36,
+    "first_ts_ms": 1778933766923,
+    "first_ts_utc": "2026-05-16T12:16:06.923000Z",
+    "last_ts_ms": 1779001271432,
+    "last_ts_utc": "2026-05-17T07:01:11.432000Z",
+    "symbols": [
+      "DOGEUSDT",
+      "ETHUSDT",
+      "XRPUSDT"
+    ],
+    "lifecycle_ids": [],
+    "armed_count": 18,
+    "triggered_count": 18,
+    "cluster_count": 10,
+    "max_cluster_size": 6
+  },
+  "shadow_critical_journal": {
+    "count": 36,
+    "first_ts_ms": 1778933766923,
+    "first_ts_utc": "2026-05-16T12:16:06.923000Z",
+    "last_ts_ms": 1779001271440,
+    "last_ts_utc": "2026-05-17T07:01:11.440000Z",
+    "symbols": [
+      "DOGEUSDT",
+      "ETHUSDT",
+      "XRPUSDT"
+    ],
+    "lifecycle_ids": [],
+    "armed_count_direct": 0,
+    "triggered_count_direct": 0,
+    "armed_count_inferred": 18,
+    "triggered_count_inferred": 18,
+    "cluster_count": 10,
+    "max_cluster_size": 6
+  },
+  "rows_by_symbol": {
+    "DOGEUSDT": 12,
+    "ETHUSDT": 12,
+    "XRPUSDT": 12
+  },
+  "cluster_inventory": [
+    {
+      "symbol": "XRPUSDT",
+      "event_ts_utc": "2026-05-16T12:16:06.923000Z",
+      "transition": "ARMED",
+      "trade_rows": 6,
+      "journal_rows": 6,
+      "exact_top_level_ts_matches": 1,
+      "joinable_timestamp_mismatches": 5
+    },
+    {
+      "symbol": "XRPUSDT",
+      "event_ts_utc": "2026-05-16T12:17:50.519000Z",
+      "transition": "TRIGGERED",
+      "trade_rows": 6,
+      "journal_rows": 6,
+      "exact_top_level_ts_matches": 1,
+      "joinable_timestamp_mismatches": 5
+    },
+    {
+      "symbol": "ETHUSDT",
+      "event_ts_utc": "2026-05-16T14:36:07.149000Z",
+      "transition": "ARMED",
+      "trade_rows": 2,
+      "journal_rows": 2,
+      "exact_top_level_ts_matches": 1,
+      "joinable_timestamp_mismatches": 1
+    },
+    {
+      "symbol": "ETHUSDT",
+      "event_ts_utc": "2026-05-16T14:36:30.037000Z",
+      "transition": "ARMED",
+      "trade_rows": 2,
+      "journal_rows": 2,
+      "exact_top_level_ts_matches": 1,
+      "joinable_timestamp_mismatches": 1
+    },
+    {
+      "symbol": "ETHUSDT",
+      "event_ts_utc": "2026-05-16T14:36:41.477000Z",
+      "transition": "ARMED",
+      "trade_rows": 2,
+      "journal_rows": 2,
+      "exact_top_level_ts_matches": 1,
+      "joinable_timestamp_mismatches": 1
+    },
+    {
+      "symbol": "ETHUSDT",
+      "event_ts_utc": "2026-05-16T14:37:21.526000Z",
+      "transition": "TRIGGERED",
+      "trade_rows": 6,
+      "journal_rows": 6,
+      "exact_top_level_ts_matches": 0,
+      "joinable_timestamp_mismatches": 6
+    },
+    {
+      "symbol": "DOGEUSDT",
+      "event_ts_utc": "2026-05-17T06:58:59.611000Z",
+      "transition": "ARMED",
+      "trade_rows": 2,
+      "journal_rows": 2,
+      "exact_top_level_ts_matches": 1,
+      "joinable_timestamp_mismatches": 1
+    },
+    {
+      "symbol": "DOGEUSDT",
+      "event_ts_utc": "2026-05-17T06:59:22.451000Z",
+      "transition": "ARMED",
+      "trade_rows": 2,
+      "journal_rows": 2,
+      "exact_top_level_ts_matches": 0,
+      "joinable_timestamp_mismatches": 2
+    },
+    {
+      "symbol": "DOGEUSDT",
+      "event_ts_utc": "2026-05-17T06:59:28.164000Z",
+      "transition": "ARMED",
+      "trade_rows": 2,
+      "journal_rows": 2,
+      "exact_top_level_ts_matches": 1,
+      "joinable_timestamp_mismatches": 1
+    },
+    {
+      "symbol": "DOGEUSDT",
+      "event_ts_utc": "2026-05-17T07:01:11.432000Z",
+      "transition": "TRIGGERED",
+      "trade_rows": 6,
+      "journal_rows": 6,
+      "exact_top_level_ts_matches": 1,
+      "joinable_timestamp_mismatches": 5
+    }
+  ],
+  "domain_execution_position_text_hits": [],
+  "aurora_core_text_hits": [],
+  "close_hits": []
+}

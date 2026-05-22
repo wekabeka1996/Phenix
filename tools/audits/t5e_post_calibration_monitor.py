@@ -39,7 +39,8 @@ WINDOW_MARKER_GAP_MS = 300000
 
 def load_t5d_module():
     module_path = Path(__file__).with_name("t5d_gate_rerun_analysis.py")
-    spec = importlib.util.spec_from_file_location("t5d_gate_rerun_analysis", module_path)
+    spec = importlib.util.spec_from_file_location(
+        "t5d_gate_rerun_analysis", module_path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Unable to load helper module: {module_path}")
     module = importlib.util.module_from_spec(spec)
@@ -100,7 +101,8 @@ def discover_json_files(repo_root: Path, boundary_hint_ms: int) -> list[Path]:
 
 def discover_text_files(repo_root: Path, boundary_hint_ms: int) -> list[Path]:
     files: list[Path] = []
-    search_roots = [repo_root / "logs", repo_root / "logs" / "frozen", repo_root / "frozen"]
+    search_roots = [repo_root / "logs", repo_root /
+                    "logs" / "frozen", repo_root / "frozen"]
     cutoff_ms = max(boundary_hint_ms - 12 * 3600000, 0)
     for base in search_roots:
         if not base.exists():
@@ -134,13 +136,20 @@ def csv_value(value):
 def add_dist_fields(row: dict, prefix: str, values: list[int | None]):
     summary = T5D.dist_summary(values)
     row[f"{prefix}_count"] = summary["count"]
-    row[f"{prefix}_min"] = csv_value(int(summary["min"]) if summary["min"] is not None else None)
-    row[f"{prefix}_p50"] = csv_value(int(summary["p50"]) if summary["p50"] is not None else None)
-    row[f"{prefix}_p75"] = csv_value(int(summary["p75"]) if summary["p75"] is not None else None)
-    row[f"{prefix}_p90"] = csv_value(int(summary["p90"]) if summary["p90"] is not None else None)
-    row[f"{prefix}_p95"] = csv_value(int(summary["p95"]) if summary["p95"] is not None else None)
-    row[f"{prefix}_p99"] = csv_value(int(summary["p99"]) if summary["p99"] is not None else None)
-    row[f"{prefix}_max"] = csv_value(int(summary["max"]) if summary["max"] is not None else None)
+    row[f"{prefix}_min"] = csv_value(
+        int(summary["min"]) if summary["min"] is not None else None)
+    row[f"{prefix}_p50"] = csv_value(
+        int(summary["p50"]) if summary["p50"] is not None else None)
+    row[f"{prefix}_p75"] = csv_value(
+        int(summary["p75"]) if summary["p75"] is not None else None)
+    row[f"{prefix}_p90"] = csv_value(
+        int(summary["p90"]) if summary["p90"] is not None else None)
+    row[f"{prefix}_p95"] = csv_value(
+        int(summary["p95"]) if summary["p95"] is not None else None)
+    row[f"{prefix}_p99"] = csv_value(
+        int(summary["p99"]) if summary["p99"] is not None else None)
+    row[f"{prefix}_max"] = csv_value(
+        int(summary["max"]) if summary["max"] is not None else None)
 
 
 def join_list(values: list[str]) -> str:
@@ -182,6 +191,56 @@ def build_flag_row(**kwargs) -> FlagRow:
         evidence=kwargs.get("evidence", ""),
         notes=kwargs.get("notes", ""),
     )
+
+
+def safe_float(value):
+    try:
+        if value in (None, "", "None"):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def fill_identity_key(event: dict) -> tuple:
+    payload = event.get("payload") if isinstance(event, dict) else None
+    metadata = payload.get("metadata") if isinstance(payload, dict) else None
+    fill_trade_id = ""
+    if isinstance(metadata, dict):
+        fill_trade_id = T5D.stringify(metadata.get("fill_trade_id"))
+    if fill_trade_id:
+        return ("trade_id", fill_trade_id)
+    return (
+        "event",
+        event.get("ts_ms"),
+        event.get("order_id"),
+        event.get("client_order_id"),
+        event.get("quantity"),
+        event.get("price"),
+    )
+
+
+def resolve_terminal_fill(placed_qty: float | None, fill_matches: list[tuple]):
+    if not fill_matches:
+        return None
+    if placed_qty is None or placed_qty <= 0:
+        return fill_matches[0]
+
+    seen_fill_keys = set()
+    cumulative_qty = 0.0
+    for match in fill_matches:
+        candidate = match[2]
+        fill_key = fill_identity_key(candidate)
+        if fill_key in seen_fill_keys:
+            continue
+        seen_fill_keys.add(fill_key)
+        fill_qty = safe_float(candidate.get("quantity"))
+        if fill_qty is None or fill_qty <= 0:
+            continue
+        cumulative_qty += fill_qty
+        if cumulative_qty + 1e-9 >= placed_qty:
+            return match
+    return None
 
 
 def main():
@@ -274,7 +333,8 @@ def main():
             for line_no, line in enumerate(handle, start=1):
                 raw = line.rstrip("\n")
                 match = T5D.TEXT_TS_RE.match(raw)
-                ts_ms = T5D.parse_text_datetime(match.group(1)) if match else None
+                ts_ms = T5D.parse_text_datetime(
+                    match.group(1)) if match else None
                 embedded = T5D.EMBEDDED_TS_MS_RE.search(raw)
                 if embedded:
                     ts_ms = T5D.safe_int(embedded.group(1)) or ts_ms
@@ -338,10 +398,13 @@ def main():
                 seen_fingerprints.add(fingerprint)
                 relevant_events.append(event)
 
-    relevant_events.sort(key=lambda item: (item["ts_ms"], item["event_type"], item["source_file"], item["line_no"]))
-    placed_events = [event for event in relevant_events if event["event_type"] == "ORDER_PLACED"]
+    relevant_events.sort(key=lambda item: (
+        item["ts_ms"], item["event_type"], item["source_file"], item["line_no"]))
+    placed_events = [
+        event for event in relevant_events if event["event_type"] == "ORDER_PLACED"]
     first_order_after_report_ts = min(
-        (event["ts_ms"] for event in placed_events if event["ts_ms"] >= report_mtime_ms),
+        (event["ts_ms"]
+         for event in placed_events if event["ts_ms"] >= report_mtime_ms),
         default=None,
     )
     first_runtime_1800000_ts = min(
@@ -363,11 +426,15 @@ def main():
         if ts_ms is not None:
             boundary_candidates.append((label, ts_ms))
 
-    boundary_source, boundary_ts = max(boundary_candidates, key=lambda item: item[1])
-    post_events = [event for event in relevant_events if event["ts_ms"] >= boundary_ts]
-    post_placed = [event for event in placed_events if event["ts_ms"] >= boundary_ts]
+    boundary_source, boundary_ts = max(
+        boundary_candidates, key=lambda item: item[1])
+    post_events = [
+        event for event in relevant_events if event["ts_ms"] >= boundary_ts]
+    post_placed = [
+        event for event in placed_events if event["ts_ms"] >= boundary_ts]
 
-    post_boot_events = [event for event in post_events if event["event_type"] == "BOOT"]
+    post_boot_events = [
+        event for event in post_events if event["event_type"] == "BOOT"]
     post_startup_markers = [
         marker for marker in startup_markers if marker["ts_ms"] is not None and marker["ts_ms"] >= boundary_ts
     ]
@@ -382,10 +449,12 @@ def main():
     window_markers.extend(event["ts_ms"] for event in post_boot_events)
     window_markers.extend(marker["ts_ms"] for marker in post_startup_markers)
     window_starts = cluster_window_starts(window_markers)
-    max_event_ts = max((event["ts_ms"] for event in post_events), default=boundary_ts)
+    max_event_ts = max((event["ts_ms"]
+                       for event in post_events), default=boundary_ts)
     window_specs = []
     for index, start_ts in enumerate(window_starts, start=1):
-        next_start = window_starts[index] if index < len(window_starts) else None
+        next_start = window_starts[index] if index < len(
+            window_starts) else None
         end_ts = (next_start - 1) if next_start is not None else max_event_ts
         window_specs.append(
             {
@@ -395,7 +464,8 @@ def main():
             }
         )
     if not window_specs:
-        window_specs.append({"window_id": "W01", "start_ts_ms": boundary_ts, "end_ts_ms": max_event_ts})
+        window_specs.append(
+            {"window_id": "W01", "start_ts_ms": boundary_ts, "end_ts_ms": max_event_ts})
 
     window_lookup = [spec["start_ts_ms"] for spec in window_specs]
 
@@ -449,7 +519,8 @@ def main():
                 cancels_by_client[event["client_order_id"]].append(event)
         elif event_type == "POSITION_CLOSED":
             if event["lifecycle_id"]:
-                position_closed_by_lifecycle[event["lifecycle_id"]].append(event)
+                position_closed_by_lifecycle[event["lifecycle_id"]].append(
+                    event)
             if event["symbol"]:
                 position_closed_by_symbol[event["symbol"]].append(event)
 
@@ -459,6 +530,7 @@ def main():
         rid = placed["rid"]
         order_id = placed["order_id"]
         client_order_id = placed["client_order_id"]
+        placed_qty = safe_float(placed.get("quantity"))
 
         fill_matches = []
         for method, candidates in (
@@ -468,7 +540,8 @@ def main():
         ):
             for candidate in candidates:
                 if candidate["ts_ms"] >= placed_ts:
-                    fill_matches.append((candidate["ts_ms"], method, candidate))
+                    fill_matches.append(
+                        (candidate["ts_ms"], method, candidate))
 
         trade_matches = []
         for method, candidates in (
@@ -478,7 +551,8 @@ def main():
         ):
             for candidate in candidates:
                 if candidate["ts_ms"] >= placed_ts:
-                    trade_matches.append((candidate["ts_ms"], method, candidate))
+                    trade_matches.append(
+                        (candidate["ts_ms"], method, candidate))
 
         timeout_matches = []
         for method, candidates in (
@@ -488,7 +562,8 @@ def main():
         ):
             for candidate in candidates:
                 if candidate["ts_ms"] >= placed_ts:
-                    timeout_matches.append((candidate["ts_ms"], method, candidate))
+                    timeout_matches.append(
+                        (candidate["ts_ms"], method, candidate))
 
         cancel_matches = []
         for method, candidates in (
@@ -497,16 +572,19 @@ def main():
         ):
             for candidate in candidates:
                 if candidate["ts_ms"] >= placed_ts:
-                    cancel_matches.append((candidate["ts_ms"], method, candidate))
+                    cancel_matches.append(
+                        (candidate["ts_ms"], method, candidate))
 
         position_closed_matches = []
         for candidate in position_closed_by_lifecycle.get(rid, []):
             if candidate["ts_ms"] >= placed_ts:
-                position_closed_matches.append((candidate["ts_ms"], "position_closed.lifecycle_id", candidate))
+                position_closed_matches.append(
+                    (candidate["ts_ms"], "position_closed.lifecycle_id", candidate))
         if not position_closed_matches:
             for candidate in position_closed_by_symbol.get(placed["symbol"], []):
                 if candidate["ts_ms"] >= placed_ts:
-                    position_closed_matches.append((candidate["ts_ms"], "position_closed.symbol", candidate))
+                    position_closed_matches.append(
+                        (candidate["ts_ms"], "position_closed.symbol", candidate))
 
         fill_matches.sort(key=lambda item: item[0])
         trade_matches.sort(key=lambda item: item[0])
@@ -515,6 +593,7 @@ def main():
         position_closed_matches.sort(key=lambda item: item[0])
 
         first_fill = fill_matches[0] if fill_matches else None
+        terminal_fill = resolve_terminal_fill(placed_qty, fill_matches)
         first_trade = trade_matches[0] if trade_matches else None
         if first_fill and first_trade:
             first_fill_like = first_fill if first_fill[0] <= first_trade[0] else first_trade
@@ -524,12 +603,15 @@ def main():
         first_cancel = cancel_matches[0] if cancel_matches else None
 
         terminal_candidates = []
-        if first_fill:
-            terminal_candidates.append((first_fill[0], "filled", first_fill[1], first_fill[2]))
+        if terminal_fill:
+            terminal_candidates.append(
+                (terminal_fill[0], "filled", terminal_fill[1], terminal_fill[2]))
         if first_timeout:
-            terminal_candidates.append((first_timeout[0], "timeout", first_timeout[1], first_timeout[2]))
+            terminal_candidates.append(
+                (first_timeout[0], "timeout", first_timeout[1], first_timeout[2]))
         if first_cancel:
-            terminal_candidates.append((first_cancel[0], "canceled", first_cancel[1], first_cancel[2]))
+            terminal_candidates.append(
+                (first_cancel[0], "canceled", first_cancel[1], first_cancel[2]))
         terminal_candidates.sort(key=lambda item: item[0])
         terminal = terminal_candidates[0] if terminal_candidates else None
 
@@ -555,6 +637,8 @@ def main():
         notes = []
         if first_fill_like and first_fill_like[1].startswith("trade_"):
             notes.append(f"first_fill_via_{first_fill_like[1]}")
+        if first_fill and terminal_fill is None:
+            notes.append("non_terminal_fill_observed")
         if terminal and first_fill and terminal[1] != "filled" and first_fill[0] < terminal[0]:
             notes.append("fill_before_terminal")
         if not placed["fill_ttl_source_present"]:
@@ -604,21 +688,29 @@ def main():
     global_metrics = T5D.compute_metrics(order_rows)
     runtime_span_ms = max(max_event_ts - boundary_ts, 0)
     runtime_hours = runtime_span_ms / 3600000.0
-    relevant_rows = [row for row in order_rows if row["is_calibration_relevant"]]
-    relevant_metadata_rows = [row for row in relevant_rows if row["metadata_bearing"]]
-    relevant_known_terminal_rows = [row for row in relevant_rows if row["terminal_state"] != "unknown"]
+    relevant_rows = [
+        row for row in order_rows if row["is_calibration_relevant"]]
+    relevant_metadata_rows = [
+        row for row in relevant_rows if row["metadata_bearing"]]
+    relevant_known_terminal_rows = [
+        row for row in relevant_rows if row["terminal_state"] != "unknown"]
     relevant_join_rate = (
-        len(relevant_known_terminal_rows) / len(relevant_rows) if relevant_rows else 0.0
+        len(relevant_known_terminal_rows) /
+        len(relevant_rows) if relevant_rows else 0.0
     )
     close_executor_unknown_rows = [
         row
         for row in order_rows
         if row["terminal_state"] == "unknown" and row["source_fsm"] == "CloseExecutor"
     ]
-    relevant_unknown_rows = [row for row in relevant_rows if row["terminal_state"] == "unknown"]
-    minimum_sample_met = runtime_hours >= MIN_RUNTIME_HOURS and global_metrics["total_order_placed"] >= MIN_POST_T5D_ORDER_PLACED
-    preferred_sample_met = runtime_hours >= PREFERRED_RUNTIME_HOURS and global_metrics["aurora_entry_limit_gtx_orders"] >= PREFERRED_AURORA_LIMIT_GTX
-    global_watchdog_rows = [row for row in order_rows if row["fill_ttl_source"] == "global_watchdog"]
+    relevant_unknown_rows = [
+        row for row in relevant_rows if row["terminal_state"] == "unknown"]
+    minimum_sample_met = runtime_hours >= MIN_RUNTIME_HOURS and global_metrics[
+        "total_order_placed"] >= MIN_POST_T5D_ORDER_PLACED
+    preferred_sample_met = runtime_hours >= PREFERRED_RUNTIME_HOURS and global_metrics[
+        "aurora_entry_limit_gtx_orders"] >= PREFERRED_AURORA_LIMIT_GTX
+    global_watchdog_rows = [
+        row for row in order_rows if row["fill_ttl_source"] == "global_watchdog"]
     relevant_override_mismatch_rows = [
         row
         for row in relevant_rows
@@ -626,8 +718,10 @@ def main():
         or row["fill_ttl_source"] != "per_order_override"
         or row["fill_ttl_override_ms"] != EXPECTED_PER_ORDER_OVERRIDE_MS
     ]
-    relevant_missing_metadata_rows = [row for row in relevant_rows if not row["metadata_bearing"]]
-    relevant_timeout_rows = [row for row in relevant_rows if row["age_to_timeout_ms"] is not None]
+    relevant_missing_metadata_rows = [
+        row for row in relevant_rows if not row["metadata_bearing"]]
+    relevant_timeout_rows = [
+        row for row in relevant_rows if row["age_to_timeout_ms"] is not None]
     relevant_timeout_near_20m_rows = [
         row
         for row in relevant_timeout_rows
@@ -638,9 +732,22 @@ def main():
         for row in relevant_timeout_rows
         if abs(row["age_to_timeout_ms"] - EXPECTED_GLOBAL_WATCHDOG_TTL_MS) <= TIMEOUT_TOLERANCE_MS
     ]
+    relevant_global_backstop_timeout_rows = [
+        row
+        for row in relevant_timeout_near_30m_rows
+        if not row["metadata_bearing"] or row["fill_ttl_source"] == "global_watchdog"
+    ]
+    relevant_override_timeout_near_30m_rows = [
+        row
+        for row in relevant_timeout_near_30m_rows
+        if row["metadata_bearing"]
+        and row["fill_ttl_source"] == "per_order_override"
+        and row["fill_ttl_override_ms"] == EXPECTED_PER_ORDER_OVERRIDE_MS
+    ]
 
     stale_suspicions = []
-    timeout_rows = [row for row in order_rows if row["age_to_timeout_ms"] is not None]
+    timeout_rows = [
+        row for row in order_rows if row["age_to_timeout_ms"] is not None]
     for row in timeout_rows:
         reasons = []
         timeout_ts = row["placed_ts_ms"] + row["age_to_timeout_ms"]
@@ -720,8 +827,10 @@ def main():
             if not row["metadata_bearing"]:
                 observed_bits.append("metadata_missing")
             else:
-                observed_bits.append(f"fill_ttl_source={row['fill_ttl_source']}")
-                observed_bits.append(f"fill_ttl_override_ms={row['fill_ttl_override_ms']}")
+                observed_bits.append(
+                    f"fill_ttl_source={row['fill_ttl_source']}")
+                observed_bits.append(
+                    f"fill_ttl_override_ms={row['fill_ttl_override_ms']}")
             flag_rows.append(
                 build_flag_row(
                     flag_type="PER_ORDER_OVERRIDE_CONTRACT_MISMATCH",
@@ -739,7 +848,7 @@ def main():
                 )
             )
 
-    for row in relevant_timeout_near_30m_rows:
+    for row in relevant_global_backstop_timeout_rows:
         flag_rows.append(
             build_flag_row(
                 flag_type="OVERRIDE_TIMEOUT_NEAR_30MIN",
@@ -754,6 +863,31 @@ def main():
                 expected_value=f"near {EXPECTED_PER_ORDER_OVERRIDE_MS}",
                 evidence=f"fill_ttl_source={row['fill_ttl_source']} fill_ttl_override_ms={row['fill_ttl_override_ms']}",
                 notes="Aurora LIMIT/GTX timeout drifted toward global 30-minute backstop",
+            )
+        )
+
+    for row in relevant_override_timeout_near_30m_rows:
+        notes = "per-order override metadata retained, but timeout still drifted toward global 30-minute backstop"
+        if row["age_to_first_fill_ms"] is not None:
+            notes += "; non-terminal fill was observed before timeout"
+        flag_rows.append(
+            build_flag_row(
+                flag_type="OVERRIDE_NOT_APPLIED_TIMEOUT_NEAR_30MIN",
+                severity="critical",
+                status="open",
+                order_key=row["order_key"],
+                symbol=row["symbol"],
+                window_id=row["window_id"],
+                placed_ts_iso=row["placed_ts_iso"],
+                terminal_ts_iso=row["terminal_ts_iso"],
+                observed_value=str(row["age_to_timeout_ms"]),
+                expected_value=f"near {EXPECTED_PER_ORDER_OVERRIDE_MS}",
+                evidence=(
+                    f"fill_ttl_source={row['fill_ttl_source']} "
+                    + f"fill_ttl_override_ms={row['fill_ttl_override_ms']} "
+                    + f"age_to_first_fill_ms={row['age_to_first_fill_ms']}"
+                ),
+                notes=notes,
             )
         )
 
@@ -781,7 +915,8 @@ def main():
                 observed_value=f"terminal_state={row['terminal_state']}; age_to_timeout_ms={row['age_to_timeout_ms']}",
                 expected_value=f"global_backstop={EXPECTED_GLOBAL_WATCHDOG_TTL_MS}",
                 evidence=f"fill_ttl_source={row['fill_ttl_source']}",
-                notes="; ".join(case["notes"]) or "global watchdog path observed",
+                notes="; ".join(
+                    case["notes"]) or "global watchdog path observed",
             )
         )
 
@@ -908,10 +1043,14 @@ def main():
             "strategies": join_list(metrics["strategies_observed"]),
             "source_fsms": join_list(metrics["source_fsms_observed"]),
         }
-        add_dist_fields(window_row, "age_to_first_fill_ms", [row["age_to_first_fill_ms"] for row in rows])
-        add_dist_fields(window_row, "age_to_timeout_ms", [row["age_to_timeout_ms"] for row in rows])
-        add_dist_fields(window_row, "age_to_cancel_ms", [row["age_to_cancel_ms"] for row in rows])
-        add_dist_fields(window_row, "age_to_terminal_ms", [row["age_to_terminal_ms"] for row in rows])
+        add_dist_fields(window_row, "age_to_first_fill_ms", [
+                        row["age_to_first_fill_ms"] for row in rows])
+        add_dist_fields(window_row, "age_to_timeout_ms", [
+                        row["age_to_timeout_ms"] for row in rows])
+        add_dist_fields(window_row, "age_to_cancel_ms", [
+                        row["age_to_cancel_ms"] for row in rows])
+        add_dist_fields(window_row, "age_to_terminal_ms", [
+                        row["age_to_terminal_ms"] for row in rows])
         window_rows.append(window_row)
 
     fill_ttl_override_values = sorted(
@@ -921,17 +1060,25 @@ def main():
             if row["fill_ttl_override_present"] and row["fill_ttl_override_ms"] is not None
         }
     )
-    first_fill_summary = T5D.dist_summary([row["age_to_first_fill_ms"] for row in order_rows])
-    timeout_summary = T5D.dist_summary([row["age_to_timeout_ms"] for row in order_rows])
-    cancel_summary = T5D.dist_summary([row["age_to_cancel_ms"] for row in order_rows])
-    terminal_summary = T5D.dist_summary([row["age_to_terminal_ms"] for row in order_rows])
+    first_fill_summary = T5D.dist_summary(
+        [row["age_to_first_fill_ms"] for row in order_rows])
+    timeout_summary = T5D.dist_summary(
+        [row["age_to_timeout_ms"] for row in order_rows])
+    cancel_summary = T5D.dist_summary(
+        [row["age_to_cancel_ms"] for row in order_rows])
+    terminal_summary = T5D.dist_summary(
+        [row["age_to_terminal_ms"] for row in order_rows])
 
-    per_order_override_dominates = not relevant_override_mismatch_rows and bool(relevant_rows)
-    accidental_30min_timeout = bool(relevant_timeout_near_30m_rows)
+    per_order_override_dominates = not relevant_override_mismatch_rows and bool(
+        relevant_rows)
+    accidental_30min_timeout = bool(relevant_global_backstop_timeout_rows)
+    override_timeout_near_30m = bool(relevant_override_timeout_near_30m_rows)
     runtime_global_marker_confirmed = bool(post_ttl_1800000_markers)
     post_boundary_old_runtime_marker = bool(post_ttl_3600000_markers)
-    global_watchdog_regression = any(case["classification"] == "regression" for case in global_watchdog_cases)
-    global_watchdog_suspicious = any(case["classification"] == "suspicious" for case in global_watchdog_cases)
+    global_watchdog_regression = any(
+        case["classification"] == "regression" for case in global_watchdog_cases)
+    global_watchdog_suspicious = any(
+        case["classification"] == "suspicious" for case in global_watchdog_cases)
     lifecycle_regression = stale_watchdog_verdict == "STALE_WATCHDOG_CONFIRMED"
     warning_condition = (
         relevant_join_rate < 0.95
@@ -948,7 +1095,7 @@ def main():
 
     if not minimum_sample_met:
         verdict = "NOT_ENOUGH_POST_T5D_RUNTIME"
-    elif post_boundary_old_runtime_marker or accidental_30min_timeout or lifecycle_regression or global_watchdog_regression:
+    elif post_boundary_old_runtime_marker or accidental_30min_timeout or override_timeout_near_30m or lifecycle_regression or global_watchdog_regression:
         verdict = "POST_CALIBRATION_REGRESSION_DETECTED"
     elif warning_condition:
         verdict = "POST_CALIBRATION_WARNING"
@@ -969,9 +1116,11 @@ def main():
         writer.writeheader()
         if order_rows:
             for row in order_rows:
-                writer.writerow({field: csv_value(row.get(field)) for field in order_fields})
+                writer.writerow({field: csv_value(row.get(field))
+                                for field in order_fields})
         else:
-            writer.writerow({"notes": "diagnostic_only:no_post_t5d_order_rows"})
+            writer.writerow(
+                {"notes": "diagnostic_only:no_post_t5d_order_rows"})
 
     window_fields = [
         "window_id", "start_ts_ms", "start_ts_iso", "end_ts_ms", "end_ts_iso", "orders_count",
@@ -995,7 +1144,8 @@ def main():
         writer.writeheader()
         if window_rows:
             for row in window_rows:
-                writer.writerow({field: csv_value(row.get(field)) for field in window_fields})
+                writer.writerow({field: csv_value(row.get(field))
+                                for field in window_fields})
         else:
             writer.writerow({"window_id": "W01", "orders_count": 0})
 
@@ -1004,9 +1154,11 @@ def main():
         writer = csv.DictWriter(handle, fieldnames=flag_fields)
         writer.writeheader()
         for row in flag_rows:
-            writer.writerow({field: csv_value(getattr(row, field)) for field in flag_fields})
+            writer.writerow({field: csv_value(getattr(row, field))
+                            for field in flag_fields})
 
-    boundary_lines = [f"{label}={T5D.iso_utc(ts_ms)}" for label, ts_ms in boundary_candidates]
+    boundary_lines = [
+        f"{label}={T5D.iso_utc(ts_ms)}" for label, ts_ms in boundary_candidates]
     window_lines = [
         "- "
         + f"{row['window_id']} {row['start_ts_iso']} -> {row['end_ts_iso']} orders={row['orders_count']} "
@@ -1027,6 +1179,17 @@ def main():
         )
     if not global_watchdog_lines:
         global_watchdog_lines.append("- none")
+
+    override_timeout_lines = []
+    for row in relevant_override_timeout_near_30m_rows[:10]:
+        override_timeout_lines.append(
+            "- "
+            + f"{row['order_key']} {row['symbol']} terminal={row['terminal_state']} "
+            + f"age_to_timeout_ms={row['age_to_timeout_ms']} age_to_first_fill_ms={row['age_to_first_fill_ms']} "
+            + f"fill_ttl_source={row['fill_ttl_source']} fill_ttl_override_ms={row['fill_ttl_override_ms']}"
+        )
+    if not override_timeout_lines:
+        override_timeout_lines.append("- none")
 
     stale_lines = []
     for item in stale_suspicions[:10]:
@@ -1060,12 +1223,16 @@ def main():
         verdict_rationale.append(
             f"minimum post-T5D sample not met: runtime_hours={runtime_hours:.2f}, post_t5d_order_placed_total={global_metrics['total_order_placed']}"
         )
-    verdict_rationale.append(format_override_check(len(relevant_rows), len(relevant_override_mismatch_rows), len(relevant_missing_metadata_rows)))
+    verdict_rationale.append(format_override_check(len(relevant_rows), len(
+        relevant_override_mismatch_rows), len(relevant_missing_metadata_rows)))
     verdict_rationale.append(
         f"override timeout distribution near 20m: {len(relevant_timeout_near_20m_rows)}/{len(relevant_timeout_rows)} relevant timeout rows"
     )
     verdict_rationale.append(
-        f"accidental 30m timeout on override path: {'YES' if accidental_30min_timeout else 'NO'}"
+        f"any 30m global backstop timeout on calibration path: {'YES' if accidental_30min_timeout else 'NO'}"
+    )
+    verdict_rationale.append(
+        f"per-order override timeout still near 30m: {'YES' if override_timeout_near_30m else 'NO'}"
     )
     verdict_rationale.append(
         f"stale watchdog verdict: {stale_watchdog_verdict}"
@@ -1075,17 +1242,37 @@ def main():
             "overall unknown joins are isolated to non-calibration CloseExecutor market rows; calibration-relevant join rate remained complete"
         )
 
+    runtime_behavior_lines = []
+    if override_timeout_near_30m:
+        runtime_behavior_lines.append(
+            f"- per_order_override_timeout_near_30m: count={len(relevant_override_timeout_near_30m_rows)}"
+        )
+    if accidental_30min_timeout:
+        runtime_behavior_lines.append(
+            f"- global_backstop_timeout_near_30m: count={len(relevant_global_backstop_timeout_rows)}"
+        )
+    if not runtime_behavior_lines:
+        runtime_behavior_lines.append("- NONE")
+
     risks = []
     if not runtime_global_marker_confirmed:
-        risks.append("exact post-boundary runtime proof for global 1800000 backstop is not retained in text logs")
+        risks.append(
+            "exact post-boundary runtime proof for global 1800000 backstop is not retained in text logs")
     if not minimum_sample_met:
         risks.append("explicit 1800000 runtime startup is retained, but runtime collected after that boundary is still below the minimum 24h / 30 ORDER_PLACED sample")
     elif not preferred_sample_met:
-        risks.append("preferred 48h / 50 metadata-bearing Aurora LIMIT/GTX sample is not yet reached")
+        risks.append(
+            "preferred 48h / 50 metadata-bearing Aurora LIMIT/GTX sample is not yet reached")
     if stale_watchdog_verdict == "STALE_WATCHDOG_SUSPECTED":
-        risks.append("symbol-only stale-watchdog suspicion remains unconfirmed at lifecycle identity level")
+        risks.append(
+            "symbol-only stale-watchdog suspicion remains unconfirmed at lifecycle identity level")
+    if override_timeout_near_30m:
+        risks.append(
+            "per-order override metadata was retained on at least one Aurora LIMIT/GTX row whose timeout still drifted toward 1800000"
+        )
     if global_watchdog_cases:
-        risks.append("global_watchdog path exists and should keep being monitored until more cases accumulate")
+        risks.append(
+            "global_watchdog path exists and should keep being monitored until more cases accumulate")
     if close_executor_unknown_rows and not relevant_unknown_rows:
         risks.append(
             f"overall terminal join rate is diluted by {len(close_executor_unknown_rows)} non-calibration CloseExecutor market rows with no retained terminal join"
@@ -1095,13 +1282,17 @@ def main():
 
     unproven = []
     if not minimum_sample_met:
-        unproven.append("post-boundary order behavior after the explicit 1800000 runtime startup remains unproven")
+        unproven.append(
+            "post-boundary order behavior after the explicit 1800000 runtime startup remains unproven")
     if not runtime_global_marker_confirmed:
-        unproven.append("post-boundary ExecPosFSM TTL config line with fill_ttl_ms=1800000 was not retained")
+        unproven.append(
+            "post-boundary ExecPosFSM TTL config line with fill_ttl_ms=1800000 was not retained")
     if not global_watchdog_cases:
-        unproven.append("global_watchdog order path remains unobserved in post-T5D ORDER_PLACED metadata")
+        unproven.append(
+            "global_watchdog order path remains unobserved in post-T5D ORDER_PLACED metadata")
     if stale_watchdog_verdict == "STALE_WATCHDOG_SUSPECTED":
-        unproven.append("symbol-only timeout-after-position-closed remains suspected, not lifecycle-confirmed")
+        unproven.append(
+            "symbol-only timeout-after-position-closed remains suspected, not lifecycle-confirmed")
     if not unproven:
         unproven.append("none")
 
@@ -1150,7 +1341,9 @@ def main():
         "",
         "regression_checks:",
         f"- per_order_override_dominates: {format_override_check(len(relevant_rows), len(relevant_override_mismatch_rows), len(relevant_missing_metadata_rows))}",
-        f"- accidental_30min_timeout_on_override_path: {'FAIL' if accidental_30min_timeout else 'PASS'} count={len(relevant_timeout_near_30m_rows)}",
+        f"- any_30min_global_backstop_timeout: {'FAIL' if accidental_30min_timeout else 'PASS'} count={len(relevant_global_backstop_timeout_rows)}",
+        f"- per_order_override_timeout_near_30m: {'FAIL' if override_timeout_near_30m else 'PASS'} count={len(relevant_override_timeout_near_30m_rows)}",
+        *override_timeout_lines,
         f"- global_watchdog_cases: count={len(global_watchdog_cases)}",
         *global_watchdog_lines,
         f"- stale_watchdog_check: {stale_watchdog_verdict}",
@@ -1160,7 +1353,7 @@ def main():
         *[f"- {line}" for line in verdict_rationale],
         "",
         "runtime_behavior_change:",
-        "- NONE",
+        *runtime_behavior_lines,
         "",
         "config_changes:",
         "- NONE",
@@ -1179,9 +1372,12 @@ def main():
 
     print(f"verdict={verdict}")
     print(f"post_t5d_boundary={T5D.iso_utc(boundary_ts)}")
-    print(f"post_t5d_order_placed_total={global_metrics['total_order_placed']}")
-    print(f"metadata_bearing_order_placed={global_metrics['metadata_bearing_order_placed']}")
-    print(f"aurora_limit_gtx_entries={global_metrics['aurora_entry_limit_gtx_orders']}")
+    print(
+        f"post_t5d_order_placed_total={global_metrics['total_order_placed']}")
+    print(
+        f"metadata_bearing_order_placed={global_metrics['metadata_bearing_order_placed']}")
+    print(
+        f"aurora_limit_gtx_entries={global_metrics['aurora_entry_limit_gtx_orders']}")
     print(f"terminal_join_rate={global_metrics['terminal_join_rate']:.3f}")
     print(f"runtime_global_marker_confirmed={len(post_ttl_1800000_markers)}")
     print(f"report={REPORT_NAME}")

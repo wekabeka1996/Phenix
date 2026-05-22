@@ -60,6 +60,26 @@
       "type": ["number", "null"],
       "description": "Decision-time regime confidence propagated additively to execution."
     },
+    "resolved_min_regime_confidence": {
+      "type": ["number", "null"],
+      "description": "Resolved minimum regime-confidence threshold propagated additively to execution."
+    },
+    "threshold_applied": {
+      "type": ["boolean", "null"],
+      "description": "Admission-threshold evaluation flag propagated additively to execution."
+    },
+    "threshold_verdict": {
+      "type": ["string", "null"],
+      "description": "Admission-threshold verdict propagated additively to execution."
+    },
+    "threshold_reason": {
+      "type": ["string", "null"],
+      "description": "Admission-threshold explanation propagated additively to execution."
+    },
+    "regime_confidence_gate_verdict": {
+      "type": ["string", "null"],
+      "description": "Canonical regime-confidence gate verdict propagated additively to execution."
+    },
     "regime_provenance": {
       "anyOf": [
         {

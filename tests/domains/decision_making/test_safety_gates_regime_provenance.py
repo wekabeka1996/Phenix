@@ -1,5 +1,6 @@
 from apps.reference.domains.decision_making.gates.safety_gates import (
     _extract_regime,
+    resolve_max_regime_confidence,
     resolve_min_regime_confidence,
 )
 
@@ -143,6 +144,74 @@ def test_resolve_min_regime_confidence_strategy_default_beats_domain_specific() 
     assert resolved.source == "strategy_default"
     assert resolved.strategy_id == "aurora"
     assert resolved.regime_key == "DEFAULT"
+
+
+def test_resolve_min_regime_confidence_strategy_symbol_regime_side_specific_beats_legacy_symbol_regime() -> None:
+    resolved = resolve_min_regime_confidence(
+        "TREND_DOWN",
+        0.45,
+        {"DEFAULT": 0.20, "TREND_DOWN": 0.52},
+        strategy_id="aurora",
+        symbol="ETHUSDT",
+        side="SELL",
+        strategy_by_regime={"DEFAULT": 0.40, "TREND_DOWN": 0.65},
+        strategy_symbol_by_regime={"DEFAULT": 0.62, "TREND_DOWN": 0.75},
+        strategy_symbol_by_regime_side={
+            "TREND_DOWN": {
+                "SELL": 0.81,
+            }
+        },
+    )
+
+    assert resolved.threshold == 0.81
+    assert resolved.source == "strategy_symbol_regime_side_specific"
+    assert resolved.strategy_id == "aurora"
+    assert resolved.regime_key == "TREND_DOWN"
+    assert resolved.disabled is False
+
+
+def test_resolve_max_regime_confidence_buy_does_not_inherit_sell_disabled_override() -> None:
+    resolved = resolve_max_regime_confidence(
+        "TREND_DOWN",
+        {"TREND_DOWN": 0.67},
+        strategy_id="aurora",
+        symbol="ETHUSDT",
+        side="BUY",
+        strategy_symbol_by_regime_side={
+            "TREND_DOWN": {
+                "SELL": {
+                    "enabled": False,
+                }
+            }
+        },
+    )
+
+    assert resolved.threshold == 0.67
+    assert resolved.source == "domain_regime_specific"
+    assert resolved.disabled is False
+
+
+def test_resolve_max_regime_confidence_side_disable_is_explicit_and_distinct() -> None:
+    resolved = resolve_max_regime_confidence(
+        "TREND_DOWN",
+        {"TREND_DOWN": 0.67},
+        strategy_id="aurora",
+        symbol="ETHUSDT",
+        side="SELL",
+        strategy_symbol_by_regime_side={
+            "TREND_DOWN": {
+                "SELL": {
+                    "enabled": False,
+                }
+            }
+        },
+    )
+
+    assert resolved.threshold is None
+    assert resolved.source == "strategy_symbol_regime_side_specific_disabled"
+    assert resolved.strategy_id == "aurora"
+    assert resolved.regime_key == "TREND_DOWN"
+    assert resolved.disabled is True
 
 
 def test_resolve_min_regime_confidence_ignores_strategy_mapping_without_strategy_id() -> None:

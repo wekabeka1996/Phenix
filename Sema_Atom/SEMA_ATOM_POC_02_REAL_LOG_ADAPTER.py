@@ -9,6 +9,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
+from sema_atom_reference_price_resolver import (
+    resolve_reference_price,
+    TRAINABILITY_TRAINABLE,
+    TRAINABILITY_DIAGNOSTICS_ONLY,
+    TRAINABILITY_INVALID,
+    TRAINABILITY_MISSING,
+)
+
 
 REPO_ROOT = Path(__file__).resolve().parent
 DEFAULT_SAF_PATH = REPO_ROOT / "aurora_real_logs_v02.saf.jsonl"
@@ -252,10 +260,13 @@ class RecorderStore:
                     if not line:
                         continue
                     parts = line.split(",")
-                    ts_ms = _safe_int(parts[index["timestamp"]])
-                    close = _safe_float(parts[index["close"]])
-                    high = _safe_float(parts[index["high"]])
-                    low = _safe_float(parts[index["low"]])
+                    try:
+                        ts_ms = _safe_int(parts[index["timestamp"]])
+                        close = _safe_float(parts[index["close"]])
+                        high = _safe_float(parts[index["high"]])
+                        low = _safe_float(parts[index["low"]])
+                    except IndexError:
+                        continue
                     if ts_ms is None or close is None or high is None or low is None:
                         continue
                     bars.append(Bar(ts_ms=ts_ms, close=close, high=high, low=low))
@@ -474,6 +485,7 @@ class RejectedDecisionCollector:
     def __init__(self, rows: Sequence[dict[str, Any]]) -> None:
         self.rows = list(rows)
         self.incomplete_buckets: Counter[str] = Counter()
+        self._source_level_counts: Counter[str] = Counter()
 
     def collect(self) -> tuple[list[RawContract], dict[str, Any]]:
         contracts: list[RawContract] = []
@@ -492,11 +504,6 @@ class RejectedDecisionCollector:
                 continue
 
             metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
-            low_vol_cost_floor = (
-                metadata.get("low_vol_cost_floor")
-                if isinstance(metadata.get("low_vol_cost_floor"), dict)
-                else {}
-            )
             regime_confidence = _safe_float(row.get("regime_confidence"))
             direction_confidence = _extract_first_float(
                 row,
@@ -506,23 +513,21 @@ class RejectedDecisionCollector:
                     ("direction_confidence",),
                 ),
             )
-            reference_price = _extract_first_float(
-                row,
-                (
-                    ("metadata", "low_vol_cost_floor", "entry_price"),
-                    ("metadata", "reference_price"),
-                    ("metadata", "intended_entry_price"),
-                    ("metadata", "economics_context", "entry_price"),
-                    ("reference_price",),
-                    ("intended_entry_price",),
-                ),
-            )
+            resolution = resolve_reference_price(row)
+            self._source_level_counts[resolution.source_level] += 1
+            if resolution.trainability == TRAINABILITY_MISSING:
+                self.incomplete_buckets["incomplete_rejected_missing_reference_price"] += 1
+                continue
+            if resolution.trainability == TRAINABILITY_INVALID:
+                self.incomplete_buckets["incomplete_rejected_invalid_reference_price"] += 1
+                continue
+            if resolution.trainability == TRAINABILITY_DIAGNOSTICS_ONLY:
+                self.incomplete_buckets["incomplete_rejected_diagnostics_only_reference_price"] += 1
+                continue
+            reference_price = resolution.reference_price
             missing_fields: list[str] = []
             if regime_confidence is None:
                 missing_fields.append("regime_confidence")
-            if reference_price is None:
-                self.incomplete_buckets["incomplete_rejected_missing_reference_price"] += 1
-                continue
             ts_ms = _safe_int(row.get("timestamp"))
             if ts_ms is None:
                 missing_fields.append("timestamp")
@@ -560,9 +565,11 @@ class RejectedDecisionCollector:
                 provenance={
                     "reject_source_path": row.get("_source_path"),
                     "reject_source_line": row.get("_source_line"),
-                    "reference_price_source": "metadata.low_vol_cost_floor.entry_price"
-                    if _safe_float(low_vol_cost_floor.get("entry_price")) is not None
-                    else "fallback_nested_field",
+                    "reference_price_source": resolution.source,
+                    "reference_price_source_level": resolution.source_level,
+                    "reference_price_trainability": resolution.trainability,
+                    "reference_price_recovery_reason": resolution.recovery_reason,
+                    "reference_price_causal_link_ok": resolution.causal_link_ok,
                 },
             )
             rejected_contracts_evaluated += 1
@@ -571,6 +578,7 @@ class RejectedDecisionCollector:
             "rejected_events_found": rejected_events_found,
             "rejected_contracts_evaluated": rejected_contracts_evaluated,
             "incomplete_rejected_buckets": dict(self.incomplete_buckets),
+            "reference_price_source_level_histogram": dict(self._source_level_counts),
         }
 
 
@@ -907,6 +915,7 @@ class ReportGenerator:
                 "## Rejected Evaluator Results",
                 f"- rejected events found: {rejected_results.get('rejected_events_found', 0)}",
                 f"- rejected contracts evaluated: {rejected_results.get('rejected_contracts_evaluated', 0)}",
+                f"- reference_price_source_level_histogram: {_json_dumps(rejected_results.get('reference_price_source_level_histogram', {}))}",
                 "",
                 "## MFE/MAE Reconstruction Results",
                 f"- MFE/MAE computed count: {replay_results.get('mfe_mae_computed_count', 0)}",

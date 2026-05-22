@@ -12,9 +12,19 @@ from tools.analysis.order_reconstruction_tp_sl_common import (
 )
 
 
-def _assets_from_aurora_cfg(aurora_cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def _resolve_aurora_root(aurora_cfg: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(aurora_cfg, dict):
+        return {}
+    if isinstance(aurora_cfg.get("aurora"), dict):
+        return aurora_cfg.get("aurora") or {}
     strategies = aurora_cfg.get("strategies") or {}
-    aurora = strategies.get("aurora") or {}
+    if isinstance(strategies, dict) and isinstance(strategies.get("aurora"), dict):
+        return strategies.get("aurora") or {}
+    return {}
+
+
+def _assets_from_aurora_cfg(aurora_cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    aurora = _resolve_aurora_root(aurora_cfg)
     assets = aurora.get("assets") or {}
     resolved: dict[str, dict[str, Any]] = {}
     for symbol, asset_cfg in assets.items():
@@ -41,14 +51,16 @@ def load_backtest_config(root: Path) -> dict[str, Any]:
     strategy_context = load_strategy_context(root)
     directional_sanity = payload_get(domains_cfg, "decision_making.directional_sanity") or {}
     price_motion_sanity = payload_get(domains_cfg, "decision_making.price_motion_sanity") or {}
+    aurora_root = _resolve_aurora_root(aurora_cfg)
     return {
         "directional_sanity": directional_sanity,
         "price_motion_sanity": price_motion_sanity,
         "fees": strategy_context.get("fees") or {},
+        "instruments": strategy_context.get("instruments") or {},
         "allowed_regimes": strategy_context.get("allowed_regimes") or {},
         "assets": _assets_from_aurora_cfg(aurora_cfg),
         "regime_config": strategy_context.get("regime_config") or {},
-        "strategy_id": stringify(payload_get(aurora_cfg, "strategies.aurora.strategy_id")) or "aurora",
+        "strategy_id": stringify(aurora_root.get("strategy_id")) or "aurora",
     }
 
 

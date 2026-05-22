@@ -262,6 +262,21 @@ def test_fee_aware_shadow_event_writes_to_shadow_journal_without_authority_regre
     assert payload_fragment["shadow_only"] is True
     assert payload_fragment["authority_applied"] is False
     assert payload_fragment["no_effect"] is True
+    assert payload_fragment["symbol"] == "BTCUSDT"
+    assert isinstance(payload_fragment["ts_ms"], int)
+    assert payload_fragment["transitions"] == ["ARMED"]
+    assert payload_fragment["candidate_identity"] == {"fee_multiple": 2.0}
+    assert payload_fragment["fee_multiple"] == 2.0
+    assert payload_fragment["fee_source"] == "realized_lifecycle_fee"
+    assert payload_fragment["estimated_fee_usd"] == 2.0
+    assert payload_fragment["required_edge_usd"] == 4.0
+    assert payload_fragment["is_armed"] is True
+    assert payload_fragment["would_trigger"] is False
+    assert payload_fragment["null_reasons"] == {}
+    assert "rid" not in payload_fragment
+    assert "lifecycle_id" not in payload_fragment
+    assert "candidate_state" not in payload_fragment
+    assert "position_snapshot" not in payload_fragment
 
     trade_lifecycle_records = _read_jsonl(tmp_path / "trade_lifecycle.jsonl")
     assert any(

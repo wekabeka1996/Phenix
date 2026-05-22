@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from tools.order_log_scenario_backtest.candles import load_1m_candles
 from tools.order_log_scenario_backtest.exit_policies import (
     build_sidecar_request_index,
     materialize_trade_result,
@@ -19,6 +20,19 @@ from tools.order_log_scenario_backtest.gates import (
     evaluate_nrr030,
 )
 from tools.order_log_scenario_backtest.models import CanonicalEntry, CandleSeries, ScenarioRuntime
+from tools.order_log_scenario_backtest.pyramiding import (
+    PYRAMIDING_SCENARIO_ID,
+    build_pyramiding_enabled_entry_set,
+)
+from tools.order_log_scenario_backtest.quadratic_regime_forensics import (
+    QUADRATIC_REGIME_SCENARIO_ID,
+    _confidence_sweep_rows,
+    _variant_rows,
+)
+from tools.order_log_scenario_backtest.regime_confidence import (
+    REGIME_CONFIDENCE_SCENARIO_ID,
+    build_regime_confidence_disabled_entry_set,
+)
 from tools.order_log_scenario_backtest.reconstruct import reconstruct_canonical_entries
 from tools.order_log_scenario_backtest.schema_probe import probe_schema
 
@@ -244,6 +258,242 @@ def _build_runtime(tmp_path: Path) -> tuple[Path, Path, Path, int]:
         },
     ]
     _write_jsonl(runtime_root / "trade_lifecycle.jsonl", sidecar_rows)
+
+    shadow_rows = [
+        {
+            "event_name": "EVT:QUADRATIC_DECISION_TRACE",
+            "rid": "aurora_ETHUSDT_pyramid_1",
+            "symbol": "ETHUSDT",
+            "strategy_id": "aurora",
+            "side": "buy",
+            "ts_ms": entry1_ts_ms + 120000,
+            "payload_fragment": {
+                "symbol": "ETHUSDT",
+                "regime": "TREND_DOWN",
+                "regime_confidence": 0.25,
+                "strategy_id": "aurora",
+                "ts_ms": entry1_ts_ms + 120000,
+                "side": "buy",
+                "anti_peak_observability": {
+                    "score_path": {"final_score": 0.025, "signal_threshold": 0.001},
+                },
+            },
+        },
+        {
+            "event_name": "EVT:TRADE_INTENT_REJECTED",
+            "rid": "aurora_ETHUSDT_pyramid_1",
+            "symbol": "ETHUSDT",
+            "strategy_id": "aurora",
+            "side": "buy",
+            "ts_ms": entry1_ts_ms + 120001,
+            "payload_fragment": {
+                "symbol": "ETHUSDT",
+                "strategy_id": "aurora",
+                "side": "buy",
+                "ts_ms": entry1_ts_ms + 120000,
+                "reason_code": "ANTI_PYRAMIDING_BLOCK",
+                "why_chain": ["enter:buy:score=0.0250>=thr_buy=0.0010"],
+            },
+        },
+        {
+            "event_name": "EVT:QUADRATIC_DECISION_TRACE",
+            "rid": "aurora_BTCUSDT_pyramid_1",
+            "symbol": "BTCUSDT",
+            "strategy_id": "aurora",
+            "side": "sell",
+            "ts_ms": entry2_ts_ms + 120000,
+            "payload_fragment": {
+                "symbol": "BTCUSDT",
+                "regime": "TREND_UP",
+                "regime_confidence": 0.35,
+                "strategy_id": "aurora",
+                "ts_ms": entry2_ts_ms + 120000,
+                "side": "sell",
+                "anti_peak_observability": {
+                    "score_path": {"final_score": -0.022, "signal_threshold": 0.0006},
+                },
+            },
+        },
+        {
+            "event_name": "EVT:TRADE_INTENT_REJECTED",
+            "rid": "aurora_BTCUSDT_pyramid_1",
+            "symbol": "BTCUSDT",
+            "strategy_id": "aurora",
+            "side": "sell",
+            "ts_ms": entry2_ts_ms + 120001,
+            "payload_fragment": {
+                "symbol": "BTCUSDT",
+                "strategy_id": "aurora",
+                "side": "sell",
+                "ts_ms": entry2_ts_ms + 120000,
+                "reason_code": "ANTI_PYRAMIDING_BLOCK",
+                "why_chain": ["enter:sell:score=-0.0220<=-thr_sell=0.0006"],
+            },
+        },
+    ]
+    _write_jsonl(runtime_root / "shadow_critical_event_journal_v1.jsonl", shadow_rows)
+
+    confidence_rows = [
+        {
+            "record_type": "decision",
+            "schema_version": "1.0.0",
+            "ts_ms": entry1_ts_ms + 120000,
+            "symbol": "ETHUSDT",
+            "rid": "aurora_ETHUSDT_conf_1",
+            "strategy_id": "aurora",
+            "intent_side": "LONG",
+            "outcome": "DENY",
+            "regime_used": "TREND_DOWN",
+            "regime_confidence_used": 0.15,
+            "detector_event_ts_ms": entry1_ts_ms + 119999,
+            "bar_close_ts_ms": int((base_dt + timedelta(minutes=2)).timestamp() * 1000),
+            "basis_tf_sec": 300,
+            "source_model": "sma_trend_v1",
+            "resolved_min_regime_confidence": 0.2,
+            "resolved_min_regime_confidence_source": "domain_regime_specific",
+            "resolved_max_regime_confidence": None,
+            "resolved_max_regime_confidence_source": None,
+            "regime_confidence_breach_kind": "below_min",
+            "regime_confidence_gate_verdict": "DENY",
+            "threshold_reason": "regime_confidence=0.15 <= min=0.2",
+            "deny_reason": "NRR-026",
+            "why_short": "below_min",
+        },
+        {
+            "record_type": "decision",
+            "schema_version": "1.0.0",
+            "ts_ms": entry2_ts_ms + 120000,
+            "symbol": "BTCUSDT",
+            "rid": "aurora_BTCUSDT_conf_1",
+            "strategy_id": "aurora",
+            "intent_side": "SHORT",
+            "outcome": "DENY",
+            "regime_used": "TREND_UP",
+            "regime_confidence_used": 0.5,
+            "detector_event_ts_ms": entry2_ts_ms + 119999,
+            "bar_close_ts_ms": int((base_dt + timedelta(minutes=7)).timestamp() * 1000),
+            "basis_tf_sec": 300,
+            "source_model": "sma_trend_v1",
+            "resolved_min_regime_confidence": 0.2,
+            "resolved_min_regime_confidence_source": "domain_regime_specific",
+            "resolved_max_regime_confidence": 0.4,
+            "resolved_max_regime_confidence_source": "domain_regime_specific",
+            "regime_confidence_breach_kind": "above_max",
+            "regime_confidence_gate_verdict": "DENY",
+            "threshold_reason": "regime_confidence=0.5 > max=0.4",
+            "deny_reason": "NRR-063",
+            "why_short": "above_max",
+        },
+    ]
+    _write_jsonl(runtime_root / "regime_confidence_audit_v1.jsonl", confidence_rows)
+
+    shadow_confidence_rows = [
+        {
+            "event_name": "EVT:QUADRATIC_DECISION_TRACE",
+            "rid": "aurora_ETHUSDT_conf_1",
+            "symbol": "ETHUSDT",
+            "strategy_id": "aurora",
+            "side": "buy",
+            "ts_ms": entry1_ts_ms + 120000,
+            "payload_fragment": {
+                "symbol": "ETHUSDT",
+                "regime": "TREND_DOWN",
+                "regime_confidence": 0.15,
+                "strategy_id": "aurora",
+                "ts_ms": entry1_ts_ms + 120000,
+                "side": "buy",
+                "anti_peak_observability": {
+                    "score_path": {"final_score": 0.03, "signal_threshold": 0.001},
+                },
+            },
+        },
+        {
+            "event_name": "EVT:STRATEGY_SIGNAL_PRODUCED",
+            "rid": "aurora_ETHUSDT_conf_1",
+            "symbol": "ETHUSDT",
+            "strategy_id": "aurora",
+            "side": "BUY",
+            "ts_ms": entry1_ts_ms + 120001,
+            "payload_fragment": {
+                "symbol": "ETHUSDT",
+                "why_chain": ["enter:buy:score=0.0300>=thr_buy=0.0010"],
+                "strategy_id": "aurora",
+                "ts_ms": entry1_ts_ms + 120000,
+                "side": "BUY",
+            },
+        },
+        {
+            "event_name": "EVT:DECISION_TRACE_EMITTED",
+            "rid": "aurora_ETHUSDT_conf_1",
+            "symbol": "ETHUSDT",
+            "strategy_id": "aurora",
+            "side": "BUY",
+            "ts_ms": entry1_ts_ms + 120002,
+            "payload_fragment": {
+                "symbol": "ETHUSDT",
+                "regime": "TREND_DOWN",
+                "regime_confidence": 0.15,
+                "event_ts_ms": entry1_ts_ms + 120000,
+                "why": "below_min",
+                "reject_reason": "NRR-026",
+                "strategy_id": "aurora",
+                "side": "BUY",
+            },
+        },
+        {
+            "event_name": "EVT:QUADRATIC_DECISION_TRACE",
+            "rid": "aurora_BTCUSDT_conf_1",
+            "symbol": "BTCUSDT",
+            "strategy_id": "aurora",
+            "side": "sell",
+            "ts_ms": entry2_ts_ms + 120000,
+            "payload_fragment": {
+                "symbol": "BTCUSDT",
+                "regime": "TREND_UP",
+                "regime_confidence": 0.5,
+                "strategy_id": "aurora",
+                "ts_ms": entry2_ts_ms + 120000,
+                "side": "sell",
+                "anti_peak_observability": {
+                    "score_path": {"final_score": -0.03, "signal_threshold": 0.001},
+                },
+            },
+        },
+        {
+            "event_name": "EVT:STRATEGY_SIGNAL_PRODUCED",
+            "rid": "aurora_BTCUSDT_conf_1",
+            "symbol": "BTCUSDT",
+            "strategy_id": "aurora",
+            "side": "SELL",
+            "ts_ms": entry2_ts_ms + 120001,
+            "payload_fragment": {
+                "symbol": "BTCUSDT",
+                "why_chain": ["enter:sell:score=-0.0300<=-thr_sell=0.0010"],
+                "strategy_id": "aurora",
+                "ts_ms": entry2_ts_ms + 120000,
+                "side": "SELL",
+            },
+        },
+        {
+            "event_name": "EVT:DECISION_TRACE_EMITTED",
+            "rid": "aurora_BTCUSDT_conf_1",
+            "symbol": "BTCUSDT",
+            "strategy_id": "aurora",
+            "side": "SELL",
+            "ts_ms": entry2_ts_ms + 120002,
+            "payload_fragment": {
+                "symbol": "BTCUSDT",
+                "regime": "TREND_UP",
+                "regime_confidence": 0.5,
+                "event_ts_ms": entry2_ts_ms + 120000,
+                "why": "above_max",
+                "reject_reason": "NRR-063",
+                "strategy_id": "aurora",
+                "side": "SELL",
+            },
+        },
+    ]
+    _write_jsonl(runtime_root / "shadow_critical_event_journal_v1.jsonl", shadow_rows + shadow_confidence_rows)
 
     _write_yaml(
         workspace_root / "config" / "aurora" / "domains.yaml",
@@ -565,3 +815,128 @@ def test_tp_sl_only_exit_and_sidecar_only_exit() -> None:
     assert sidecar_event.price == 99.1
     result_row = materialize_trade_result("sidecar_only", entry, runtime, sidecar_event, sidecar_extras)
     assert result_row["status"] == "loss"
+
+
+def test_build_pyramiding_enabled_entry_set_materializes_synthetic_adds(tmp_path: Path) -> None:
+    workspace_root, runtime_root, report_root, _ = _build_runtime(tmp_path)
+    entries, _, _ = reconstruct_canonical_entries(workspace_root, runtime_root, report_root)
+    candles_by_symbol = load_1m_candles(workspace_root, [workspace_root / "data" / "recorder"])
+    runtime = ScenarioRuntime(
+        workspace_root=workspace_root,
+        runtime_root=runtime_root,
+        report_root=report_root,
+        config={
+            "strategy_id": "aurora",
+            "instruments": {
+                "ETHUSDT": {"target_leverage": 10},
+                "BTCUSDT": {"target_leverage": 10},
+                "XRPUSDT": {"target_leverage": 5},
+            },
+        },
+        candles_by_symbol=candles_by_symbol,
+        strict=True,
+    )
+    combined = build_pyramiding_enabled_entry_set(
+        entries,
+        runtime,
+        materialize_price_proxy=True,
+        emit_artifacts=True,
+    )
+    synthetic = [entry for entry in combined if entry.entry_origin == "synthetic_pyramiding_reject_proxy"]
+    assert len(synthetic) == 2
+    assert {entry.symbol for entry in synthetic} == {"ETHUSDT", "BTCUSDT"}
+    assert all(entry.qty == 0.0 for entry in synthetic)
+    assert (report_root / "pyramiding_candidate_audit.csv").exists()
+    assert (report_root / "pyramiding_candidate_summary.json").exists()
+
+
+def test_build_regime_confidence_disabled_entry_set_materializes_synthetic_entries(tmp_path: Path) -> None:
+    workspace_root, runtime_root, report_root, _ = _build_runtime(tmp_path)
+    entries, _, _ = reconstruct_canonical_entries(workspace_root, runtime_root, report_root)
+    candles_by_symbol = load_1m_candles(workspace_root, [workspace_root / "data" / "recorder"])
+    runtime = ScenarioRuntime(
+        workspace_root=workspace_root,
+        runtime_root=runtime_root,
+        report_root=report_root,
+        config={
+            "strategy_id": "aurora",
+            "instruments": {
+                "ETHUSDT": {"target_leverage": 10},
+                "BTCUSDT": {"target_leverage": 10},
+                "XRPUSDT": {"target_leverage": 5},
+            },
+        },
+        candles_by_symbol=candles_by_symbol,
+        strict=True,
+    )
+    combined = build_regime_confidence_disabled_entry_set(
+        entries,
+        runtime,
+        materialize_price_proxy=True,
+        emit_artifacts=True,
+    )
+    synthetic = [entry for entry in combined if entry.entry_origin == "synthetic_regime_confidence_gate_proxy"]
+    assert len(synthetic) == 2
+    assert {entry.symbol for entry in synthetic} == {"ETHUSDT", "BTCUSDT"}
+    assert all(entry.qty == 0.0 for entry in synthetic)
+    assert (report_root / REGIME_CONFIDENCE_SCENARIO_ID / "candidate_audit.csv").exists()
+    assert (report_root / REGIME_CONFIDENCE_SCENARIO_ID / "microstructure_review.csv").exists()
+
+
+def test_quadratic_regime_variant_logic_distinguishes_btc_doge_vs_eth() -> None:
+    cases = [
+        {
+            "entry_id": "btc",
+            "symbol": "BTCUSDT",
+            "side": "SELL",
+            "actual_trade_status": "loss",
+            "actual_exit_reason": "actual_close_sl",
+            "actual_net_pnl_roi_pct": -12.49,
+            "regime_confidence_at_entry": 0.20597874586033435,
+            "score_margin_abs": 0.02399765,
+            "motion_abs_sigma": 5.23979871,
+            "raw_regime_mismatch": True,
+            "signal_to_fill_sec": 48.944,
+        },
+        {
+            "entry_id": "doge",
+            "symbol": "DOGEUSDT",
+            "side": "SELL",
+            "actual_trade_status": "loss",
+            "actual_exit_reason": "actual_close_sl",
+            "actual_net_pnl_roi_pct": -5.23886905,
+            "regime_confidence_at_entry": 0.3431086177341437,
+            "score_margin_abs": 0.00077267,
+            "motion_abs_sigma": 4.24979493,
+            "raw_regime_mismatch": False,
+            "signal_to_fill_sec": 458.351,
+        },
+        {
+            "entry_id": "eth",
+            "symbol": "ETHUSDT",
+            "side": "SELL",
+            "actual_trade_status": "loss",
+            "actual_exit_reason": "actual_close_tp",
+            "actual_net_pnl_roi_pct": -1.59637767,
+            "regime_confidence_at_entry": 0.4707958596937715,
+            "score_margin_abs": 0.00528261,
+            "motion_abs_sigma": 2.73576752,
+            "raw_regime_mismatch": False,
+            "signal_to_fill_sec": 206.28,
+        },
+    ]
+    confidence_rows = _confidence_sweep_rows(cases)
+    floor_035 = next(row for row in confidence_rows if row["threshold"] == 0.35)
+    assert floor_035["blocked_entries"] == 2
+    assert floor_035["blocked_loss_sl_entries"] == 2
+    assert floor_035["blocked_loss_tp_tag_entries"] == 0
+
+    matrix_rows, variant_rows = _variant_rows(cases)
+    assert any(row["variant_id"] == "combined_safe_short_v2" for row in matrix_rows)
+    combined_v2 = next(row for row in variant_rows if row["variant_id"] == "combined_safe_short_v2")
+    combined_v3 = next(row for row in variant_rows if row["variant_id"] == "combined_safe_short_v3_zero_entry")
+    assert combined_v2["blocked_entries"] == 2
+    assert combined_v2["blocked_loss_sl_entries"] == 2
+    assert combined_v2["allowed_entries"] == 1
+    assert combined_v3["blocked_entries"] == 3
+    assert combined_v3["allowed_entries"] == 0

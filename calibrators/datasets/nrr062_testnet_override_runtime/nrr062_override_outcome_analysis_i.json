@@ -1,0 +1,66 @@
+{
+  "bundle_root": "logs/frozen/nrr062_fresh_capture_20260516_101448",
+  "trade_lifecycle_invalid_json_lines": [
+    {
+      "line": 230729,
+      "head": "hot\": {}}"
+    },
+    {
+      "line": 429732,
+      "head": "cumbent_owner\": null, \"score_snapshot\": {}}"
+    },
+    {
+      "line": 430100,
+      "head": "\"fee_source_confidence\": \"unavailable\", \"optional_pct_floor\": {\"candidate_pct\": 0.05, \"required_edge_usd\": null}, \"requi"
+    },
+    {
+      "line": 430137,
+      "head": ""
+    },
+    {
+      "line": 430997,
+      "head": "hot\": {}}"
+    },
+    {
+      "line": 430998,
+      "head": "wner\": null, \"score_snapshot\": {}}"
+    },
+    {
+      "line": 430999,
+      "head": "pshot\": {}}"
+    },
+    {
+      "line": 431004,
+      "head": "fidence\": \"unavailable\", \"optional_pct_floor\": {\"candidate_pct\": 0.05, \"required_edge_usd\": null}, \"required_edge_usd\": "
+    }
+  ],
+  "override_rids": [
+    "aurora_BTCUSDT_1778845805903",
+    "aurora_BTCUSDT_1778874602993",
+    "aurora_ETHUSDT_1778874602066",
+    "aurora_ETHUSDT_1778875209803",
+    "aurora_XRPUSDT_1778875503239"
+  ],
+  "override_rows_order_log": 5,
+  "submitted_count": 5,
+  "filled_count": 4,
+  "closed_count": 4,
+  "exact_roundtrip_rows": 4,
+  "wins": 4,
+  "losses": 0,
+  "unresolved": 1,
+  "net_pnl_quote": 70.33973751,
+  "gross_pnl_quote": 78.38716,
+  "fees_quote": 8.04742249,
+  "fee_drag_ratio_of_gross": 0.10266250863023997,
+  "close_distribution": {
+    "OVERRIDE_CLOSED_OTHER": 4,
+    "OVERRIDE_ORDER_SUBMITTED_NOT_FILLED": 1
+  },
+  "close_reason_distribution": {
+    "closed_win": 4,
+    "NONE": 1
+  },
+  "sidecar_observed_rids": 0,
+  "verdict": "POSITIVE_BUT_SAMPLE_STILL_SMALL"
+}

@@ -22,7 +22,7 @@ def _ceil_to_minute_close_ts(ts_ms: int) -> int:
 
 
 def _tp_sl_horizon_end(entry: CanonicalEntry) -> int:
-    return max(entry.entry_ts_ms + DEFAULT_REPLAY_HORIZON_MS, entry.actual_close_ts_ms or 0)
+    return entry.entry_ts_ms + DEFAULT_REPLAY_HORIZON_MS
 
 
 def _decimal(value: float | int | str) -> Decimal:
@@ -502,6 +502,7 @@ def materialize_trade_result(
         "symbol": entry.symbol,
         "side": entry.side,
         "strategy_id": entry.strategy_id,
+        "entry_origin": entry.entry_origin,
         "regime_at_entry": entry.regime_at_entry,
         "entry_ts_ms": entry.entry_ts_ms,
         "entry_time_iso": entry.entry_time_iso,

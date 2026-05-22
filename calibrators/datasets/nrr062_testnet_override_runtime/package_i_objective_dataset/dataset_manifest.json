@@ -1,0 +1,68 @@
+{
+  "generated_at_utc": "2026-05-16T10:21:34.257015Z",
+  "builder": "objective_stack_builder",
+  "output_schemas": [
+    "calibration_trade_decision_dataset_v1",
+    "calibration_realized_trade_dataset_v1"
+  ],
+  "data_quality": {
+    "builder_valid": true,
+    "schema_valid": true,
+    "has_rows": true,
+    "rows_emitted": 566,
+    "rows_valid": 566,
+    "rows_invalid": 0,
+    "has_realized_outcomes": true,
+    "exact_roundtrip_count": 32,
+    "eligible_input_rows": 82,
+    "matched_rows": 34,
+    "unmatched_rows": 48,
+    "match_coverage_pct": 41.4634,
+    "exact_roundtrip_coverage_pct": 39.0244,
+    "min_required_rows": 30,
+    "min_required_coverage_pct": 50.0,
+    "coverage_grade": "PARTIAL_DIAGNOSTIC",
+    "coverage_blockers": [
+      "INSUFFICIENT_REALIZED_COVERAGE"
+    ],
+    "diagnostics_only": true,
+    "promotion_grade": false,
+    "promotion_blockers": [
+      "SOURCE_REALIZED_DATASET_NOT_PROMOTION_GRADE",
+      "INSUFFICIENT_REALIZED_COVERAGE",
+      "PARTIAL_EXACT_ROUNDTRIPS"
+    ],
+    "warnings": [
+      "Authority request journal not found: logs\\frozen\\nrr062_fresh_capture_20260516_101448\\data\\authority_request_journal_v1.jsonl",
+      "Authority response journal not found: logs\\frozen\\nrr062_fresh_capture_20260516_101448\\data\\authority_response_journal_v1.jsonl"
+    ],
+    "total_rows": 566,
+    "blockers": [
+      "SOURCE_REALIZED_DATASET_NOT_PROMOTION_GRADE",
+      "INSUFFICIENT_REALIZED_COVERAGE",
+      "PARTIAL_EXACT_ROUNDTRIPS"
+    ],
+    "blocker_count": 3,
+    "warning_count": 2,
+    "decision_rows_count": 532,
+    "decision_rows_valid": 532,
+    "realized_rows_count": 34,
+    "realized_rows_valid": 34,
+    "realized_source_coverage_pct": 41.4634,
+    "source_promotion_grade": false,
+    "source_coverage_grade": "PARTIAL_DIAGNOSTIC",
+    "source_promotion_blockers": [
+      "INSUFFICIENT_REALIZED_COVERAGE",
+      "PARTIAL_EXACT_ROUNDTRIPS"
+    ],
+    "source_authority": "CANONICAL_REALIZED_OUTCOME_DATASET",
+    "authority_requests_count": 0,
+    "authority_responses_count": 0,
+    "decision_ledger_count": 532,
+    "executed_trades_count": 0,
+    "canonical_realized_rows_count": 34,
+    "realized_source": "canonical_realized_outcome_dataset",
+    "realized_source_path": "C:\\Users\\user\\Music\\Phenix\\calibrators\\datasets\\nrr062_testnet_override_runtime\\package_i_realized_dataset\\realized_trades.jsonl",
+    "realized_source_authority": "CANONICAL_REALIZED_OUTCOME_DATASET"
+  }
+}

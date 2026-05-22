@@ -176,6 +176,28 @@ class CmdOpenPayload(BaseModel):
         le=1.0,
         description="Decision-time regime confidence propagated additively to execution.",
     )
+    resolved_min_regime_confidence: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Resolved minimum regime-confidence threshold propagated additively to execution.",
+    )
+    threshold_applied: Optional[bool] = Field(
+        default=None,
+        description="Admission-threshold evaluation flag propagated additively to execution.",
+    )
+    threshold_verdict: Optional[str] = Field(
+        default=None,
+        description="Admission-threshold verdict propagated additively to execution.",
+    )
+    threshold_reason: Optional[str] = Field(
+        default=None,
+        description="Admission-threshold explanation propagated additively to execution.",
+    )
+    regime_confidence_gate_verdict: Optional[str] = Field(
+        default=None,
+        description="Canonical regime-confidence gate verdict propagated additively to execution.",
+    )
     regime_provenance: Optional[RegimeProvenancePayload] = Field(
         default=None,
         description="Structured detector/cache provenance for the propagated regime truth.",
@@ -625,6 +647,11 @@ class OpenFlowFSM:
                         regime_epoch_ref=validated_pld.regime_epoch_ref,
                         regime=validated_pld.regime,
                         regime_confidence=validated_pld.regime_confidence,
+                        resolved_min_regime_confidence=validated_pld.resolved_min_regime_confidence,
+                        threshold_applied=validated_pld.threshold_applied,
+                        threshold_verdict=validated_pld.threshold_verdict,
+                        threshold_reason=validated_pld.threshold_reason,
+                        regime_confidence_gate_verdict=validated_pld.regime_confidence_gate_verdict,
                         regime_provenance=validated_pld.regime_provenance.model_dump()
                         if validated_pld.regime_provenance is not None
                         else None,

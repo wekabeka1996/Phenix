@@ -1,0 +1,52 @@
+{
+  "verdict": "NO_ROLLBACK_SIGNAL_TESTNET_ONLY_CONTINUE_COLLECTION",
+  "trade_lifecycle_invalid_json_lines": [
+    {
+      "line": 230729,
+      "head": "hot\": {}}"
+    },
+    {
+      "line": 429732,
+      "head": "cumbent_owner\": null, \"score_snapshot\": {}}"
+    },
+    {
+      "line": 430100,
+      "head": "\"fee_source_confidence\": \"unavailable\", \"optional_pct_floor\": {\"candidate_pct\": 0.05, \"required_edge_usd\": null}, \"requi"
+    },
+    {
+      "line": 430997,
+      "head": "hot\": {}}"
+    },
+    {
+      "line": 430998,
+      "head": "wner\": null, \"score_snapshot\": {}}"
+    },
+    {
+      "line": 430999,
+      "head": "pshot\": {}}"
+    },
+    {
+      "line": 431004,
+      "head": "fidence\": \"unavailable\", \"optional_pct_floor\": {\"candidate_pct\": 0.05, \"required_edge_usd\": null}, \"required_edge_usd\": "
+    }
+  ],
+  "conditions": {
+    "override_observed": true,
+    "boundary_leak_detected": false,
+    "realized_positive": true,
+    "sample_size_sufficient_for_promotion": false,
+    "objective_rows_preserve_override_token": false,
+    "decision_ledger_preserves_override_token": false,
+    "sidecar_authority_changed": false,
+    "production_scope_changed": false
+  },
+  "recommended_action": "Keep the Package G override unchanged in hybrid_live_data_testnet_exec only; continue runtime observation; do not promote to production and do not tune thresholds.",
+  "rationale": [
+    "Observed override-applied order_log rows: 1",
+    "Observed realized override rows: 1",
+    "Observed net quote across realized override rows: 22.6742616",
+    "Boundary leakage rows observed in runtime window: 0",
+    "Skipped malformed trade_lifecycle lines: 7",
+    "Sample remains too small for calibration or promotion."
+  ]
+}

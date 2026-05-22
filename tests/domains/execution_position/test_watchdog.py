@@ -1,10 +1,26 @@
+import json
 import pytest
 import asyncio
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, AsyncMock, patch
 from decimal import Decimal
 
-from apps.reference.domains.execution_position.adapters.watchdog import OrderTimeoutWatchdog, OrderTimeoutType, OrderDeadline
+import jsonschema
+
+from apps.reference.domains.execution_position.adapters.watchdog import (
+    WATCHDOG_ORDER_STATE_CHANGED_WAL_WHY,
+    OrderTimeoutWatchdog,
+    OrderTimeoutType,
+    OrderDeadline,
+)
+from apps.reference.telemetry.shadow_journal import (
+    DEFAULT_CRITICAL_EVENTS,
+    attach_shadow_journal,
+)
 from apps.reference.core.time import get_clock
+from vfoundation.core.fsm_core import FSMCore
+from vfoundation.dr import wal
 
 
 @pytest.fixture
@@ -234,6 +250,266 @@ async def test_poll_order_statuses_cancelled(watchdog):
 
         assert "o2" not in watchdog.acked_orders
         assert watchdog._poll_meta["o2"]["terminal"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "terminal_state_kind", "test_id"),
+    [
+        ("CANCELED", "CANCELED", "cancelled"),
+        ("REJECTED", "REJECTED", "rejected"),
+        ("EXPIRED", "EXPIRED", "expired"),
+    ],
+    ids=lambda item: item if isinstance(item, str) else None,
+)
+async def test_poll_order_statuses_order_state_changed_writes_wal_before_emit(
+    watchdog,
+    status,
+    terminal_state_kind,
+    test_id,
+):
+    del test_id
+    get_order_fn = AsyncMock(
+        return_value={"status": status, "clientOrderId": "c1"})
+    sequence = []
+    wal_records = []
+
+    async def emit_fn(event_name, payload):
+        sequence.append(("emit", event_name, payload))
+
+    def wal_append(record):
+        sequence.append(("wal", record))
+        wal_records.append(record)
+        return "hash-1"
+
+    watchdog.set_hooks(get_order_fn, emit_fn)
+    watchdog.acked_orders["o2"] = OrderDeadline(
+        "o2",
+        "c1",
+        "BTC",
+        30000,
+        OrderTimeoutType.FILL_TIMEOUT,
+        rid="rid-o2",
+    )
+
+    with patch("apps.reference.domains.execution_position.adapters.watchdog.get_clock") as mock_clock, patch(
+        "vfoundation.dr.wal.append", side_effect=wal_append
+    ):
+        mock_clock.return_value.now_ms.return_value = 10000
+
+        await watchdog._poll_order_statuses()
+
+    assert [step[0] for step in sequence] == ["wal", "emit"]
+    assert len(wal_records) == 1
+    wal_record = wal_records[0]
+    assert wal_record["op"] == "EVT"
+    assert wal_record["verb"] == "ORDER_STATE_CHANGED"
+    assert wal_record["src"] == "execution_position"
+    assert wal_record["dst"] == "monitoring"
+    assert wal_record["rid"] == "rid-o2"
+    assert wal_record["why"] == WATCHDOG_ORDER_STATE_CHANGED_WAL_WHY
+    assert wal_record["pld"]["status"] == status
+    assert wal_record["pld"]["symbol"] == "BTC"
+    assert wal_record["pld"]["order_id"] == "o2"
+    assert wal_record["pld"]["client_order_id"] == "c1"
+    assert wal_record["pld"]["terminal_state_kind"] == terminal_state_kind
+
+    emit_step = sequence[1]
+    assert emit_step[1] == "EVT:ORDER_STATE_CHANGED"
+    assert emit_step[2] == wal_record["pld"]
+    assert "o2" not in watchdog.acked_orders
+    assert watchdog._poll_meta["o2"]["terminal"] is True
+
+
+@pytest.mark.asyncio
+async def test_poll_order_statuses_order_state_changed_controlled_runtime_induction_writes_real_wal_and_shadow(
+    watchdog,
+    tmp_path,
+):
+    bus = FSMCore()
+    shadow_path = tmp_path / "shadow_watchdog_controlled.jsonl"
+    attach_shadow_journal(
+        bus,
+        SimpleNamespace(
+            observability=SimpleNamespace(
+                shadow_journal=SimpleNamespace(
+                    enabled=True,
+                    path=str(shadow_path),
+                    schema_version="1.0.0",
+                    instrumentation_version="1.0.0",
+                    critical_events=list(DEFAULT_CRITICAL_EVENTS),
+                )
+            )
+        ),
+    )
+
+    status_specs = [
+        ("o-cancel", "c-cancel", "rid-cancel", "CANCELED", 10000),
+        ("o-reject", "c-reject", "rid-reject", "REJECTED", 11000),
+        ("o-expire", "c-expire", "rid-expire", "EXPIRED", 12000),
+    ]
+    rid_by_order_id = {order_id: rid for order_id,
+                       _, rid, _, _ in status_specs}
+    status_by_order_id = {
+        order_id: {"status": status, "clientOrderId": client_order_id}
+        for order_id, client_order_id, _, status, _ in status_specs
+    }
+    emitted = []
+
+    async def emit_fn(event_name, payload):
+        emitted.append((event_name, payload))
+        bus.emit(
+            event_name,
+            payload,
+            why=WATCHDOG_ORDER_STATE_CHANGED_WAL_WHY,
+            rid=rid_by_order_id[payload["order_id"]],
+        )
+
+    watchdog.set_hooks(
+        AsyncMock(side_effect=lambda symbol,
+                  order_id: status_by_order_id[order_id]),
+        emit_fn,
+    )
+
+    schema = json.loads(
+        Path(
+            "apps/reference/domains/execution_position/schemas/order_state_changed_v1.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    for order_id, client_order_id, rid, _, now_ms in status_specs:
+        watchdog.acked_orders[order_id] = OrderDeadline(
+            order_id,
+            client_order_id,
+            "BTCUSDT",
+            30000,
+            OrderTimeoutType.FILL_TIMEOUT,
+            rid=rid,
+        )
+
+        with patch("apps.reference.domains.execution_position.adapters.watchdog.get_clock") as mock_clock:
+            mock_clock.return_value.now_ms.return_value = now_ms
+            await watchdog._poll_order_statuses()
+
+        assert order_id not in watchdog.acked_orders
+        assert watchdog._poll_meta[order_id]["terminal"] is True
+
+    wal_records = wal.read_all()
+    assert len(wal_records) == 3
+    assert wal.verify_chain(wal_records) is True
+    assert wal_records[1]["_prev"] == wal_records[0]["_hash"]
+    assert wal_records[2]["_prev"] == wal_records[1]["_hash"]
+
+    seen_statuses = set()
+    for record in wal_records:
+        payload = record["pld"]
+        seen_statuses.add(payload["status"])
+
+        assert record["op"] == "EVT"
+        assert record["verb"] == "ORDER_STATE_CHANGED"
+        assert record["src"] == "execution_position"
+        assert record["dst"] == "monitoring"
+        assert record["why"] == WATCHDOG_ORDER_STATE_CHANGED_WAL_WHY
+        assert record["rid"] == rid_by_order_id[payload["order_id"]]
+        assert payload["symbol"] == "BTCUSDT"
+        assert payload["status"] in {"CANCELED", "REJECTED", "EXPIRED"}
+        assert payload["order_id"]
+        assert payload["client_order_id"]
+        assert payload["canonical_identity_key"]
+        assert payload["terminal_non_fill"] is True
+        assert payload["compatibility_aliases_retained"] is True
+        jsonschema.validate(payload, schema)
+
+        assert record["_writer_pid"]
+        assert record["_writer_process_name"]
+        assert record["_writer_host"]
+        assert record["_writer_lock_mode"]
+        assert record["_wal_writer_version"] == "P11_B4_ATTRIBUTION_V1"
+
+    assert seen_statuses == {"CANCELED", "REJECTED", "EXPIRED"}
+    assert [event_name for event_name, _ in emitted] == [
+        "EVT:ORDER_STATE_CHANGED",
+        "EVT:ORDER_STATE_CHANGED",
+        "EVT:ORDER_STATE_CHANGED",
+    ]
+
+    with shadow_path.open("r", encoding="utf-8") as fh:
+        shadow_records = [json.loads(line) for line in fh if line.strip()]
+
+    shadow_events = [
+        record
+        for record in shadow_records
+        if record.get("event_name") == "EVT:ORDER_STATE_CHANGED"
+    ]
+    assert len(shadow_events) == 3
+
+    for wal_record in wal_records:
+        payload = wal_record["pld"]
+        matches = [
+            shadow_record
+            for shadow_record in shadow_events
+            if shadow_record.get("rid") == wal_record["rid"]
+            and shadow_record.get("source_component") == "execution_position.watchdog"
+            and shadow_record.get("event_origin_type") == "watchdog"
+            and (shadow_record.get("payload_fragment") or {}).get("canonical_identity_key")
+            == payload["canonical_identity_key"]
+        ]
+        assert len(matches) == 1
+        fragment = matches[0]["payload_fragment"]
+        assert fragment["status"] == payload["status"]
+        assert fragment["terminal_non_fill"] is True
+        assert fragment["terminal_state_kind"] == payload["terminal_state_kind"]
+
+
+@pytest.mark.asyncio
+async def test_poll_order_statuses_order_state_changed_logs_wal_append_failure_and_still_emits(
+    watchdog,
+    caplog,
+):
+    get_order_fn = AsyncMock(
+        return_value={"status": "CANCELED", "clientOrderId": "c1"})
+    emit_fn = AsyncMock()
+    watchdog.set_hooks(get_order_fn, emit_fn)
+    watchdog.acked_orders["o2"] = OrderDeadline(
+        "o2",
+        "c1",
+        "BTC",
+        30000,
+        OrderTimeoutType.FILL_TIMEOUT,
+        rid="rid-o2",
+    )
+
+    with patch("apps.reference.domains.execution_position.adapters.watchdog.get_clock") as mock_clock, patch(
+        "vfoundation.dr.wal.append", return_value=None
+    ):
+        mock_clock.return_value.now_ms.return_value = 10000
+        with caplog.at_level("WARNING"):
+            await watchdog._poll_order_statuses()
+
+    emit_fn.assert_called_once_with(
+        "EVT:ORDER_STATE_CHANGED",
+        {
+            "orderId": "o2",
+            "symbol": "BTC",
+            "status": "CANCELED",
+            "client_order_id": "c1",
+            "rid": None,
+            "clientOrderId": "c1",
+            "order_id": "o2",
+            "event_ts_ms": 10000,
+            "ts_ms": 10000,
+            "terminal_non_fill": True,
+            "terminal_state_kind": "CANCELED",
+            "identity_quality": "order_identity_exact",
+            "canonical_identity_key": "evt:order_state_changed:symbol=BTC:order_id=o2:client_order_id=c1:terminal_state=CANCELED",
+            "compatibility_aliases_retained": True,
+        },
+    )
+    assert "WATCHDOG_ORDER_STATE_CHANGED_WAL_APPEND_FAILED" in caplog.text
+    assert "symbol=BTC" in caplog.text
+    assert "order_id=o2" in caplog.text
+    assert "status=CANCELED" in caplog.text
+    assert "rid=rid-o2" in caplog.text
 
 
 @pytest.mark.asyncio

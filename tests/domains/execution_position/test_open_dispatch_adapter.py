@@ -70,6 +70,11 @@ def _cmd_open_message(rid: str = "RID-OPEN-DISPATCH") -> Message:
             "idempotent_key": f"KEY-{rid}",
             "regime": "TREND_UP",
             "regime_confidence": 0.87,
+            "resolved_min_regime_confidence": 0.45,
+            "threshold_applied": True,
+            "threshold_verdict": "PASS",
+            "threshold_reason": "regime_confidence=0.87 within band min=0.45",
+            "regime_confidence_gate_verdict": "ALLOW",
             "regime_provenance": {
                 "source_kind": "detector_cache",
                 "detector_event": None,
@@ -172,6 +177,11 @@ def test_typed_open_dispatch_payload_builds_bounded_dec_open_surface() -> None:
         idempotent_key="KEY-UNIT-1",
         regime="TREND_UP",
         regime_confidence=0.87,
+        resolved_min_regime_confidence=0.45,
+        threshold_applied=True,
+        threshold_verdict="PASS",
+        threshold_reason="regime_confidence=0.87 within band min=0.45",
+        regime_confidence_gate_verdict="ALLOW",
         regime_epoch_ref=None,
         regime_provenance={"source_kind": "detector_cache",
                            "detector_event": None, "cache_snapshot": None},
@@ -180,7 +190,13 @@ def test_typed_open_dispatch_payload_builds_bounded_dec_open_surface() -> None:
     assert payload.symbol == "BTCUSDT"
     assert payload.qty == "0.001"
     assert payload.price == "10000.01"
-    assert payload.to_dec_open_payload()["order_type"] == "LIMIT"
+    dec_open_payload = payload.to_dec_open_payload()
+    assert dec_open_payload["order_type"] == "LIMIT"
+    assert dec_open_payload["resolved_min_regime_confidence"] == 0.45
+    assert dec_open_payload["threshold_applied"] is True
+    assert dec_open_payload["threshold_verdict"] == "PASS"
+    assert dec_open_payload["threshold_reason"] == "regime_confidence=0.87 within band min=0.45"
+    assert dec_open_payload["regime_confidence_gate_verdict"] == "ALLOW"
 
 
 def test_typed_open_dispatch_rejects_inconsistent_limit_bridge_fail_closed() -> None:
@@ -199,6 +215,11 @@ def test_typed_open_dispatch_rejects_inconsistent_limit_bridge_fail_closed() -> 
             idempotent_key="KEY-UNIT-2",
             regime=None,
             regime_confidence=None,
+            resolved_min_regime_confidence=None,
+            threshold_applied=None,
+            threshold_verdict=None,
+            threshold_reason=None,
+            regime_confidence_gate_verdict=None,
             regime_epoch_ref=None,
             regime_provenance=None,
         )
@@ -220,6 +241,11 @@ def test_live_cmd_open_hot_path_is_runtime_governed_by_typed_open_dispatch_adapt
     assert wrapped_dispatch.call_count == 1
     assert result is not None
     assert result.op == "DEC" and result.verb == "OPEN"
+    assert result.pld["resolved_min_regime_confidence"] == 0.45
+    assert result.pld["threshold_applied"] is True
+    assert result.pld["threshold_verdict"] == "PASS"
+    assert result.pld["threshold_reason"] == "regime_confidence=0.87 within band min=0.45"
+    assert result.pld["regime_confidence_gate_verdict"] == "ALLOW"
     assert any(
         isinstance(ref, str)
         and ref.startswith("obs://execution_position/open_dispatch?")

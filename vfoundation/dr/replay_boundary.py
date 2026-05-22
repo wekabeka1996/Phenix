@@ -64,19 +64,22 @@ EXECUTION_BOUNDARY_CLASSIFICATIONS: tuple[ReplayBoundaryVerb, ...] = (
     ReplayBoundaryVerb(
         event_name="EVT:ORDER_STATE_CHANGED",
         required_for_restore_replay=False,
-        authority=BoundaryAuthority.PARTIAL_REPLAY_CANDIDATE,
-        replay_role="terminal_non_fill_outcome_pending_uniform_wal_ownership",
+        authority=BoundaryAuthority.REPLAY,
+        replay_role="terminal_non_fill_outcome_uniform_wal_ownership",
         required_join_keys=(
             "symbol",
             "event_ts_ms",
-            "order_id_or_client_order_id_or_rid",
             "status",
             "canonical_identity_key",
+            "order_id_or_client_order_id_or_rid",
         ),
+        w5_eligible=True,
         notes=(
-            "Audited timeout/idempotent-cancel and WS terminal paths write canonical WAL, "
-            "but watchdog fallback has no local WAL ownership proof. Treat as partial until "
-            "producer coverage is uniform or the replay subset is narrowed to proven terminal paths."
+            "Websocket terminal non-fill, timeout/idempotent-timeout cancellation, and watchdog "
+            "REST fallback all have local canonical WAL ownership. Watchdog fallback additionally "
+            "has controlled runtime induction proof for CANCELED, REJECTED, and EXPIRED. This "
+            "promotion is replay-authoritative only for report-only W5 bounded replay and does "
+            "not expand restore authority."
         ),
     ),
     ReplayBoundaryVerb(

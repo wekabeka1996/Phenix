@@ -239,6 +239,7 @@ def reconstruct_canonical_entries(
         "regime_at_entry",
         "regime_confidence_at_entry",
         "regime_source",
+        "entry_origin",
         "actual_close_ts_ms",
         "actual_close_price",
         "actual_outcome_status",

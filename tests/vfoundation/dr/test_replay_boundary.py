@@ -5,7 +5,6 @@ from vfoundation.dr.replay_boundary import (
     FORENSIC_ONLY_LOGS,
     LEGACY_OR_UNPROVEN_EVENTS,
     OBSERVABILITY_ONLY_EVENTS,
-    PARTIAL_REPLAY_CANDIDATE_EVENTS,
     RESTORE_AUTHORITATIVE_ARTIFACTS,
     RESTORE_AUTHORITATIVE_SCOPES,
     W5_CANDIDATE_REPLAY_EVENT_NAMES,
@@ -35,13 +34,13 @@ def test_w5_candidate_subset_is_narrow_and_honest() -> None:
     assert W5_CANDIDATE_REPLAY_EVENT_NAMES == {
         "EVT:ORDER_PLACED",
         "EVT:ORDER_REJECTED",
+        "EVT:ORDER_STATE_CHANGED",
         "EVT:TRADE_EXECUTED",
         "EVT:PENDING_BRACKETS_STORED",
         "EVT:PENDING_BRACKETS_CLEARED",
     }
     assert "EVT:ORDER_FILL" not in W5_CANDIDATE_REPLAY_EVENT_NAMES
     assert "EVT:EXECUTION_CLOSE_RECONCILED" not in W5_CANDIDATE_REPLAY_EVENT_NAMES
-    assert "EVT:ORDER_STATE_CHANGED" not in W5_CANDIDATE_REPLAY_EVENT_NAMES
 
 
 def test_order_fill_is_legacy_or_unproven_not_replay_authoritative() -> None:
@@ -69,17 +68,28 @@ def test_execution_close_reconciled_is_observability_only_not_replay_authoritati
         "EVT:EXECUTION_CLOSE_RECONCILED") is False
 
 
-def test_order_state_changed_remains_partial_candidate_until_wal_ownership_is_uniform() -> None:
+def test_order_state_changed_is_replay_authoritative_for_report_only_w5_after_promotion() -> None:
     spec = get_boundary_classification_spec("EVT:ORDER_STATE_CHANGED")
 
     assert spec is not None
-    assert spec.authority == BoundaryAuthority.PARTIAL_REPLAY_CANDIDATE
+    assert spec.authority == BoundaryAuthority.REPLAY
     assert spec.required_for_restore_replay is False
-    assert spec.w5_eligible is False
-    assert "EVT:ORDER_STATE_CHANGED" in PARTIAL_REPLAY_CANDIDATE_EVENTS
-    assert "watchdog fallback" in spec.notes.lower()
+    assert spec.w5_eligible is True
+    assert spec.replay_role == "terminal_non_fill_outcome_uniform_wal_ownership"
+    assert spec.required_join_keys == (
+        "symbol",
+        "event_ts_ms",
+        "status",
+        "canonical_identity_key",
+        "order_id_or_client_order_id_or_rid",
+    )
+    assert "websocket terminal non-fill" in spec.notes.lower()
+    assert "watchdog rest fallback" in spec.notes.lower()
+    assert "controlled runtime induction proof" in spec.notes.lower()
+    assert "report-only w5 bounded replay" in spec.notes.lower()
+    assert "restore authority" in spec.notes.lower()
     assert is_selected_replay_boundary_event(
-        "EVT:ORDER_STATE_CHANGED") is False
+        "EVT:ORDER_STATE_CHANGED") is True
 
 
 def test_trade_executed_replay_authority_is_conditioned_on_position_tracking_wal_seam() -> None:
@@ -95,7 +105,9 @@ def test_trade_executed_replay_authority_is_conditioned_on_position_tracking_wal
 
 def test_linked_bracket_exact_lineage_remains_restore_authoritative_not_replay_authoritative() -> None:
     assert "linked_bracket_exact_lineage" in RESTORE_AUTHORITATIVE_SCOPES
-    assert "ops/restore/execution_position_restore_envelope_v1.json" in RESTORE_AUTHORITATIVE_ARTIFACTS
+    assert RESTORE_AUTHORITATIVE_ARTIFACTS == {
+        "ops/restore/execution_position_restore_envelope_v1.json"
+    }
     assert "linked_bracket_exact_lineage" not in W5_CANDIDATE_REPLAY_EVENT_NAMES
 
 

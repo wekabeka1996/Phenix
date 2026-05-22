@@ -121,13 +121,21 @@ class StrategyGateway:
         return v
 
     def _reject(self, *, symbol, strategy_id, side, rid,
-                reason_code, reason, context, why_chain, details=None):
+                reason_code, reason, context, why_chain, details=None,
+                signal_payload: dict[str, Any] | None = None):
+        enriched_details = dict(details) if isinstance(details, dict) else {}
+        if isinstance(signal_payload, dict):
+            scoring = signal_payload.get("scoring")
+            anti_peak = scoring.get("anti_peak_observability") if isinstance(
+                scoring, dict) else None
+            if isinstance(anti_peak, dict) and "anti_peak_observability" not in enriched_details:
+                enriched_details["anti_peak_observability"] = dict(anti_peak)
         self._dm._emit_trade_intent_rejected(
             symbol=symbol, strategy_id=str(strategy_id), side=str(side),
             rid=str(rid), reason_code=reason_code, reason=reason,
             context=context,
             why_chain=why_chain if isinstance(why_chain, list) else [],
-            details=details)
+            details=(enriched_details or details))
         self._dm._record_blocked_intent(symbol)
 
     def _defer(self, *, symbol, reason, retry_key, next_ts, pld,
@@ -167,7 +175,15 @@ class StrategyGateway:
     def _block(self, symbol: str) -> None:
         self._dm._record_blocked_intent(symbol)
 
-    def _emit_gate_chain_trace(self, symbol: str, strategy_id: str, rid: str, ts_ms: int, chain_result: Any) -> None:
+    def _emit_gate_chain_trace(
+        self,
+        symbol: str,
+        strategy_id: str,
+        rid: str,
+        ts_ms: int,
+        chain_result: Any,
+        signal_payload: dict[str, Any] | None = None,
+    ) -> None:
         try:
             gates = []
             for entry in chain_result.trace:
@@ -189,6 +205,12 @@ class StrategyGateway:
                 "total_elapsed_ms": chain_result.total_elapsed_ms,
                 "gates": gates,
             }
+            if isinstance(signal_payload, dict):
+                scoring = signal_payload.get("scoring")
+                anti_peak = scoring.get("anti_peak_observability") if isinstance(
+                    scoring, dict) else None
+                if isinstance(anti_peak, dict):
+                    payload["anti_peak_observability"] = dict(anti_peak)
             self._dm.fsm.emit(
                 "EVT:GATE_CHAIN_TRACE",
                 payload,
@@ -1596,7 +1618,8 @@ class StrategyGateway:
                 strategy_id=strategy_id_s,
                 rid=rid,
                 ts_ms=pld["ts_ms"],
-                chain_result=chain_result
+                chain_result=chain_result,
+                signal_payload=pld,
             )
 
             if not chain_result.passed:
@@ -1619,6 +1642,8 @@ class StrategyGateway:
             qos_enabled = gate_ctx.accumulated.get("_qos_enabled", False)
             latest_risk = gate_ctx.accumulated.get(
                 "latest_risk", dm.symbol_states[symbol].get("risk") or {})
+            pyramiding_add_info = gate_ctx.accumulated.get(
+                "pyramiding_add_info")
             authority_context = None
 
             if isinstance(why_chain, list):
@@ -1834,6 +1859,14 @@ class StrategyGateway:
                     strategy_trace_payload["anti_peak_observability"] = dict(
                         _anti_peak_obs)
 
+            # Attach pyramiding_add_info to strategy_trace if present
+            if pyramiding_add_info and isinstance(strategy_trace_payload, dict):
+                strategy_trace_payload["pyramiding_add_info"] = dict(
+                    pyramiding_add_info)
+            elif pyramiding_add_info and strategy_trace_payload is None:
+                strategy_trace_payload = {
+                    "pyramiding_add_info": dict(pyramiding_add_info)}
+
             # Dispatch through facade (safety gates already ran in chain)
             dm._propose_trade_intent(
                 symbol=symbol, side=side,
@@ -1922,6 +1955,7 @@ class StrategyGateway:
                 context=result.context,
                 why_chain=effective_why,
                 details=result.details,
+                signal_payload=pld,
             )
             return
 

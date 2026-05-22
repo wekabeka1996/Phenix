@@ -208,6 +208,18 @@ class AuroraScoringHelpersMixin:
                 f"[{symbol}] GATE_ANTI_FLAT_SIGMA: Blocking entry "
                 f"(motion={motion_norm_sigma:.3f} < threshold={self.anti_flat_sigma})"
             )
+            anti_peak_observability = self._build_anti_peak_observability(
+                symbol=symbol,
+                features=features,
+                result=result,
+                state=state,
+                pillar_sum=float((result.psi_vector or {}).get(
+                    "s_linear", features.get("pillar_sum", 0.0)) or 0.0),
+                raw_exposure=float((result.psi_vector or {}).get(
+                    "raw_exposure", 0.0) or 0.0),
+                price_motion_provenance=price_motion_provenance,
+                consumed_by_gate=True,
+            )
             self._emit_strategy_blocked(
                 symbol=symbol,
                 reason_code="GATE_ANTI_FLAT_SIGMA",
@@ -218,6 +230,7 @@ class AuroraScoringHelpersMixin:
                     "threshold": self.anti_flat_sigma,
                     "window_sec": self.motion_window_sec,
                     "price_motion": price_motion_payload,
+                    "anti_peak_observability": anti_peak_observability,
                 },
                 why_chain=["VOL_GATE", "ANTI_FLAT",
                            f"motion:{motion_norm_sigma:.3f}"],
@@ -230,6 +243,18 @@ class AuroraScoringHelpersMixin:
                 f"[{symbol}] GATE_ANTI_FOMO_SIGMA: Blocking entry "
                 f"(motion={motion_norm_sigma:.3f} > threshold={self.anti_fomo_sigma})"
             )
+            anti_peak_observability = self._build_anti_peak_observability(
+                symbol=symbol,
+                features=features,
+                result=result,
+                state=state,
+                pillar_sum=float((result.psi_vector or {}).get(
+                    "s_linear", features.get("pillar_sum", 0.0)) or 0.0),
+                raw_exposure=float((result.psi_vector or {}).get(
+                    "raw_exposure", 0.0) or 0.0),
+                price_motion_provenance=price_motion_provenance,
+                consumed_by_gate=True,
+            )
             self._emit_strategy_blocked(
                 symbol=symbol,
                 reason_code="GATE_ANTI_FOMO_SIGMA",
@@ -240,6 +265,7 @@ class AuroraScoringHelpersMixin:
                     "threshold": self.anti_fomo_sigma,
                     "window_sec": self.motion_window_sec,
                     "price_motion": price_motion_payload,
+                    "anti_peak_observability": anti_peak_observability,
                 },
                 why_chain=["VOL_GATE", "ANTI_FOMO",
                            f"motion:{motion_norm_sigma:.3f}"],

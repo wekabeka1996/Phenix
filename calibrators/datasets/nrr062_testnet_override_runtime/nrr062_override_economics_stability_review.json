@@ -1,0 +1,59 @@
+{
+  "package_f_replay": {
+    "candidate_rows": 79,
+    "tp": 25,
+    "sl": 2,
+    "timeout": 52,
+    "estimated_net_pnl_quote": 825.2672997047,
+    "profit_factor": 4.92434390438585
+  },
+  "package_h_runtime": {
+    "override_count": 1,
+    "resolved_closes": 1,
+    "wins": 1,
+    "losses": 0,
+    "net_pnl_quote": 22.6742616
+  },
+  "package_i_runtime": {
+    "override_count": 5,
+    "resolved_closes": 4,
+    "wins": 4,
+    "losses": 0,
+    "net_pnl_quote": 70.33973751
+  },
+  "package_j_freeze_runtime": {
+    "override_count": 26,
+    "resolved_closes": 1,
+    "wins": 0,
+    "losses": 1,
+    "net_pnl_quote": -13.08771079
+  },
+  "package_j_latest_known": {
+    "resolved_closes": 2,
+    "wins": 0,
+    "losses": 2,
+    "net_pnl_quote": -41.672209859999995
+  },
+  "combined_i_plus_j_freeze": {
+    "override_count": 31,
+    "resolved_closes": 5,
+    "wins": 4,
+    "losses": 1,
+    "net_pnl_quote": 57.25202672
+  },
+  "combined_i_plus_j_latest_known": {
+    "override_count": 31,
+    "resolved_closes": 6,
+    "wins": 4,
+    "losses": 2,
+    "net_pnl_quote": 28.66752765000001
+  },
+  "combined_h_i_j_latest_known": {
+    "override_count": 32,
+    "resolved_closes": 7,
+    "wins": 5,
+    "losses": 2,
+    "net_pnl_quote": 51.34178925000002
+  },
+  "verdict": "RUNTIME_WEAKENED_BUT_STILL_NET_POSITIVE"
+}

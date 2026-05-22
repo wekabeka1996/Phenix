@@ -13,6 +13,12 @@ from .exit_policies import (
     materialize_trade_result,
 )
 from .models import CanonicalEntry, ScenarioRuntime
+from .pyramiding import PYRAMIDING_SCENARIO_ID, build_pyramiding_enabled_entry_set
+from .quadratic_regime_forensics import QUADRATIC_REGIME_SCENARIO_ID
+from .regime_confidence import (
+    REGIME_CONFIDENCE_SCENARIO_ID,
+    build_regime_confidence_disabled_entry_set,
+)
 from .reconstruct import reconstruct_canonical_entries
 from .reporting import write_json, write_scenario_artifacts
 from .scenario_registry import build_scenario_registry
@@ -46,11 +52,12 @@ def _run_scenario(
     baseline_summary: dict | None,
 ) -> dict:
     scenario = registry[scenario_id]
+    scenario_entries = scenario.entry_provider(entries, runtime) if scenario.entry_provider else entries
     blocked_rows: list[dict] = []
     trade_rows: list[dict] = []
     request_join_audit_rows: list[dict] = []
 
-    for entry in entries:
+    for entry in scenario_entries:
         decision = scenario.entry_filter(entry, runtime)
         if not decision.allowed:
             blocked_rows.append(decision.to_row(scenario_id, entry))
@@ -62,11 +69,47 @@ def _run_scenario(
         trade_rows.append(materialize_trade_result(scenario_id, entry, runtime, exit_event, extras))
 
     assumptions = [
-        "Replay horizon is max(actual_close_ts_ms, entry_ts_ms + 24h).",
+        "Replay horizon for TP/SL replay is entry_ts_ms + 24h and is not truncated by actual close timing.",
         "TP/SL geometry is reconstructed from current Aurora pct_mult config and runtime guardrails.",
         "Missing gate surfaces are treated fail-closed for NRR entry-filter scenarios.",
     ]
     unknowns = []
+    if scenario_id == QUADRATIC_REGIME_SCENARIO_ID:
+        assumptions = [
+            "Primary scenario metrics use actual close truth from order_log_v1.jsonl rather than a new 24h TP/SL replay.",
+            "Recorder 300s/900s bars are used as retained bar-level microstructure proxies for the quadratic late-entry audit.",
+            "Variant rows are counterfactual filters over retained traces; they do not force downstream runtime execution success.",
+        ]
+        unknowns = [
+            "No WAL directory is available in this workspace slice for a deeper per-entry write-ahead-log join.",
+            "TA feature alignment remains limited to retained code-path evidence because the current runtime slice does not expose authoritative TA events for these entries.",
+        ]
+    if scenario_id == PYRAMIDING_SCENARIO_ID:
+        assumptions.extend(
+            [
+                "Synthetic pyramiding entries are sourced from ANTI_PYRAMIDING_BLOCK rejects in shadow_critical_event_journal_v1.jsonl.",
+                "Synthetic add-entry pricing uses the next 1m candle open after the reject timestamp.",
+            ]
+        )
+        unknowns.extend(
+            [
+                "Rejected same-side signals do not retain authoritative qty or fill price; add-entry pricing is proxy-based and qty remains non-authoritative.",
+                "The scenario removes the anti-pyramiding block only; it does not re-simulate downstream exposure or notional-cap rejections that could have happened after the gate.",
+            ]
+        )
+    if scenario_id == REGIME_CONFIDENCE_SCENARIO_ID:
+        assumptions.extend(
+            [
+                "Synthetic confidence-disabled entries are sourced only from regime_confidence_audit_v1.jsonl rows where regime_confidence_gate_verdict=DENY and deny_reason is NRR-026 or NRR-063.",
+                "Counterfactual entries keep the retained regime and side, but use next-candle-open proxy pricing and non-authoritative qty=0.",
+            ]
+        )
+        unknowns.extend(
+            [
+                "The scenario removes only the regime-confidence gate; it does not force-allow LOW_VOL cost-floor blocks or other downstream vetoes.",
+                "Denied decisions do not retain authoritative fill price or executed quantity, so ROI attribution for synthetic entries is proxy-based.",
+            ]
+        )
     if scenario_id.startswith("nrr") and not any(
         row.get("support_quality") == "runtime_parity" for row in blocked_rows
     ):
@@ -108,12 +151,36 @@ def run_backtest(
         runtime_root,
         report_root,
     )
+    config = load_backtest_config(workspace_root)
+    provisional_runtime = ScenarioRuntime(
+        workspace_root=workspace_root,
+        runtime_root=runtime_root,
+        report_root=report_root,
+        config=config,
+        candles_by_symbol={},
+        strict=strict,
+    )
+    coverage_entries = canonical_entries
+    if PYRAMIDING_SCENARIO_ID in selected:
+        coverage_entries = build_pyramiding_enabled_entry_set(
+            canonical_entries,
+            provisional_runtime,
+            materialize_price_proxy=False,
+            emit_artifacts=False,
+        )
+    if REGIME_CONFIDENCE_SCENARIO_ID in selected:
+        coverage_entries = build_regime_confidence_disabled_entry_set(
+            coverage_entries,
+            provisional_runtime,
+            materialize_price_proxy=False,
+            emit_artifacts=False,
+        )
 
     coverage_result = None
     try:
         coverage_result = preflight_1m_coverage(
             workspace_root,
-            canonical_entries,
+            coverage_entries,
             report_root,
             recorder_roots,
             strict=strict,
@@ -144,7 +211,6 @@ def run_backtest(
         return manifest
 
     candles_by_symbol = load_1m_candles(workspace_root, recorder_roots)
-    config = load_backtest_config(workspace_root)
     runtime = ScenarioRuntime(
         workspace_root=workspace_root,
         runtime_root=runtime_root,
@@ -157,6 +223,20 @@ def run_backtest(
         sidecar_requests = load_sidecar_requests(runtime_root)
         runtime.sidecar_requests = sidecar_requests
         runtime.sidecar_request_index = build_sidecar_request_index(sidecar_requests)
+    if PYRAMIDING_SCENARIO_ID in selected:
+        runtime.synthetic_entry_sets[PYRAMIDING_SCENARIO_ID] = build_pyramiding_enabled_entry_set(
+            canonical_entries,
+            runtime,
+            materialize_price_proxy=True,
+            emit_artifacts=True,
+        )
+    if REGIME_CONFIDENCE_SCENARIO_ID in selected:
+        runtime.synthetic_entry_sets[REGIME_CONFIDENCE_SCENARIO_ID] = build_regime_confidence_disabled_entry_set(
+            canonical_entries,
+            runtime,
+            materialize_price_proxy=True,
+            emit_artifacts=True,
+        )
 
     scenario_summaries: dict[str, dict] = {}
     baseline_summary = None

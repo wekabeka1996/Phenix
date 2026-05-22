@@ -9,6 +9,13 @@ from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
+from sema_atom_reference_price_resolver import (
+    resolve_reference_price,
+    TRAINABILITY_TRAINABLE,
+    TRAINABILITY_DIAGNOSTICS_ONLY,
+    TRAINABILITY_INVALID,
+    TRAINABILITY_MISSING,
+)
 from SEMA_ATOM_POC_02_REAL_LOG_ADAPTER import (
     CONFIDENCE_BUCKETS,
     DEFAULT_TF_SEC,
@@ -464,6 +471,7 @@ class RejectedDecisionCollector:
     def __init__(self, rows: Sequence[dict[str, Any]]) -> None:
         self.rows = list(rows)
         self.incomplete_buckets: Counter[str] = Counter()
+        self._source_level_counts: Counter[str] = Counter()
 
     def collect(self) -> tuple[list[RawContract], dict[str, Any]]:
         contracts: list[RawContract] = []
@@ -483,7 +491,6 @@ class RejectedDecisionCollector:
                 continue
 
             metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
-            low_vol_cost_floor = metadata.get("low_vol_cost_floor") if isinstance(metadata.get("low_vol_cost_floor"), dict) else {}
             regime_confidence = _safe_float(row.get("regime_confidence"))
             direction_confidence = _extract_first_float(
                 row,
@@ -491,17 +498,6 @@ class RejectedDecisionCollector:
                     ("metadata", "low_vol_cost_floor", "direction_confidence"),
                     ("metadata", "direction_confidence"),
                     ("direction_confidence",),
-                ),
-            )
-            reference_price = _extract_first_float(
-                row,
-                (
-                    ("metadata", "low_vol_cost_floor", "entry_price"),
-                    ("metadata", "reference_price"),
-                    ("metadata", "intended_entry_price"),
-                    ("metadata", "economics_context", "entry_price"),
-                    ("reference_price",),
-                    ("intended_entry_price",),
                 ),
             )
             spread_bps = _extract_first_float(
@@ -520,13 +516,22 @@ class RejectedDecisionCollector:
                     ("final_score",),
                 ),
             )
+            resolution = resolve_reference_price(row)
+            self._source_level_counts[resolution.source_level] += 1
+            if resolution.trainability == TRAINABILITY_MISSING:
+                self.incomplete_buckets["incomplete_rejected_missing_reference_price"] += 1
+                continue
+            if resolution.trainability == TRAINABILITY_INVALID:
+                self.incomplete_buckets["incomplete_rejected_invalid_reference_price"] += 1
+                continue
+            if resolution.trainability == TRAINABILITY_DIAGNOSTICS_ONLY:
+                self.incomplete_buckets["incomplete_rejected_diagnostics_only_reference_price"] += 1
+                continue
+            reference_price = resolution.reference_price
+            rejected_with_reference_price += 1
             missing_fields: list[str] = []
             if regime_confidence is None:
                 missing_fields.append("regime_confidence")
-            if reference_price is None:
-                self.incomplete_buckets["incomplete_rejected_missing_reference_price"] += 1
-                continue
-            rejected_with_reference_price += 1
             ts_ms = _safe_int(row.get("timestamp"))
             if ts_ms is None:
                 missing_fields.append("timestamp")
@@ -568,9 +573,11 @@ class RejectedDecisionCollector:
                 provenance={
                     "reject_source_path": row.get("_source_path"),
                     "reject_source_line": row.get("_source_line"),
-                    "reference_price_source": "metadata.low_vol_cost_floor.entry_price"
-                    if _safe_float(low_vol_cost_floor.get("entry_price")) is not None
-                    else "fallback_nested_field",
+                    "reference_price_source": resolution.source,
+                    "reference_price_source_level": resolution.source_level,
+                    "reference_price_trainability": resolution.trainability,
+                    "reference_price_recovery_reason": resolution.recovery_reason,
+                    "reference_price_causal_link_ok": resolution.causal_link_ok,
                 },
             )
             rejected_evaluated += 1
@@ -579,13 +586,26 @@ class RejectedDecisionCollector:
         coverage = None
         if rejected_events_found:
             coverage = rejected_with_reference_price / rejected_events_found
+        diagnostics_only_count = self.incomplete_buckets.get(
+            "incomplete_rejected_diagnostics_only_reference_price", 0
+        )
+        any_coverage = None
+        if rejected_events_found:
+            any_coverage = (rejected_with_reference_price + diagnostics_only_count) / rejected_events_found
         return contracts, {
             "rejected_events_found": rejected_events_found,
             "rejected_with_reference_price": rejected_with_reference_price,
+            "rejected_reference_price_trainable_count": rejected_with_reference_price,
+            "rejected_reference_price_diagnostics_only_count": diagnostics_only_count,
             "rejected_missing_reference_price": self.incomplete_buckets.get("incomplete_rejected_missing_reference_price", 0),
+            "rejected_missing_reference_price_count": self.incomplete_buckets.get("incomplete_rejected_missing_reference_price", 0),
+            "rejected_invalid_reference_price_count": self.incomplete_buckets.get("incomplete_rejected_invalid_reference_price", 0),
             "rejected_missing_critical_fields": self.incomplete_buckets.get("incomplete_rejected_missing_critical_fields", 0),
             "rejected_evaluated": rejected_evaluated,
             "rejected_reference_price_coverage": coverage,
+            "reference_price_coverage_trainable": coverage,
+            "reference_price_coverage_any": any_coverage,
+            "reference_price_source_level_histogram": dict(self._source_level_counts),
             "rejected_incomplete_buckets": dict(self.incomplete_buckets),
         }
 
@@ -947,6 +967,8 @@ class ForwardCollectionReportGenerator:
                 "## Deduplication",
                 f"- duplicates_detected: {dedupe_summary.get('duplicates_detected', 0)}",
                 f"- duplicates_skipped: {dedupe_summary.get('duplicates_skipped', 0)}",
+                f"- incomplete_rejected_missing_identity: {dedupe_summary.get('incomplete_rejected_missing_identity', 0)}",
+                f"- incomplete_rejected_missing_dedupe_key_fields: {dedupe_summary.get('incomplete_rejected_missing_dedupe_key_fields', 0)}",
                 "",
                 "## Error Samples",
             ]
@@ -1033,15 +1055,21 @@ def _accepted_dedupe_key(contract: RawContract) -> str:
     )
 
 
-def _rejected_dedupe_key(contract: RawContract) -> str:
+def _rejected_dedupe_key(contract: RawContract) -> str | None:
+    decision_id = contract.decision_id or ""
+    if not decision_id:
+        return None
+    if not contract.symbol or not contract.side or contract.event_ts_ms is None:
+        return None
+    strategy_id = contract.strategy_id or "aurora"
     return ":".join(
         [
             "rejected",
-            contract.decision_id or "",
-            contract.symbol or "",
-            contract.side or "",
-            str(contract.event_ts_ms or ""),
-            contract.reject_reason or "",
+            decision_id,
+            contract.symbol,
+            contract.side,
+            str(contract.event_ts_ms),
+            strategy_id,
         ]
     )
 
@@ -1058,11 +1086,15 @@ def _atom_dedupe_key_from_payload(atom: dict[str, Any]) -> str | None:
         return f"accepted:{lifecycle_id}:{trade_id}:{close_ts_ms}"
     if contract_kind == "REJECTED":
         decision_id = _text(raw_contract.get("decision_id")) or _text(raw_contract.get("trade_id")) or ""
+        if not decision_id:
+            return None
         symbol = _normalize_symbol(raw_contract.get("symbol")) or ""
         side = _normalize_side(raw_contract.get("side")) or ""
-        timestamp = str(_safe_int(raw_contract.get("event_ts_ms")) or "")
-        reject_reason = _text(raw_contract.get("reject_reason")) or ""
-        return f"rejected:{decision_id}:{symbol}:{side}:{timestamp}:{reject_reason}"
+        timestamp_int = _safe_int(raw_contract.get("event_ts_ms"))
+        if not symbol or not side or timestamp_int is None:
+            return None
+        strategy_id = _text(raw_contract.get("strategy_id")) or "aurora"
+        return f"rejected:{decision_id}:{symbol}:{side}:{timestamp_int}:{strategy_id}"
     return None
 
 
@@ -1277,6 +1309,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     dedupe_summary = {
         "duplicates_detected": 0,
         "duplicates_skipped": 0,
+        "incomplete_rejected_missing_identity": 0,
+        "incomplete_rejected_missing_dedupe_key_fields": 0,
     }
 
     baseline_atoms = _load_existing_atoms(inputs["baseline_saf"])
@@ -1316,6 +1350,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 atoms.append(atom)
                 accepted_atoms_created += 1
         for contract in rejected_contracts:
+            if not contract.decision_id:
+                dedupe_summary["incomplete_rejected_missing_identity"] += 1
+                continue
+            if not contract.symbol or not contract.side or contract.event_ts_ms is None:
+                dedupe_summary["incomplete_rejected_missing_dedupe_key_fields"] += 1
+                continue
             dedupe_key = _rejected_dedupe_key(contract)
             if dedupe_key in seen_keys:
                 dedupe_summary["duplicates_detected"] += 1
@@ -1375,7 +1415,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "rejected_atoms_created": rejected_atoms_created,
         "diagnostics_only_atoms_created": diagnostics_only_atoms_created,
         "atoms_created_reconciliation_ok": atoms_created_reconciliation_ok,
-        "atoms_skipped": len(accepted_contracts) + len(rejected_contracts) - len(atoms) - dedupe_summary["duplicates_skipped"],
+        "atoms_skipped": len(accepted_contracts) + len(rejected_contracts) - len(atoms) - dedupe_summary["duplicates_skipped"] - dedupe_summary["incomplete_rejected_missing_identity"] - dedupe_summary["incomplete_rejected_missing_dedupe_key_fields"],
         "encoding_errors_count": encoding_errors_count,
     }
     status = _determine_status(

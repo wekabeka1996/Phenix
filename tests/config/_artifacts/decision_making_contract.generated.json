@@ -356,6 +356,11 @@
         "default": "'<required>'",
         "default_factory": null,
         "required": true
+      },
+      "pyramiding_policy": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
       }
     }
   },
@@ -1131,6 +1136,26 @@
         "default": "None",
         "default_factory": null,
         "required": false
+      },
+      "min_by_regime_side": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "min_by_symbol_regime_side": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "max_by_regime_side": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "max_by_symbol_regime_side": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
       }
     }
   },
@@ -1376,6 +1401,51 @@
         "default": "'<required>'",
         "default_factory": null,
         "required": true
+      }
+    }
+  },
+  "RegimeConfidenceSideMinThresholdConfig": {
+    "extra": "forbid",
+    "fields": {
+      "BUY": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "SELL": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      }
+    }
+  },
+  "RegimeConfidenceMaxSideOverrideConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "threshold": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      }
+    }
+  },
+  "RegimeConfidenceSideMaxOverrideMapConfig": {
+    "extra": "forbid",
+    "fields": {
+      "BUY": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "SELL": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
       }
     }
   }

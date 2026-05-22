@@ -1,0 +1,66 @@
+{
+  "scope": "NRR062_SIDECAR_MODE_COMPARABILITY_MATRIX",
+  "classification": "COMPARABILITY_COHORT_SPLIT_REQUIRED",
+  "accepted_baseline_mode": "enable",
+  "packages": [
+    {
+      "package": "H",
+      "bundle_root": "logs/frozen/nrr062_fresh_capture_20260515_180927",
+      "sidecar_mode": "enable",
+      "domains_yaml_sha256": "3ece313409a6f0db2fd0ee5ce44a9ee0ff5e94a6fad98c1a878e8c6f3a5394d5",
+      "matches_accepted_baseline": true,
+      "apples_to_apples_with": [
+        "H",
+        "L",
+        "CURRENT_RESTORED_BASELINE",
+        "FUTURE_ENABLE_COHORT"
+      ],
+      "notes": "Clean snapshot on tracked commit 34a3..."
+    },
+    {
+      "package": "I",
+      "bundle_root": "logs/frozen/nrr062_fresh_capture_20260516_101448",
+      "sidecar_mode": "shadow",
+      "domains_yaml_sha256": "e33e95a9a44f7606169ad78ac6bf0bc68be4a1d47df0d61940ce05f117fd0477",
+      "matches_accepted_baseline": false,
+      "apples_to_apples_with": [
+        "I",
+        "J"
+      ],
+      "notes": "Dirty domains.yaml snapshot on the same tracked commit as H/J/L."
+    },
+    {
+      "package": "J",
+      "bundle_root": "logs/frozen/nrr062_fresh_capture_20260517_080431",
+      "sidecar_mode": "shadow",
+      "domains_yaml_sha256": "e33e95a9a44f7606169ad78ac6bf0bc68be4a1d47df0d61940ce05f117fd0477",
+      "matches_accepted_baseline": false,
+      "apples_to_apples_with": [
+        "I",
+        "J"
+      ],
+      "notes": "Dirty shadow snapshot; package L already reported J-to-L comparability caveat."
+    },
+    {
+      "package": "L",
+      "bundle_root": "logs/frozen/nrr062_fresh_capture_20260517_210245",
+      "sidecar_mode": "enable",
+      "domains_yaml_sha256": "3ece313409a6f0db2fd0ee5ce44a9ee0ff5e94a6fad98c1a878e8c6f3a5394d5",
+      "matches_accepted_baseline": true,
+      "apples_to_apples_with": [
+        "H",
+        "L",
+        "CURRENT_RESTORED_BASELINE",
+        "FUTURE_ENABLE_COHORT"
+      ],
+      "notes": "Clean enable snapshot on the accepted baseline."
+    }
+  ],
+  "current_workspace_after_restore": {
+    "sidecar_mode": "enable",
+    "domains_yaml_sha256": "3ece313409a6f0db2fd0ee5ce44a9ee0ff5e94a6fad98c1a878e8c6f3a5394d5",
+    "matches_accepted_baseline": true
+  },
+  "cross_cohort_rule": "Do not compare economics apples-to-apples across enable and shadow sidecar cohorts without explicit labeling.",
+  "diagnostics_only_nuance": "Package L's downstream no-effect classification for the 24 J diagnostics-only rows remains valid because those rows never reached submit, fill, or close evidence."
+}

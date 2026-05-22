@@ -132,6 +132,27 @@ def test_valid_trade_intent_passes_through_typed_open_intake_and_builds_cmd_open
     assert "tf_sec" not in cmd_open.pld["metadata"]
 
 
+def test_admission_threshold_telemetry_survives_typed_open_intake() -> None:
+    router, fsm, _bus = _make_router()
+
+    router.on_trade_intent_proposed(
+        _make_intent_message(
+            resolved_min_regime_confidence=0.45,
+            threshold_applied=True,
+            threshold_verdict="PASS",
+            threshold_reason="regime_confidence=0.81 within band min=0.45",
+            regime_confidence_gate_verdict="ALLOW",
+        )
+    )
+
+    cmd_open = fsm.handle.call_args.args[0]
+    assert cmd_open.pld["resolved_min_regime_confidence"] == 0.45
+    assert cmd_open.pld["threshold_applied"] is True
+    assert cmd_open.pld["threshold_verdict"] == "PASS"
+    assert cmd_open.pld["threshold_reason"] == "regime_confidence=0.81 within band min=0.45"
+    assert cmd_open.pld["regime_confidence_gate_verdict"] == "ALLOW"
+
+
 def test_invalid_trade_intent_missing_order_type_is_rejected_fail_closed_at_typed_intake() -> None:
     router, fsm, bus = _make_router()
     msg = _make_intent_message(

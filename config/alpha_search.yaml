@@ -251,12 +251,26 @@ alpha_search:
       max_file_size_mb: 50
       rotation: "daily"
 
+    # PKG-2 SSOT NOTE (2026-05-21):
+    # This `simulator:` block configures the SHADOW PLAN SIMULATOR
+    # (apps/reference/domains/alpha_search/judge/shadow_simulator.py),
+    # which is a FORENSIC-ONLY tool invoked from
+    # scripts/forensics/run_shadow_simulator.py and
+    # tools/alpha_search/j6_s17_c1_shadow_outcomes.py.
+    #
+    # It is NOT consumed by the official PKG-1 → PKG-4 pipeline
+    # (outcomes materializer → judge-simulator CLI → judge-review CLI),
+    # which loads fee/slippage from config/judge_simulator.yaml (SSOT).
+    #
+    # Units here are basis points (bps). Do NOT add fee/slippage
+    # fields read by the official pipeline to this block — keep all
+    # such fields in config/judge_simulator.yaml.
     simulator:
       enabled: true
       max_bars_after_signal: 12
       intrabar_ambiguity_policy: mark_ambiguous
-      fees_bps: 2.0
-      slippage_bps: 1.0
+      fees_bps: 2.0          # bps; consumed by ShadowPlanSimulator only
+      slippage_bps: 1.0      # bps; consumed by ShadowPlanSimulator only
 
     # Phase 3: Chamber aggregation config
     chamber:

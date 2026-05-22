@@ -24,6 +24,7 @@ class CanonicalEntry:
     regime_at_entry: str
     regime_confidence_at_entry: float | None
     regime_source: str
+    entry_origin: str = "actual_order_log_fill"
     actual_close_ts_ms: int | None = None
     actual_close_price: float | None = None
     actual_outcome_status: str = ""
@@ -59,6 +60,7 @@ class CanonicalEntry:
             "regime_at_entry": self.regime_at_entry,
             "regime_confidence_at_entry": self.regime_confidence_at_entry,
             "regime_source": self.regime_source,
+            "entry_origin": self.entry_origin,
             "actual_close_ts_ms": self.actual_close_ts_ms,
             "actual_close_price": self.actual_close_price,
             "actual_outcome_status": self.actual_outcome_status,
@@ -124,10 +126,12 @@ class ScenarioRuntime:
     strict: bool
     sidecar_requests: list[dict[str, Any]] = field(default_factory=list)
     sidecar_request_index: dict[str, dict[str, list[dict[str, Any]]]] = field(default_factory=dict)
+    synthetic_entry_sets: dict[str, list[CanonicalEntry]] = field(default_factory=dict)
 
 
 EntryFilter = Callable[[CanonicalEntry, ScenarioRuntime], GateDecision]
 ExitPolicy = Callable[[CanonicalEntry, ScenarioRuntime], tuple[ExitEvent, dict[str, Any]]]
+EntryProvider = Callable[[list[CanonicalEntry], ScenarioRuntime], list[CanonicalEntry]]
 
 
 @dataclass(frozen=True)
@@ -138,3 +142,4 @@ class ScenarioSpec:
     required_surfaces: tuple[str, ...]
     report_contract: str
     allow_regime_flip_exits: bool = True
+    entry_provider: EntryProvider | None = None

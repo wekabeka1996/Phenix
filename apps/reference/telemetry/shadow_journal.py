@@ -69,6 +69,10 @@ DEFAULT_CRITICAL_EVENTS = (
     "CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_LOAD_FAILED",
 )
 
+FEE_AWARE_SHADOW_ARM_EVENT = "EVT:POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE"
+FEE_AWARE_SHADOW_ARM_EVENT_TYPE = "POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE"
+DECISION_TRACE_EVENT = "EVT:DECISION_TRACE_EMITTED"
+
 
 def _to_jsonable(value: Any, *, _seen: set[int] | None = None, _depth: int = 0) -> Any:
     if value is None or isinstance(value, (str, int, float, bool)):
@@ -307,7 +311,8 @@ class ShadowCriticalEventJournal:
             duplicate_heuristic=duplicate_heuristic,
             repeated_close=repeated_close,
             partial_identity=partial_identity,
-            payload_fragment=build_payload_fragment(payload),
+            payload_fragment=build_payload_fragment(
+                payload, event_name=event_name),
             notes=notes,
         )
         self._write_record(record)
@@ -374,7 +379,8 @@ class ShadowCriticalEventJournal:
             duplicate_heuristic=duplicate_heuristic,
             repeated_close=repeated_close,
             partial_identity=partial_identity,
-            payload_fragment=build_payload_fragment(payload),
+            payload_fragment=build_payload_fragment(
+                payload, event_name=event_name),
             notes=list(notes or []),
         )
         self._write_record(record)
@@ -535,7 +541,94 @@ def detect_partial_identity(identity: Dict[str, Optional[str]]) -> bool:
     )
 
 
-def build_payload_fragment(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _build_fee_aware_shadow_arm_fragment(payload: Dict[str, Any]) -> Dict[str, Any]:
+    fragment: Dict[str, Any] = {}
+    for key in (
+        "symbol",
+        "ts_ms",
+        "shadow_only",
+        "authority_applied",
+        "no_effect",
+        "transitions",
+        "rid",
+        "lifecycle_id",
+    ):
+        if key in payload:
+            fragment[key] = payload.get(key)
+
+    candidate_state = _safe_dict(payload.get("candidate_state"))
+    optional_pct_floor = _safe_dict(candidate_state.get("optional_pct_floor"))
+    candidate_identity: Dict[str, Any] = {}
+
+    candidate_key = payload.get("candidate_key")
+    if candidate_key is None:
+        candidate_key = candidate_state.get("candidate_key")
+    if candidate_key is not None:
+        fragment["candidate_key"] = candidate_key
+
+    fee_multiple = candidate_state.get("fee_multiple")
+    if fee_multiple is not None:
+        fragment["fee_multiple"] = fee_multiple
+        candidate_identity["fee_multiple"] = fee_multiple
+
+    optional_pct_candidate = optional_pct_floor.get("candidate_pct")
+    if optional_pct_candidate is not None:
+        fragment["optional_pct_candidate"] = optional_pct_candidate
+        candidate_identity["optional_pct_candidate"] = optional_pct_candidate
+
+    if candidate_identity:
+        fragment["candidate_identity"] = candidate_identity
+
+    for key in (
+        "fee_source",
+        "estimated_fee_usd",
+        "realized_lifecycle_fee",
+        "required_edge_usd",
+        "cost_floor_usd",
+        "is_armed",
+        "would_trigger",
+    ):
+        if key in candidate_state:
+            fragment[key] = candidate_state.get(key)
+        elif key in payload:
+            fragment[key] = payload.get(key)
+
+    if "null_reasons" in candidate_state:
+        fragment["null_reasons"] = _safe_dict(
+            candidate_state.get("null_reasons"))
+    elif "null_reasons" in payload:
+        fragment["null_reasons"] = _safe_dict(payload.get("null_reasons"))
+
+    return _safe_dict(_to_jsonable(fragment))
+
+
+def _strip_placeholder_attribution_fields(fragment: Dict[str, Any]) -> Dict[str, Any]:
+    # These fields drive forensic attribution; a bare "unknown" is a placeholder
+    # from upstream, not a meaningful domain value.
+    attribution_critical = (
+        "reason",
+        "trigger",
+        "block_reason",
+        "reject_reason",
+        "reject_reason_normalized",
+        "reject_reason_source",
+        "reason_code",
+        "tidy_reason",
+        "match_reason",
+        "close_reason",
+        "side",
+        "source",
+        "strategy",
+        "strategy_id",
+        "inferred_role",
+    )
+    for field in attribution_critical:
+        if field in fragment and _is_placeholder_text(fragment[field]):
+            fragment[field] = None
+    return fragment
+
+
+def _build_generic_payload_fragment(payload: Dict[str, Any]) -> Dict[str, Any]:
     keep = (
         "symbol",
         "instrument",
@@ -636,32 +729,115 @@ def build_payload_fragment(payload: Dict[str, Any]) -> Dict[str, Any]:
         "anti_peak_observability",
     )
     fragment = {key: payload.get(key) for key in keep if key in payload}
-    # Strip bare "unknown" placeholders from attribution-critical fields.
-    # These fields drive forensic attribution; a bare "unknown" is a placeholder
-    # from upstream (e.g. missing close_reason), not a meaningful domain value.
-    # Legitimate compound values like "unknown_disappearance" survive because
-    # _is_placeholder_text only matches the exact word "unknown".
-    _attribution_critical = (
-        "reason",
-        "trigger",
-        "block_reason",
-        "reject_reason",
-        "reject_reason_normalized",
-        "reject_reason_source",
-        "reason_code",
-        "tidy_reason",
-        "match_reason",
-        "close_reason",
-        "side",
-        "source",
-        "strategy",
+    return _safe_dict(_to_jsonable(_strip_placeholder_attribution_fields(fragment)))
+
+
+def _build_decision_trace_fragment(payload: Dict[str, Any]) -> Dict[str, Any]:
+    fragment = _build_generic_payload_fragment(payload)
+
+    # Keep the decision-trace fragment compact but replay-capable. This extends
+    # the generic fragment with the minimum decision surface needed by T3D/T4B.
+    for key in (
+        "rid",
+        "decision_id",
+        "cycle_key",
+        "intent_id",
+        "lifecycle_id",
+        "symbol",
         "strategy_id",
-        "inferred_role",
-    )
-    for field in _attribution_critical:
-        if field in fragment and _is_placeholder_text(fragment[field]):
-            fragment[field] = None
-    return _safe_dict(_to_jsonable(fragment))
+        "side",
+        "regime",
+        "regime_confidence",
+        "regime_confidence_gate_verdict",
+        "trend_dir",
+        "trend_confidence",
+        "trend_run_length",
+        "price_motion_context",
+        "pm_norm_10s",
+        "pm_norm_60s",
+        "pm_norm_300s",
+        "missing_inputs",
+        "safety_gate_snapshot",
+        "low_vol_cost_floor",
+        "anti_peak_observability",
+        "ts_ms",
+        "ts",
+        "event_ts_ms",
+        "features_ts_ms",
+        "bar_close_ts",
+        "bar_close_ts_ms",
+        "tf_sec",
+        "intent_side",
+        "decision_surface",
+        "gate_chain_result",
+        "gate_outcome",
+        "accepted_or_rejected",
+        "reject_reason",
+        "deny_reason",
+        "why",
+        "regime_provenance",
+    ):
+        if key in payload:
+            fragment[key] = payload.get(key)
+
+    return _safe_dict(_to_jsonable(_strip_placeholder_attribution_fields(fragment)))
+
+
+def _extract_anti_peak_observability(payload: Dict[str, Any]) -> Dict[str, Any] | None:
+    direct = payload.get("anti_peak_observability")
+    if isinstance(direct, dict):
+        return dict(direct)
+
+    scoring = payload.get("scoring")
+    if isinstance(scoring, dict):
+        nested = scoring.get("anti_peak_observability")
+        if isinstance(nested, dict):
+            return dict(nested)
+
+    details = payload.get("details")
+    if isinstance(details, dict):
+        nested = details.get("anti_peak_observability")
+        if isinstance(nested, dict):
+            return dict(nested)
+
+    return None
+
+
+def _attach_anti_peak_observability(
+    fragment: Dict[str, Any], payload: Dict[str, Any]
+) -> Dict[str, Any]:
+    anti_peak = _extract_anti_peak_observability(payload)
+    if anti_peak is not None:
+        fragment["anti_peak_observability"] = anti_peak
+    return fragment
+
+
+def build_payload_fragment(
+    payload: Dict[str, Any], *, event_name: Optional[str] = None
+) -> Dict[str, Any]:
+    if (
+        event_name == FEE_AWARE_SHADOW_ARM_EVENT
+        or payload.get("event_type") == FEE_AWARE_SHADOW_ARM_EVENT_TYPE
+    ):
+        return _build_fee_aware_shadow_arm_fragment(payload)
+    if event_name == DECISION_TRACE_EVENT:
+        return _attach_anti_peak_observability(
+            _build_decision_trace_fragment(payload), payload
+        )
+
+    if event_name in (
+        "EVT:STRATEGY_SIGNAL_PRODUCED",
+        "EVT:STRATEGY_DECISION_BLOCKED",
+        "EVT:DECISION_BLOCKED",
+        "EVT:TRADE_INTENT_REJECTED",
+        "EVT:QUADRATIC_DECISION_TRACE",
+        "EVT:GATE_CHAIN_TRACE",
+    ):
+        return _attach_anti_peak_observability(
+            _build_generic_payload_fragment(payload), payload
+        )
+
+    return _build_generic_payload_fragment(payload)
 
 
 def extract_identity(

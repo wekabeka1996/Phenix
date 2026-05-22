@@ -164,6 +164,15 @@ class TradeIntentOpenIntake(BaseModel):
     regime_epoch_ref: Optional[str] = None
     regime: Optional[str] = None
     regime_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    resolved_min_regime_confidence: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+    )
+    threshold_applied: Optional[bool] = None
+    threshold_verdict: Optional[str] = None
+    threshold_reason: Optional[str] = None
+    regime_confidence_gate_verdict: Optional[str] = None
     regime_provenance: Optional[Dict[str, Any]] = None
     tca_budget: Optional[Dict[str, Any]] = None
     risk_context: Optional[Dict[str, Any]] = None
@@ -208,6 +217,11 @@ class TradeIntentOpenIntake(BaseModel):
             "regime_epoch_ref": self.regime_epoch_ref,
             "regime": self.regime,
             "regime_confidence": self.regime_confidence,
+            "resolved_min_regime_confidence": self.resolved_min_regime_confidence,
+            "threshold_applied": self.threshold_applied,
+            "threshold_verdict": self.threshold_verdict,
+            "threshold_reason": self.threshold_reason,
+            "regime_confidence_gate_verdict": self.regime_confidence_gate_verdict,
             "regime_provenance": dict(self.regime_provenance) if isinstance(self.regime_provenance, dict) else None,
         }
 
@@ -290,6 +304,11 @@ def parse_trade_intent_open_intake(
                 "regime_epoch_ref": _stringify_optional(raw.get("regime_epoch_ref")),
                 "regime": raw.get("regime"),
                 "regime_confidence": raw.get("regime_confidence"),
+                "resolved_min_regime_confidence": raw.get("resolved_min_regime_confidence"),
+                "threshold_applied": raw.get("threshold_applied"),
+                "threshold_verdict": raw.get("threshold_verdict"),
+                "threshold_reason": raw.get("threshold_reason"),
+                "regime_confidence_gate_verdict": raw.get("regime_confidence_gate_verdict"),
                 "regime_provenance": raw.get("regime_provenance"),
                 "tca_budget": raw.get("tca_budget"),
                 "risk_context": raw.get("risk_context"),

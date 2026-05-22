@@ -345,6 +345,41 @@
       ],
       "description": "Confidence of the detected regime"
     },
+    "resolved_min_regime_confidence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Resolved minimum regime-confidence threshold applied by safety gates when the decision path provides it."
+    },
+    "threshold_applied": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "Whether regime-confidence threshold evaluation was actually applied on the admission path."
+    },
+    "threshold_verdict": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Admission-threshold verdict propagated additively for execution-side observability parity."
+    },
+    "threshold_reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Human-readable threshold explanation propagated additively for execution-side observability parity."
+    },
+    "regime_confidence_gate_verdict": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Canonical regime-confidence gate verdict propagated additively for execution-side observability parity."
+    },
     "regime_provenance": {
       "anyOf": [
         {

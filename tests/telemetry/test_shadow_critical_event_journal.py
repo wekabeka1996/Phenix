@@ -15,6 +15,7 @@ from apps.reference.telemetry.shadow_journal import (
     DEFAULT_CRITICAL_EVENTS,
     ShadowCriticalEventJournal,
     attach_shadow_journal,
+    build_payload_fragment,
 )
 from vfoundation.core.fsm_core import FSMCore
 from vfoundation.core.protocol import Message
@@ -153,6 +154,98 @@ def _make_execpos_config(path: Path):
     cfg.trading.mode = "testnet"
     cfg.observability = _shadow_cfg(path).observability
     return cfg
+
+
+def _decision_trace_payload() -> dict:
+    return {
+        "rid": "aurora_BTCUSDT_1779246904880",
+        "decision_id": "decision-1",
+        "cycle_key": "cycle-1",
+        "intent_id": "intent-1",
+        "lifecycle_id": "intent-1",
+        "symbol": "BTCUSDT",
+        "strategy_id": "aurora",
+        "side": "SELL",
+        "regime": "LOW_VOLATILITY",
+        "regime_confidence": 0.41,
+        "regime_confidence_gate_verdict": "ALLOW",
+        "trend_dir": "DOWN",
+        "trend_confidence": 0.72,
+        "trend_run_length": 5,
+        "ts": 1779246904883,
+        "event_ts_ms": 1779246904883,
+        "ts_ms": 1779246904883,
+        "features_ts_ms": 1779246899999,
+        "bar_close_ts": 1779246899999,
+        "tf_sec": 300,
+        "intent_side": "SHORT",
+        "decision_surface": "decision_trace",
+        "gate_chain_result": "ALLOW",
+        "accepted_or_rejected": "ACCEPTED",
+        "why": "low_vol_allow",
+        "pm_norm_10s": None,
+        "pm_norm_60s": -2.3026263054187086,
+        "pm_norm_300s": -3.91772263739205,
+        "price_motion_context": {
+            "pm_norm_10s": None,
+            "pm_norm_60s": -2.3026263054187086,
+            "pm_norm_300s": -3.91772263739205,
+            "vol_pct_10s": None,
+            "vol_pct_60s": 0.00014428888975548883,
+            "vol_pct_300s": 6.235069930206187e-05,
+            "missing": {
+                "pm_norm_10s": True,
+                "pm_norm_60s": False,
+                "pm_norm_300s": False,
+            },
+        },
+        "missing_inputs": {
+            "signal_score": "absent_from_attached_score_lineage",
+            "pm_norm_10s": "absent_from_safety_gate_result",
+            "pm_norm_60s": None,
+            "pm_norm_300s": None,
+        },
+        "safety_gate_snapshot": {
+            "apply_safety_gates": True,
+            "regime_confidence_gate_verdict": "ALLOW",
+            "threshold_verdict": "PASS",
+            "threshold_reason": "threshold_passed",
+        },
+        "low_vol_cost_floor": {
+            "reason": "LOW_VOL_COST_FLOOR_PASS",
+            "gate_reason": "LOW_VOL_COST_FLOOR_PASS",
+            "price_motion_context": {
+                "pm_norm_60s": -2.3026263054187086,
+                "pm_norm_300s": -3.91772263739205,
+            },
+            "missing_inputs": {
+                "signal_score": False,
+            },
+        },
+        "anti_peak_observability": {
+            "schema_version": "1.0.0",
+            "motion": {
+                "enabled": True,
+                "window_sec": 300,
+                "window_sec_value_source": "active_config",
+                "motion_norm_sigma": -3.9,
+                "motion_norm_sigma_value_source": "live_observation",
+            },
+        },
+        "score_lineage": {
+            "path": "should_not_be_retained",
+            "records": [],
+        },
+        "tpsl_owner_ctx": {
+            "owner": "risk",
+        },
+        "regime_provenance": {
+            "source_kind": "detector_cache",
+            "detector_event": {
+                "bar_close_ts_ms": 1779246899999,
+            },
+        },
+    }
 
 
 def test_shadow_journal_append_only_and_repeated_close_marker(tmp_path):
@@ -322,6 +415,170 @@ def test_shadow_journal_strictly_admits_fee_aware_shadow_event_name(tmp_path):
         "EVT:POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE") is True
     assert journal.should_capture(
         "POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE") is False
+
+
+def test_build_payload_fragment_retains_compact_fee_aware_identity_without_snapshot_bloat():
+    payload = {
+        "event_type": "POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE",
+        "symbol": "ETHUSDT",
+        "ts_ms": 1775400000000,
+        "shadow_only": True,
+        "authority_applied": False,
+        "no_effect": True,
+        "transitions": ["ARMED"],
+        "trace_id": "pps:ETHUSDT:1775400000000:1",
+        "reason_codes": ["shadow_fee_aware_armed"],
+        "candidate_state": {
+            "fee_multiple": 1.5,
+            "estimated_fee_usd": 0.75,
+            "fee_source": "realized_lifecycle_fee",
+            "required_edge_usd": 1.125,
+            "is_armed": True,
+            "would_trigger": False,
+            "null_reasons": {},
+            "optional_pct_floor": {
+                "candidate_pct": 0.02,
+                "required_edge_usd": 0.75,
+            },
+            "peak_edge_usd": 1.4,
+            "current_edge_usd": 1.1,
+        },
+        "position_snapshot": {
+            "symbol": "ETHUSDT",
+            "unrealized_pnl_usdt": 1.1,
+            "manage_state": "BRACKETS_PENDING",
+        },
+    }
+
+    fragment = build_payload_fragment(
+        payload,
+        event_name="EVT:POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE",
+    )
+
+    assert fragment["symbol"] == "ETHUSDT"
+    assert fragment["ts_ms"] == 1775400000000
+    assert fragment["shadow_only"] is True
+    assert fragment["authority_applied"] is False
+    assert fragment["no_effect"] is True
+    assert fragment["transitions"] == ["ARMED"]
+    assert fragment["candidate_identity"] == {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02,
+    }
+    assert fragment["fee_multiple"] == 1.5
+    assert fragment["optional_pct_candidate"] == 0.02
+    assert fragment["fee_source"] == "realized_lifecycle_fee"
+    assert fragment["estimated_fee_usd"] == 0.75
+    assert fragment["required_edge_usd"] == 1.125
+    assert fragment["is_armed"] is True
+    assert fragment["would_trigger"] is False
+    assert fragment["null_reasons"] == {}
+    assert "rid" not in fragment
+    assert "lifecycle_id" not in fragment
+    assert "candidate_state" not in fragment
+    assert "position_snapshot" not in fragment
+    assert "trace_id" not in fragment
+    assert "reason_codes" not in fragment
+
+
+def test_shadow_journal_captures_compact_decision_trace_replay_fragment(tmp_path):
+    path = tmp_path / "journal.jsonl"
+    fsm = FSMCore()
+    attach_shadow_journal(fsm, _shadow_cfg(path))
+
+    payload = _decision_trace_payload()
+    fsm.emit(
+        "EVT:DECISION_TRACE_EMITTED",
+        payload=payload,
+        why="decision_trace",
+        rid=payload["rid"],
+    )
+
+    records = _read_jsonl(path)
+    assert len(records) == 1
+
+    fragment = records[0]["payload_fragment"]
+    assert fragment["rid"] == payload["rid"]
+    assert fragment["intent_id"] == "intent-1"
+    assert fragment["lifecycle_id"] == "intent-1"
+    assert fragment["symbol"] == "BTCUSDT"
+    assert fragment["strategy_id"] == "aurora"
+    assert fragment["side"] == "SELL"
+    assert fragment["regime"] == "LOW_VOLATILITY"
+    assert fragment["regime_confidence"] == 0.41
+    assert fragment["regime_confidence_gate_verdict"] == "ALLOW"
+    assert fragment["trend_dir"] == "DOWN"
+    assert fragment["trend_confidence"] == 0.72
+    assert fragment["trend_run_length"] == 5
+    assert fragment["ts_ms"] == 1779246904883
+    assert fragment["features_ts_ms"] == 1779246899999
+    assert fragment["bar_close_ts"] == 1779246899999
+    assert fragment["price_motion_context"]["pm_norm_60s"] == - \
+        2.3026263054187086
+    assert fragment["price_motion_context"]["pm_norm_300s"] == - \
+        3.91772263739205
+    assert fragment["pm_norm_60s"] == -2.3026263054187086
+    assert fragment["pm_norm_300s"] == -3.91772263739205
+    assert fragment["missing_inputs"]["signal_score"] == "absent_from_attached_score_lineage"
+    assert fragment["safety_gate_snapshot"]["regime_confidence_gate_verdict"] == "ALLOW"
+    assert fragment["low_vol_cost_floor"]["reason"] == "LOW_VOL_COST_FLOOR_PASS"
+    assert fragment["anti_peak_observability"]["motion"]["window_sec_value_source"] == "active_config"
+    assert fragment["anti_peak_observability"]["motion"]["motion_norm_sigma_value_source"] == "live_observation"
+    assert "score_lineage" not in fragment
+    assert "tpsl_owner_ctx" not in fragment
+
+
+def test_build_payload_fragment_decision_trace_preserves_absence_semantics_without_defaults():
+    payload = _decision_trace_payload()
+    payload.pop("low_vol_cost_floor")
+    payload.pop("price_motion_context")
+    payload.pop("safety_gate_snapshot")
+    payload.pop("pm_norm_10s")
+    payload.pop("pm_norm_60s")
+    payload.pop("pm_norm_300s")
+    payload.pop("trend_confidence")
+    payload.pop("anti_peak_observability")
+    payload["missing_inputs"] = {
+        "signal_score": "absent_from_attached_score_lineage"}
+
+    fragment = build_payload_fragment(
+        payload,
+        event_name="EVT:DECISION_TRACE_EMITTED",
+    )
+
+    assert "low_vol_cost_floor" not in fragment
+    assert "price_motion_context" not in fragment
+    assert "safety_gate_snapshot" not in fragment
+    assert "pm_norm_10s" not in fragment
+    assert "pm_norm_60s" not in fragment
+    assert "pm_norm_300s" not in fragment
+    assert "trend_confidence" not in fragment
+    assert "anti_peak_observability" not in fragment
+    assert fragment["missing_inputs"] == {
+        "signal_score": "absent_from_attached_score_lineage"
+    }
+
+
+def test_build_payload_fragment_decision_trace_scope_is_limited_to_decision_trace_event():
+    payload = _decision_trace_payload()
+
+    fragment = build_payload_fragment(
+        payload,
+        event_name="EVT:TRADE_INTENT_REJECTED",
+    )
+
+    assert fragment["symbol"] == "BTCUSDT"
+    assert fragment["regime"] == "LOW_VOLATILITY"
+    assert fragment["regime_confidence"] == 0.41
+    assert fragment["strategy_id"] == "aurora"
+    assert fragment["side"] == "SELL"
+    assert "rid" not in fragment
+    assert "intent_id" not in fragment
+    assert "regime_confidence_gate_verdict" not in fragment
+    assert "price_motion_context" not in fragment
+    assert "missing_inputs" not in fragment
+    assert "safety_gate_snapshot" not in fragment
+    assert "low_vol_cost_floor" not in fragment
 
 
 def test_shadow_journal_captures_low_vol_trace_events_with_decision_source_context(tmp_path):

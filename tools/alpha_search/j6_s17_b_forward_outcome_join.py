@@ -486,7 +486,7 @@ def main(root: str = 'c:\\Users\\user\\Music\\Phenix') -> int:
     outcome_index, outcome_total = build_outcome_index(artifacts)
 
     logger.info(
-        f"\nOutcome artifacts: {outcome_total} records in {len(outcome_index)} keys")
+        f"\nOutcome artifacts: {outcome_total} records in {len(outcome_index.canonical_index)} canonical keys")
     if outcome_total == 0:
         logger.warning(
             "No simulation outcomes found — dataset will have empty outcome fields")

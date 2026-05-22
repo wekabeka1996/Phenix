@@ -116,7 +116,42 @@
     },
     "scoring": {
       "type": "object",
-      "additionalProperties": true
+      "additionalProperties": true,
+      "properties": {
+        "anti_peak_observability": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {"type": ["boolean", "null"]},
+            "gate_disabled": {"type": ["boolean", "null"]},
+            "motion_classification": {"type": ["string", "null"]},
+            "missing_inputs": {
+              "type": ["object", "null"],
+              "additionalProperties": {"type": ["string", "null"]}
+            },
+            "active_config": {"type": ["object", "null"], "additionalProperties": true},
+            "disabled_config_snapshot": {"type": ["object", "null"], "additionalProperties": true},
+            "anti_fomo_sigma": {"type": ["number", "null"]},
+            "anti_flat_sigma": {"type": ["number", "null"]},
+            "window_sec": {"type": ["integer", "null"]},
+            "anti_fomo_sigma_value_source": {"type": ["string", "null"]},
+            "anti_flat_sigma_value_source": {"type": ["string", "null"]},
+            "window_sec_value_source": {"type": ["string", "null"]},
+            "motion_norm_sigma": {"type": ["number", "null"]},
+            "score_before_shields": {"type": ["number", "null"]},
+            "score_after_shields": {"type": ["number", "null"]},
+            "final_score": {"type": ["number", "null"]},
+            "signal_threshold": {"type": ["number", "null"]},
+            "danger_zone_applied": {"type": ["boolean", "null"]},
+            "context_shield_applied": {"type": ["boolean", "null"]},
+            "attenuated_below_threshold": {"type": ["boolean", "null"]},
+            "consumed_by_gate": {"type": ["boolean", "null"]},
+            "source": {"type": ["string", "null"]},
+            "ready": {"type": ["boolean", "null"]},
+            "reason": {"type": ["string", "null"]}
+          }
+        }
+      }
     },
     "readiness": {
       "type": "object",

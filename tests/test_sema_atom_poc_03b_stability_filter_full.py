@@ -203,3 +203,18 @@ def test_run_fails_closed_on_schema_version_mismatch(tmp_path: Path) -> None:
     assert result["status"] == "FAILED_SIDECAR_SCHEMA_VALIDATION"
     assert result["manifest_total_contexts"] == 0
     assert "schema_version_mismatch:2.0.0" in result["sidecar_validation"]["errors"]
+
+
+def test_run_fails_closed_on_schema_id_mismatch(tmp_path: Path) -> None:
+    bad_sidecar = _sample_sidecar()
+    bad_sidecar["schema_id"] = "SomeOtherSchema"
+    input_sidecar = tmp_path / "bad_id.json"
+    input_sidecar.write_text(json.dumps(bad_sidecar), encoding="utf-8")
+    result = poc03b.run(
+        input_sidecar=input_sidecar,
+        output_manifest=tmp_path / "manifest.json",
+        output_report=tmp_path / "report.md",
+    )
+    assert result["status"] == "FAILED_SIDECAR_SCHEMA_VALIDATION"
+    assert result["manifest_total_contexts"] == 0
+    assert "schema_id_mismatch:SomeOtherSchema" in result["sidecar_validation"]["errors"]

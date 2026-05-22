@@ -124,6 +124,8 @@ class AuroraDecisionMixin:
         state: Any,
         pillar_sum: float,
         raw_exposure: float,
+        price_motion_provenance: Optional[Dict[str, Any]] = None,
+        consumed_by_gate: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """Build a provenance-first anti-peak payload without re-running gate logic."""
         cfg = getattr(self, "_scoring_engine_cfg", None)
@@ -168,14 +170,16 @@ class AuroraDecisionMixin:
 
         motion_norm_sigma = None
         price_motion = features.get("price_motion")
-        if isinstance(price_motion, dict) and window_sec is not None:
-            motion_norm_sigma = _lineage_float(
-                price_motion.get(f"pm_norm_{window_sec}s")
-            )
+        motion_bucket = f"pm_norm_{window_sec}s" if window_sec is not None else None
+        if isinstance(price_motion, dict) and motion_bucket is not None:
+            motion_norm_sigma = _lineage_float(price_motion.get(motion_bucket))
 
         psi = result.psi_vector or {}
         result_side = str(getattr(result, "side", "") or "").lower()
         score_before = _lineage_float(psi.get("admission_pre_shield"))
+        score_after_shields = _lineage_float(
+            psi.get("final_score", getattr(result, "score", None))
+        )
         final_score = _lineage_float(getattr(result, "score", None))
 
         if result_side == "sell":
@@ -196,10 +200,17 @@ class AuroraDecisionMixin:
         danger_zone_applied = any(
             str(reason).startswith("DANGER_ZONE:") for reason in shield_reasons
         )
+        context_shield_applied = any(
+            "CONTEXT" in str(reason).upper() for reason in shield_reasons
+        )
         dz_enabled = bool(getattr(dz_cfg, "enabled", False)
                           ) if dz_cfg else False
         ctx_enabled = bool(getattr(ctx_cfg, "enabled", False)
                            ) if ctx_cfg else False
+
+        source = str((price_motion_provenance or {}
+                      ).get("source") or "missing")
+        ready = bool((price_motion_provenance or {}).get("ready", False))
 
         motion_missing_reason = None
         if not vol_gates_enabled:
@@ -215,18 +226,164 @@ class AuroraDecisionMixin:
         ):
             motion_missing_reason = "active_threshold_missing"
 
+        missing_inputs: dict[str, str] = {}
+        if anti_fomo_sigma is None:
+            missing_inputs["anti_fomo_sigma"] = (
+                "absent_from_active_config"
+                if vol_gates_enabled
+                else "absent_from_disabled_config_snapshot"
+            )
+        if anti_flat_sigma is None:
+            missing_inputs["anti_flat_sigma"] = (
+                "absent_from_active_config"
+                if vol_gates_enabled
+                else "absent_from_disabled_config_snapshot"
+            )
+        if window_sec is None:
+            missing_inputs["window_sec"] = (
+                "absent_from_active_config"
+                if vol_gates_enabled
+                else "absent_from_disabled_config_snapshot"
+            )
+        if motion_norm_sigma is None:
+            if not isinstance(price_motion, dict):
+                missing_inputs["motion_norm_sigma"] = "price_motion_block_missing"
+            elif motion_bucket is None:
+                missing_inputs["motion_norm_sigma"] = "window_sec_unresolved"
+            else:
+                missing_inputs["motion_norm_sigma"] = (
+                    f"absent_from_features:{motion_bucket}"
+                )
+        if score_before is None:
+            missing_inputs["score_before_shields"] = "absent_from_admission_pre_shield"
+        if score_after_shields is None:
+            missing_inputs["score_after_shields"] = "absent_from_final_score"
+        if final_score is None:
+            missing_inputs["final_score"] = "absent_from_scoring_result"
+        if active_threshold is None:
+            missing_inputs["signal_threshold"] = "absent_from_threshold_selection"
+
+        attenuated_below_threshold = None
+        if (
+            score_before is not None
+            and score_after_shields is not None
+            and active_threshold is not None
+        ):
+            attenuated_below_threshold = (
+                abs(score_before) >= abs(active_threshold)
+                and abs(score_after_shields) < abs(active_threshold)
+            )
+        else:
+            missing_inputs.setdefault(
+                "attenuated_below_threshold",
+                "insufficient_score_path_or_threshold_context",
+            )
+
+        if ctx_enabled and not context_shield_applied:
+            missing_inputs.setdefault(
+                "context_shield_applied",
+                "not_authoritatively_available",
+            )
+
+        if not vol_gates_enabled:
+            motion_classification = "gate_disabled"
+            reason = motion_missing_reason or "gate_disabled"
+        elif motion_missing_reason == "active_threshold_missing":
+            motion_classification = "config_unresolved"
+            reason = "active_threshold_missing"
+        elif motion_norm_sigma is None:
+            motion_classification = "insufficient_motion_data"
+            reason = motion_missing_reason or "insufficient_motion_data"
+        elif anti_flat_sigma is not None and motion_norm_sigma < anti_flat_sigma:
+            motion_classification = "anti_flat_triggered"
+            reason = "anti_flat_threshold_breached"
+        elif anti_fomo_sigma is not None and motion_norm_sigma > anti_fomo_sigma:
+            motion_classification = "anti_fomo_triggered"
+            reason = "anti_fomo_threshold_breached"
+        else:
+            motion_classification = "within_band"
+            if danger_zone_applied:
+                reason = "danger_zone_applied"
+            elif attenuated_below_threshold is True:
+                reason = "attenuated_below_threshold"
+            elif consumed_by_gate is True:
+                reason = "not_applied:motion_within_allowed_band"
+            elif consumed_by_gate is False:
+                reason = "not_applied:vol_gate_not_consumed_on_this_path"
+            else:
+                reason = "not_applied:pre_vol_gate_trace"
+
+        active_config = None
+        disabled_config_snapshot = None
+        if vol_gates_enabled:
+            active_config = {
+                "enabled": True,
+                "anti_fomo_sigma": anti_fomo_sigma,
+                "anti_flat_sigma": anti_flat_sigma,
+                "window_sec": window_sec,
+                "anti_fomo_sigma_value_source": anti_fomo_sigma_value_source,
+                "anti_flat_sigma_value_source": anti_flat_sigma_value_source,
+                "window_sec_value_source": window_sec_value_source,
+            }
+        else:
+            disabled_config_snapshot = {
+                "enabled": False,
+                "anti_fomo_sigma": anti_fomo_sigma,
+                "anti_flat_sigma": anti_flat_sigma,
+                "window_sec": window_sec,
+                "anti_fomo_sigma_value_source": anti_fomo_sigma_value_source,
+                "anti_flat_sigma_value_source": anti_flat_sigma_value_source,
+                "window_sec_value_source": window_sec_value_source,
+                "missing_reason": motion_missing_reason,
+            }
+
         return {
             "schema_version": "1.0.0",
             "strategy_id": getattr(self, "strategy_id", "aurora"),
             "symbol": symbol,
             "side": result.side or None,
             "tf_sec": int(getattr(self, "timeframe_sec", 300) or 0),
+            # Canonical anti-peak observability contract.
+            "enabled": vol_gates_enabled,
+            "gate_disabled": not vol_gates_enabled,
+            "motion_classification": motion_classification,
+            "missing_inputs": dict(missing_inputs),
+            "active_config": active_config,
+            "disabled_config_snapshot": disabled_config_snapshot,
+            "anti_fomo_sigma": anti_fomo_sigma,
+            "anti_flat_sigma": anti_flat_sigma,
+            "window_sec": window_sec,
+            "anti_fomo_sigma_value_source": anti_fomo_sigma_value_source,
+            "anti_flat_sigma_value_source": anti_flat_sigma_value_source,
+            "window_sec_value_source": window_sec_value_source,
+            "motion_norm_sigma": (
+                float(motion_norm_sigma) if motion_norm_sigma is not None else None
+            ),
+            "score_before_shields": score_before,
+            "score_after_shields": score_after_shields,
+            "final_score": final_score,
+            "signal_threshold": active_threshold,
+            "danger_zone_applied": danger_zone_applied,
+            "context_shield_applied": (
+                False if not ctx_enabled else (
+                    True if context_shield_applied else None)
+            ),
+            "attenuated_below_threshold": attenuated_below_threshold,
+            "consumed_by_gate": consumed_by_gate,
+            "source": source,
+            "ready": ready,
+            "reason": reason,
+            # Legacy compatibility aliases retained temporarily for existing
+            # downstream forensic/tests that have not yet migrated.
             "motion": {
                 "enabled": vol_gates_enabled,
                 "window_sec": window_sec,
                 "window_sec_value_source": window_sec_value_source,
                 "motion_norm_sigma": (
                     float(motion_norm_sigma) if motion_norm_sigma is not None else None
+                ),
+                "motion_norm_sigma_value_source": (
+                    "live_observation" if motion_norm_sigma is not None else None
                 ),
                 "anti_fomo_sigma": anti_fomo_sigma,
                 "anti_flat_sigma": anti_flat_sigma,
@@ -255,6 +412,7 @@ class AuroraDecisionMixin:
                 "score_after_context_shield": None,
                 "score_after_memory_shield": None,
                 "score_after_system_stress": None,
+                "score_after_shields": score_after_shields,
                 "final_score": final_score,
                 "signal_threshold": active_threshold,
                 "would_emit_signal_before_shields": None,
@@ -284,7 +442,7 @@ class AuroraDecisionMixin:
             "context_shield": {
                 "enabled": ctx_enabled,
                 "evaluated": None,
-                "applied": None,
+                "applied": False if not ctx_enabled else (True if context_shield_applied else None),
                 "multiplier": None,
                 "regime": str(features.get("regime")) if features.get("regime") is not None else None,
                 "regime_confidence": _lineage_float(features.get("regime_confidence")),
@@ -308,7 +466,7 @@ class AuroraDecisionMixin:
             },
             "classification": {
                 "hard_blocked": danger_zone_applied,
-                "attenuated_below_threshold": None,
+                "attenuated_below_threshold": attenuated_below_threshold,
                 "passed_after_attenuation": None,
                 "masked_by_prior_gate": None,
                 "block_reason": "DANGER_ZONE_HARD_BLOCK" if danger_zone_applied else None,
@@ -398,7 +556,8 @@ class AuroraDecisionMixin:
                 state=state,
                 pillar_sum=float(
                     psi.get("s_linear", features.get("pillar_sum", 0.0)) or 0.0),
-                raw_exposure=float(psi.get("raw_exposure", 0.0) or 0.0)
+                raw_exposure=float(psi.get("raw_exposure", 0.0) or 0.0),
+                price_motion_provenance=price_motion_provenance,
             ),
         }
 
@@ -1341,7 +1500,9 @@ class AuroraDecisionMixin:
                 pillar_sum=float((result.psi_vector or {}).get(
                     "s_linear", features.get("pillar_sum", 0.0)) or 0.0),
                 raw_exposure=float((result.psi_vector or {}).get(
-                    "raw_exposure", 0.0) or 0.0)
+                    "raw_exposure", 0.0) or 0.0),
+                price_motion_provenance=price_motion_provenance,
+                consumed_by_gate=price_motion_consumed_by_vol_gate,
             )
             return merged
 
@@ -2019,7 +2180,9 @@ class AuroraDecisionMixin:
                     pillar_sum=float((result.psi_vector or {}).get(
                         "s_linear", features.get("pillar_sum", 0.0)) or 0.0),
                     raw_exposure=float((result.psi_vector or {}).get(
-                        "raw_exposure", 0.0) or 0.0)
+                        "raw_exposure", 0.0) or 0.0),
+                    price_motion_provenance=price_motion_provenance,
+                    consumed_by_gate=price_motion_consumed_by_vol_gate,
                 ),
             },
             "sizing": {

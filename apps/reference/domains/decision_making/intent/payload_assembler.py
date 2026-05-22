@@ -116,8 +116,10 @@ def _build_missing_inputs(
         candidate is not None
         for candidate in (
             _resolve_lineage_value(score_lineage, "signal_score"),
-            strategy_trace.get("signal_score") if isinstance(strategy_trace, dict) else None,
-            low_vol_score_context.get("signal_score") if isinstance(low_vol_score_context, dict) else None,
+            strategy_trace.get("signal_score") if isinstance(
+                strategy_trace, dict) else None,
+            low_vol_score_context.get("signal_score") if isinstance(
+                low_vol_score_context, dict) else None,
         )
     )
     return {
@@ -208,6 +210,11 @@ def build_trade_intent_payload(
     entry_plan_trace: Optional[dict],
     regime: Any,
     regime_confidence: Any,
+    resolved_min_regime_confidence: Any,
+    threshold_applied: Any,
+    threshold_verdict: Any,
+    threshold_reason: Any,
+    regime_confidence_gate_verdict: Any,
     regime_provenance: Optional[dict],
     regime_epoch_ref: Optional[str],
     tpsl_owner_ctx: Optional[dict],
@@ -255,6 +262,11 @@ def build_trade_intent_payload(
         "entry_plan": entry_plan_trace,
         "regime": regime,
         "regime_confidence": regime_confidence,
+        "resolved_min_regime_confidence": resolved_min_regime_confidence,
+        "threshold_applied": threshold_applied,
+        "threshold_verdict": threshold_verdict,
+        "threshold_reason": threshold_reason,
+        "regime_confidence_gate_verdict": regime_confidence_gate_verdict,
         "regime_provenance": None,
     }
     if isinstance(regime_provenance, dict) and regime_provenance:

@@ -1,0 +1,803 @@
+{
+  "bundle_root": "logs/frozen/nrr062_fresh_capture_20260517_080431",
+  "freeze_window": {
+    "start_ts_ms": 1778928002063,
+    "start_ts_utc": "2026-05-16T10:40:02.063000+00:00",
+    "end_ts_ms": 1779004037036,
+    "end_ts_utc": "2026-05-17T07:47:17.036000+00:00",
+    "duration_seconds": 76034.973,
+    "duration_hours": 21.1208,
+    "active_symbols": [
+      "BNBUSDT",
+      "BTCUSDT",
+      "DOGEUSDT",
+      "ETHUSDT",
+      "XRPUSDT"
+    ],
+    "restarts_after_boundary": "NOT_LOCALIZED_FROM_RETAINED_TAIL",
+    "manual_cleanup_status": "NOT_OBSERVED_IN_FROZEN_EVIDENCE",
+    "trading_modes": [
+      "hybrid_live_data_testnet_exec"
+    ],
+    "config_snapshot_status": {
+      "required_present": 8,
+      "required_files": 8,
+      "all_required_present": true,
+      "parse_status_counts": {
+        "PARSED_MAPPING": 11
+      }
+    }
+  },
+  "freeze_bucket_counts": {
+    "INCONCLUSIVE": 24,
+    "FILLED_POSITION_STILL_OPEN": 1,
+    "CLOSED_CANONICAL_LOSS": 1
+  },
+  "latest_bucket_counts": {
+    "INCONCLUSIVE": 24,
+    "CLOSED_NON_CANONICAL_EVIDENCE": 1,
+    "CLOSED_CANONICAL_LOSS": 1
+  },
+  "decision_ledger_semantics": {
+    "terminal_execution_counts": {
+      "REJECTED_UPSTREAM|EXCHANGE_REJECTED": 25,
+      "INVALID_FOR_DATASET|PENDING_TIMEOUT": 2
+    },
+    "invalid_reason_counts": {
+      "NON_CAUSAL_TIME": 25,
+      "TERMINAL_EVENT_MISSING": 2
+    },
+    "support_no_effect_counts": {
+      "True": 27
+    },
+    "joined_by_counts": {
+      "rid": 25,
+      "None": 2
+    }
+  },
+  "rows": [
+    {
+      "rid": "aurora_BTCUSDT_1778936098521",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778936699616",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778937300900",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778955599428",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778956200544",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778959201469",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778959802578",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778961003822",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778961605077",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778962205306",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778964603346",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778965504445",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778971802990",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778972404161",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778973004867",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778974802809",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778975403742",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778976004910",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778978102794",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778978703848",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778979304446",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778991305469",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778991900853",
+      "symbol": "BTCUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    },
+    {
+      "rid": "aurora_ETHUSDT_1778942102182",
+      "symbol": "ETHUSDT",
+      "freeze_bucket": "FILLED_POSITION_STILL_OPEN",
+      "latest_bucket": "CLOSED_NON_CANONICAL_EVIDENCE",
+      "freeze_terminal_status": "INVALID_FOR_DATASET",
+      "latest_terminal_pairs": [
+        "INVALID_FOR_DATASET|PENDING_TIMEOUT"
+      ],
+      "invalid_reason_codes": [
+        "TERMINAL_EVENT_MISSING"
+      ],
+      "order_events": [
+        "ORDER_FILLED",
+        "ORDER_INTENT",
+        "ORDER_PLACED",
+        "POSITION_CLOSED"
+      ],
+      "trade_events": [
+        "EXECUTION_BRACKET_DEFERRED_PLACED",
+        "EXECUTION_BRACKET_DEFERRED_STORED",
+        "EXECUTION_FILL_INGRESS",
+        "ORPHANED_TTL",
+        "TRADE_LIFECYCLE_FILLED",
+        "TRADE_LIFECYCLE_ORDERED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": "SL",
+      "latest_close_ts_utc": "2026-05-17T10:04:46.273000+00:00",
+      "latest_close_after_freeze_end": true,
+      "latest_realized_pnl_net": -28.58449907,
+      "notes": [
+        "Raw close exists after Package J freeze; not counted in Package J canonical realized dataset.",
+        "Open at freeze boundary and closed after freeze end."
+      ]
+    },
+    {
+      "rid": "aurora_XRPUSDT_1778933700563",
+      "symbol": "XRPUSDT",
+      "freeze_bucket": "CLOSED_CANONICAL_LOSS",
+      "latest_bucket": "CLOSED_CANONICAL_LOSS",
+      "freeze_terminal_status": "INVALID_FOR_DATASET",
+      "latest_terminal_pairs": [
+        "INVALID_FOR_DATASET|PENDING_TIMEOUT",
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME",
+        "TERMINAL_EVENT_MISSING"
+      ],
+      "order_events": [
+        "ORDER_FILLED",
+        "ORDER_INTENT",
+        "ORDER_PLACED",
+        "POSITION_CLOSED"
+      ],
+      "trade_events": [
+        "EXECUTION_BRACKET_DEFERRED_PLACED",
+        "EXECUTION_BRACKET_DEFERRED_STORED",
+        "EXECUTION_FILL_INGRESS",
+        "ORPHANED_TTL",
+        "TRADE_LIFECYCLE_FILLED",
+        "TRADE_LIFECYCLE_ORDERED"
+      ],
+      "canonical_realized_in_j": true,
+      "latest_close_reason": "SL",
+      "latest_close_ts_utc": "2026-05-16T16:04:36.327000+00:00",
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": -13.08771079,
+      "notes": []
+    },
+    {
+      "rid": "aurora_XRPUSDT_1778934901815",
+      "symbol": "XRPUSDT",
+      "freeze_bucket": "INCONCLUSIVE",
+      "latest_bucket": "INCONCLUSIVE",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "canonical_realized_in_j": false,
+      "latest_close_reason": null,
+      "latest_close_ts_utc": null,
+      "latest_close_after_freeze_end": false,
+      "latest_realized_pnl_net": null,
+      "notes": [
+        "Only ORDER_INTENT plus diagnostics-only decision-ledger row; no downstream submit/fill evidence in retained or current raw logs."
+      ]
+    }
+  ]
+}

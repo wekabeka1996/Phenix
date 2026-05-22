@@ -38,8 +38,9 @@ from urllib.parse import urlencode, quote_plus
 import requests
 
 
-# Ensure project imports work when running as a script
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# Ensure project imports work when running as a script.
+# This file lives under scripts/diagnostics/, so the repo root is two levels up.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -533,7 +534,8 @@ def main() -> int:
     lines.append(
         f"Generated: {dt.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
     lines.append(f"Base URL: `{base_url}`\n")
-    lines.append(f"Range: `{_fmt_ts_ms(start_ms)}` -> `{_fmt_ts_ms(end_ms)}`\n")
+    lines.append(
+        f"Range: `{_fmt_ts_ms(start_ms)}` -> `{_fmt_ts_ms(end_ms)}`\n")
 
     # Income section
     lines.append("## Income (fapi/v1/income)\n")

@@ -256,6 +256,10 @@ def test_same_bar_typed_cmd_transport_vol_gate_block_preserves_matching_provenan
         "ready": trace["price_motion_ready"],
         "consumed_by_vol_gate": True,
     }
+    anti_peak = blocked["details"]["anti_peak_observability"]
+    assert anti_peak["motion_classification"] == "anti_flat_triggered"
+    assert anti_peak["consumed_by_gate"] is True
+    assert anti_peak["source"] == "cmd_typed"
 
 
 def test_same_bar_cache_fallback_marks_price_motion_ready() -> None:

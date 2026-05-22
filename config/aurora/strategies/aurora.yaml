@@ -15,6 +15,12 @@ aurora:
     enabled: true
     system_stress_policy: attenuate
     stress_attenuation_factor: 0.5
+    regime_confidence:
+      max_by_symbol_regime_side:
+        ETHUSDT:
+          TREND_DOWN:
+            SELL:
+              enabled: false
   shadow_mode_enabled: false
   objective:
     enabled: true
@@ -355,10 +361,35 @@ aurora:
     exit:
       time_exit_enabled: false
       max_hold_time_sec: 86400
-      signal_exit_enabled: true
+      signal_exit_enabled: false
       signal_reversal_threshold: -0.1
       danger_zone_action: TIGHTEN_STOPS
       danger_zone_tighten_factor: 0.5
+    pyramiding_policy:
+      enabled: true
+      mode: testnet_enforced
+      default_action: block
+      order_type: LIMIT
+      max_adds_per_lifecycle: 1
+      max_pending_add_orders_per_symbol: 1
+      rules:
+        - id: aurora_low_vol_sell_v1
+          strategy_id: aurora
+          regimes:
+            - LOW_VOLATILITY
+          sides:
+            - SELL
+          symbols: null
+          enabled: true
+      guards:
+        require_same_side_position: true
+        require_position_mode_strict_base: true
+        block_if_close_in_progress: true
+        block_if_pending_add_exists: true
+        block_if_sidecar_live_authority_active: true
+        require_regime_confidence: false
+      telemetry:
+        emit_trace: true
     operational_mode: paranoid
     dashboard: null
   assets:
@@ -525,7 +556,6 @@ aurora:
       - TREND_UP
       - TREND_DOWN
       - LOW_VOLATILITY
-      - MEAN_REVERSION
       - HIGH_VOLATILITY
       scoring_version: null
       feature_neutrals: null
@@ -582,9 +612,9 @@ aurora:
         DEFAULT: 1.0
       regime_sizing:
         HIGH_VOLATILITY: 0.7
-        LOW_VOLATILITY: 0.7
-        TREND_UP: 1.3
-        TREND_DOWN: 1.3
+        LOW_VOLATILITY: 1.05
+        TREND_UP: 1.0
+        TREND_DOWN: 1.95
         MEAN_REVERSION: 0.7
       exit:
         sl_pct: 0.005
@@ -630,7 +660,6 @@ aurora:
       - TREND_DOWN
       - LOW_VOLATILITY
       - HIGH_VOLATILITY
-      - MEAN_REVERSION
       scoring_version: null
       feature_neutrals: null
       essential_features: null
@@ -658,7 +687,7 @@ aurora:
           DEFAULT: 0.12
       max_risk_score: null
     BNBUSDT:
-      enabled: true
+      enabled: false
       weights:
         ema_bias: -0.119873
         volume_spike: 0.243661
@@ -733,7 +762,6 @@ aurora:
       - TREND_UP
       - TREND_DOWN
       - HIGH_VOLATILITY
-      - MEAN_REVERSION
       scoring_version: null
       feature_neutrals: null
       essential_features: null
@@ -899,7 +927,7 @@ aurora:
         HIGH_VOLATILITY: 0.7
         LOW_VOLATILITY: 0.7
         TREND_UP: 1.3
-        TREND_DOWN: 1.3
+        TREND_DOWN: 1.625
         MEAN_REVERSION: 0.7
       exit:
         sl_pct: 0.005
@@ -943,7 +971,6 @@ aurora:
       allowed_regimes:
       - TREND_DOWN
       - HIGH_VOLATILITY
-      - MEAN_REVERSION
       scoring_version: null
       feature_neutrals: null
       essential_features: null
@@ -971,7 +998,7 @@ aurora:
           DEFAULT: 0.12
       max_risk_score: null
     XRPUSDT:
-      enabled: true
+      enabled: false
       weights:
         ema_bias: -0.119873
         volume_spike: 0.243661

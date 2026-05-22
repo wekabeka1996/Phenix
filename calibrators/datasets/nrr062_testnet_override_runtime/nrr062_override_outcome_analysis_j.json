@@ -1,0 +1,71 @@
+{
+  "bundle_root": "logs/frozen/nrr062_fresh_capture_20260517_080431",
+  "trade_lifecycle_invalid_json_lines": [
+    {
+      "line": 2134,
+      "head": "wner\": null, \"score_snapshot\": {}}"
+    }
+  ],
+  "override_rids": [
+    "aurora_BTCUSDT_1778936098521",
+    "aurora_BTCUSDT_1778936699616",
+    "aurora_BTCUSDT_1778937300900",
+    "aurora_BTCUSDT_1778955599428",
+    "aurora_BTCUSDT_1778956200544",
+    "aurora_BTCUSDT_1778959201469",
+    "aurora_BTCUSDT_1778959802578",
+    "aurora_BTCUSDT_1778961003822",
+    "aurora_BTCUSDT_1778961605077",
+    "aurora_BTCUSDT_1778962205306",
+    "aurora_BTCUSDT_1778964603346",
+    "aurora_BTCUSDT_1778965504445",
+    "aurora_BTCUSDT_1778971802990",
+    "aurora_BTCUSDT_1778972404161",
+    "aurora_BTCUSDT_1778973004867",
+    "aurora_BTCUSDT_1778974802809",
+    "aurora_BTCUSDT_1778975403742",
+    "aurora_BTCUSDT_1778976004910",
+    "aurora_BTCUSDT_1778978102794",
+    "aurora_BTCUSDT_1778978703848",
+    "aurora_BTCUSDT_1778979304446",
+    "aurora_BTCUSDT_1778991305469",
+    "aurora_BTCUSDT_1778991900853",
+    "aurora_ETHUSDT_1778942102182",
+    "aurora_XRPUSDT_1778933700563",
+    "aurora_XRPUSDT_1778934901815"
+  ],
+  "override_rows_order_log": 26,
+  "decision_ledger_status_counts": {
+    "REJECTED_UPSTREAM": 24,
+    "INVALID_FOR_DATASET": 2
+  },
+  "canonical_closed_count": 1,
+  "exact_roundtrip_rows": 1,
+  "wins": 0,
+  "losses": 1,
+  "unresolved": 25,
+  "net_pnl_quote": -13.08771079,
+  "gross_pnl_quote": -11.28317,
+  "fees_quote": 1.80454079,
+  "fee_drag_ratio_of_abs_gross": 0.15993207493993264,
+  "close_distribution": {
+    "OVERRIDE_REJECTED_UPSTREAM": 24,
+    "OVERRIDE_UNRESOLVED_INVALID_FOR_DATASET": 1,
+    "OVERRIDE_CANONICAL_CLOSED_LOSS": 1
+  },
+  "close_reason_distribution": {
+    "NONE": 25,
+    "closed_loss": 1
+  },
+  "sidecar_observed_rids": 0,
+  "current_total_sample": {
+    "package_i_override_count": 5,
+    "package_i_closed_count": 4,
+    "package_i_net_pnl_quote": 70.33973751,
+    "combined_override_count_i_plus_j": 31,
+    "combined_closed_count_i_plus_j": 5,
+    "combined_net_quote_i_plus_j": 57.25202672,
+    "sample_gate_reached": true
+  },
+  "verdict": "NEGATIVE_J_WINDOW_SINGLE_CANONICAL_CLOSE"
+}

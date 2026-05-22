@@ -152,10 +152,26 @@ def test_current_aurora_config_loads_decision_making_contract() -> None:
     assert aurora.safety_gates.enabled is True
     assert aurora.safety_gates.system_stress_policy == "attenuate"
     assert aurora.safety_gates.stress_attenuation_factor == 0.5
-    assert aurora.safety_gates.regime_confidence is None
+    assert aurora.safety_gates.regime_confidence is not None
+    assert aurora.safety_gates.regime_confidence.max_by_symbol_regime_side is not None
+    eth_side_override = aurora.safety_gates.regime_confidence.max_by_symbol_regime_side[
+        "ETHUSDT"]["TREND_DOWN"]
+    assert eth_side_override.BUY is None
+    assert eth_side_override.SELL == domain_dm.RegimeConfidenceMaxSideOverrideConfig(
+        enabled=False,
+        threshold=None,
+    )
+    assert aurora.safety_gates.regime_confidence.min_by_regime is None
+    assert aurora.safety_gates.regime_confidence.min_by_symbol is None
+    assert aurora.safety_gates.regime_confidence.max_by_regime is None
+    assert aurora.safety_gates.regime_confidence.max_by_symbol is None
+    assert aurora.safety_gates.regime_confidence.max_by_regime_side is None
+    assert "DOGEUSDT" not in aurora.safety_gates.regime_confidence.max_by_symbol_regime_side
     assert cfg.strategies.md_amr.safety_gates.regime_confidence is None
     assert cfg.strategies.mean_reversion.safety_gates.regime_confidence is None
     assert cfg.strategies.llm_microstructure.safety_gates.regime_confidence is None
+    assert dm_domain.directional_sanity.nrr026_enabled is False
+    assert aurora.assets["XRPUSDT"].enabled is False
 
     decision = aurora.decision
     assert decision.testnet is not None
@@ -225,6 +241,69 @@ def test_directional_sanity_accepts_optional_max_per_regime_confidence_threshold
     }
 
 
+def test_variant_b2_pre_restart_hardening_and_size_rebalance_contract() -> None:
+    cfg = ConfigLoader(config_dir=CONFIG_DIR).load_config()
+
+    aurora = cfg.strategies.aurora
+    decision = aurora.decision
+    dm_domain = cfg.domains.decision_making
+    sidecar = cfg.domains.execution_position.position_policy_sidecar
+
+    assert sidecar.mode.value == "enable"
+    assert dm_domain.directional_sanity.nrr026_enabled is False
+
+    assert decision.exit is not None
+    assert decision.exit.signal_exit_enabled is False
+
+    pyramiding = decision.pyramiding_policy
+    assert pyramiding is not None
+    assert pyramiding.enabled is True
+    assert pyramiding.mode == "testnet_enforced"
+    assert pyramiding.order_type == "LIMIT"
+    assert pyramiding.max_adds_per_lifecycle == 1
+    assert pyramiding.rules is not None
+    assert len(pyramiding.rules) == 1
+    rule = pyramiding.rules[0]
+    assert rule.enabled is True
+    assert rule.regimes == ["LOW_VOLATILITY"]
+    assert rule.sides == ["SELL"]
+    assert rule.symbols is None
+
+    assert aurora.assets["BNBUSDT"].enabled is False
+    assert aurora.assets["XRPUSDT"].enabled is False
+    assert aurora.assets["SOLUSDT"].signal_threshold.enabled is False
+
+    eth_side_override = aurora.safety_gates.regime_confidence.max_by_symbol_regime_side[
+        "ETHUSDT"]["TREND_DOWN"]
+    assert eth_side_override.BUY is None
+    assert eth_side_override.SELL == domain_dm.RegimeConfidenceMaxSideOverrideConfig(
+        enabled=False,
+        threshold=None,
+    )
+    assert "DOGEUSDT" not in aurora.safety_gates.regime_confidence.max_by_symbol_regime_side
+    assert "BNBUSDT" not in aurora.safety_gates.regime_confidence.max_by_symbol_regime_side
+    assert "BTCUSDT" not in aurora.safety_gates.regime_confidence.max_by_symbol_regime_side
+
+    enabled_assets = {
+        symbol: asset
+        for symbol, asset in aurora.assets.items()
+        if asset.enabled
+    }
+    assert all(
+        getattr(asset.position_mode, "value", asset.position_mode) == "STRICT"
+        for asset in enabled_assets.values()
+    )
+    assert all(
+        "MEAN_REVERSION" not in list(asset.allowed_regimes or [])
+        for asset in enabled_assets.values()
+    )
+
+    assert aurora.assets["BTCUSDT"].regime_sizing["LOW_VOLATILITY"] == 1.05
+    assert aurora.assets["BTCUSDT"].regime_sizing["TREND_DOWN"] == 1.95
+    assert aurora.assets["DOGEUSDT"].regime_sizing["TREND_DOWN"] == 1.625
+    assert aurora.assets["ETHUSDT"].regime_sizing["TREND_UP"] == 1.3
+
+
 def test_safety_gates_accepts_optional_strategy_regime_confidence_thresholds() -> None:
     cfg = domain_dm.SafetyGatesConfig(
         enabled=True,
@@ -281,6 +360,70 @@ def test_safety_gates_accepts_optional_strategy_symbol_regime_confidence_thresho
             "TREND_UP": 0.70,
         },
     }
+
+
+def test_safety_gates_accepts_side_aware_strategy_regime_confidence_thresholds() -> None:
+    cfg = domain_dm.SafetyGatesConfig(
+        enabled=True,
+        system_stress_policy="off",
+        stress_attenuation_factor=0.5,
+        regime_confidence={
+            "min_by_regime_side": {
+                "TREND_DOWN": {
+                    "SELL": 0.62,
+                }
+            },
+            "max_by_regime_side": {
+                "TREND_DOWN": {
+                    "SELL": {
+                        "enabled": False,
+                    }
+                }
+            },
+        },
+    )
+
+    assert cfg.regime_confidence is not None
+    assert cfg.regime_confidence.min_by_regime_side is not None
+    assert cfg.regime_confidence.min_by_regime_side["TREND_DOWN"].SELL == 0.62
+    assert cfg.regime_confidence.max_by_regime_side is not None
+    assert cfg.regime_confidence.max_by_regime_side["TREND_DOWN"].SELL is not None
+    assert cfg.regime_confidence.max_by_regime_side["TREND_DOWN"].SELL.enabled is False
+
+
+def test_safety_gates_accepts_side_aware_strategy_symbol_regime_confidence_thresholds() -> None:
+    cfg = domain_dm.SafetyGatesConfig(
+        enabled=True,
+        system_stress_policy="off",
+        stress_attenuation_factor=0.5,
+        regime_confidence={
+            "min_by_symbol_regime_side": {
+                "ETHUSDT": {
+                    "TREND_DOWN": {
+                        "SELL": 0.79,
+                    }
+                }
+            },
+            "max_by_symbol_regime_side": {
+                "ETHUSDT": {
+                    "TREND_DOWN": {
+                        "SELL": {
+                            "enabled": True,
+                            "threshold": 0.95,
+                        }
+                    }
+                }
+            },
+        },
+    )
+
+    assert cfg.regime_confidence is not None
+    assert cfg.regime_confidence.min_by_symbol_regime_side is not None
+    assert cfg.regime_confidence.min_by_symbol_regime_side["ETHUSDT"]["TREND_DOWN"].SELL == 0.79
+    assert cfg.regime_confidence.max_by_symbol_regime_side is not None
+    assert cfg.regime_confidence.max_by_symbol_regime_side["ETHUSDT"]["TREND_DOWN"].SELL is not None
+    assert cfg.regime_confidence.max_by_symbol_regime_side[
+        "ETHUSDT"]["TREND_DOWN"].SELL.threshold == 0.95
 
 
 def test_safety_gates_accepts_optional_strategy_max_regime_confidence_thresholds() -> None:
@@ -364,6 +507,84 @@ def test_safety_gates_accepts_partial_max_thresholds_without_default() -> None:
         "TREND_UP": 0.975,
         "TREND_DOWN": 0.88,
     }
+
+
+def test_safety_gates_rejects_side_aware_default_regime_key() -> None:
+    with pytest.raises(ValidationError, match="DEFAULT\\+side is not supported|unsupported"):
+        domain_dm.SafetyGatesConfig(
+            enabled=True,
+            system_stress_policy="off",
+            stress_attenuation_factor=0.5,
+            regime_confidence={
+                "min_by_regime_side": {
+                    "DEFAULT": {
+                        "SELL": 0.62,
+                    }
+                }
+            },
+        )
+
+
+def test_safety_gates_rejects_unknown_side_label_for_side_aware_thresholds() -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        domain_dm.SafetyGatesConfig(
+            enabled=True,
+            system_stress_policy="off",
+            stress_attenuation_factor=0.5,
+            regime_confidence={
+                "min_by_regime_side": {
+                    "TREND_DOWN": {
+                        "SHORT": 0.62,
+                    }
+                }
+            },
+        )
+
+
+def test_safety_gates_rejects_explicit_null_side_max_override() -> None:
+    with pytest.raises(ValidationError, match="explicit null"):
+        domain_dm.SafetyGatesConfig(
+            enabled=True,
+            system_stress_policy="off",
+            stress_attenuation_factor=0.5,
+            regime_confidence={
+                "max_by_symbol_regime_side": {
+                    "ETHUSDT": {
+                        "TREND_DOWN": {
+                            "SELL": None,
+                        }
+                    }
+                }
+            },
+        )
+
+
+def test_safety_gates_rejects_invalid_side_aware_band_configuration() -> None:
+    with pytest.raises(ValidationError, match="must be >= min threshold"):
+        domain_dm.SafetyGatesConfig(
+            enabled=True,
+            system_stress_policy="off",
+            stress_attenuation_factor=0.5,
+            regime_confidence={
+                "min_by_symbol_regime_side": {
+                    "ETHUSDT": {
+                        "TREND_DOWN": {
+                            "SELL": 0.82,
+                        }
+                    }
+                },
+                "max_by_symbol_regime_side": {
+                    "ETHUSDT": {
+                        "TREND_DOWN": {
+                            "SELL": {
+                                "enabled": True,
+                                "threshold": 0.79,
+                            }
+                        }
+                    }
+                },
+            },
+        )
 
 
 def test_directional_sanity_rejects_invalid_band_configuration() -> None:

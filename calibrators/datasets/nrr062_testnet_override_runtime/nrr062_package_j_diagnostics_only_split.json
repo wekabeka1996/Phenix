@@ -1,0 +1,730 @@
+{
+  "bundle_root": "logs/frozen/nrr062_fresh_capture_20260517_080431",
+  "classification_basis": "exact rid/decision_id/lifecycle_id correlation against the Package L frozen bundle plus frozen decision ledger copy at the L capture boundary",
+  "target_row_count": 24,
+  "bucket_counts": {
+    "DOWNSTREAM_NO_EFFECT_CONFIRMED": 24,
+    "ORDER_INTENT_ONLY_NO_SUBMIT": 0,
+    "SUBMIT_EVIDENCE_MISSING": 0,
+    "FILL_EVIDENCE_MISSING": 0,
+    "CORRELATION_GAP_RID_NOT_PROPAGATED": 0,
+    "OBJECTIVE_DATASET_ONLY_NO_RUNTIME_AUTHORITY": 0,
+    "PRE_ADMISSION_DIAGNOSTIC_ONLY": 0,
+    "POST_FREEZE_OUTCOME_PENDING": 0,
+    "RAW_CLOSE_AFTER_FREEZE": 0,
+    "INCONCLUSIVE": 0
+  },
+  "uniform_signature": {
+    "present": true,
+    "signature": {
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "ORPHANED_TTL",
+        "REJECTED"
+      ],
+      "terminal_pair": "REJECTED_UPSTREAM|EXCHANGE_REJECTED",
+      "invalid_reason_code": "NON_CAUSAL_TIME",
+      "no_effect": true
+    }
+  },
+  "rows": [
+    {
+      "rid": "aurora_BTCUSDT_1778936098521",
+      "symbol": "BTCUSDT",
+      "decision_id": "e20a5e81-1d50-4480-bb9a-a43d72ccc39d",
+      "lifecycle_id": "9b1d4a05-49c0-46c1-8208-24ccff6cc46d",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778936699616",
+      "symbol": "BTCUSDT",
+      "decision_id": "fb12b752-7d5d-4670-8d6f-e6cfbfc53cf2",
+      "lifecycle_id": "a83fd69f-d537-4e09-bc96-ff71b1e373db",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778937300900",
+      "symbol": "BTCUSDT",
+      "decision_id": "a9f36566-2d6d-4a94-80ee-6c0ffe3b3184",
+      "lifecycle_id": "e37813ea-448c-489e-a732-b62a1960b510",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778955599428",
+      "symbol": "BTCUSDT",
+      "decision_id": "75f0d8d7-d65d-4d75-9c68-7dc7e783da3d",
+      "lifecycle_id": "2811b60b-095c-46f5-869d-26a66b4fbf5a",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778956200544",
+      "symbol": "BTCUSDT",
+      "decision_id": "50f718bb-3d0f-4aa3-b876-d0f7d3949525",
+      "lifecycle_id": "930de7e6-868b-4e53-ad35-08a6deb3f531",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778959201469",
+      "symbol": "BTCUSDT",
+      "decision_id": "4bb9085f-b54e-4ffb-a5ca-8a5e638960ae",
+      "lifecycle_id": "9badd2ad-6232-426a-b221-5444b8381bb4",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778959802578",
+      "symbol": "BTCUSDT",
+      "decision_id": "55745f4c-9e6f-4d3b-8321-c3a3d8dd03b4",
+      "lifecycle_id": "0d14ab29-2e55-4810-94b5-45eefcf3b411",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778961003822",
+      "symbol": "BTCUSDT",
+      "decision_id": "5526594b-378a-41ca-aca3-3aaa5208f5bd",
+      "lifecycle_id": "0614cbc8-1435-46ee-9b52-3f56737594b6",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778961605077",
+      "symbol": "BTCUSDT",
+      "decision_id": "245473c6-9d5e-489c-9df3-e36e05683f21",
+      "lifecycle_id": "592e1d11-2f69-40b9-9d7f-a14d382d7e8d",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778962205306",
+      "symbol": "BTCUSDT",
+      "decision_id": "e149e30c-0eaa-4704-8591-85e9ce14307f",
+      "lifecycle_id": "0640e04e-3b7e-4356-948f-02431b6a59da",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778964603346",
+      "symbol": "BTCUSDT",
+      "decision_id": "c69bf315-7264-4d09-ab57-997651fc48db",
+      "lifecycle_id": "69c503d8-7e77-4253-bfb8-de19a59f7a26",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778965504445",
+      "symbol": "BTCUSDT",
+      "decision_id": "a05bb90f-2dbf-436d-b9b6-6ef7abddbcbb",
+      "lifecycle_id": "647f5dc0-2613-49f3-bb04-65d5c728e068",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778971802990",
+      "symbol": "BTCUSDT",
+      "decision_id": "ec469936-3fd9-4ef5-80bb-39e672e9ce86",
+      "lifecycle_id": "d21a940e-610b-4387-9f30-0fefc41d1e71",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778972404161",
+      "symbol": "BTCUSDT",
+      "decision_id": "f6d7075f-697b-47e1-ac1e-1fef50e72615",
+      "lifecycle_id": "67d32b97-3c34-4c08-830b-63fc19283be7",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778973004867",
+      "symbol": "BTCUSDT",
+      "decision_id": "45a73251-cfd9-4fec-8cd1-a46d51bc05ae",
+      "lifecycle_id": "557f3d43-6082-4aa8-b46f-c00449b9e677",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778974802809",
+      "symbol": "BTCUSDT",
+      "decision_id": "80121f87-9699-4fc4-b22a-8f021a8ddd55",
+      "lifecycle_id": "dd561e60-feb5-4b43-8e45-228de04dba7c",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778975403742",
+      "symbol": "BTCUSDT",
+      "decision_id": "d149541c-47a6-4afb-b5ca-2cb24fdbb7fb",
+      "lifecycle_id": "c15b5487-6bb7-4886-b0da-207b7db645f6",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778976004910",
+      "symbol": "BTCUSDT",
+      "decision_id": "37ef648b-77d8-47ae-a142-822c2529f0ce",
+      "lifecycle_id": "674b057f-3fff-4ba3-a7b3-94f116ac2737",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778978102794",
+      "symbol": "BTCUSDT",
+      "decision_id": "1eb5fd95-44e9-4dc1-9071-c2749a9165fc",
+      "lifecycle_id": "9039f7f1-3854-4163-bcdc-c58f4a51414d",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778978703848",
+      "symbol": "BTCUSDT",
+      "decision_id": "c454eaf3-be34-4a23-aa36-8eaa723bb1a5",
+      "lifecycle_id": "c008f060-a4b7-4a0d-9aa0-e676599c6bc1",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778979304446",
+      "symbol": "BTCUSDT",
+      "decision_id": "09916c61-642e-4a4b-9bf3-4dcd611a0a6d",
+      "lifecycle_id": "41156259-ad1e-49a2-9640-492c82f85ad4",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778991305469",
+      "symbol": "BTCUSDT",
+      "decision_id": "ecf012cb-f313-4011-91a4-c771b5e5eb31",
+      "lifecycle_id": "d48ab494-7ba6-4724-a8a5-67496067746c",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778991900853",
+      "symbol": "BTCUSDT",
+      "decision_id": "6c705016-b212-4a87-9243-9bfee586ff96",
+      "lifecycle_id": "7af91290-d63e-426a-bf62-843afd74844c",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    },
+    {
+      "rid": "aurora_XRPUSDT_1778934901815",
+      "symbol": "XRPUSDT",
+      "decision_id": "87491b27-89bd-4001-8100-41c4b64a903d",
+      "lifecycle_id": "8c0db969-38c3-4c01-834c-bbb69e88694f",
+      "subtype": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "freeze_terminal_status": "REJECTED_UPSTREAM",
+      "latest_terminal_pairs": [
+        "REJECTED_UPSTREAM|EXCHANGE_REJECTED"
+      ],
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "support_no_effect": true,
+      "joined_by": [
+        "rid"
+      ],
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "submit_like": false,
+      "fill_like": false,
+      "close_like": false,
+      "rationale": "Exact rid-correlation preserved the same retained/current signature for all 24 rows: ORDER_INTENT only, REJECTED plus ORPHANED_TTL, decision_ledger REJECTED_UPSTREAM|EXCHANGE_REJECTED, invalid_reason NON_CAUSAL_TIME, and support_quality.no_effect=true."
+    }
+  ]
+}

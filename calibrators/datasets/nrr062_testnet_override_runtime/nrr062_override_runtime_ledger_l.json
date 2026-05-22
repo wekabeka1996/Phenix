@@ -1,0 +1,344 @@
+{
+  "bundle_root": "logs/frozen/nrr062_fresh_capture_20260517_210245",
+  "observation_scope": "post_package_j_freeze_end_non_overlapping_tail",
+  "observation_boot_boundary": {
+    "ts_ms": 1779004037036,
+    "ts_utc": "2026-05-17T07:47:17.036000+00:00",
+    "boundary_kind": "package_j_freeze_end",
+    "note": "Package L uses the end of the retained Package J frozen window as the non-overlapping collection boundary."
+  },
+  "runtime_window": {
+    "start_ts_ms": 1779004037036,
+    "start_ts_utc": "2026-05-17T07:47:17.036000+00:00",
+    "end_ts_ms": 1779042741295,
+    "end_ts_utc": "2026-05-17T18:32:21.295000+00:00",
+    "duration_seconds": 38704.259,
+    "duration_hours": 10.7512,
+    "active_symbols": [
+      "BTCUSDT"
+    ],
+    "trading_modes": [],
+    "config_snapshot_status": {
+      "required_files": 8,
+      "required_present": 8,
+      "optional_present": 3,
+      "missing_configs": [],
+      "parse_status_counts": {
+        "PARSED_MAPPING": 11
+      },
+      "all_required_present": true
+    }
+  },
+  "override_rows_order_log": 7,
+  "override_rows_shadow_journal": 0,
+  "rows": [
+    {
+      "rid": "aurora_BTCUSDT_1779007800774",
+      "timestamp_ms": 1779007800908,
+      "timestamp_utc": "2026-05-17T08:50:00.908000+00:00",
+      "symbol": "BTCUSDT",
+      "side": "sell",
+      "strategy_id": "aurora",
+      "regime": "LOW_VOLATILITY",
+      "selected_source": "signal_score",
+      "selected_scale": "raw_signed_score",
+      "threshold_family": "raw_signed_score",
+      "original_direction_confidence": 0.01084358,
+      "original_regime_confidence": 0.45145504476411646,
+      "trading_mode": null,
+      "gate_mode": "enforced",
+      "decision_id": "2fcdc7d4-fca7-4115-901b-5898c5ba476c",
+      "lifecycle_id": "c954b9a2-c6a5-4a81-bb95-b0d9f7aee9a2",
+      "decision_ledger_row_present": true,
+      "decision_ledger_terminal_status": "REJECTED_UPSTREAM",
+      "decision_ledger_dataset_visibility": "diagnostics_only",
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "execution_outcomes": [
+        "EXCHANGE_REJECTED"
+      ],
+      "joined_by": [
+        "rid"
+      ],
+      "support_no_effect": true,
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "order_submitted": false,
+      "entry_filled": false,
+      "position_closed": false,
+      "freeze_bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "latest_bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "notes": "Only ORDER_INTENT plus REJECTED/ORPHANED_TTL and diagnostics-only REJECTED_UPSTREAM no_effect evidence; no submit/fill/close proof."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1779008401968",
+      "timestamp_ms": 1779008402087,
+      "timestamp_utc": "2026-05-17T09:00:02.087000+00:00",
+      "symbol": "BTCUSDT",
+      "side": "sell",
+      "strategy_id": "aurora",
+      "regime": "LOW_VOLATILITY",
+      "selected_source": "signal_score",
+      "selected_scale": "raw_signed_score",
+      "threshold_family": "raw_signed_score",
+      "original_direction_confidence": 0.01084358,
+      "original_regime_confidence": 0.6538310171898144,
+      "trading_mode": null,
+      "gate_mode": "enforced",
+      "decision_id": "27ecf5df-0b23-49de-a462-c74b3e85202d",
+      "lifecycle_id": "b000b533-0e13-44a3-8cd9-c8482f86331b",
+      "decision_ledger_row_present": true,
+      "decision_ledger_terminal_status": "REJECTED_UPSTREAM",
+      "decision_ledger_dataset_visibility": "diagnostics_only",
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "execution_outcomes": [
+        "EXCHANGE_REJECTED"
+      ],
+      "joined_by": [
+        "rid"
+      ],
+      "support_no_effect": true,
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "order_submitted": false,
+      "entry_filled": false,
+      "position_closed": false,
+      "freeze_bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "latest_bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "notes": "Only ORDER_INTENT plus REJECTED/ORPHANED_TTL and diagnostics-only REJECTED_UPSTREAM no_effect evidence; no submit/fill/close proof."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1779009002413",
+      "timestamp_ms": 1779009002521,
+      "timestamp_utc": "2026-05-17T09:10:02.521000+00:00",
+      "symbol": "BTCUSDT",
+      "side": "sell",
+      "strategy_id": "aurora",
+      "regime": "LOW_VOLATILITY",
+      "selected_source": "signal_score",
+      "selected_scale": "raw_signed_score",
+      "threshold_family": "raw_signed_score",
+      "original_direction_confidence": 0.00770074,
+      "original_regime_confidence": 0.7783130091725787,
+      "trading_mode": null,
+      "gate_mode": "enforced",
+      "decision_id": "5dce4127-0d43-42b1-8713-47ca323a46bf",
+      "lifecycle_id": "b017d512-e1c2-48d7-87a9-a8fa1e479960",
+      "decision_ledger_row_present": true,
+      "decision_ledger_terminal_status": "REJECTED_UPSTREAM",
+      "decision_ledger_dataset_visibility": "diagnostics_only",
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "execution_outcomes": [
+        "EXCHANGE_REJECTED"
+      ],
+      "joined_by": [
+        "rid"
+      ],
+      "support_no_effect": true,
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "order_submitted": false,
+      "entry_filled": false,
+      "position_closed": false,
+      "freeze_bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "latest_bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "notes": "Only ORDER_INTENT plus REJECTED/ORPHANED_TTL and diagnostics-only REJECTED_UPSTREAM no_effect evidence; no submit/fill/close proof."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1779009603278",
+      "timestamp_ms": 1779009603439,
+      "timestamp_utc": "2026-05-17T09:20:03.439000+00:00",
+      "symbol": "BTCUSDT",
+      "side": "sell",
+      "strategy_id": "aurora",
+      "regime": "LOW_VOLATILITY",
+      "selected_source": "signal_score",
+      "selected_scale": "raw_signed_score",
+      "threshold_family": "raw_signed_score",
+      "original_direction_confidence": 0.00426255,
+      "original_regime_confidence": 0.8219880581852522,
+      "trading_mode": null,
+      "gate_mode": "enforced",
+      "decision_id": "f8c3e48e-5f38-4f0b-8517-c35a582c56c7",
+      "lifecycle_id": "e5a77a07-e2f8-4e81-998b-2c41265dad7e",
+      "decision_ledger_row_present": true,
+      "decision_ledger_terminal_status": "REJECTED_UPSTREAM",
+      "decision_ledger_dataset_visibility": "diagnostics_only",
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "execution_outcomes": [
+        "EXCHANGE_REJECTED"
+      ],
+      "joined_by": [
+        "rid"
+      ],
+      "support_no_effect": true,
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "order_submitted": false,
+      "entry_filled": false,
+      "position_closed": false,
+      "freeze_bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "latest_bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "notes": "Only ORDER_INTENT plus REJECTED/ORPHANED_TTL and diagnostics-only REJECTED_UPSTREAM no_effect evidence; no submit/fill/close proof."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1779010204520",
+      "timestamp_ms": 1779010204639,
+      "timestamp_utc": "2026-05-17T09:30:04.639000+00:00",
+      "symbol": "BTCUSDT",
+      "side": "sell",
+      "strategy_id": "aurora",
+      "regime": "LOW_VOLATILITY",
+      "selected_source": "signal_score",
+      "selected_scale": "raw_signed_score",
+      "threshold_family": "raw_signed_score",
+      "original_direction_confidence": 0.00426255,
+      "original_regime_confidence": 0.85,
+      "trading_mode": null,
+      "gate_mode": "enforced",
+      "decision_id": "600541a0-6a55-4516-816a-6990f9f3ff82",
+      "lifecycle_id": "5cbf892f-a338-4242-a0e1-7cd3975a7a43",
+      "decision_ledger_row_present": true,
+      "decision_ledger_terminal_status": "REJECTED_UPSTREAM",
+      "decision_ledger_dataset_visibility": "diagnostics_only",
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "execution_outcomes": [
+        "EXCHANGE_REJECTED"
+      ],
+      "joined_by": [
+        "rid"
+      ],
+      "support_no_effect": true,
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "order_submitted": false,
+      "entry_filled": false,
+      "position_closed": false,
+      "freeze_bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "latest_bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "notes": "Only ORDER_INTENT plus REJECTED/ORPHANED_TTL and diagnostics-only REJECTED_UPSTREAM no_effect evidence; no submit/fill/close proof."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1779011105644",
+      "timestamp_ms": 1779011105753,
+      "timestamp_utc": "2026-05-17T09:45:05.753000+00:00",
+      "symbol": "BTCUSDT",
+      "side": "sell",
+      "strategy_id": "aurora",
+      "regime": "LOW_VOLATILITY",
+      "selected_source": "signal_score",
+      "selected_scale": "raw_signed_score",
+      "threshold_family": "raw_signed_score",
+      "original_direction_confidence": 0.00283453,
+      "original_regime_confidence": 0.85,
+      "trading_mode": null,
+      "gate_mode": "enforced",
+      "decision_id": "a378545f-26bc-491a-b539-08a9aae3af8d",
+      "lifecycle_id": "73a2f152-219b-45b8-b9be-a50a99bd7846",
+      "decision_ledger_row_present": true,
+      "decision_ledger_terminal_status": "REJECTED_UPSTREAM",
+      "decision_ledger_dataset_visibility": "diagnostics_only",
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "execution_outcomes": [
+        "EXCHANGE_REJECTED"
+      ],
+      "joined_by": [
+        "rid"
+      ],
+      "support_no_effect": true,
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "order_submitted": false,
+      "entry_filled": false,
+      "position_closed": false,
+      "freeze_bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "latest_bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "notes": "Only ORDER_INTENT plus REJECTED/ORPHANED_TTL and diagnostics-only REJECTED_UPSTREAM no_effect evidence; no submit/fill/close proof."
+    },
+    {
+      "rid": "aurora_BTCUSDT_1779012001877",
+      "timestamp_ms": 1779012002014,
+      "timestamp_utc": "2026-05-17T10:00:02.014000+00:00",
+      "symbol": "BTCUSDT",
+      "side": "sell",
+      "strategy_id": "aurora",
+      "regime": "LOW_VOLATILITY",
+      "selected_source": "signal_score",
+      "selected_scale": "raw_signed_score",
+      "threshold_family": "raw_signed_score",
+      "original_direction_confidence": 0.00650266,
+      "original_regime_confidence": 0.47227366536864407,
+      "trading_mode": null,
+      "gate_mode": "enforced",
+      "decision_id": "aae3d9aa-4cdb-4f12-8009-19cf3c6c446a",
+      "lifecycle_id": "0a882379-ae59-49d6-a347-e746f0281139",
+      "decision_ledger_row_present": true,
+      "decision_ledger_terminal_status": "REJECTED_UPSTREAM",
+      "decision_ledger_dataset_visibility": "diagnostics_only",
+      "invalid_reason_codes": [
+        "NON_CAUSAL_TIME"
+      ],
+      "execution_outcomes": [
+        "EXCHANGE_REJECTED"
+      ],
+      "joined_by": [
+        "rid"
+      ],
+      "support_no_effect": true,
+      "order_events": [
+        "ORDER_INTENT"
+      ],
+      "trade_events": [
+        "REJECTED",
+        "ORPHANED_TTL"
+      ],
+      "order_submitted": false,
+      "entry_filled": false,
+      "position_closed": false,
+      "freeze_bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "latest_bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+      "notes": "Only ORDER_INTENT plus REJECTED/ORPHANED_TTL and diagnostics-only REJECTED_UPSTREAM no_effect evidence; no submit/fill/close proof."
+    }
+  ]
+}

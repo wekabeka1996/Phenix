@@ -928,21 +928,49 @@
     },
     "anti_peak_observability": {
       "type": ["object", "null"],
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "schema_version": {"type": "string"},
         "strategy_id": {"type": ["string", "null"]},
         "symbol": {"type": ["string", "null"]},
         "side": {"type": ["string", "null"]},
         "tf_sec": {"type": ["integer", "null"]},
+        "enabled": {"type": ["boolean", "null"]},
+        "gate_disabled": {"type": ["boolean", "null"]},
+        "motion_classification": {"type": ["string", "null"]},
+        "missing_inputs": {
+          "type": ["object", "null"],
+          "additionalProperties": {"type": ["string", "null"]}
+        },
+        "active_config": {"type": ["object", "null"], "additionalProperties": true},
+        "disabled_config_snapshot": {"type": ["object", "null"], "additionalProperties": true},
+        "anti_fomo_sigma": {"type": ["number", "null"]},
+        "anti_flat_sigma": {"type": ["number", "null"]},
+        "window_sec": {"type": ["integer", "null"]},
+        "anti_fomo_sigma_value_source": {"type": ["string", "null"]},
+        "anti_flat_sigma_value_source": {"type": ["string", "null"]},
+        "window_sec_value_source": {"type": ["string", "null"]},
+        "motion_norm_sigma": {"type": ["number", "null"]},
+        "score_before_shields": {"type": ["number", "null"]},
+        "score_after_shields": {"type": ["number", "null"]},
+        "final_score": {"type": ["number", "null"]},
+        "signal_threshold": {"type": ["number", "null"]},
+        "danger_zone_applied": {"type": ["boolean", "null"]},
+        "context_shield_applied": {"type": ["boolean", "null"]},
+        "attenuated_below_threshold": {"type": ["boolean", "null"]},
+        "consumed_by_gate": {"type": ["boolean", "null"]},
+        "source": {"type": ["string", "null"]},
+        "ready": {"type": ["boolean", "null"]},
+        "reason": {"type": ["string", "null"]},
         "motion": {
           "type": ["object", "null"],
-          "additionalProperties": false,
+          "additionalProperties": true,
           "properties": {
             "enabled": {"type": ["boolean", "null"]},
             "window_sec": {"type": ["integer", "null"]},
             "window_sec_value_source": {"type": ["string", "null"]},
             "motion_norm_sigma": {"type": ["number", "null"]},
+            "motion_norm_sigma_value_source": {"type": ["string", "null"]},
             "anti_fomo_sigma": {"type": ["number", "null"]},
             "anti_flat_sigma": {"type": ["number", "null"]},
             "anti_fomo_sigma_value_source": {"type": ["string", "null"]},
@@ -955,13 +983,14 @@
         },
         "score_path": {
           "type": ["object", "null"],
-          "additionalProperties": false,
+          "additionalProperties": true,
           "properties": {
             "score_before_shields": {"type": ["number", "null"]},
             "score_after_danger_zone": {"type": ["number", "null"]},
             "score_after_context_shield": {"type": ["number", "null"]},
             "score_after_memory_shield": {"type": ["number", "null"]},
             "score_after_system_stress": {"type": ["number", "null"]},
+            "score_after_shields": {"type": ["number", "null"]},
             "final_score": {"type": ["number", "null"]},
             "signal_threshold": {"type": ["number", "null"]},
             "would_emit_signal_before_shields": {"type": ["boolean", "null"]},
@@ -970,7 +999,7 @@
         },
         "danger_zone_shield": {
           "type": ["object", "null"],
-          "additionalProperties": false,
+          "additionalProperties": true,
           "properties": {
             "enabled": {"type": ["boolean", "null"]},
             "evaluated": {"type": ["boolean", "null"]},
@@ -999,7 +1028,7 @@
         },
         "context_shield": {
           "type": ["object", "null"],
-          "additionalProperties": false,
+          "additionalProperties": true,
           "properties": {
             "enabled": {"type": ["boolean", "null"]},
             "evaluated": {"type": ["boolean", "null"]},
@@ -1014,7 +1043,7 @@
         },
         "system_stress": {
           "type": ["object", "null"],
-          "additionalProperties": false,
+          "additionalProperties": true,
           "properties": {
             "enabled": {"type": ["boolean", "null"]},
             "state": {"type": ["string", "null"]},
@@ -1028,7 +1057,7 @@
         },
         "classification": {
           "type": ["object", "null"],
-          "additionalProperties": false,
+          "additionalProperties": true,
           "properties": {
             "hard_blocked": {"type": ["boolean", "null"]},
             "attenuated_below_threshold": {"type": ["boolean", "null"]},

@@ -24,11 +24,23 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from .contracts import CortexMode
 
 NormalizeMode = Literal["off", "signed_v2"]
-IntrabarAmbiguityPolicy = Literal["mark_ambiguous", "prioritize_sl", "prioritize_tp"]
+IntrabarAmbiguityPolicy = Literal["mark_ambiguous",
+                                  "prioritize_sl", "prioritize_tp"]
 
 
 class ShadowSimulatorConfig(BaseModel):
-    """Config for Shadow Plan Fill Simulator (J6-S4)."""
+    """Config for Shadow Plan Fill Simulator (J6-S4).
+
+    SCOPE (PKG-2 SSOT note, 2026-05-21):
+    This config is consumed ONLY by ShadowPlanSimulator
+    (apps/reference/domains/alpha_search/judge/shadow_simulator.py),
+    a forensic-only replay tool. It is NOT consumed by the official
+    PKG-1 → PKG-4 pipeline (offline simulator + review CLIs), which
+    loads fee/slippage from config/judge_simulator.yaml via
+    apps/reference/domains/alpha_search/judge/simulator/config_models.SimulatorConfig.
+
+    Units: fees_bps and slippage_bps are both basis points (divided by 10_000).
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -37,7 +49,6 @@ class ShadowSimulatorConfig(BaseModel):
     intrabar_ambiguity_policy: IntrabarAmbiguityPolicy = "mark_ambiguous"
     fees_bps: float = 2.0
     slippage_bps: float = 1.0
-
 
 
 class SignalWeightsExpertConfig(BaseModel):
@@ -310,7 +321,8 @@ class ShadowPlanConfig(BaseModel):
             )
 
         if self.actionable_tiers:
-            invalid_tiers = [t for t in self.actionable_tiers if t not in names]
+            invalid_tiers = [
+                t for t in self.actionable_tiers if t not in names]
             if invalid_tiers:
                 raise ValueError(
                     f"actionable_tiers {invalid_tiers} not found in confidence_ladder"
