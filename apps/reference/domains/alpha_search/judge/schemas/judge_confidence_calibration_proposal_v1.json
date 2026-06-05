@@ -1,0 +1,177 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Judge Confidence Calibration Proposal V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "proposal_id",
+    "created_ts_ms",
+    "calibration_window",
+    "dataset_summary",
+    "gates",
+    "confidence_bands",
+    "breakdowns",
+    "recommended_policy",
+    "anti_leakage",
+    "source_refs"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "proposal_id": { "type": "string", "minLength": 1 },
+    "created_ts_ms": { "type": "integer", "minimum": 0 },
+    "calibration_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "train_start_ts_ms",
+        "train_end_ts_ms",
+        "holdout_start_ts_ms",
+        "holdout_end_ts_ms",
+        "cadence_days"
+      ],
+      "properties": {
+        "train_start_ts_ms": { "type": "integer", "minimum": 0 },
+        "train_end_ts_ms": { "type": "integer", "minimum": 0 },
+        "holdout_start_ts_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "holdout_end_ts_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "cadence_days": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "dataset_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total_rows",
+        "usable_rows",
+        "unresolved_rows",
+        "symbols",
+        "regimes",
+        "sides"
+      ],
+      "properties": {
+        "total_rows": { "type": "integer", "minimum": 0 },
+        "usable_rows": { "type": "integer", "minimum": 0 },
+        "unresolved_rows": { "type": "integer", "minimum": 0 },
+        "symbols": { "type": "array", "items": { "type": "string" } },
+        "regimes": { "type": "array", "items": { "type": "string" } },
+        "sides": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "min_rows_required",
+        "min_symbols_required",
+        "min_usable_rows_passed",
+        "min_symbols_passed",
+        "holdout_present",
+        "promotion_allowed"
+      ],
+      "properties": {
+        "min_rows_required": { "type": "integer", "minimum": 0 },
+        "min_symbols_required": { "type": "integer", "minimum": 0 },
+        "min_usable_rows_passed": { "type": "boolean" },
+        "min_symbols_passed": { "type": "boolean" },
+        "holdout_present": { "type": "boolean" },
+        "promotion_allowed": { "const": false }
+      }
+    },
+    "confidence_bands": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidates"],
+      "properties": {
+        "candidates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "band_id",
+              "min_confidence",
+              "max_confidence",
+              "action",
+              "rows",
+              "win_rate",
+              "avg_net_pnl_usd",
+              "total_net_pnl_usd",
+              "expectancy_net_usd",
+              "max_drawdown_usd",
+              "ci_low",
+              "ci_high",
+              "status",
+              "reason_codes"
+            ],
+            "properties": {
+              "band_id": { "type": "string", "minLength": 1 },
+              "min_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+              "max_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+              "action": { "type": "string", "enum": ["allow", "suppress", "observe"] },
+              "rows": { "type": "integer", "minimum": 0 },
+              "win_rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+              "avg_net_pnl_usd": { "type": ["number", "null"] },
+              "total_net_pnl_usd": { "type": ["number", "null"] },
+              "expectancy_net_usd": { "type": ["number", "null"] },
+              "max_drawdown_usd": { "type": ["number", "null"] },
+              "ci_low": { "type": ["number", "null"] },
+              "ci_high": { "type": ["number", "null"] },
+              "status": {
+                "type": "string",
+                "enum": ["CANDIDATE", "TOXIC", "LOW_POWER", "REJECTED", "OBSERVE_ONLY"]
+              },
+              "reason_codes": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+    "breakdowns": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "recommended_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "proposal_only",
+        "auto_apply",
+        "yaml_patch",
+        "human_review_required"
+      ],
+      "properties": {
+        "proposal_only": { "const": true },
+        "auto_apply": { "const": false },
+        "yaml_patch": { "type": ["object", "null"], "additionalProperties": true },
+        "human_review_required": { "const": true }
+      }
+    },
+    "anti_leakage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "train_holdout_split_valid",
+        "no_future_outcome_in_train_features",
+        "leakage_warnings"
+      ],
+      "properties": {
+        "train_holdout_split_valid": { "type": "boolean" },
+        "no_future_outcome_in_train_features": { "type": "boolean" },
+        "leakage_warnings": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "source_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_paths", "report_path"],
+      "properties": {
+        "input_paths": { "type": "array", "items": { "type": "string" } },
+        "report_path": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

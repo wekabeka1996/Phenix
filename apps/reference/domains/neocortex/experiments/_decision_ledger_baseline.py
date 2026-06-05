@@ -23,6 +23,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from apps.reference.domains.shadow_telemetry.schemas.decision_ledger_row import (  # noqa: E402
     DecisionOutcomeLedgerRow,
+    DecisionOutcomeTerminalStatus,
     ExecutionOutcome,
 )
 
@@ -91,6 +92,10 @@ class SimulationResult:
     toxic_block_precision: float | None
     prevented_toxic_loss: float
     missed_good_pnl: float
+
+
+def _decision_ts_ms(row: DecisionOutcomeLedgerRow) -> int:
+    return int(row.request_ts_ms)
 
 
 def _safe_float(value: Any) -> float | None:
@@ -185,11 +190,12 @@ def _flatten_scalars(value: Any, prefix: str, features: dict[str, Any]) -> None:
 
 
 def _extract_row_features(row: DecisionOutcomeLedgerRow, source_kind: str, toxic_pnl_threshold: float) -> dict[str, Any]:
+    decision_ts_ms = _decision_ts_ms(row)
     snapshot = dict(row.causal_state_snapshot or {})
     features: dict[str, Any] = {
         "decision_id": row.decision_id,
         "rid": row.rid,
-        "decision_ts_ms": int(row.decision_ts_ms),
+        "decision_ts_ms": decision_ts_ms,
         "realized_pnl_net": float(row.realized_pnl_net),
         "toxic_label": int(float(row.realized_pnl_net) <= toxic_pnl_threshold),
         "source_kind": source_kind,
@@ -201,7 +207,6 @@ def _extract_row_features(row: DecisionOutcomeLedgerRow, source_kind: str, toxic
     _add_feature(features, "action", action_value)
     _add_feature(features, "fallback_reason", row.fallback_reason or "NONE")
 
-    decision_ts_ms = int(row.decision_ts_ms)
     tick_ts_ms = _safe_float(snapshot.get("tick_ts_ms"))
     feature_event_ts_ms = _safe_float(snapshot.get("feature_event_ts_ms"))
     portfolio_event_ts_ms = _safe_float(snapshot.get("portfolio_event_ts_ms"))
@@ -274,7 +279,7 @@ def load_executed_ledger_rows(path: Path) -> LedgerLoadResult:
             if row.execution_outcome == ExecutionOutcome.EXECUTED and row.realized_pnl_net is not None:
                 executed_rows.append(row)
 
-    executed_rows.sort(key=lambda item: int(item.decision_ts_ms))
+    executed_rows.sort(key=_decision_ts_ms)
     return LedgerLoadResult(
         executed_rows=executed_rows,
         total_lines=total_lines,
@@ -358,11 +363,29 @@ def generate_synthetic_ledger_rows(count: int, start_ts_ms: int, seed: int) -> l
 
         decision_ts_ms = int(start_ts_ms + index * 300_000)
         rid = f"SYN-RID-{decision_ts_ms}-{index:04d}"
+        request_ts_ms = decision_ts_ms
+        response_ts_ms = decision_ts_ms + int(rng.integers(1, 25))
+        close_ts_ms = response_ts_ms + int(rng.integers(60_000, 900_000))
+        fees = float(np.clip(abs(rng.normal(0.24, 0.08)), 0.03, 1.20))
+
         payload = {
             "decision_id": f"syn-decision-{index:05d}",
             "rid": rid,
             "symbol": symbol,
-            "decision_ts_ms": decision_ts_ms,
+            "authority_mode": "shadow",
+            "request_ts_ms": request_ts_ms,
+            "response_ts_ms": response_ts_ms,
+            "event_ts_ms": request_ts_ms,
+            "tf_sec": 300,
+            "strategy_id": f"baseline_{symbol.lower()}",
+            "side": side,
+            "accepted_or_rejected": "ACCEPTED",
+            "regime": regime,
+            "regime_confidence": regime_confidence,
+            "apply_result": "SHADOW_MODEL_ALLOW",
+            "terminal_status": DecisionOutcomeTerminalStatus.EXECUTED_AND_CLOSED,
+            "close_ts_ms": close_ts_ms,
+            "realized_pnl_gross": realized_pnl_net + fees,
             "causal_state_snapshot": {
                 "snapshot_contract": "decision_making_projection_v1",
                 "symbol": symbol,
@@ -421,12 +444,15 @@ def generate_synthetic_ledger_rows(count: int, start_ts_ms: int, seed: int) -> l
                 },
             },
             "neocortex_action": "ALLOW",
-            "fallback_reason": None,
-            "execution_outcome": "EXECUTED",
+            "realized_pnl_net": realized_pnl_net,
+            "fees": fees,
+            "dataset_visibility": "trainable",
+            "counterfactual_support": "supported",
+            "execution_outcome": ExecutionOutcome.EXECUTED,
             "realized_pnl_net": realized_pnl_net,
             "data_quality_flags": {
                 "snapshot_missing": False,
-                "supports_counterfactual_join": False,
+                "supports_counterfactual_join": True,
                 "snapshot_provider_configured": True,
                 "has_nan": False,
                 "is_stale": False,
@@ -471,7 +497,7 @@ def prepare_dataset(
         elif "minority_class_too_small" in synthetic_reasons:
             synthetic_needed = max(synthetic_needed, 120)
 
-    start_ts_ms = int(real_rows[-1].decision_ts_ms +
+    start_ts_ms = int(_decision_ts_ms(real_rows[-1]) +
                       300_000) if real_rows else 1_710_000_000_000
     synthetic_ledger_rows = generate_synthetic_ledger_rows(
         synthetic_needed, start_ts_ms=start_ts_ms, seed=seed)

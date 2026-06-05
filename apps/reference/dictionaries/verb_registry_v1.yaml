@@ -74,6 +74,34 @@ registry:
   schema: schemas/account_update_received_v1.json
   since: '2026-01-08'
 - op: EVT
+  verb: JUDGE_EVIDENCE_ENVELOPE_BUILT_V2
+  owner: alpha_search/judge
+  status: experimental
+  authority: evidence_only
+  schema: apps/reference/domains/alpha_search/judge/schemas/judge_evidence_envelope_built_v2.json
+  since: '2026-05-26'
+- op: EVT
+  verb: JUDGE_POLICY_VERDICT_EMITTED_V2
+  owner: alpha_search/judge
+  status: experimental
+  authority: shadow_only
+  schema: apps/reference/domains/alpha_search/judge/schemas/judge_policy_verdict_emitted_v2.json
+  since: '2026-05-26'
+- op: EVT
+  verb: JUDGE_BRIDGE_DECISION_EVALUATED_V1
+  owner: decision_making
+  status: experimental
+  authority: no_effect
+  schema: apps/reference/domains/decision_making/schemas/judge_bridge_decision_evaluated_v1.json
+  since: '2026-05-26'
+- op: EVT
+  verb: JUDGE_SHADOW_CALIBRATION_ROW_BUILT_V1
+  owner: alpha_search/judge
+  status: experimental
+  authority: runtime_shadow_only
+  schema: apps/reference/domains/alpha_search/judge/schemas/judge_shadow_calibration_row_built_v1.json
+  since: '2026-05-26'
+- op: EVT
   verb: ALPHA_SCORE_CALCULATED
   owner: alpha_search
   co_emitters: [decision_making]

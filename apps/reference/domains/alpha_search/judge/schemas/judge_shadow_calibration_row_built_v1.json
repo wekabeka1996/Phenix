@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Judge Shadow Calibration Row Built V1 Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_name", "payload"],
+  "properties": {
+    "event_name": {
+      "const": "EVT:JUDGE_SHADOW_CALIBRATION_ROW_BUILT_V1"
+    },
+    "payload": {
+      "type": "object",
+      "required": ["schema_version", "row_id", "verdict", "bridge"],
+      "properties": {
+        "schema_version": {"const": "1.0.0"},
+        "row_id": {"type": "string", "minLength": 1},
+        "verdict": {
+          "type": "object",
+          "required": ["applied"],
+          "properties": {
+            "applied": {"const": false}
+          },
+          "additionalProperties": true
+        },
+        "bridge": {
+          "type": "object",
+          "required": ["no_effect"],
+          "properties": {
+            "no_effect": {"const": true}
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

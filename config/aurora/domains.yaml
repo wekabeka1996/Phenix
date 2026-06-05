@@ -158,6 +158,81 @@ decision_making:
     enabled: true
     min_loss_threshold_net: 0.0
     fee_only_close_policy: ignore
+  judge_bridge:
+    enabled: true
+    authority_mode: shadow
+    allowed_runtime_modes:
+    - backtest
+    - testnet
+    - hybrid_live_data_testnet_exec
+    forbidden_runtime_modes:
+    - production
+    - live
+    confidence_policy:
+      unknown_policy: fail_closed
+      allow_overlapping_bands: false
+      open_bands:
+      - min: 0.55
+        max: 0.85
+        action: allow
+      suppress_bands:
+      - min: 0.90
+        max: 1.00
+        action: suppress
+    hard_gates:
+      judge_cannot_override:
+      - panic_killswitch
+      - exchange_filter_fail
+      - exposure_limit
+      - stale_features
+      - stale_regime
+      - order_guardian_block
+    calibration_guard:
+      required_for_hybrid_gated: false
+      required_for_live_gated: true
+      accepted_artifact_path: null
+      auto_apply: false
+    shadow_capture:
+      enabled: true
+      output_dir: logs/shadow_telemetry
+      evidence_envelope_file: judge_evidence_envelope_v2.jsonl
+      policy_verdict_file: judge_policy_verdict_v2.jsonl
+      bridge_decision_file: judge_bridge_decision_v1.jsonl
+      calibration_row_file: judge_shadow_calibration_row_v1.jsonl
+      meta_scoring:
+        schema_version: "1.0.0"
+        agreement_weight: 0.35
+        confidence_weight: 0.35
+        regime_weight: 0.15
+        historical_surface_weight: 0.10
+        missingness_penalty_weight: 0.02
+        freshness_penalty_weight: 1.0
+        disagreement_penalty_weight: 0.20
+        no_expert_penalty: 0.40
+        unknown_cap: 0.25
+        min_confidence: 0.0
+        max_confidence: 1.0
+        verdict_thresholds:
+          open_long_min_confidence: 0.60
+          open_short_min_confidence: 0.60
+          suppress_max_confidence: 0.20
+          unknown_max_evidence_score: 0.05
+        stale_policy:
+          stale_regime_penalty: 0.10
+          stale_market_penalty: 0.10
+          missing_execution_readiness_penalty: 0.05
+          missing_risk_context_penalty: 0.05
+          missing_portfolio_context_penalty: 0.05
+        hard_unknown_conditions:
+          no_strategy_experts: true
+          missing_regime_context: false
+          missing_market_context: false
+        agreement_state_scores:
+          agree: 1.0
+          single_expert: 0.45
+          unknown: 0.0
+          disagree: 0.0
+          no_experts: 0.0
   neocortex_enforcement_mode: shadow
   fail_closed_on_degraded_context: false
   degraded_context_critical_keys: []

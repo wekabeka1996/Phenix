@@ -33,33 +33,6 @@ class AuroraAlphaAdapter(AlphaModel):
     # Default essential features (from aurora.yaml:decision.essential_features)
     DEFAULT_ESSENTIAL_FEATURES = ["obi", "delta_price", "macro_resid"]
 
-    # Default signal weights (from aurora.yaml:decision.signal_weights)
-    DEFAULT_SIGNAL_WEIGHTS = {
-        "obi": 0.15,
-        "tfi": 0.15,
-        "delta_price": 0.1,
-        "ema_bias": 0.15,
-        "volume_spike": 0.1,
-        "volatility_state": 0.1,
-        "depth_imbalance": -0.15,
-        "macro_resid": 0.1,
-        "absorption": 0.0,   # R2: disabled until Phase 2 calibration
-    }
-
-    # Default feature neutrals (from aurora.yaml:decision.feature_neutrals)
-    DEFAULT_FEATURE_NEUTRALS = {
-        "obi": 0.0,
-        "tfi": 0.0,
-        "delta_price": 0.0,
-        "ema_bias": 0.5,
-        "volume_spike": 0.0,
-        "volatility_state": 0.0,
-        "depth_imbalance": 0.5,
-        "macro_sync": 0.5,
-        "macro_resid": 0.0,
-        "absorption": 0.0,   # R2: SIGNED feature, neutral is 0.0
-    }
-
     # Default direction/strength config
     DEFAULT_DIRECTION_STRENGTH_CFG = {
         "directional_features": [
@@ -87,8 +60,6 @@ class AuroraAlphaAdapter(AlphaModel):
         self,
         config: Optional[Dict[str, Any]] = None,
         essential_features: Optional[List[str]] = None,
-        signal_weights: Optional[Dict[str, float]] = None,
-        feature_neutrals: Optional[Dict[str, float]] = None,
         direction_strength_cfg: Optional[Dict[str, Any]] = None,
         regime_thresholds: Optional[Dict[str, float]] = None,
         base_threshold: float = 0.12,
@@ -101,8 +72,6 @@ class AuroraAlphaAdapter(AlphaModel):
         Args:
             config: Base model config (optional)
             essential_features: Required features for scoring
-            signal_weights: Feature weights for scoring
-            feature_neutrals: Neutral values for features
             direction_strength_cfg: Direction/strength scoring config
             regime_thresholds: Regime-based threshold multipliers
             base_threshold: Base signal threshold
@@ -113,8 +82,6 @@ class AuroraAlphaAdapter(AlphaModel):
         self._scoring_version = scoring_version
 
         self._essential_features = essential_features or self.DEFAULT_ESSENTIAL_FEATURES
-        self._signal_weights = signal_weights or self.DEFAULT_SIGNAL_WEIGHTS
-        self._feature_neutrals = feature_neutrals or self.DEFAULT_FEATURE_NEUTRALS
         self._direction_strength_cfg = direction_strength_cfg or self.DEFAULT_DIRECTION_STRENGTH_CFG
         self._regime_thresholds = regime_thresholds or self.DEFAULT_REGIME_THRESHOLDS
         self._base_threshold = decimal.Decimal(str(base_threshold))
@@ -183,15 +150,14 @@ class AuroraAlphaAdapter(AlphaModel):
         # Get regime (default to "DEFAULT" if not provided)
         regime = context.get("regime", "DEFAULT")
 
-        # Run Quadratic kernel
+        # Run Quadratic kernel — signal_weights/feature_neutrals intentionally
+        # omitted: QuadraticScoringKernel reads pillar_sum only.
         try:
             result: ScoringResult = QuadraticScoringKernel.compute(
                 symbol=symbol,
                 features=features,
                 warmup_readiness=warmup_readiness,
                 price=decimal.Decimal(str(price)),
-                signal_weights=self._signal_weights,
-                feature_neutrals=self._feature_neutrals,
                 essential_features=self._essential_features,
                 base_threshold=self._base_threshold,
                 regime_name=regime,

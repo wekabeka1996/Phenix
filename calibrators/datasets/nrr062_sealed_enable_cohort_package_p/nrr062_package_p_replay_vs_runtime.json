@@ -1,0 +1,15 @@
+{
+  "bundle_root": "logs/frozen/package_o_smoke/nrr062_fresh_capture_20260605_133915",
+  "net_pnl_delta_vs_replay_candidate": -522.9531924915,
+  "override_sample_fraction_vs_replay_candidate": 0.5163398692810458,
+  "replay_candidate_net_pnl_quote": 391.0476869715,
+  "replay_candidate_profit_factor": 1.4120756633,
+  "replay_candidate_rows": 153,
+  "replay_candidate_valid_rows": 153,
+  "resolved_close_fraction_vs_replay_candidate": 0.17647058823529413,
+  "runtime_net_pnl_quote": -131.90550552,
+  "runtime_override_rows": 79,
+  "runtime_profit_factor": 0.6275905480548548,
+  "runtime_resolved_closes": 27,
+  "verdict": "ENABLE_RUNTIME_NOT_YET_DIRECTIONALLY_ALIGNED_WITH_POSITIVE_REPLAY"
+}

@@ -1,0 +1,71 @@
+{
+  "package_h": {
+    "override_count": 1,
+    "bucket_counts": {
+      "INCONCLUSIVE": 1
+    },
+    "resolved_closes": 0,
+    "wins": 0,
+    "losses": 0,
+    "flats": 0,
+    "submitted_not_filled": 0,
+    "filled_position_still_open": 0,
+    "downstream_no_effect_confirmed": 0,
+    "net_pnl_quote": 0
+  },
+  "package_l": {
+    "override_count": 7,
+    "bucket_counts": {
+      "DOWNSTREAM_NO_EFFECT_CONFIRMED": 7
+    },
+    "resolved_closes": 0,
+    "wins": 0,
+    "losses": 0,
+    "flats": 0,
+    "submitted_not_filled": 0,
+    "filled_position_still_open": 0,
+    "downstream_no_effect_confirmed": 7,
+    "net_pnl_quote": 0
+  },
+  "package_n": {
+    "override_count": 22,
+    "bucket_counts": {
+      "CLOSED_CANONICAL_LOSS": 5,
+      "CLOSED_CANONICAL_PROFIT": 3,
+      "CLOSED_NON_CANONICAL_EVIDENCE": 2,
+      "DOWNSTREAM_NO_EFFECT_CONFIRMED": 9,
+      "FILLED_POSITION_STILL_OPEN": 1,
+      "SUBMITTED_NOT_FILLED": 2
+    },
+    "resolved_closes": 10,
+    "wins": 3,
+    "losses": 5,
+    "flats": 0,
+    "submitted_not_filled": 2,
+    "filled_position_still_open": 1,
+    "downstream_no_effect_confirmed": 9,
+    "net_pnl_quote": 4.948720610000007,
+    "unexpected_side_rows": 0,
+    "unexpected_regime_rows": 0,
+    "unexpected_override_name_rows": 0,
+    "active_symbols": [
+      "1000PEPEUSDT",
+      "BTCUSDT",
+      "ETHUSDT",
+      "XRPUSDT"
+    ]
+  },
+  "config_compare": {
+    "current_domains_sha256": "5f7a330b12a7e52ae3c412b967960726c9926c156e3b97acf26aac94d7339a12",
+    "accepted_domains_sha256": "3ece313409a6f0db2fd0ee5ce44a9ee0ff5e94a6fad98c1a878e8c6f3a5394d5",
+    "full_hash_matches": false,
+    "current_sidecar_mode": "enable",
+    "accepted_sidecar_mode": "enable",
+    "sidecar_block_equal": true
+  },
+  "bundle_gaps": {
+    "decision_ledger_frozen_in_bundle": false,
+    "freeze_report_preexisting": true
+  },
+  "verdict": "BOUNDARY_STABLE_NO_OVERRIDE_LEAKAGE_SIDECAR_OWNER_EQUIVALENT_FULL_CONFIG_DRIFT_OUTSIDE_OWNER_SURFACE"
+}

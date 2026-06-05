@@ -1,0 +1,147 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/strategies/aurora/aurora_expert_output_v1.json",
+  "title": "AuroraExpertOutput v1",
+  "description": "Opinion-only native microstructure evidence output from Aurora strategy runtime.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "expert_id",
+    "strategy_id",
+    "question_type",
+    "symbol",
+    "ts_ms",
+    "side_opinion",
+    "confidence",
+    "confidence_source",
+    "horizon",
+    "authority_status",
+    "microstructure_evidence",
+    "evidence_freshness",
+    "missingness",
+    "regime_context_ref",
+    "legacy_score_trace",
+    "invalidates_if",
+    "reason_codes",
+    "source_refs"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["1.0.0"] },
+    "expert_id": { "type": "string", "minLength": 1 },
+    "strategy_id": { "type": "string", "enum": ["aurora"] },
+    "question_type": { "type": "string", "enum": ["entry"] },
+    "symbol": { "type": "string", "minLength": 1 },
+    "ts_ms": { "type": "integer", "minimum": 0 },
+    "side_opinion": { "type": "string", "enum": ["BUY", "SELL", "NONE", "UNKNOWN"] },
+    "confidence": { "type": ["number", "null"], "minimum": 0.0, "maximum": 1.0 },
+    "confidence_source": { "type": "string", "minLength": 1 },
+    "horizon": { "type": ["string", "null"] },
+    "authority_status": { "type": "string", "enum": ["opinion_only"] },
+    "microstructure_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "obi",
+        "tfi",
+        "absorption",
+        "liquidity_kappa",
+        "spread_bps",
+        "macro_resid",
+        "delta_price",
+        "volatility_state",
+        "large_trade_imbalance"
+      ],
+      "properties": {
+        "obi": { "type": ["number", "null"] },
+        "tfi": { "type": ["number", "null"] },
+        "absorption": { "type": ["number", "null"] },
+        "liquidity_kappa": { "type": ["number", "null"] },
+        "spread_bps": { "type": ["number", "null"] },
+        "macro_resid": { "type": ["number", "null"] },
+        "delta_price": { "type": ["number", "null"] },
+        "volatility_state": { "type": ["number", "null"] },
+        "large_trade_imbalance": { "type": ["number", "null"] }
+      }
+    },
+    "evidence_freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["feature_ts_ms", "decision_ts_ms", "age_ms", "freshness_state"],
+      "properties": {
+        "feature_ts_ms": { "type": ["integer", "null"] },
+        "decision_ts_ms": { "type": ["integer", "null"] },
+        "age_ms": { "type": ["integer", "null"] },
+        "freshness_state": { "type": "string", "enum": ["FRESH", "STALE", "MISSING", "UNKNOWN"] }
+      }
+    },
+    "missingness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["per_field"],
+      "properties": {
+        "per_field": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "regime_context_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["regime_label", "regime_confidence", "basis_tf_sec", "regime_age_ms"],
+      "properties": {
+        "regime_label": { "type": ["string", "null"] },
+        "regime_confidence": { "type": ["number", "null"] },
+        "basis_tf_sec": { "type": ["integer", "null"] },
+        "regime_age_ms": { "type": ["integer", "null"] }
+      }
+    },
+    "legacy_score_trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pillar_sum",
+        "raw_score",
+        "decision_score",
+        "sizing_score",
+        "admission_mode",
+        "sizing_mode",
+        "score_lineage_present",
+        "score_trace_authority_note"
+      ],
+      "properties": {
+        "pillar_sum": { "type": ["number", "null"] },
+        "raw_score": { "type": ["number", "null"] },
+        "decision_score": { "type": ["number", "null"] },
+        "sizing_score": { "type": ["number", "null"] },
+        "admission_mode": { "type": ["string", "null"] },
+        "sizing_mode": { "type": ["string", "null"] },
+        "score_lineage_present": { "type": "boolean" },
+        "score_trace_authority_note": {
+          "type": "string",
+          "enum": ["legacy_trace_not_judge_canonical"]
+        }
+      }
+    },
+    "invalidates_if": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "reason_codes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "source_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision_id", "rid", "trace_id", "source_event"],
+      "properties": {
+        "decision_id": { "type": ["string", "null"] },
+        "rid": { "type": ["string", "null"] },
+        "trace_id": { "type": ["string", "null"] },
+        "source_event": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

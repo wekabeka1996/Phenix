@@ -720,6 +720,10 @@ class IntentBuilder:
             _release_entry_reservation()
             return
 
+        resolved_strategy_trace = (
+            dict(strategy_trace) if isinstance(strategy_trace, dict) else {}
+        )
+
         # ── Payload assembly ───────────────────────────────────
         trade_intent = build_trade_intent_payload(
             symbol=symbol,
@@ -758,7 +762,7 @@ class IntentBuilder:
             regime_provenance=regime_provenance,
             regime_epoch_ref=self._get_regime_epoch_ref(symbol),
             tpsl_owner_ctx=tpsl_payload.owner_ctx,
-            strategy_trace=strategy_trace,
+            strategy_trace=resolved_strategy_trace or None,
             authority_context=authority_context,
         )
 
@@ -836,6 +840,17 @@ class IntentBuilder:
                     authority_response.fallback_reason,
                 )
             trade_intent["authority_context"] = authority_context
+
+        authority_decision_id = None
+        if isinstance(authority_context, dict):
+            candidate_decision_id = authority_context.get("decision_id")
+            if isinstance(candidate_decision_id, str) and candidate_decision_id.strip():
+                authority_decision_id = candidate_decision_id
+        if authority_decision_id is not None and not resolved_strategy_trace.get("decision_id"):
+            resolved_strategy_trace["decision_id"] = authority_decision_id
+            trace_payload = trade_intent.get("trace")
+            if isinstance(trace_payload, dict):
+                trace_payload["decision_id"] = authority_decision_id
         try:
             emit_regime_decision_audit(
                 logger=self.logger,
@@ -862,8 +877,7 @@ class IntentBuilder:
             order_side=str(side),
             lifecycle_id=str(trade_intent["idempotent_key"]),
             sg=sg,
-            strategy_trace=strategy_trace if isinstance(
-                strategy_trace, dict) else None,
+            strategy_trace=resolved_strategy_trace or None,
             regime_provenance=regime_provenance,
             tpsl_owner_ctx=tpsl_payload.owner_ctx,
             tf_sec=tf_sec,

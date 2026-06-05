@@ -1,0 +1,17 @@
+{
+  "bundle_root": "logs/frozen/package_o_smoke/nrr062_fresh_capture_20260605_133915",
+  "candidate_rows": 79,
+  "downstream_no_effect_confirmed": 20,
+  "fees_quote": 37.17135906,
+  "filled_position_still_open": 2,
+  "flats": 0,
+  "gross_pnl_quote": -94.73414645999999,
+  "losses": 16,
+  "net_pnl_quote": -131.90550552,
+  "profit_factor": 0.6275905480548548,
+  "resolved_closes": 27,
+  "submitted_not_filled": 30,
+  "verdict": "ENABLE_RUNTIME_NOT_YET_POSITIVE_CONTINUE_TESTNET_COLLECTION_ONLY",
+  "win_rate_percent": 29.629629629629626,
+  "wins": 8
+}

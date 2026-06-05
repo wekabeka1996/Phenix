@@ -274,6 +274,7 @@ aurora:
     - DOGEUSDT
     - XRPUSDT
     - BNBUSDT
+    - 1000PEPEUSDT
     neutral_threshold: 0.05
     scoring_version: quadratic
     feature_neutrals:
@@ -302,6 +303,11 @@ aurora:
       threshold: -2.0
     score_multiplier: 1.0
     decision_geometry:
+      # admission_mode=linear is intentional: admission uses |S| directly
+      # (no quadratic squaring) so that borderline entries are not suppressed by
+      # the ^2 transform. sizing_mode=quadratic retains non-linear position sizing.
+      # This split was calibrated on 2024-05-01 and is the authoritative runtime
+      # geometry — do NOT change without a matching calibration run and score-lineage audit.
       admission_mode: linear
       admission_power: null
       sizing_mode: quadratic
@@ -687,7 +693,7 @@ aurora:
           DEFAULT: 0.12
       max_risk_score: null
     BNBUSDT:
-      enabled: false
+      enabled: true
       weights:
         ema_bias: -0.119873
         volume_spike: 0.243661
@@ -789,7 +795,7 @@ aurora:
           DEFAULT: 0.12
       max_risk_score: null
     1000PEPEUSDT:
-      enabled: false
+      enabled: true
       weights:
         ema_bias: 0.2
         volume_spike: 0.2
@@ -836,7 +842,7 @@ aurora:
           tp_mult:
             DEFAULT: 1.0
             FLAT_LOW: 0.65
-            LOW_VOLATILITY: 0.7
+            LOW_VOLATILITY: 3.4
             FLAT_NORMAL: 0.8
             MEAN_REVERSION: 0.75
             TREND_UP: 1.3
@@ -998,7 +1004,7 @@ aurora:
           DEFAULT: 0.12
       max_risk_score: null
     XRPUSDT:
-      enabled: false
+      enabled: true
       weights:
         ema_bias: -0.119873
         volume_spike: 0.243661

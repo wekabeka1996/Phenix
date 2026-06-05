@@ -609,6 +609,55 @@ def test_build_and_emit_preserves_decision_trace_payload_contract() -> None:
     ]
 
 
+def test_build_and_emit_backfills_decision_trace_decision_id_from_authority_context() -> None:
+    builder = _make_builder()
+    kwargs = _build_kwargs()
+    kwargs["strategy_trace"] = {
+        key: value
+        for key, value in kwargs["strategy_trace"].items()
+        if key != "decision_id"
+    }
+    kwargs["authority_context"] = {
+        "decision_id": "decision-authority-1",
+        "authority_mode": "shadow",
+        "action": "allow",
+        "apply_result": "SHADOW_RECORDED",
+        "capture_mode": "journal_only",
+        "authority_applied": False,
+        "no_effect": True,
+    }
+
+    with (
+        patch("apps.reference.domains.decision_making.intent.builder.wal.append",
+              return_value="wal-ok"),
+        patch("apps.reference.domains.decision_making.intent.builder.order_logger.write"),
+        patch("apps.reference.domains.decision_making.intent.builder.print"),
+        patch("apps.reference.domains.decision_making.intent.builder.emit_regime_decision_audit"),
+        patch(
+            "apps.reference.domains.decision_making.intent.builder._trade_lifecycle", None),
+    ):
+        builder.build_and_emit(**kwargs)
+
+    decision_trace_payload = next(
+        call.kwargs["payload"]
+        for call in builder._fsm.emit.call_args_list
+        if call.args[0] == "EVT:DECISION_TRACE_EMITTED"
+    )
+    trade_intent_payload = next(
+        call.kwargs["payload"]
+        for call in builder._fsm.emit.call_args_list
+        if call.args[0] == "EVT:TRADE_INTENT_PROPOSED"
+    )
+
+    _validate_decision_trace_payload(decision_trace_payload)
+
+    assert decision_trace_payload["decision_id"] == "decision-authority-1"
+    assert decision_trace_payload["cycle_key"] == "ENTRY:BTCUSDT:300:1700000000000"
+    assert trade_intent_payload["trace"]["decision_id"] == "decision-authority-1"
+    assert trade_intent_payload["trace"]["cycle_key"] == "ENTRY:BTCUSDT:300:1700000000000"
+    assert trade_intent_payload["authority_context"]["decision_id"] == "decision-authority-1"
+
+
 def test_build_and_emit_persists_explicit_missing_reasons_for_absent_inputs() -> None:
     builder = _make_builder()
     sg = _FakeSG()

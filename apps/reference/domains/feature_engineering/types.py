@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional, Union, Deque, Tuple, List, Dict
 from collections import deque
 
+from apps.reference.shared.data_primitives.ohlc_validator import GAP_RESET_STATES
+
 if TYPE_CHECKING:
     from apps.reference.config_models import (
         AuroraConfig,
@@ -155,11 +157,27 @@ class BarVolatilityState:
     # Readiness flag
     atr_ready: bool = False
 
-    def update_tr(self, true_range: float) -> None:
+    def __post_init__(self) -> None:
+        self.tr_buffer = deque(self.tr_buffer, maxlen=int(self.atr_window))
+
+    def reset_tr_buffer(self, *, clear_prev_close: bool = False) -> None:
+        """Clear ATR state on runtime gap boundaries."""
+        self.tr_buffer.clear()
+        self.last_atr = None
+        self.atr_ready = False
+        if clear_prev_close:
+            self.prev_close = None
+
+    def update_tr(
+        self,
+        true_range: float,
+        *,
+        gap_state: str | None = None,
+        reset_buffer: bool = False,
+    ) -> None:
         """Add new True Range value and update ATR."""
-        # Add to buffer, respecting maxlen
-        if len(self.tr_buffer) >= self.atr_window:
-            self.tr_buffer.popleft()
+        if reset_buffer or str(gap_state or "") in GAP_RESET_STATES:
+            self.reset_tr_buffer(clear_prev_close=True)
         self.tr_buffer.append(true_range)
 
         # Calculate ATR if we have enough history

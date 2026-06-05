@@ -1,0 +1,24 @@
+{
+  "task": "AURORA_R7Y_RERUN_FEE_AWARE_SHADOW_POST_PAYLOAD_REPAIR_RUNTIME_CONFIRMATION",
+  "boundary": {
+    "requested_boundary": "2026-05-21T08:36:57.039051Z",
+    "effective_boundary": "2026-05-22T07:46:31Z",
+    "method": "git_commit",
+    "confidence": "high",
+    "git_commit": "34db9a74027833fa4031c232600371664cadb3fe"
+  },
+  "authority_leak_detected": false,
+  "event_storm_detected": false,
+  "schema_drift_detected": false,
+  "payload_bloat_detected": false,
+  "shadow_only_false_rows": [],
+  "authority_applied_true_rows": [],
+  "no_effect_false_rows": [],
+  "fee_close_rows": [],
+  "close_command_rows": [],
+  "close_hits_in_text_logs": [],
+  "event_rate": {
+    "max_events_per_second": 6,
+    "max_events_per_symbol_second": 6
+  }
+}

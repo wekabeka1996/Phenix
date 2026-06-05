@@ -3,9 +3,9 @@
 
 > **AUDIT SUMMARY**
 > - **Document path:** `config/docs/strategies_passport.md`
-> - **Audit date:** 2026-03-29
+> - **Audit date:** 2026-05-28
 > - **Audit mode:** Code-driven sync
-> - **Major drifts found:** `DOGEUSDT -> mean_reversion` is no longer present in `strategies.yaml`. The current live assigned strategy set is `aurora`, `md_amr`, and `llm_microstructure`; `mean_reversion.yaml` remains on disk but is not live-loaded because `mean_reversion` is unassigned. Registry-driven profile loading and arbitration logic remain structurally unchanged.
+> - **Major drifts found:** registry ownership changed again. The current live assigned strategy set is `aurora`, `mean_reversion`, and `llm_microstructure`; `md_amr.yaml` remains on disk but is not live-loaded because `md_amr` is unassigned on the current branch. Registry-driven profile loading and arbitration logic remain structurally unchanged.
 > - **Overall confidence:** HIGH
 > - **Governance SSOT:** bounded verdicts for already-closed surfaces live in `reports/GOVERNANCE_BOUNDED_VERDICTS_AND_NEXT_PACKAGES_2026-04-04.md`; this passport should reference that note instead of reopening those questions.
 
@@ -96,12 +96,13 @@ Authoritative sources traced for this passport:
 - Runtime Role: hard SSOT for which strategy IDs are allowed to exist on each symbol.
 - Actual Runtime Semantics:
   - Current assignments:
-    - `ETHUSDT -> [aurora]`
-    - `SOLUSDT -> [aurora]`
-    - `XRPUSDT -> [md_amr]`
-    - `BTCUSDT -> [aurora]`
-    - `BNBUSDT -> [md_amr]`
-    - `1000PEPEUSDT -> [llm_microstructure]`
+    - `ETHUSDT -> [aurora, llm_microstructure]`
+    - `SOLUSDT -> [aurora, llm_microstructure]`
+    - `XRPUSDT -> [aurora]`
+    - `BTCUSDT -> [aurora, llm_microstructure]`
+    - `BNBUSDT -> [aurora]`
+    - `1000PEPEUSDT -> [aurora]`
+    - `DOGEUSDT -> [aurora, mean_reversion, llm_microstructure]`
   - StrategyRuntime starts handlers only for strategy IDs that appear somewhere in assignments.
   - DecisionMaking arbitration fail-closes when a symbol is missing from assignments or when a strategy is not assigned to that symbol.
   - Aurora handler checks assignments first in `_is_symbol_enabled()`.

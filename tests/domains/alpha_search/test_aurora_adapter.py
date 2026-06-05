@@ -200,8 +200,6 @@ class TestAuroraAdapterIntegration:
             features=features,
             warmup_readiness=warmup_readiness,
             price=Decimal("50000.0"),
-            signal_weights=adapter._signal_weights,
-            feature_neutrals=adapter._feature_neutrals,
             essential_features=adapter._essential_features,
             base_threshold=adapter._base_threshold,
             regime_name="DEFAULT",

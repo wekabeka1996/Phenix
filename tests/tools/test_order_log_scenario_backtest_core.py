@@ -57,7 +57,8 @@ def _iso_from_ms(ts_ms: int) -> str:
 def _write_candles(path: Path, start_close_ts_ms: int, minutes: int, price: float, overrides: dict[int, dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["open", "high", "low", "close", "timestamp"])
+        writer = csv.DictWriter(
+            handle, fieldnames=["open", "high", "low", "close", "timestamp"])
         writer.writeheader()
         for idx in range(minutes):
             row = {
@@ -77,11 +78,14 @@ def _build_runtime(tmp_path: Path) -> tuple[Path, Path, Path, int]:
     report_root = workspace_root / "reports" / "order_log_scenario_backtest"
     base_dt = datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)
     entry1_ts_ms = int((base_dt + timedelta(seconds=10)).timestamp() * 1000)
-    entry2_ts_ms = int((base_dt + timedelta(minutes=5, seconds=10)).timestamp() * 1000)
-    entry3_ts_ms = int((base_dt + timedelta(minutes=10, seconds=10)).timestamp() * 1000)
+    entry2_ts_ms = int(
+        (base_dt + timedelta(minutes=5, seconds=10)).timestamp() * 1000)
+    entry3_ts_ms = int(
+        (base_dt + timedelta(minutes=10, seconds=10)).timestamp() * 1000)
 
     order_log_rows = [
-        {"event_type": "BOOT", "timestamp": entry1_ts_ms - 1000, "source_fsm": "OrderLoggerV1", "rid": "boot-1", "symbol": "_SYSTEM_"},
+        {"event_type": "BOOT", "timestamp": entry1_ts_ms - 1000,
+            "source_fsm": "OrderLoggerV1", "rid": "boot-1", "symbol": "_SYSTEM_"},
         {
             "rid": "reserve-eth",
             "event_type": "ORDER_INTENT",
@@ -103,6 +107,14 @@ def _build_runtime(tmp_path: Path) -> tuple[Path, Path, Path, int]:
             "quantity": 1.0,
             "price": 100.0,
             "source_fsm": "DecisionMaking",
+            "target_price": 102.0,
+            "stop_price": 98.5,
+            "actual_tp_bps": 200.0,
+            "actual_sl_bps": 150.0,
+            "round_trip_fee_bps": 8.0,
+            "expected_net_if_tp_bps": 192.0,
+            "expected_net_if_sl_bps": -158.0,
+            "rr_ratio": 1.33333333,
             "regime": "TREND_DOWN",
             "regime_confidence": 0.15,
             "trend_dir": "DOWN",
@@ -112,6 +124,16 @@ def _build_runtime(tmp_path: Path) -> tuple[Path, Path, Path, int]:
             "metadata": {
                 "resolved_min_regime_confidence": 0.2,
                 "resolved_min_regime_confidence_source": "domain_regime_specific",
+                "economics_context": {
+                    "target_price": 102.0,
+                    "stop_price": 98.5,
+                    "actual_tp_bps": 200.0,
+                    "actual_sl_bps": 150.0,
+                    "round_trip_fee_bps": 8.0,
+                    "expected_net_if_tp_bps": 192.0,
+                    "expected_net_if_sl_bps": -158.0,
+                    "rr_ratio": 1.33333333,
+                },
             },
             "timestamp": entry1_ts_ms,
         },
@@ -170,6 +192,26 @@ def _build_runtime(tmp_path: Path) -> tuple[Path, Path, Path, int]:
             "metadata": {
                 "resolved_min_regime_confidence": 0.2,
                 "resolved_min_regime_confidence_source": "domain_regime_specific",
+                "low_vol_cost_floor": {
+                    "target_price": 196.0,
+                    "stop_price": 203.0,
+                    "actual_tp_bps": 200.0,
+                    "actual_sl_bps": 150.0,
+                    "round_trip_fee_bps": 8.0,
+                    "expected_net_if_tp_bps": 192.0,
+                    "expected_net_if_sl_bps": -158.0,
+                    "rr_ratio": 1.33333333,
+                    "economics_context": {
+                        "target_price": 196.0,
+                        "stop_price": 203.0,
+                        "actual_tp_bps": 200.0,
+                        "actual_sl_bps": 150.0,
+                        "round_trip_fee_bps": 8.0,
+                        "expected_net_if_tp_bps": 192.0,
+                        "expected_net_if_sl_bps": -158.0,
+                        "rr_ratio": 1.33333333,
+                    },
+                },
             },
             "timestamp": entry2_ts_ms,
         },
@@ -234,6 +276,16 @@ def _build_runtime(tmp_path: Path) -> tuple[Path, Path, Path, int]:
         },
     ]
     _write_jsonl(runtime_root / "order_log_v1.jsonl", order_log_rows)
+
+    core_log_lines = [
+        "2026-01-01 03:00:04,000 - aurora_handler.aurora - INFO - [ETHUSDT] REGIME_TPSL: regime=TREND_DOWN stop=98.500000 target=102.000000",
+        "2026-01-01 03:05:04,000 - aurora_handler.aurora - INFO - [BTCUSDT] REGIME_TPSL: regime=TREND_UP stop=203.000000 target=196.000000",
+        "2026-01-01 03:10:04,000 - aurora_handler.aurora - INFO - [XRPUSDT] REGIME_TPSL: regime=LOW_VOLATILITY stop=49.100000 target=50.900000",
+    ]
+    (runtime_root / "aurora_core.log").write_text(
+        "\n".join(core_log_lines) + "\n",
+        encoding="utf-8",
+    )
 
     sidecar_rows = [
         {
@@ -331,7 +383,8 @@ def _build_runtime(tmp_path: Path) -> tuple[Path, Path, Path, int]:
             },
         },
     ]
-    _write_jsonl(runtime_root / "shadow_critical_event_journal_v1.jsonl", shadow_rows)
+    _write_jsonl(runtime_root /
+                 "shadow_critical_event_journal_v1.jsonl", shadow_rows)
 
     confidence_rows = [
         {
@@ -385,7 +438,8 @@ def _build_runtime(tmp_path: Path) -> tuple[Path, Path, Path, int]:
             "why_short": "above_max",
         },
     ]
-    _write_jsonl(runtime_root / "regime_confidence_audit_v1.jsonl", confidence_rows)
+    _write_jsonl(runtime_root /
+                 "regime_confidence_audit_v1.jsonl", confidence_rows)
 
     shadow_confidence_rows = [
         {
@@ -493,7 +547,8 @@ def _build_runtime(tmp_path: Path) -> tuple[Path, Path, Path, int]:
             },
         },
     ]
-    _write_jsonl(runtime_root / "shadow_critical_event_journal_v1.jsonl", shadow_rows + shadow_confidence_rows)
+    _write_jsonl(runtime_root / "shadow_critical_event_journal_v1.jsonl",
+                 shadow_rows + shadow_confidence_rows)
 
     _write_yaml(
         workspace_root / "config" / "aurora" / "domains.yaml",
@@ -612,7 +667,8 @@ strategies:
 """,
     )
 
-    candle_start_close_ts_ms = int((base_dt + timedelta(minutes=1)).timestamp() * 1000) - 1
+    candle_start_close_ts_ms = int(
+        (base_dt + timedelta(minutes=1)).timestamp() * 1000) - 1
     _write_candles(
         workspace_root / "data" / "recorder" / "ETHUSDT_60.csv",
         candle_start_close_ts_ms,
@@ -647,8 +703,10 @@ strategies:
 
 def test_schema_probe_reads_head_slice(tmp_path: Path) -> None:
     workspace_root, runtime_root, report_root, _ = _build_runtime(tmp_path)
-    payload = probe_schema(runtime_root / "order_log_v1.jsonl", report_root, max_lines=20)
-    captured = {(item["event_type"], item["source_fsm"]) for item in payload["captured_families"]}
+    payload = probe_schema(
+        runtime_root / "order_log_v1.jsonl", report_root, max_lines=20)
+    captured = {(item["event_type"], item["source_fsm"])
+                for item in payload["captured_families"]}
     assert ("BOOT", "") in captured
     assert ("ORDER_INTENT", "DecisionMaking") in captured
     assert ("ORDER_FILLED", "") in captured
@@ -676,12 +734,38 @@ def test_reconstruct_canonical_entries_aggregates_multi_fill(tmp_path: Path) -> 
         order_log,
         [json.loads(line) for line in rows] + [multi_fill],
     )
-    entries, unresolved_rows, manifest = reconstruct_canonical_entries(workspace_root, runtime_root, report_root)
+    entries, unresolved_rows, manifest = reconstruct_canonical_entries(
+        workspace_root, runtime_root, report_root)
     eth = next(entry for entry in entries if entry.symbol == "ETHUSDT")
     assert round(eth.entry_price, 6) == round((100.0 + 102.0) / 2.0, 6)
     assert eth.qty == 2.0
     assert eth.lifecycle_id == "aurora_ETHUSDT_1"
     assert manifest["canonical_entries"] == 3
+    assert unresolved_rows == []
+
+
+def test_reconstruct_canonical_entries_preserves_historical_geometry(tmp_path: Path) -> None:
+    workspace_root, runtime_root, report_root, _ = _build_runtime(tmp_path)
+    entries, unresolved_rows, manifest = reconstruct_canonical_entries(
+        workspace_root, runtime_root, report_root)
+
+    eth = next(entry for entry in entries if entry.symbol == "ETHUSDT")
+    assert eth.historical_target_price == 102.0
+    assert eth.historical_stop_price == 98.5
+    assert eth.historical_round_trip_fee_bps == 8.0
+    assert eth.historical_geometry_source == "order_log_intent"
+
+    btc = next(entry for entry in entries if entry.symbol == "BTCUSDT")
+    assert btc.historical_target_price == 196.0
+    assert btc.historical_stop_price == 203.0
+    assert btc.historical_expected_net_if_tp_bps == 192.0
+    assert btc.historical_geometry_source == "low_vol_cost_floor+low_vol_cost_floor.economics_context"
+
+    xrp = next(entry for entry in entries if entry.symbol == "XRPUSDT")
+    assert xrp.historical_target_price == 50.9
+    assert xrp.historical_stop_price == 49.1
+    assert xrp.historical_geometry_source == "aurora_core_regime_tpsl"
+    assert manifest["core_log_offset_ms"] == 10800000
     assert unresolved_rows == []
 
 
@@ -761,8 +845,10 @@ def test_tp_sl_only_exit_and_sidecar_only_exit() -> None:
     candles = CandleSeries(
         symbol="ETHUSDT",
         rows=[
-            {"timestamp": 59_999, "open": 100.0, "high": 101.5, "low": 98.5, "close": 100.2},
-            {"timestamp": 119_999, "open": 99.1, "high": 99.4, "low": 98.9, "close": 99.2},
+            {"timestamp": 59_999, "open": 100.0,
+                "high": 101.5, "low": 98.5, "close": 100.2},
+            {"timestamp": 119_999, "open": 99.1,
+                "high": 99.4, "low": 98.9, "close": 99.2},
         ],
         timestamps=[59_999, 119_999],
     )
@@ -809,18 +895,22 @@ def test_tp_sl_only_exit_and_sidecar_only_exit() -> None:
             "trace_id": "trace-1",
         }
     ]
-    runtime.sidecar_request_index = build_sidecar_request_index(runtime.sidecar_requests)
+    runtime.sidecar_request_index = build_sidecar_request_index(
+        runtime.sidecar_requests)
     sidecar_event, sidecar_extras = sidecar_only_exit(entry, runtime)
     assert sidecar_event.reason == "sidecar_close_requested"
     assert sidecar_event.price == 99.1
-    result_row = materialize_trade_result("sidecar_only", entry, runtime, sidecar_event, sidecar_extras)
+    result_row = materialize_trade_result(
+        "sidecar_only", entry, runtime, sidecar_event, sidecar_extras)
     assert result_row["status"] == "loss"
 
 
 def test_build_pyramiding_enabled_entry_set_materializes_synthetic_adds(tmp_path: Path) -> None:
     workspace_root, runtime_root, report_root, _ = _build_runtime(tmp_path)
-    entries, _, _ = reconstruct_canonical_entries(workspace_root, runtime_root, report_root)
-    candles_by_symbol = load_1m_candles(workspace_root, [workspace_root / "data" / "recorder"])
+    entries, _, _ = reconstruct_canonical_entries(
+        workspace_root, runtime_root, report_root)
+    candles_by_symbol = load_1m_candles(
+        workspace_root, [workspace_root / "data" / "recorder"])
     runtime = ScenarioRuntime(
         workspace_root=workspace_root,
         runtime_root=runtime_root,
@@ -842,7 +932,8 @@ def test_build_pyramiding_enabled_entry_set_materializes_synthetic_adds(tmp_path
         materialize_price_proxy=True,
         emit_artifacts=True,
     )
-    synthetic = [entry for entry in combined if entry.entry_origin == "synthetic_pyramiding_reject_proxy"]
+    synthetic = [entry for entry in combined if entry.entry_origin ==
+                 "synthetic_pyramiding_reject_proxy"]
     assert len(synthetic) == 2
     assert {entry.symbol for entry in synthetic} == {"ETHUSDT", "BTCUSDT"}
     assert all(entry.qty == 0.0 for entry in synthetic)
@@ -852,8 +943,10 @@ def test_build_pyramiding_enabled_entry_set_materializes_synthetic_adds(tmp_path
 
 def test_build_regime_confidence_disabled_entry_set_materializes_synthetic_entries(tmp_path: Path) -> None:
     workspace_root, runtime_root, report_root, _ = _build_runtime(tmp_path)
-    entries, _, _ = reconstruct_canonical_entries(workspace_root, runtime_root, report_root)
-    candles_by_symbol = load_1m_candles(workspace_root, [workspace_root / "data" / "recorder"])
+    entries, _, _ = reconstruct_canonical_entries(
+        workspace_root, runtime_root, report_root)
+    candles_by_symbol = load_1m_candles(
+        workspace_root, [workspace_root / "data" / "recorder"])
     runtime = ScenarioRuntime(
         workspace_root=workspace_root,
         runtime_root=runtime_root,
@@ -875,12 +968,15 @@ def test_build_regime_confidence_disabled_entry_set_materializes_synthetic_entri
         materialize_price_proxy=True,
         emit_artifacts=True,
     )
-    synthetic = [entry for entry in combined if entry.entry_origin == "synthetic_regime_confidence_gate_proxy"]
+    synthetic = [entry for entry in combined if entry.entry_origin ==
+                 "synthetic_regime_confidence_gate_proxy"]
     assert len(synthetic) == 2
     assert {entry.symbol for entry in synthetic} == {"ETHUSDT", "BTCUSDT"}
     assert all(entry.qty == 0.0 for entry in synthetic)
-    assert (report_root / REGIME_CONFIDENCE_SCENARIO_ID / "candidate_audit.csv").exists()
-    assert (report_root / REGIME_CONFIDENCE_SCENARIO_ID / "microstructure_review.csv").exists()
+    assert (report_root / REGIME_CONFIDENCE_SCENARIO_ID /
+            "candidate_audit.csv").exists()
+    assert (report_root / REGIME_CONFIDENCE_SCENARIO_ID /
+            "microstructure_review.csv").exists()
 
 
 def test_quadratic_regime_variant_logic_distinguishes_btc_doge_vs_eth() -> None:
@@ -926,15 +1022,19 @@ def test_quadratic_regime_variant_logic_distinguishes_btc_doge_vs_eth() -> None:
         },
     ]
     confidence_rows = _confidence_sweep_rows(cases)
-    floor_035 = next(row for row in confidence_rows if row["threshold"] == 0.35)
+    floor_035 = next(
+        row for row in confidence_rows if row["threshold"] == 0.35)
     assert floor_035["blocked_entries"] == 2
     assert floor_035["blocked_loss_sl_entries"] == 2
     assert floor_035["blocked_loss_tp_tag_entries"] == 0
 
     matrix_rows, variant_rows = _variant_rows(cases)
-    assert any(row["variant_id"] == "combined_safe_short_v2" for row in matrix_rows)
-    combined_v2 = next(row for row in variant_rows if row["variant_id"] == "combined_safe_short_v2")
-    combined_v3 = next(row for row in variant_rows if row["variant_id"] == "combined_safe_short_v3_zero_entry")
+    assert any(row["variant_id"] ==
+               "combined_safe_short_v2" for row in matrix_rows)
+    combined_v2 = next(
+        row for row in variant_rows if row["variant_id"] == "combined_safe_short_v2")
+    combined_v3 = next(
+        row for row in variant_rows if row["variant_id"] == "combined_safe_short_v3_zero_entry")
     assert combined_v2["blocked_entries"] == 2
     assert combined_v2["blocked_loss_sl_entries"] == 2
     assert combined_v2["allowed_entries"] == 1

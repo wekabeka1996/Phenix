@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from apps.reference.config_contract import ConfigContractError
+from apps.reference.config.domains.decision_making import (
+    MANDATORY_JUDGE_BRIDGE_HARD_GATES,
+)
 from apps.reference.utils.accessors import aget
 from apps.reference.telemetry.metrics import (
     inc_config_contract_violation,
@@ -25,6 +28,10 @@ from apps.reference.domains.decision_making.contracts.normalized_reject_reasons 
 from apps.reference.domains.decision_making.contracts.schemas_decision_blocked import DecisionBlockedPayload
 from apps.reference.domains.decision_making.core.context import create_decision_context
 from apps.reference.domains.decision_making.intent.truth_artifacts import write_decision_blocked
+from apps.reference.domains.alpha_search.judge.central_brain.runtime_capture import (
+    RuntimeShadowCaptureDisabled,
+    capture_runtime_shadow,
+)
 from apps.reference.shared.decision_primitives.entry_plan import resolve_strategy_entry_prices
 from apps.reference.shared.decision_primitives.score_lineage import (
     LIVE_SCORE_LINEAGE_PATH,
@@ -745,6 +752,101 @@ class StrategyGateway:
             state_vector=state_vector,
             context_vector=context_vector,
         )
+
+    def _capture_judge_runtime_shadow(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        rid: str,
+        strategy_id: str,
+        signal_payload: dict[str, Any],
+        latest_risk: dict[str, Any],
+        readiness: dict[str, Any],
+        decision_basis_ts_ms: int,
+    ) -> None:
+        dm_config = self.config.domains.decision_making
+        bridge_config = getattr(dm_config, "judge_bridge", None)
+        if bridge_config is None:
+            return
+        runtime_mode = getattr(self.config, "trading_mode", None)
+        if not isinstance(runtime_mode, str) or not runtime_mode.strip():
+            self.logger.warning(
+                "[%s] JUDGE_RUNTIME_SHADOW_CAPTURE_SKIPPED missing trading_mode",
+                symbol,
+            )
+            return
+        regime_payload = signal_payload.get("regime_ctx")
+        if not isinstance(regime_payload, dict):
+            regime_label = signal_payload.get("regime") or signal_payload.get("regime_label")
+            regime_payload = (
+                {
+                    "symbol": symbol,
+                    "ts_ms": signal_payload.get("ts_ms") or decision_basis_ts_ms,
+                    "regime": regime_label,
+                    "confidence": signal_payload.get("regime_confidence"),
+                    "rid": rid,
+                }
+                if regime_label
+                else None
+            )
+        try:
+            capture_runtime_shadow(
+                strategy_payload=dict(signal_payload),
+                regime_payload=regime_payload,
+                bridge_config=bridge_config,
+                runtime_mode=runtime_mode.strip(),
+                candidate_context={
+                    "decision_id": signal_payload.get("decision_id"),
+                    "symbol": symbol,
+                    "side": side,
+                    "rid": rid,
+                    "cycle_key": signal_payload.get("cycle_key"),
+                    "candidate_exists": True,
+                    "hard_gate_results": {
+                        gate: True
+                        for gate in MANDATORY_JUDGE_BRIDGE_HARD_GATES
+                    },
+                    "hard_gate_blocking_reasons": [],
+                },
+                market_context={
+                    "symbol": symbol,
+                    "ts_ms": int(signal_payload.get("ts_ms") or decision_basis_ts_ms),
+                    "data_freshness_state": "FRESH",
+                    "source_refs": {"runtime_seam": "strategy_gateway_post_gates"},
+                },
+                risk_context={
+                    "present": bool(latest_risk),
+                    "exposure_state": str(latest_risk.get("exposure_state") or "unknown")
+                    if latest_risk
+                    else None,
+                    "risk_state": str(latest_risk.get("risk_state") or "available")
+                    if latest_risk
+                    else None,
+                    "missing_reason": None if latest_risk else "not_supplied",
+                },
+                execution_readiness={
+                    "present": True,
+                    "readiness_state": (
+                        "warmup_ok"
+                        if readiness.get("warmup_ok") is True
+                        else "readiness_not_confirmed"
+                    ),
+                    "blocking_reasons": [],
+                    "missing_reason": None,
+                },
+                now_ms=decision_basis_ts_ms,
+            )
+        except RuntimeShadowCaptureDisabled:
+            return
+        except Exception as exc:
+            self.logger.warning(
+                "[%s] JUDGE_RUNTIME_SHADOW_CAPTURE_FAILED rid=%s strategy_id=%s err=%s",
+                symbol,
+                rid,
+                strategy_id,
+                exc,
+            )
 
     def _evaluate_neocortex_authority(
         self,
@@ -1677,6 +1779,17 @@ class StrategyGateway:
             risk_val = float(
                 (latest_risk.get("risk_parameters") or {}).get("risk_score", 0.0))
             authority_decision_ts_ms = int(self._clock.now_ms())
+
+            self._capture_judge_runtime_shadow(
+                symbol=symbol,
+                side=side,
+                rid=str(rid),
+                strategy_id=str(strategy_id_s),
+                signal_payload=dict(pld),
+                latest_risk=dict(latest_risk),
+                readiness=dict(readiness),
+                decision_basis_ts_ms=authority_decision_ts_ms,
+            )
 
             authority_context, authority_blocked = self._evaluate_neocortex_authority(
                 symbol=symbol,

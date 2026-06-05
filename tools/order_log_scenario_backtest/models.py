@@ -24,6 +24,15 @@ class CanonicalEntry:
     regime_at_entry: str
     regime_confidence_at_entry: float | None
     regime_source: str
+    historical_target_price: float | None = None
+    historical_stop_price: float | None = None
+    historical_actual_tp_bps: float | None = None
+    historical_actual_sl_bps: float | None = None
+    historical_round_trip_fee_bps: float | None = None
+    historical_expected_net_if_tp_bps: float | None = None
+    historical_expected_net_if_sl_bps: float | None = None
+    historical_rr_ratio: float | None = None
+    historical_geometry_source: str | None = None
     entry_origin: str = "actual_order_log_fill"
     actual_close_ts_ms: int | None = None
     actual_close_price: float | None = None
@@ -39,7 +48,8 @@ class CanonicalEntry:
     resolved_min_regime_confidence_source: str | None = None
     resolved_max_regime_confidence: float | None = None
     resolved_max_regime_confidence_source: str | None = None
-    raw_surface: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+    raw_surface: dict[str, Any] = field(
+        default_factory=dict, repr=False, compare=False)
 
     def to_row(self) -> dict[str, Any]:
         return {
@@ -60,6 +70,15 @@ class CanonicalEntry:
             "regime_at_entry": self.regime_at_entry,
             "regime_confidence_at_entry": self.regime_confidence_at_entry,
             "regime_source": self.regime_source,
+            "historical_target_price": self.historical_target_price,
+            "historical_stop_price": self.historical_stop_price,
+            "historical_actual_tp_bps": self.historical_actual_tp_bps,
+            "historical_actual_sl_bps": self.historical_actual_sl_bps,
+            "historical_round_trip_fee_bps": self.historical_round_trip_fee_bps,
+            "historical_expected_net_if_tp_bps": self.historical_expected_net_if_tp_bps,
+            "historical_expected_net_if_sl_bps": self.historical_expected_net_if_sl_bps,
+            "historical_rr_ratio": self.historical_rr_ratio,
+            "historical_geometry_source": self.historical_geometry_source,
             "entry_origin": self.entry_origin,
             "actual_close_ts_ms": self.actual_close_ts_ms,
             "actual_close_price": self.actual_close_price,
@@ -125,13 +144,17 @@ class ScenarioRuntime:
     candles_by_symbol: dict[str, CandleSeries]
     strict: bool
     sidecar_requests: list[dict[str, Any]] = field(default_factory=list)
-    sidecar_request_index: dict[str, dict[str, list[dict[str, Any]]]] = field(default_factory=dict)
-    synthetic_entry_sets: dict[str, list[CanonicalEntry]] = field(default_factory=dict)
+    sidecar_request_index: dict[str, dict[str, list[dict[str, Any]]]] = field(
+        default_factory=dict)
+    synthetic_entry_sets: dict[str, list[CanonicalEntry]] = field(
+        default_factory=dict)
 
 
 EntryFilter = Callable[[CanonicalEntry, ScenarioRuntime], GateDecision]
-ExitPolicy = Callable[[CanonicalEntry, ScenarioRuntime], tuple[ExitEvent, dict[str, Any]]]
-EntryProvider = Callable[[list[CanonicalEntry], ScenarioRuntime], list[CanonicalEntry]]
+ExitPolicy = Callable[[CanonicalEntry, ScenarioRuntime],
+                      tuple[ExitEvent, dict[str, Any]]]
+EntryProvider = Callable[[list[CanonicalEntry],
+                          ScenarioRuntime], list[CanonicalEntry]]
 
 
 @dataclass(frozen=True)

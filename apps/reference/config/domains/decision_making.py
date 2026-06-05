@@ -2068,6 +2068,238 @@ class LowVolCostFloorGateConfig(BaseModel):
         return self
 
 
+MANDATORY_JUDGE_BRIDGE_HARD_GATES = frozenset({
+    "panic_killswitch",
+    "exchange_filter_fail",
+    "exposure_limit",
+    "stale_features",
+    "stale_regime",
+    "order_guardian_block",
+})
+
+
+JudgeBridgeAuthorityMode = Literal[
+    "shadow",
+    "advisory",
+    "hybrid_gated",
+    "live_gated",
+]
+JudgeBridgeBandAction = Literal["allow", "suppress"]
+JudgeBridgeUnknownPolicy = Literal["fail_closed", "record_only"]
+
+
+class JudgeBridgeConfidenceBandConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    min: float = Field(..., ge=0.0, le=1.0)
+    max: float = Field(..., ge=0.0, le=1.0)
+    action: JudgeBridgeBandAction
+
+    @model_validator(mode='after')
+    def validate_bounds(self) -> 'JudgeBridgeConfidenceBandConfig':
+        if self.min >= self.max:
+            raise ValueError('judge_bridge confidence band min must be < max')
+        return self
+
+
+class JudgeBridgeConfidencePolicyConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    unknown_policy: JudgeBridgeUnknownPolicy = Field(...)
+    allow_overlapping_bands: bool = Field(...)
+    open_bands: List[JudgeBridgeConfidenceBandConfig] = Field(...)
+    suppress_bands: List[JudgeBridgeConfidenceBandConfig] = Field(...)
+
+    @staticmethod
+    def _overlaps(
+        left: JudgeBridgeConfidenceBandConfig,
+        right: JudgeBridgeConfidenceBandConfig,
+    ) -> bool:
+        return max(left.min, right.min) < min(left.max, right.max)
+
+    @model_validator(mode='after')
+    def validate_bands(self) -> 'JudgeBridgeConfidencePolicyConfig':
+        all_bands = list(self.open_bands) + list(self.suppress_bands)
+        for band in self.open_bands:
+            if band.action != "allow":
+                raise ValueError('judge_bridge open_bands action must be allow')
+        for band in self.suppress_bands:
+            if band.action != "suppress":
+                raise ValueError('judge_bridge suppress_bands action must be suppress')
+
+        if not self.allow_overlapping_bands:
+            for idx, left in enumerate(all_bands):
+                for right in all_bands[idx + 1:]:
+                    if self._overlaps(left, right):
+                        raise ValueError(
+                            'judge_bridge confidence bands must not overlap'
+                        )
+        for open_band in self.open_bands:
+            for suppress_band in self.suppress_bands:
+                if self._overlaps(open_band, suppress_band):
+                    raise ValueError(
+                        'judge_bridge open and suppress bands must not conflict'
+                    )
+        return self
+
+
+class JudgeBridgeHardGatesConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    judge_cannot_override: List[str] = Field(..., min_length=1)
+
+    @model_validator(mode='after')
+    def validate_mandatory_gates(self) -> 'JudgeBridgeHardGatesConfig':
+        configured = set(self.judge_cannot_override)
+        missing = MANDATORY_JUDGE_BRIDGE_HARD_GATES - configured
+        if missing:
+            raise ValueError(
+                'judge_bridge hard_gates missing mandatory gates: '
+                + ', '.join(sorted(missing))
+            )
+        return self
+
+
+class JudgeBridgeCalibrationGuardConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    required_for_hybrid_gated: bool = Field(...)
+    required_for_live_gated: bool = Field(...)
+    accepted_artifact_path: Optional[str] = Field(...)
+    auto_apply: bool = Field(...)
+
+    @model_validator(mode='after')
+    def validate_no_auto_apply(self) -> 'JudgeBridgeCalibrationGuardConfig':
+        if self.auto_apply:
+            raise ValueError('judge_bridge calibration_guard.auto_apply must be false')
+        return self
+
+
+class JudgeBridgeRuntimeAgreementStateScoresConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    agree: float = Field(..., ge=0.0, le=1.0)
+    single_expert: float = Field(..., ge=0.0, le=1.0)
+    unknown: float = Field(..., ge=0.0, le=1.0)
+    disagree: float = Field(..., ge=0.0, le=1.0)
+    no_experts: float = Field(..., ge=0.0, le=1.0)
+
+
+class JudgeBridgeRuntimeVerdictThresholdsConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    open_long_min_confidence: float = Field(..., ge=0.0, le=1.0)
+    open_short_min_confidence: float = Field(..., ge=0.0, le=1.0)
+    suppress_max_confidence: float = Field(..., ge=0.0, le=1.0)
+    unknown_max_evidence_score: float = Field(..., ge=0.0, le=1.0)
+
+
+class JudgeBridgeRuntimeStalePolicyConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    stale_regime_penalty: float = Field(..., ge=0.0)
+    stale_market_penalty: float = Field(..., ge=0.0)
+    missing_execution_readiness_penalty: float = Field(..., ge=0.0)
+    missing_risk_context_penalty: float = Field(..., ge=0.0)
+    missing_portfolio_context_penalty: float = Field(..., ge=0.0)
+
+
+class JudgeBridgeRuntimeHardUnknownConditionsConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    no_strategy_experts: bool = Field(...)
+    missing_regime_context: bool = Field(...)
+    missing_market_context: bool = Field(...)
+
+
+class JudgeBridgeRuntimeMetaScoringConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    schema_version: Literal["1.0.0"] = "1.0.0"
+    agreement_weight: float = Field(..., ge=0.0)
+    confidence_weight: float = Field(..., ge=0.0)
+    regime_weight: float = Field(..., ge=0.0)
+    historical_surface_weight: float = Field(..., ge=0.0)
+    missingness_penalty_weight: float = Field(..., ge=0.0)
+    freshness_penalty_weight: float = Field(..., ge=0.0)
+    disagreement_penalty_weight: float = Field(..., ge=0.0)
+    no_expert_penalty: float = Field(..., ge=0.0)
+    unknown_cap: float = Field(..., ge=0.0, le=1.0)
+    min_confidence: float = Field(..., ge=0.0, le=1.0)
+    max_confidence: float = Field(..., ge=0.0, le=1.0)
+    verdict_thresholds: JudgeBridgeRuntimeVerdictThresholdsConfig
+    stale_policy: JudgeBridgeRuntimeStalePolicyConfig
+    hard_unknown_conditions: JudgeBridgeRuntimeHardUnknownConditionsConfig
+    agreement_state_scores: JudgeBridgeRuntimeAgreementStateScoresConfig
+
+    @model_validator(mode='after')
+    def validate_runtime_meta_config(self) -> 'JudgeBridgeRuntimeMetaScoringConfig':
+        if self.min_confidence > self.max_confidence:
+            raise ValueError('judge_bridge shadow_capture min_confidence must be <= max_confidence')
+        if not any(
+            weight > 0
+            for weight in (
+                self.agreement_weight,
+                self.confidence_weight,
+                self.regime_weight,
+                self.historical_surface_weight,
+            )
+        ):
+            raise ValueError('judge_bridge shadow_capture requires at least one positive scoring weight')
+        return self
+
+
+class JudgeBridgeShadowCaptureConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(...)
+    output_dir: str = Field(..., min_length=1)
+    evidence_envelope_file: str = Field(..., min_length=1)
+    policy_verdict_file: str = Field(..., min_length=1)
+    bridge_decision_file: str = Field(..., min_length=1)
+    calibration_row_file: str = Field(..., min_length=1)
+    meta_scoring: JudgeBridgeRuntimeMetaScoringConfig
+
+    @field_validator(
+        'evidence_envelope_file',
+        'policy_verdict_file',
+        'bridge_decision_file',
+        'calibration_row_file',
+    )
+    @classmethod
+    def validate_jsonl_filename(cls, value: str) -> str:
+        if not value.endswith('.jsonl'):
+            raise ValueError('judge_bridge shadow_capture files must be jsonl')
+        return value
+
+
+class JudgeBridgeConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(...)
+    authority_mode: JudgeBridgeAuthorityMode = Field(...)
+    allowed_runtime_modes: List[str] = Field(..., min_length=1)
+    forbidden_runtime_modes: List[str] = Field(..., min_length=1)
+    confidence_policy: JudgeBridgeConfidencePolicyConfig = Field(...)
+    hard_gates: JudgeBridgeHardGatesConfig = Field(...)
+    calibration_guard: JudgeBridgeCalibrationGuardConfig = Field(...)
+    shadow_capture: JudgeBridgeShadowCaptureConfig = Field(...)
+
+    @model_validator(mode='after')
+    def validate_runtime_policy(self) -> 'JudgeBridgeConfig':
+        allowed = set(self.allowed_runtime_modes)
+        forbidden = set(self.forbidden_runtime_modes)
+        if allowed & forbidden:
+            raise ValueError('judge_bridge allowed and forbidden runtime modes overlap')
+        if "production" not in forbidden or "live" not in forbidden:
+            raise ValueError('judge_bridge must forbid production and live runtime modes')
+        if self.authority_mode == "live_gated" and not self.calibration_guard.accepted_artifact_path:
+            raise ValueError(
+                'judge_bridge live_gated requires accepted_artifact_path'
+            )
+        return self
+
+
 class DecisionMakingDomainConfig(BaseModel):
     """Complete decision making domain configuration."""
 
@@ -2097,6 +2329,10 @@ class DecisionMakingDomainConfig(BaseModel):
     regime_loss_embargo: RegimeLossEmbargoConfig = Field(
         ...,
         description="Decision-making-owned stable regime epoch loss embargo.",
+    )
+    judge_bridge: JudgeBridgeConfig = Field(
+        ...,
+        description="Disabled-by-default Judge bridge mode policy. Phase 7 contract only.",
     )
     neocortex_enforcement_mode: Literal["shadow", "enforce"] = Field(
         ...,

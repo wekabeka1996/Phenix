@@ -1,0 +1,295 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/alpha_search/judge/judge_evidence_envelope_v2.json",
+  "title": "JudgeEvidenceEnvelope V2",
+  "description": "Evidence-only container for native strategy opinions and regime context. It is not a verdict or authority surface.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "envelope_id",
+    "created_ts_ms",
+    "symbol",
+    "question_type",
+    "authority_status",
+    "market_context",
+    "regime_context",
+    "strategy_opinions",
+    "risk_context",
+    "portfolio_context",
+    "execution_readiness",
+    "historical_surface_evidence",
+    "freshness_missingness_map",
+    "disagreement_map",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["2.0.0"]
+    },
+    "envelope_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_ts_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cycle_key": {
+      "type": ["string", "null"]
+    },
+    "decision_id": {
+      "type": ["string", "null"]
+    },
+    "rid": {
+      "type": ["string", "null"]
+    },
+    "symbol": {
+      "type": "string",
+      "minLength": 1
+    },
+    "question_type": {
+      "type": "string",
+      "enum": ["entry", "lifecycle"]
+    },
+    "authority_status": {
+      "type": "string",
+      "enum": ["evidence_only"]
+    },
+    "runtime_mode": {
+      "type": ["string", "null"]
+    },
+    "market_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symbol", "ts_ms", "data_freshness_state", "source_refs"],
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ts_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "data_freshness_state": {
+          "type": "string",
+          "enum": ["FRESH", "STALE", "MISSING", "UNKNOWN"]
+        },
+        "source_refs": {
+          "type": "object"
+        }
+      }
+    },
+    "regime_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["present", "envelope", "missing_reason"],
+      "properties": {
+        "present": {
+          "type": "boolean"
+        },
+        "envelope": {
+          "type": ["object", "null"]
+        },
+        "missing_reason": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "strategy_opinions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["aurora", "mean_reversion", "md_amr"],
+      "properties": {
+        "aurora": {
+          "type": ["object", "null"]
+        },
+        "mean_reversion": {
+          "type": ["object", "null"]
+        },
+        "md_amr": {
+          "type": ["object", "null"]
+        }
+      }
+    },
+    "risk_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["present", "exposure_state", "risk_state", "missing_reason"],
+      "properties": {
+        "present": {
+          "type": "boolean"
+        },
+        "exposure_state": {
+          "type": ["string", "null"]
+        },
+        "risk_state": {
+          "type": ["string", "null"]
+        },
+        "missing_reason": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "portfolio_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["present", "position_state", "symbol_exposure", "missing_reason"],
+      "properties": {
+        "present": {
+          "type": "boolean"
+        },
+        "position_state": {
+          "type": ["string", "null"]
+        },
+        "symbol_exposure": {
+          "type": ["number", "null"]
+        },
+        "missing_reason": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "execution_readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["present", "readiness_state", "blocking_reasons", "missing_reason"],
+      "properties": {
+        "present": {
+          "type": "boolean"
+        },
+        "readiness_state": {
+          "type": ["string", "null"]
+        },
+        "blocking_reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "missing_reason": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "historical_surface_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "present",
+        "surface_key",
+        "sample_count",
+        "expectancy_net",
+        "confidence_interval_low",
+        "confidence_interval_high",
+        "missing_reason"
+      ],
+      "properties": {
+        "present": {
+          "type": "boolean"
+        },
+        "surface_key": {
+          "type": ["string", "null"]
+        },
+        "sample_count": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "expectancy_net": {
+          "type": ["number", "null"]
+        },
+        "confidence_interval_low": {
+          "type": ["number", "null"]
+        },
+        "confidence_interval_high": {
+          "type": ["number", "null"]
+        },
+        "missing_reason": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "freshness_missingness_map": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["per_block", "per_field"],
+      "properties": {
+        "per_block": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "per_field": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "disagreement_map": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "side_opinions",
+        "confidence_by_expert",
+        "agreement_state",
+        "notes"
+      ],
+      "properties": {
+        "side_opinions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "confidence_by_expert": {
+          "type": "object",
+          "additionalProperties": {
+            "type": ["number", "null"]
+          }
+        },
+        "agreement_state": {
+          "type": "string",
+          "enum": [
+            "AGREE_LONG",
+            "AGREE_SHORT",
+            "DISAGREE",
+            "SINGLE_EXPERT",
+            "NO_EXPERTS",
+            "UNKNOWN"
+          ]
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_contract_versions", "builder_version", "source_refs"],
+      "properties": {
+        "input_contract_versions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "builder_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_refs": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

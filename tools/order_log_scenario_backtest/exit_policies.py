@@ -29,11 +29,17 @@ def _decimal(value: float | int | str) -> Decimal:
     return Decimal(str(value))
 
 
-def _fee_roi_pct(entry: CanonicalEntry, runtime: ScenarioRuntime) -> float:
+def resolve_entry_round_trip_fee_bps(entry: CanonicalEntry, runtime: ScenarioRuntime) -> float:
+    if entry.historical_round_trip_fee_bps is not None:
+        return float(entry.historical_round_trip_fee_bps)
     fees = runtime.config.get("fees") or {}
     open_fee_bps = float(fees.get("open_fee_bps") or 0.0)
     close_fee_bps = float(fees.get("close_fee_bps") or 0.0)
-    return (open_fee_bps + close_fee_bps) * entry.leverage / 100.0
+    return open_fee_bps + close_fee_bps
+
+
+def _fee_roi_pct(entry: CanonicalEntry, runtime: ScenarioRuntime) -> float:
+    return resolve_entry_round_trip_fee_bps(entry, runtime) * entry.leverage / 100.0
 
 
 def _gross_price_move_pct(entry: CanonicalEntry, exit_price: float) -> float:
@@ -100,8 +106,10 @@ def compute_tpsl_geometry(entry: CanonicalEntry, runtime: ScenarioRuntime) -> di
         return {"error": "default_multiplier_missing"}
 
     regime_key = entry.regime_at_entry or "DEFAULT"
-    sl_pct_eff = _decimal(sl_pct_raw) * _decimal(sl_mult_map.get(regime_key, sl_mult_map["DEFAULT"]))
-    tp_rr_eff = _decimal(tp_low_ratio_raw) * _decimal(tp_mult_map.get(regime_key, tp_mult_map["DEFAULT"]))
+    sl_pct_eff = _decimal(
+        sl_pct_raw) * _decimal(sl_mult_map.get(regime_key, sl_mult_map["DEFAULT"]))
+    tp_rr_eff = _decimal(tp_low_ratio_raw) * \
+        _decimal(tp_mult_map.get(regime_key, tp_mult_map["DEFAULT"]))
     tp_dist_pct = sl_pct_eff * tp_rr_eff
     entry_price = _decimal(entry.entry_price)
     side = entry.side.upper()
@@ -175,6 +183,62 @@ def compute_tpsl_geometry(entry: CanonicalEntry, runtime: ScenarioRuntime) -> di
     }
 
 
+def compute_target_roi_geometry(
+    entry: CanonicalEntry,
+    runtime: ScenarioRuntime,
+    target_net_roi_pct: float,
+) -> dict[str, Any]:
+    if entry.historical_stop_price is None:
+        return {"error": "historical_stop_price_missing"}
+    if entry.entry_price <= 0:
+        return {"error": "entry_price_missing"}
+    if entry.leverage <= 0:
+        return {"error": "leverage_missing"}
+
+    side = entry.side.upper()
+    if side not in {"BUY", "SELL"}:
+        return {"error": "unsupported_side"}
+
+    round_trip_fee_bps = resolve_entry_round_trip_fee_bps(entry, runtime)
+    fee_roi_pct = round_trip_fee_bps * entry.leverage / 100.0
+    target_gross_roi_pct = float(target_net_roi_pct) + fee_roi_pct
+    target_move_pct = target_gross_roi_pct / entry.leverage
+
+    if side == "BUY":
+        tp_price = entry.entry_price * (1.0 + target_move_pct / 100.0)
+        original_sl_move_pct = (
+            (entry.entry_price - entry.historical_stop_price) / entry.entry_price) * 100.0
+    else:
+        tp_price = entry.entry_price * (1.0 - target_move_pct / 100.0)
+        original_sl_move_pct = (
+            (entry.historical_stop_price - entry.entry_price) / entry.entry_price) * 100.0
+
+    if original_sl_move_pct <= 0:
+        return {"error": "historical_stop_not_loss_side"}
+
+    original_sl_gross_roi_pct = -(original_sl_move_pct * entry.leverage)
+    original_sl_net_roi_pct = original_sl_gross_roi_pct - fee_roi_pct
+    rr_vs_original_sl = target_move_pct / original_sl_move_pct
+
+    context = {
+        "target_net_roi_pct": float(target_net_roi_pct),
+        "target_gross_roi_pct": round(target_gross_roi_pct, 8),
+        "target_move_pct": round(target_move_pct, 8),
+        "historical_stop_price": float(entry.historical_stop_price),
+        "round_trip_fee_bps": round(round_trip_fee_bps, 8),
+        "fee_roi_pct": round(fee_roi_pct, 8),
+        "original_sl_move_pct": round(original_sl_move_pct, 8),
+        "original_sl_net_roi_pct": round(original_sl_net_roi_pct, 8),
+        "rr_vs_original_sl": round(rr_vs_original_sl, 8),
+        "historical_geometry_source": entry.historical_geometry_source or "missing",
+    }
+    return {
+        "tp_price": float(tp_price),
+        "sl_price": float(entry.historical_stop_price),
+        "context": context,
+    }
+
+
 def tp_sl_only_exit(entry: CanonicalEntry, runtime: ScenarioRuntime) -> tuple[ExitEvent, dict[str, Any]]:
     geometry = compute_tpsl_geometry(entry, runtime)
     if "error" in geometry:
@@ -199,7 +263,8 @@ def tp_sl_only_exit(entry: CanonicalEntry, runtime: ScenarioRuntime) -> tuple[Ex
                 source="candles",
                 support_quality="symbol_candles_missing",
             ),
-            {"tp_price": geometry["tp_price"], "sl_price": geometry["sl_price"], "tpsl_context": geometry.get("context")},
+            {"tp_price": geometry["tp_price"], "sl_price": geometry["sl_price"],
+                "tpsl_context": geometry.get("context")},
         )
 
     start_ts = _ceil_to_minute_close_ts(entry.entry_ts_ms)
@@ -225,7 +290,8 @@ def tp_sl_only_exit(entry: CanonicalEntry, runtime: ScenarioRuntime) -> tuple[Ex
                     source="1m_candle_replay",
                     support_quality="sl_first_ambiguous_bar",
                 ),
-                {"tp_price": tp_price, "sl_price": sl_price, "tpsl_context": geometry.get("context")},
+                {"tp_price": tp_price, "sl_price": sl_price,
+                    "tpsl_context": geometry.get("context")},
             )
         if hit_tp:
             return (
@@ -236,7 +302,8 @@ def tp_sl_only_exit(entry: CanonicalEntry, runtime: ScenarioRuntime) -> tuple[Ex
                     source="1m_candle_replay",
                     support_quality="high",
                 ),
-                {"tp_price": tp_price, "sl_price": sl_price, "tpsl_context": geometry.get("context")},
+                {"tp_price": tp_price, "sl_price": sl_price,
+                    "tpsl_context": geometry.get("context")},
             )
         if hit_sl:
             return (
@@ -247,7 +314,8 @@ def tp_sl_only_exit(entry: CanonicalEntry, runtime: ScenarioRuntime) -> tuple[Ex
                     source="1m_candle_replay",
                     support_quality="high",
                 ),
-                {"tp_price": tp_price, "sl_price": sl_price, "tpsl_context": geometry.get("context")},
+                {"tp_price": tp_price, "sl_price": sl_price,
+                    "tpsl_context": geometry.get("context")},
             )
 
     return (
@@ -258,7 +326,217 @@ def tp_sl_only_exit(entry: CanonicalEntry, runtime: ScenarioRuntime) -> tuple[Ex
             source="1m_candle_replay",
             support_quality="no_tp_sl_hit",
         ),
-        {"tp_price": tp_price, "sl_price": sl_price, "tpsl_context": geometry.get("context")},
+        {"tp_price": tp_price, "sl_price": sl_price,
+            "tpsl_context": geometry.get("context")},
+    )
+
+
+def target_roi_exit(
+    entry: CanonicalEntry,
+    runtime: ScenarioRuntime,
+    target_net_roi_pct: float,
+    *,
+    horizon_mode: str,
+) -> tuple[ExitEvent, dict[str, Any]]:
+    if horizon_mode not in {"actual_close_window", "fixed_24h_window"}:
+        return (
+            ExitEvent(
+                reason="target_roi_unresolved",
+                ts_ms=None,
+                price=None,
+                source="target_roi_replay",
+                support_quality="unsupported_horizon_mode",
+            ),
+            {
+                "tp_price": "",
+                "sl_price": "",
+                "target_hit": "false",
+                "target_roi_context": {
+                    "target_net_roi_pct": float(target_net_roi_pct),
+                    "horizon_mode": horizon_mode,
+                    "error": "unsupported_horizon_mode",
+                },
+            },
+        )
+
+    geometry = compute_target_roi_geometry(entry, runtime, target_net_roi_pct)
+    if "error" in geometry:
+        return (
+            ExitEvent(
+                reason="target_roi_unresolved",
+                ts_ms=None,
+                price=None,
+                source="historical_geometry",
+                support_quality=geometry["error"],
+            ),
+            {
+                "tp_price": "",
+                "sl_price": "",
+                "target_hit": "false",
+                "target_roi_context": {
+                    "target_net_roi_pct": float(target_net_roi_pct),
+                    "horizon_mode": horizon_mode,
+                    **geometry,
+                },
+            },
+        )
+
+    series = runtime.candles_by_symbol.get(entry.symbol)
+    if series is None:
+        return (
+            ExitEvent(
+                reason="target_roi_unresolved",
+                ts_ms=None,
+                price=None,
+                source="candles",
+                support_quality="symbol_candles_missing",
+            ),
+            {
+                "tp_price": geometry["tp_price"],
+                "sl_price": geometry["sl_price"],
+                "target_hit": "false",
+                "target_roi_context": {
+                    "horizon_mode": horizon_mode,
+                    **(geometry.get("context") or {}),
+                },
+            },
+        )
+
+    start_ts = _ceil_to_minute_close_ts(entry.entry_ts_ms)
+    end_ts = (
+        entry.actual_close_ts_ms
+        if horizon_mode == "actual_close_window" and entry.actual_close_ts_ms is not None
+        else _tp_sl_horizon_end(entry)
+    )
+    start_idx = bisect_left(series.timestamps, start_ts)
+    end_idx = bisect_right(series.timestamps, end_ts)
+    tp_price = float(geometry["tp_price"])
+    sl_price = float(geometry["sl_price"])
+    last_candle = None
+
+    for candle in series.rows[start_idx:end_idx]:
+        last_candle = candle
+        if entry.side.upper() == "BUY":
+            hit_tp = candle["high"] >= tp_price
+            hit_sl = candle["low"] <= sl_price
+        else:
+            hit_tp = candle["low"] <= tp_price
+            hit_sl = candle["high"] >= sl_price
+        if hit_tp and hit_sl:
+            return (
+                ExitEvent(
+                    reason="historical_sl_first_ambiguous_intrabar",
+                    ts_ms=int(candle["timestamp"]),
+                    price=sl_price,
+                    source="1m_candle_replay",
+                    support_quality="sl_first_ambiguous_bar",
+                ),
+                {
+                    "tp_price": tp_price,
+                    "sl_price": sl_price,
+                    "target_hit": "false",
+                    "target_roi_context": {
+                        "horizon_mode": horizon_mode,
+                        **(geometry.get("context") or {}),
+                    },
+                },
+            )
+        if hit_tp:
+            return (
+                ExitEvent(
+                    reason="target_roi_hit",
+                    ts_ms=int(candle["timestamp"]),
+                    price=tp_price,
+                    source="1m_candle_replay",
+                    support_quality="high",
+                ),
+                {
+                    "tp_price": tp_price,
+                    "sl_price": sl_price,
+                    "target_hit": "true",
+                    "target_roi_context": {
+                        "horizon_mode": horizon_mode,
+                        **(geometry.get("context") or {}),
+                    },
+                },
+            )
+        if hit_sl:
+            return (
+                ExitEvent(
+                    reason="historical_sl_hit",
+                    ts_ms=int(candle["timestamp"]),
+                    price=sl_price,
+                    source="1m_candle_replay",
+                    support_quality="high",
+                ),
+                {
+                    "tp_price": tp_price,
+                    "sl_price": sl_price,
+                    "target_hit": "false",
+                    "target_roi_context": {
+                        "horizon_mode": horizon_mode,
+                        **(geometry.get("context") or {}),
+                    },
+                },
+            )
+
+    if horizon_mode == "actual_close_window" and entry.actual_close_ts_ms is not None and entry.actual_close_price is not None:
+        return (
+            ExitEvent(
+                reason="actual_close_window_end",
+                ts_ms=entry.actual_close_ts_ms,
+                price=entry.actual_close_price,
+                source="order_log_actual_close",
+                support_quality="high",
+            ),
+            {
+                "tp_price": tp_price,
+                "sl_price": sl_price,
+                "target_hit": "false",
+                "target_roi_context": {
+                    "horizon_mode": horizon_mode,
+                    **(geometry.get("context") or {}),
+                },
+            },
+        )
+
+    if last_candle is not None:
+        return (
+            ExitEvent(
+                reason="replay_window_end",
+                ts_ms=int(last_candle["timestamp"]),
+                price=float(last_candle["close"]),
+                source="1m_candle_replay",
+                support_quality="high",
+            ),
+            {
+                "tp_price": tp_price,
+                "sl_price": sl_price,
+                "target_hit": "false",
+                "target_roi_context": {
+                    "horizon_mode": horizon_mode,
+                    **(geometry.get("context") or {}),
+                },
+            },
+        )
+
+    return (
+        ExitEvent(
+            reason="target_roi_unresolved",
+            ts_ms=None,
+            price=None,
+            source="1m_candle_replay",
+            support_quality="no_candles_in_window",
+        ),
+        {
+            "tp_price": tp_price,
+            "sl_price": sl_price,
+            "target_hit": "false",
+            "target_roi_context": {
+                "horizon_mode": horizon_mode,
+                **(geometry.get("context") or {}),
+            },
+        },
     )
 
 
@@ -308,7 +586,8 @@ def build_sidecar_request_index(requests: list[dict[str, Any]]) -> dict[str, dic
         rid = stringify(fill_correlation.get("rid"))
         client_order_id = stringify(fill_correlation.get("client_order_id"))
         order_id = stringify(fill_correlation.get("order_id"))
-        symbol = stringify(payload.get("symbol")) or stringify(policy_context.get("symbol"))
+        symbol = stringify(payload.get("symbol")) or stringify(
+            policy_context.get("symbol"))
         if lifecycle_id:
             by_lifecycle_id.setdefault(lifecycle_id, []).append(payload)
         if rid:
@@ -322,7 +601,8 @@ def build_sidecar_request_index(requests: list[dict[str, Any]]) -> dict[str, dic
 
     for bucket in (by_lifecycle_id, by_rid, by_client_order_id, by_order_id, by_symbol):
         for key, values in bucket.items():
-            values.sort(key=lambda item: to_int(item.get("request_ts_ms")) or to_int(item.get("ts_ms")) or 0)
+            values.sort(key=lambda item: to_int(
+                item.get("request_ts_ms")) or to_int(item.get("ts_ms")) or 0)
             bucket[key] = values
 
     return {
@@ -359,7 +639,8 @@ def _pick_sidecar_request(
         candidates = (index.get(method) or {}).get(key) or []
         if candidates:
             chosen = candidates[0]
-            request_ts_ms = to_int(chosen.get("request_ts_ms")) or to_int(chosen.get("ts_ms"))
+            request_ts_ms = to_int(chosen.get(
+                "request_ts_ms")) or to_int(chosen.get("ts_ms"))
             audit.update(
                 {
                     "join_method": method,
@@ -378,7 +659,8 @@ def _pick_sidecar_request(
         candidates = (index.get(method) or {}).get(entry.trade_id) or []
         if candidates:
             chosen = candidates[0]
-            request_ts_ms = to_int(chosen.get("request_ts_ms")) or to_int(chosen.get("ts_ms"))
+            request_ts_ms = to_int(chosen.get(
+                "request_ts_ms")) or to_int(chosen.get("ts_ms"))
             audit.update(
                 {
                     "join_method": method,
@@ -398,7 +680,8 @@ def _pick_sidecar_request(
     best_delta = None
     horizon_end = _tp_sl_horizon_end(entry)
     for candidate in candidates:
-        request_ts_ms = to_int(candidate.get("request_ts_ms")) or to_int(candidate.get("ts_ms"))
+        request_ts_ms = to_int(candidate.get(
+            "request_ts_ms")) or to_int(candidate.get("ts_ms"))
         if request_ts_ms is None:
             continue
         if request_ts_ms < entry.entry_ts_ms or request_ts_ms > horizon_end:
@@ -437,7 +720,8 @@ def sidecar_only_exit(entry: CanonicalEntry, runtime: ScenarioRuntime) -> tuple[
             ),
             {"request_join_audit": audit},
         )
-    request_ts_ms = to_int(request.get("request_ts_ms")) or to_int(request.get("ts_ms"))
+    request_ts_ms = to_int(request.get("request_ts_ms")
+                           ) or to_int(request.get("ts_ms"))
     if request_ts_ms is None:
         return (
             ExitEvent(
@@ -461,7 +745,8 @@ def sidecar_only_exit(entry: CanonicalEntry, runtime: ScenarioRuntime) -> tuple[
             ),
             {"request_join_audit": audit},
         )
-    next_candle_idx = bisect_right(series.timestamps, _ceil_to_minute_close_ts(request_ts_ms))
+    next_candle_idx = bisect_right(
+        series.timestamps, _ceil_to_minute_close_ts(request_ts_ms))
     if next_candle_idx >= len(series.rows):
         return (
             ExitEvent(

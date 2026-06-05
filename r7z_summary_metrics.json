@@ -1,0 +1,90 @@
+{
+  "task": "AURORA_R7Z_FEE_AWARE_SHADOW_ECONOMIC_EFFECTIVENESS_ANALYSIS",
+  "verdict": "FEE_AWARE_ECONOMIC_SIGNAL_POSITIVE_BUT_NOT_PROMOTABLE",
+  "analysis_window": {
+    "start": "2026-05-26T14:57:21.345000Z",
+    "end": "2026-05-29T18:00:30.126000Z",
+    "extended_beyond_r7y": true,
+    "default_r7y_window_start": "2026-05-26T14:57:21.345000Z",
+    "default_r7y_window_end": "2026-05-29T00:00:49.320000Z"
+  },
+  "event_counts": {
+    "trade_lifecycle_fee_aware_events": 108,
+    "shadow_critical_journal_fee_aware_events": 108
+  },
+  "lifecycles": {
+    "lifecycle_count": 9,
+    "closed_with_complete_economics": 8,
+    "closed_with_estimated_economics": 1,
+    "incomplete_or_unjoinable": 0,
+    "closed_lifecycles_total": 9
+  },
+  "symbols": [
+    "1000PEPEUSDT",
+    "BNBUSDT",
+    "BTCUSDT",
+    "DOGEUSDT",
+    "ETHUSDT",
+    "XRPUSDT"
+  ],
+  "timing_comparison": {
+    "fee_aware_same_as_raw_count": 40,
+    "fee_aware_later_count": 14,
+    "fee_aware_better_count": 13,
+    "fee_aware_worse_count": 1,
+    "inconclusive_count": 0
+  },
+  "counterfactuals": {
+    "computable_high_confidence": 48,
+    "computable_medium_confidence": 6,
+    "computable_low_confidence": 0,
+    "not_computable": 0
+  },
+  "denominator": {
+    "analysis_window": {
+      "start": "2026-05-26T14:57:21.345000Z",
+      "end": "2026-05-29T18:00:30.126000Z",
+      "extended_beyond_r7y": true
+    },
+    "symbols": [
+      "1000PEPEUSDT",
+      "BNBUSDT",
+      "BTCUSDT",
+      "DOGEUSDT",
+      "ETHUSDT",
+      "XRPUSDT"
+    ],
+    "candidate_rows_total": 1815606,
+    "economics_ready_count": 321684,
+    "economics_ready_ratio": 0.17717720694908476,
+    "fee_source_distribution": {
+      "realized_lifecycle_fee": 235650,
+      "None": 1050552,
+      "order_log_fee": 529404
+    },
+    "realized_lifecycle_fee_count": 235650,
+    "order_log_fee_count": 529404,
+    "estimated_fee_count": 529404,
+    "null_fee_source_count": 1050552,
+    "null_reasons_distribution": {
+      "missing_observed_lifecycle_fee": 1579956,
+      "missing_order_log_fee": 1050552,
+      "configured_fee_model_disabled": 1050552,
+      "missing_fee_source": 2255652,
+      "missing_position_notional_usdt": 1339212,
+      "missing_unrealized_pnl_usdt": 2678748,
+      "peak_edge_not_positive": 134616
+    },
+    "missing_unrealized_pnl_usdt_count": 162,
+    "classification": "FEE_SOURCE_TOO_WEAK"
+  },
+  "aggregate_deltas": {
+    "average_delta_fee_aware_vs_raw": 1.2158449796296298,
+    "average_delta_fee_aware_vs_actual": 0.8222317024074074,
+    "median_delta_fee_aware_vs_raw": 0.0,
+    "worst_case_delta": -0.03281478999999998,
+    "best_case_delta": 9.89354308
+  },
+  "summary_confidence": "MEDIUM",
+  "window_sufficient_for_economic_analysis": true
+}

@@ -1,0 +1,39 @@
+{
+  "bundle_invalid_trade_jsonl_lines": 1,
+  "bundle_linked_shadow_rows": 4884,
+  "bundle_root": "logs/frozen/package_o_smoke/nrr062_fresh_capture_20260605_133915",
+  "config_compare": {
+    "accepted_domains_sha256": "3ece313409a6f0db2fd0ee5ce44a9ee0ff5e94a6fad98c1a878e8c6f3a5394d5",
+    "accepted_enable_bundle": "frozen/sidecar_peak_giveback_disabled_runtime_20260515T094228Z",
+    "accepted_sidecar_mode": "enable",
+    "current_domains_sha256": "5f7a330b12a7e52ae3c412b967960726c9926c156e3b97acf26aac94d7339a12",
+    "current_sidecar_mode": "enable",
+    "full_hash_matches": false,
+    "sidecar_block_equal": true
+  },
+  "config_snapshot": {
+    "config_snapshot_manifest_sha256": "26dce8821c606859872e261191b35cde8764022d202772282c25586708bd0a6a",
+    "optional_files": null,
+    "optional_present": 3,
+    "required_files": 8,
+    "required_present": 8
+  },
+  "decision_ledger_frozen_in_bundle": true,
+  "manifest": {
+    "capture_verdict": "CAPTURE_COMPLETE",
+    "decision_ledger_present": null,
+    "order_log_nrr062_rows": 42,
+    "recorder_coverage_sufficient": null,
+    "scan_ts": "2026-06-05T13:39:15.039014+00:00"
+  },
+  "mismatch_counts": {
+    "override_name": 0,
+    "regime": 0,
+    "selected_scale": 0,
+    "selected_source": 0,
+    "side": 79,
+    "threshold_family": 0,
+    "trading_mode": 0
+  },
+  "verdict": "BOUNDARY_REVIEW_REQUIRED"
+}

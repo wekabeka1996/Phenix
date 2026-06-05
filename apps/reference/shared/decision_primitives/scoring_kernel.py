@@ -110,9 +110,11 @@ class QuadraticScoringKernel:
         price: decimal.Decimal,
         # DEPRECATED: signal_weights, feature_neutrals, direction_strength_cfg
         # are accepted for call-site compat but NOT read by Quadratic kernel.
-        # Quadratic reads pillar_sum only.
-        signal_weights: Dict[str, float],
-        feature_neutrals: Dict[str, float],
+        # Quadratic reads pillar_sum only. Default None — callers should stop
+        # passing these; live Aurora decision.py still passes them but they are
+        # silently ignored. New callers must NOT pass them.
+        signal_weights: Optional[Dict[str, float]] = None,
+        feature_neutrals: Optional[Dict[str, float]] = None,
         essential_features: List[str],
         base_threshold: decimal.Decimal,
         regime_name: Optional[str],
@@ -131,6 +133,11 @@ class QuadraticScoringKernel:
         score_multiplier: float = 1.0,
         linear_score: Optional[float] = None,
         regime_smoother: Optional[Any] = None,
+        # Kernel library default is "quadratic"/"quadratic" for standalone callers
+        # (calibrators, tools, tests that do not pass these explicitly).
+        # Aurora runtime SSOT overrides admission_mode to "linear" via
+        # config/aurora/strategies/aurora.yaml:decision_geometry.admission_mode.
+        # Do not rename "quadratic scoring" globally — only Aurora overrides admission.
         admission_mode: str = "quadratic",
         admission_power: Optional[float] = None,
         sizing_mode: str = "quadratic",

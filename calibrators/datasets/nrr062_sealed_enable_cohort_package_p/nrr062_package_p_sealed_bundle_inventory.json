@@ -1,0 +1,400 @@
+{
+  "accepted_low_vol_row_count": 79,
+  "accepted_low_vol_rows": 79,
+  "analysis_scope": "sealed_bundle_only",
+  "bucket_counts": {
+    "CLOSED_CANONICAL_LOSS": 16,
+    "CLOSED_CANONICAL_PROFIT": 8,
+    "CLOSED_NON_CANONICAL_EVIDENCE": 3,
+    "DOWNSTREAM_NO_EFFECT_CONFIRMED": 20,
+    "FILLED_POSITION_STILL_OPEN": 2,
+    "SUBMITTED_NOT_FILLED": 30
+  },
+  "bundle_complete": true,
+  "bundle_root": "logs/frozen/package_o_smoke/nrr062_fresh_capture_20260605_133915",
+  "config_snapshot": {
+    "config_snapshot_manifest_sha256": "26dce8821c606859872e261191b35cde8764022d202772282c25586708bd0a6a",
+    "optional_files": null,
+    "optional_present": 3,
+    "required_files": 8,
+    "required_present": 8
+  },
+  "decision_ledger_stats": {
+    "execution_outcome_counts": {
+      "EXCHANGE_REJECTED": 130,
+      "EXECUTED": 42,
+      "PENDING_TIMEOUT": 184
+    },
+    "invalid_rows": 0,
+    "terminal_status_counts": {
+      "EXECUTED_AND_CLOSED": 42,
+      "INVALID_FOR_DATASET": 184,
+      "REJECTED_UPSTREAM": 130
+    },
+    "valid_rows": 356
+  },
+  "decision_ledger_terminal_status_counts": {
+    "EXECUTED_AND_CLOSED": 11,
+    "INVALID_FOR_DATASET": 45,
+    "REJECTED_UPSTREAM": 22
+  },
+  "invalid_jsonl_lines": {
+    "decision_ledger": 0,
+    "order_log": 0,
+    "regime_confidence_audit": 0,
+    "shadow_journal": 0,
+    "trade_lifecycle": 1
+  },
+  "manifest": {
+    "capture_verdict": "CAPTURE_COMPLETE",
+    "decision_ledger_present": null,
+    "order_log_nrr062_rows": 42,
+    "recorder_coverage_sufficient": null,
+    "scan_ts": "2026-06-05T13:39:15.039014+00:00"
+  },
+  "order_log_event_top": [
+    [
+      "ORDER_FILLED",
+      1022
+    ],
+    [
+      "ORDER_INTENT",
+      382
+    ],
+    [
+      "DECISION_INTENT_REJECTED",
+      237
+    ],
+    [
+      "ORDER_PLACED",
+      129
+    ],
+    [
+      "ORDER_CANCELLED",
+      87
+    ],
+    [
+      "POSITION_CLOSED",
+      57
+    ],
+    [
+      "ORDER_TIMEOUT",
+      41
+    ],
+    [
+      "LIMIT_PRICE_ADJUSTED",
+      14
+    ],
+    [
+      "ORDER_REJECTED",
+      8
+    ],
+    [
+      "BOOT",
+      7
+    ]
+  ],
+  "override_row_count": 79,
+  "override_rows": 79,
+  "runtime_window": {
+    "end_ts_ms": 1780666582411,
+    "end_ts_utc": "2026-06-05T13:36:22.411000+00:00",
+    "start_ts_ms": 1779521103373,
+    "start_ts_utc": "2026-05-23T07:25:03.373000+00:00"
+  },
+  "shadow_journal_stats": {
+    "event_name_counts_top": [
+      [
+        "EVT:EXPOSURE_SUMMARY_UPDATED",
+        81826
+      ],
+      [
+        "EVT:PORTFOLIO_STATE_UPDATED",
+        80664
+      ],
+      [
+        "EVT:REGIME_DETECTED",
+        24210
+      ],
+      [
+        "EVT:QUADRATIC_DECISION_TRACE",
+        8923
+      ],
+      [
+        "EVT:STRATEGY_DECISION_BLOCKED",
+        5164
+      ],
+      [
+        "EVT:TRADE_EXECUTED",
+        3190
+      ],
+      [
+        "EVT:STRATEGY_SIGNAL_PRODUCED",
+        1112
+      ],
+      [
+        "HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_MISS",
+        1022
+      ],
+      [
+        "EVT:GATE_CHAIN_TRACE",
+        982
+      ],
+      [
+        "EVT:TRADE_INTENT_REJECTED",
+        804
+      ]
+    ],
+    "invalid_rows": 0,
+    "record_type_counts_top": [
+      [
+        "event",
+        206056
+      ],
+      [
+        "transition",
+        4195
+      ],
+      [
+        "comparison",
+        62
+      ],
+      [
+        "restore",
+        8
+      ]
+    ],
+    "truth_owner_counts_top": [
+      [
+        "UNKNOWN",
+        206056
+      ],
+      [
+        "FSMCore",
+        1146
+      ],
+      [
+        "ManageFlowFSM",
+        1023
+      ],
+      [
+        "PositionTracking",
+        1022
+      ],
+      [
+        "OrderIndex",
+        815
+      ],
+      [
+        "ExecPosFSM",
+        149
+      ],
+      [
+        "CloseFlowFSM",
+        48
+      ],
+      [
+        "CloseExecutor",
+        46
+      ],
+      [
+        "ExecutionTruthHardening",
+        16
+      ]
+    ],
+    "valid_rows": 210321
+  },
+  "shadow_record_top": [
+    [
+      "event",
+      206056
+    ],
+    [
+      "transition",
+      4195
+    ],
+    [
+      "comparison",
+      62
+    ],
+    [
+      "restore",
+      8
+    ]
+  ],
+  "sidecar_linked_rows": 4884,
+  "surfaces": [
+    {
+      "invalid_rows": null,
+      "present": true,
+      "row_count": null,
+      "sha256": "3d1f8a5af2c8f4a6af033c4d5e5222801933731f76fcb6c845abb0e22f1b9dda",
+      "surface": "MANIFEST.json"
+    },
+    {
+      "invalid_rows": null,
+      "present": true,
+      "row_count": null,
+      "sha256": "ab4c61acbc22381892d8dd44b05278a875f89c7baf39bc82bef1f7e36aec5edf",
+      "surface": "FREEZE_REPORT.md"
+    },
+    {
+      "invalid_rows": 0,
+      "present": true,
+      "row_count": 1984,
+      "sha256": "63fcc0174c70d1c97a33f62312611c0deadd953a7049c6e9a382ac202b25b789",
+      "surface": "logs/order_log_v1.jsonl"
+    },
+    {
+      "invalid_rows": 1,
+      "present": true,
+      "row_count": 640410,
+      "sha256": "2b0e0118a56d22461accbfefbc75fce0863668c2a4944c46c83b72e2852791ad",
+      "surface": "logs/trade_lifecycle.jsonl"
+    },
+    {
+      "invalid_rows": 0,
+      "present": true,
+      "row_count": 210321,
+      "sha256": "81ee6f2f5c9792500685b561dc14086693c108e507a91190b62ef492e973ca25",
+      "surface": "logs/shadow_critical_event_journal_v1.jsonl"
+    },
+    {
+      "invalid_rows": 0,
+      "present": true,
+      "row_count": 356,
+      "sha256": "ea4e79520fb4736a667a8e51b96516d39590571f375a0edc33a2dfd3aa8863b8",
+      "surface": "logs/shadow_telemetry/decision_ledger_v1.jsonl"
+    },
+    {
+      "invalid_rows": 0,
+      "present": true,
+      "row_count": 11349,
+      "sha256": "75e7c6a9ff6e5e8df20d9fc7620a096e19ef0e10ec4080b3fdebd6f4c0687e14",
+      "surface": "logs/regime_confidence_audit_v1.jsonl"
+    }
+  ],
+  "terminal_status_counts": {
+    "EXECUTED_AND_CLOSED": 11,
+    "INVALID_FOR_DATASET": 45,
+    "REJECTED_UPSTREAM": 22
+  },
+  "trade_lifecycle_event_top": [
+    [
+      "POSITION_POLICY_SIDECAR_SUPPRESSED",
+      634474
+    ],
+    [
+      "POSITION_POLICY_SIDECAR_SCORES",
+      1520
+    ],
+    [
+      "POSITION_POLICY_SIDECAR_EVALUATED",
+      1520
+    ],
+    [
+      "EXECUTION_FILL_INGRESS",
+      1022
+    ],
+    [
+      "TRADE_LIFECYCLE_FILLED",
+      949
+    ],
+    [
+      "POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE",
+      180
+    ],
+    [
+      "TRADE_LIFECYCLE_ORDERED",
+      107
+    ],
+    [
+      "EXECUTION_BRACKET_DEFERRED_STORED",
+      107
+    ],
+    [
+      "ORPHANED_TTL",
+      70
+    ],
+    [
+      "POSITION_DISAPPEARANCE_ATTRIBUTED",
+      59
+    ]
+  ],
+  "trade_lifecycle_stats": {
+    "event_counts_top": [
+      [
+        "POSITION_POLICY_SIDECAR_SUPPRESSED",
+        634474
+      ],
+      [
+        "POSITION_POLICY_SIDECAR_SCORES",
+        1520
+      ],
+      [
+        "POSITION_POLICY_SIDECAR_EVALUATED",
+        1520
+      ],
+      [
+        "EXECUTION_FILL_INGRESS",
+        1022
+      ],
+      [
+        "TRADE_LIFECYCLE_FILLED",
+        949
+      ],
+      [
+        "POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE",
+        180
+      ],
+      [
+        "TRADE_LIFECYCLE_ORDERED",
+        107
+      ],
+      [
+        "EXECUTION_BRACKET_DEFERRED_STORED",
+        107
+      ],
+      [
+        "ORPHANED_TTL",
+        70
+      ],
+      [
+        "POSITION_DISAPPEARANCE_ATTRIBUTED",
+        59
+      ]
+    ],
+    "invalid_rows": 1,
+    "status_counts_top": [
+      [
+        "FILLED",
+        995
+      ],
+      [
+        "ORDERED",
+        107
+      ],
+      [
+        "ORPHANED_TTL",
+        70
+      ],
+      [
+        "CLOSED",
+        57
+      ],
+      [
+        "CANCELLED",
+        41
+      ],
+      [
+        "PARTIALLY_FILLED",
+        37
+      ],
+      [
+        "REJECTED",
+        27
+      ]
+    ],
+    "valid_rows": 640410
+  }
+}

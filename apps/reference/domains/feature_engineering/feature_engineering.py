@@ -22,6 +22,7 @@ Features computed (9 base + 3 V2):
 import decimal
 import json
 import logging
+import math
 import time
 from typing import Dict, Any, TYPE_CHECKING, Optional, Tuple
 from collections import deque, defaultdict
@@ -37,6 +38,7 @@ from apps.reference.contracts.runtime_bar_identity import (
     extract_canonical_replay_identity,
 )
 from apps.reference.contracts.runtime_gap_policy import (
+    RuntimeGapStatus,
     attach_gap_status_payload,
     extract_gap_status,
 )
@@ -68,6 +70,11 @@ from apps.reference.domains.feature_engineering.price_motion import compute_pric
 from apps.reference.telemetry.metrics import inc_data_quality_bad_dt, inc_data_quality_drop
 from apps.reference.telemetry.metrics import inc_config_contract_violation
 from apps.reference.config_contract import ConfigContractError
+from apps.reference.shared.data_primitives.ohlc_validator import (
+    GAP_RESET_STATES,
+    compute_true_range,
+    validate_ohlc,
+)
 
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
@@ -300,6 +307,8 @@ class FeatureEngineering:
         # Ensure feature logs directory exists
         self._feature_logs_dir = os.path.join("logs", "features")
         os.makedirs(self._feature_logs_dir, exist_ok=True)
+        self._ohlc_invalid_log_path = os.path.join("logs", "ohlc_invalid.jsonl")
+        os.makedirs(os.path.dirname(self._ohlc_invalid_log_path), exist_ok=True)
         self._legacy_features_log_mode = self.cfg.legacy_features_log_mode
         self._legacy_features_log_sample_every_n = max(
             1, int(self.cfg.legacy_features_log_sample_every_n)
@@ -1332,7 +1341,14 @@ class FeatureEngineering:
             "pillar_contribs": safe_contribs,
         }
 
-    def _try_warmup_seed_atr(self, symbol: str, tf_sec: int, bar_data: Optional[Dict]) -> None:
+    def _try_warmup_seed_atr(
+        self,
+        symbol: str,
+        tf_sec: int,
+        bar_data: Optional[Dict],
+        *,
+        gap_state: str | None = None,
+    ) -> None:
         """Update BarVolatilityState TR buffer from a warmup/blocked bar.
 
         ATR-WARMUP-SEED: Called in CMD:PROCESS_STRATEGY blocked paths (warmup not ready,
@@ -1348,6 +1364,14 @@ class FeatureEngineering:
         if h is None or l is None or c is None:
             return
         try:
+            valid_ohlc, _ = validate_ohlc(
+                bar_data.get("open"),
+                h,
+                l,
+                c,
+            )
+            if not valid_ohlc:
+                return
             bh = decimal.Decimal(str(h))
             bl = decimal.Decimal(str(l))
             bc = decimal.Decimal(str(c))
@@ -1356,14 +1380,66 @@ class FeatureEngineering:
                 self._bar_volatility_states[vol_key] = BarVolatilityState(
                     atr_window=14)
             vs = self._bar_volatility_states[vol_key]
-            if vs.prev_close is not None:
-                tr = float(max(bh - bl, abs(bh - vs.prev_close),
-                           abs(bl - vs.prev_close)))
-            else:
-                tr = float(bh - bl)
-            vs.update_tr(tr)
+            gap_state_value = str(gap_state or bar_data.get("gap_state") or "")
+            tr = float(
+                compute_true_range(
+                    high_price=bh,
+                    low_price=bl,
+                    prev_close=vs.prev_close,
+                    gap_state=gap_state_value,
+                )
+            )
+            vs.update_tr(tr, gap_state=gap_state_value)
             vs.prev_close = bc
         except Exception:
+            pass
+
+    @staticmethod
+    def _coerce_precomputed_atr_pct(value: Any) -> Optional[float]:
+        try:
+            atr_pct = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(atr_pct) or atr_pct < 0.0:
+            return None
+        return atr_pct
+
+    def _record_invalid_ohlc(
+        self,
+        *,
+        symbol: str,
+        tf_sec: int,
+        current_tick: dict,
+        bar_data: dict,
+        reason: str,
+        surface: str,
+        gap_status: Optional[RuntimeGapStatus],
+    ) -> None:
+        payload = {
+            "ts": int(current_tick.get("ts") or 0),
+            "symbol": str(symbol),
+            "tf_sec": int(tf_sec or 0),
+            "reason": str(reason),
+            "surface": str(surface),
+            "bar": {
+                "open": bar_data.get("open"),
+                "high": bar_data.get("high"),
+                "low": bar_data.get("low"),
+                "close": bar_data.get("close"),
+                "volume": bar_data.get("volume"),
+            },
+        }
+        if gap_status is not None:
+            attach_gap_status_payload(payload, gap=gap_status)
+        try:
+            with open(self._ohlc_invalid_log_path, "a", encoding="utf-8") as handle:
+                handle.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
+        except Exception as exc:
+            self.logger.error("Failed to append invalid OHLC log: %s", exc)
+        try:
+            self.fsm.emit("EVT:OHLC_INVALID", payload=payload, why="feature_engineering_invalid_ohlc")
+        except Exception:
+            # Best-effort only. Missing registry/schema must not crash FE.
             pass
 
     def _calculate_and_emit_features_for_tf(
@@ -2002,6 +2078,29 @@ class FeatureEngineering:
                 default_source="market_data:payload_bridge",
                 default_source_mode=RuntimeBarSourceMode.LIVE,
             )
+            if bar_data and int(tf_sec or 0) >= 60:
+                valid_ohlc, invalid_reason = validate_ohlc(
+                    bar_data.get("open"),
+                    bar_data.get("high"),
+                    bar_data.get("low"),
+                    bar_data.get("close"),
+                )
+                if not valid_ohlc:
+                    self.logger.warning(
+                        "[%s] invalid OHLC bar rejected before feature emission: %s",
+                        symbol,
+                        invalid_reason,
+                    )
+                    self._record_invalid_ohlc(
+                        symbol=symbol,
+                        tf_sec=tf_sec,
+                        current_tick=current_tick,
+                        bar_data=bar_data,
+                        reason=str(invalid_reason),
+                        surface="feature_engineering",
+                        gap_status=gap_status,
+                    )
+                    return False
 
             # Build payload
             fe_diag = self._record_features_emitted(symbol, int(
@@ -2143,14 +2242,24 @@ class FeatureEngineering:
             elif bar_data.get("_warmup_bar") is True:
                 # PRE-SIMULATION WARMUP BAR: state-only pass, no decision.
                 # ATR-WARMUP-SEED: still seed TR buffer so ATR is ready when warmup lifts.
-                self._try_warmup_seed_atr(symbol, tf_sec, bar_data)
+                self._try_warmup_seed_atr(
+                    symbol,
+                    tf_sec,
+                    bar_data,
+                    gap_state=(gap_status.state.value if gap_status is not None else None),
+                )
             elif bar_data.get("is_candidate") is False:
 
                 # SPARSE DECISION LOOP (Phase 2):
                 # Skip emitting CMD:PROCESS_STRATEGY for non-candidate bars.
                 # Do not emit blocked reason as this is a high-frequency expected shortcut.
                 # ATR-WARMUP-SEED: still seed TR buffer so ATR state builds continuously.
-                self._try_warmup_seed_atr(symbol, tf_sec, bar_data)
+                self._try_warmup_seed_atr(
+                    symbol,
+                    tf_sec,
+                    bar_data,
+                    gap_state=(gap_status.state.value if gap_status is not None else None),
+                )
             else:
                 warmup_mode = str(
                     self.cfg.warmup_enforcement_mode or "fail_fast")
@@ -2176,7 +2285,12 @@ class FeatureEngineering:
                             _emit_cmd_blocked(
                                 "WARMUP_NOT_FULL_READY", "warmup full_ready=false")
                             # ATR-WARMUP-SEED: seed TR buffer so ATR is ready when warmup lifts.
-                            self._try_warmup_seed_atr(symbol, tf_sec, bar_data)
+                            self._try_warmup_seed_atr(
+                                symbol,
+                                tf_sec,
+                                bar_data,
+                                gap_state=(gap_status.state.value if gap_status is not None else None),
+                            )
                             return
                     else:
                         # warn_only / disabled: allow strategy processing to proceed
@@ -2215,6 +2329,11 @@ class FeatureEngineering:
                     bar_high = decimal.Decimal(str(bar_data.get("high")))
                     bar_low = decimal.Decimal(str(bar_data.get("low")))
                     bar_close = decimal.Decimal(str(bar_data.get("close")))
+                    gap_state = (
+                        gap_status.state.value
+                        if gap_status is not None
+                        else str(bar_data.get("gap_state") or "")
+                    )
 
                     # bar_range = high - low
                     bar_range = bar_high - bar_low
@@ -2229,22 +2348,16 @@ class FeatureEngineering:
                             atr_window=14)
                     vol_state = self._bar_volatility_states[vol_key]
 
-                    # True Range calculation
-                    # TR = max(H - L, |H - prev_close|, |L - prev_close|)
-                    if vol_state.prev_close is not None:
-                        tr_hl = bar_high - bar_low
-                        tr_hc = abs(bar_high - vol_state.prev_close)
-                        tr_lc = abs(bar_low - vol_state.prev_close)
-                        true_range = max(tr_hl, tr_hc, tr_lc)
-                    else:
-                        # First bar: use H - L only
-                        true_range = bar_high - bar_low
+                    # True Range uses H - L on first/gap-reset bars, else max(H-L, |H-pc|, |L-pc|).
+                    true_range = compute_true_range(
+                        high_price=bar_high,
+                        low_price=bar_low,
+                        prev_close=vol_state.prev_close,
+                        gap_state=gap_state,
+                    )
 
-                    # Update prev_close for next bar
+                    vol_state.update_tr(float(true_range), gap_state=gap_state)
                     vol_state.prev_close = bar_close
-
-                    # Update TR buffer and compute ATR
-                    vol_state.update_tr(float(true_range))
 
                     # Normalized values (% of price)
                     eps = decimal.Decimal("0.00000001")
@@ -2253,14 +2366,21 @@ class FeatureEngineering:
 
                     # Phase 3 Vectorized Warmup
                     # Try to use precomputed atr_pct from the augmented backtest feed
-                    if "atr_pct" in bar_data and bar_data["atr_pct"] is not None:
-                        atr_pct = float(bar_data["atr_pct"])
-                        vol_state.atr_ready = True  # Mock ready for downstream
-                        # Update state for downstream dependency
-                        vol_state.last_atr = atr_pct * float(close_safe)
-                    else:
+                    if gap_state in GAP_RESET_STATES:
                         atr_pct = float(vol_state.last_atr / float(close_safe)
                                         ) if vol_state.atr_ready and vol_state.last_atr else None
+                    else:
+                        precomputed_atr_pct = self._coerce_precomputed_atr_pct(
+                            bar_data.get("atr_pct")
+                        )
+                        if precomputed_atr_pct is not None:
+                            atr_pct = precomputed_atr_pct
+                            vol_state.atr_ready = True  # Mock ready for downstream
+                            # Update state for downstream dependency
+                            vol_state.last_atr = atr_pct * float(close_safe)
+                        else:
+                            atr_pct = float(vol_state.last_atr / float(close_safe)
+                                            ) if vol_state.atr_ready and vol_state.last_atr else None
 
                     # =========================================================
                     # EP-01.1: OBI SNAPSHOT AT BAR CLOSE

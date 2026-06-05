@@ -1,0 +1,116 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora-core.io/schemas/mean_reversion_expert_output_v1.json",
+  "title": "MeanReversionExpertOutput_v1",
+  "description": "Opinion-only Mean Reversion native expert evidence output for future Judge evidence consumption.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "expert_id",
+    "strategy_id",
+    "question_type",
+    "symbol",
+    "ts_ms",
+    "side_opinion",
+    "confidence",
+    "confidence_source",
+    "authority_status",
+    "mean_reversion_evidence",
+    "regime_context_ref",
+    "evidence_freshness",
+    "missingness",
+    "source_refs"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "enum": ["1.0.0"]},
+    "expert_id": {"type": "string", "minLength": 1},
+    "strategy_id": {"type": "string", "enum": ["mean_reversion"]},
+    "question_type": {"type": "string", "enum": ["entry"]},
+    "symbol": {"type": "string", "minLength": 1},
+    "ts_ms": {"type": "integer", "minimum": 0},
+    "side_opinion": {"type": "string", "enum": ["BUY", "SELL", "NONE", "UNKNOWN"]},
+    "confidence": {"type": ["number", "null"], "minimum": 0.0, "maximum": 1.0},
+    "confidence_source": {"type": "string", "minLength": 1},
+    "horizon": {"type": ["string", "null"]},
+    "authority_status": {"type": "string", "enum": ["opinion_only"]},
+    "mean_reversion_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rsi",
+        "pct_b",
+        "bb_width",
+        "band_upper",
+        "band_mid",
+        "band_lower",
+        "atr",
+        "funding_rate",
+        "funding_cost",
+        "entry_boundary",
+        "expected_reversion_target",
+        "invalidation_level"
+      ],
+      "properties": {
+        "rsi": {"type": ["number", "null"]},
+        "pct_b": {"type": ["number", "null"]},
+        "bb_width": {"type": ["number", "null"]},
+        "band_upper": {"type": ["number", "null"]},
+        "band_mid": {"type": ["number", "null"]},
+        "band_lower": {"type": ["number", "null"]},
+        "atr": {"type": ["number", "null"]},
+        "funding_rate": {"type": ["number", "null"]},
+        "funding_cost": {"type": ["number", "null"]},
+        "entry_boundary": {"type": ["number", "null"]},
+        "expected_reversion_target": {"type": ["number", "null"]},
+        "invalidation_level": {"type": ["number", "null"]}
+      }
+    },
+    "regime_context_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["regime_label", "regime_confidence", "basis_tf_sec", "regime_age_ms"],
+      "properties": {
+        "regime_label": {"type": ["string", "null"]},
+        "regime_confidence": {"type": ["number", "null"], "minimum": 0.0, "maximum": 1.0},
+        "basis_tf_sec": {"type": ["integer", "null"], "minimum": 0},
+        "regime_age_ms": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "evidence_freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["feature_ts_ms", "decision_ts_ms", "age_ms", "freshness_state"],
+      "properties": {
+        "feature_ts_ms": {"type": ["integer", "null"], "minimum": 0},
+        "decision_ts_ms": {"type": ["integer", "null"], "minimum": 0},
+        "age_ms": {"type": ["integer", "null"], "minimum": 0},
+        "freshness_state": {"type": "string", "enum": ["FRESH", "STALE", "MISSING", "UNKNOWN"]}
+      }
+    },
+    "missingness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["per_field"],
+      "properties": {
+        "per_field": {
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        }
+      }
+    },
+    "invalidates_if": {"type": "array", "items": {"type": "string"}},
+    "reason_codes": {"type": "array", "items": {"type": "string"}},
+    "source_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision_id", "rid", "trace_id", "source_event"],
+      "properties": {
+        "decision_id": {"type": ["string", "null"]},
+        "rid": {"type": ["string", "null"]},
+        "trace_id": {"type": ["string", "null"]},
+        "source_event": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

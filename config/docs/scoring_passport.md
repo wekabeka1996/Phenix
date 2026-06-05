@@ -3,13 +3,13 @@
 
 > AUDIT SUMMARY
 > - Document path: config/docs/scoring_passport.md
-> - Audit date: 2026-03-18
+> - Audit date: 2026-05-28
 > - Audit mode: code-driven sync
 > - Major drifts found:
 >   1. Active Aurora live scoring is now `quadratic` (Phase 9 Migration complete). Linear `v2` scoring kernel has been removed.
 >   2. `scoring_engine.shield_enabled=true` is now mandatory in production for Quadratic scoring, effectively activating the Shield Cascade.
 >   3. `direction_strength_scoring`, `feature_neutrals`, and `signal_weights` are deprecated/legacy; they are not consumed by the active quadratic path.
->   4. Strategy ownership is verified in `config/aurora/strategies.yaml` (DOGEUSDT -> mean_reversion, XRP/BNB -> md_amr, PEPE -> llm_microstructure).
+>   4. Strategy ownership is verified in `config/aurora/strategies.yaml` and is now Aurora-led across all seven configured instruments, with hybrid overlays on DOGEUSDT, BTCUSDT, ETHUSDT, and SOLUSDT.
 >   5. `trading.risk.daily.max_realized_loss_usd` remains configured in YAML but is not consumed by the current L1 daily risk gate.
 > - Overall confidence: HIGH
 
@@ -39,10 +39,9 @@ The authoritative sources traced for this passport are:
 - Logic Owner: config/aurora/strategies.yaml
 - Runtime Role: determines which strategy is allowed to emit scoring-driven decisions for a symbol.
 - Actual Runtime Semantics:
-  - BTCUSDT, ETHUSDT, SOLUSDT are assigned to `aurora`.
-  - DOGEUSDT is assigned to `mean_reversion`.
-  - XRPUSDT and BNBUSDT are assigned to `md_amr`.
-  - 1000PEPEUSDT is assigned to `llm_microstructure`.
+  - BTCUSDT, ETHUSDT, SOLUSDT, DOGEUSDT, XRPUSDT, BNBUSDT, and 1000PEPEUSDT are assigned to `aurora`.
+  - DOGEUSDT also remains assigned to `mean_reversion`.
+  - BTCUSDT, ETHUSDT, SOLUSDT, and DOGEUSDT are additionally assigned to `llm_microstructure`.
 - Constraints / Invariants:
   - `aurora.assets` and `mean_reversion.assets` tune parameters; they do not replace strategy assignment.
   - A symbol must satisfy both registry assignment and per-strategy `enabled` flags.

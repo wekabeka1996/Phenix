@@ -3,7 +3,7 @@
 
 > **AUDIT SUMMARY**
 > - **Document path:** `config/docs/llm_microstructure_strategy_passport.md`
-> - **Audit date:** 2026-04-04
+> - **Audit date:** 2026-05-28
 > - **Audit mode:** Code-driven sync
 > - **Major drifts found:** Previous passport text still described the live external LLM route as a normal strategy-signal / DecisionMaking / safety-gates chain. Current code routes accepted LLM commands through `CMD:LLM_INTENT_SUBMIT_V1 -> CMD:EXTERNAL_OPEN_REQUEST_V1 -> execution_position IntentRouter`, while `llm_microstructure.safety_gates.enabled` remains disabled in the profile and is not the active owner for the current live external path.
 > - **Overall confidence:** HIGH
@@ -99,8 +99,11 @@ Authoritative sources traced for this passport:
 - Logic Owner: ConfigLoader + AuroraConfig validator + StrategyRuntime
 - Runtime Role: determines whether the profile is loaded and whether the strategy is allowlisted for specific symbols.
 - Actual Runtime Semantics:
-  - Current live registry assignment is:
-    - `1000PEPEUSDT -> [llm_microstructure]`
+  - Current live registry assignments are:
+    - `BTCUSDT -> [aurora, llm_microstructure]`
+    - `DOGEUSDT -> [aurora, mean_reversion, llm_microstructure]`
+    - `ETHUSDT -> [aurora, llm_microstructure]`
+    - `SOLUSDT -> [aurora, llm_microstructure]`
   - ConfigLoader loads strategies/llm_microstructure.yaml only when that assignment exists.
   - StrategyRuntime starts the plugin only when `llm_microstructure` appears in assignments.
 - Status: ACTIVE

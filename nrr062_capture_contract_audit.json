@@ -1,0 +1,104 @@
+{
+  "package": "O",
+  "objective": "Freeze contract decision_ledger repair for NRR-062 captures",
+  "pre_change": {
+    "branch": "main",
+    "commit_sha": "34db9a74027833fa4031c232600371664cadb3fe",
+    "capture_script_path": "tools/analysis/capture_nrr062_fresh_cohort.py",
+    "capture_script_sha256": "AF30331D864DDBD4BC732AED25AC2690F72182FD3A979DE4140B0E2D0F308C7F",
+    "decision_ledger": {
+      "path": "logs/shadow_telemetry/decision_ledger_v1.jsonl",
+      "exists": true,
+      "size_bytes": 1803707,
+      "row_count": 356,
+      "sha256": "ea4e79520fb4736a667a8e51b96516d39590571f375a0edc33a2dfd3aa8863b8"
+    },
+    "package_n_bundle": "logs/frozen/nrr062_fresh_capture_20260529_065313",
+    "decision_ledger_frozen_in_package_n": false,
+    "freeze_report_generated_in_package_n_capture": false
+  },
+  "post_change": {
+    "capture_script_sha256": "57E0821B43D8425CFB83805BDAC334EDCACD8194936D116713F47D30260F39A2",
+    "decision_ledger_supported": true,
+    "capture_time_freeze_report": true,
+    "manifest_required_missing_explicit": true,
+    "authority_complete_flag": true,
+    "capture_verdict_field": true,
+    "config_snapshot_integrated": true
+  },
+  "before_contract": {
+    "copied_primary_surfaces": [
+      "logs/order_log_v1.jsonl",
+      "logs/shadow_critical_event_journal_v1.jsonl",
+      "logs/regime_confidence_audit_v1.jsonl",
+      "logs/trade_lifecycle.jsonl",
+      "logs/aurora_core.log*"
+    ],
+    "decision_ledger_supported": false,
+    "shadow_telemetry_supported": false,
+    "freezer_report_generated_at_capture": false,
+    "manifest_parse_stats": false,
+    "missing_required_behavior": "hard-blocked only for the fixed order_log/shadow_journal/regime/trade quartet",
+    "config_snapshot_integrated": true
+  },
+  "after_contract": {
+    "required_surfaces": [
+      "logs/order_log_v1.jsonl",
+      "logs/shadow_telemetry/decision_ledger_v1.jsonl",
+      "logs/trade_lifecycle.jsonl"
+    ],
+    "optional_surfaces": [
+      "logs/shadow_critical_event_journal_v1.jsonl",
+      "logs/regime_confidence_audit_v1.jsonl"
+    ],
+    "freezer_report_generated_at_capture": true,
+    "manifest_parse_stats": true,
+    "missing_required_behavior": "required_missing plus capture_verdict and authority_complete=false",
+    "decision_ledger_missing_behavior": "CAPTURE_WITH_MISSING_DECISION_LEDGER",
+    "config_snapshot_integrated": true
+  },
+  "surface_audit": [
+    {
+      "surface": "logs/order_log_v1.jsonl",
+      "before": "copied and probed",
+      "after": "copied and instrumented",
+      "required": true,
+      "notes": "capture still blocks when order_log is absent because the NRR-062 probe cannot run"
+    },
+    {
+      "surface": "logs/shadow_telemetry/decision_ledger_v1.jsonl",
+      "before": "not copied",
+      "after": "copied and instrumented",
+      "required": true,
+      "notes": "bundle path preserved under logs/shadow_telemetry"
+    },
+    {
+      "surface": "logs/trade_lifecycle.jsonl",
+      "before": "copied without parse stats",
+      "after": "copied with row_count/min/max/parse_errors",
+      "required": true,
+      "notes": "missing file now becomes explicit required_missing"
+    },
+    {
+      "surface": "logs/shadow_critical_event_journal_v1.jsonl",
+      "before": "hard-required",
+      "after": "optional",
+      "required": false,
+      "notes": "optional_missing is explicit but does not claim authority completeness"
+    },
+    {
+      "surface": "logs/regime_confidence_audit_v1.jsonl",
+      "before": "hard-required",
+      "after": "optional",
+      "required": false,
+      "notes": "diagnostic surface only"
+    },
+    {
+      "surface": "FREEZE_REPORT.md",
+      "before": "post-hoc only",
+      "after": "generated during capture",
+      "required": true,
+      "notes": "capture-time summary of authority completeness and warnings"
+    }
+  ]
+}

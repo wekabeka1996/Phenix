@@ -26,6 +26,52 @@ def _write_text(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def _write_minimal_capture_fixture(
+    tmp_path: Path,
+    *,
+    include_decision_ledger: bool,
+) -> None:
+    logs = tmp_path / "logs"
+    _write_jsonl(
+        logs / "order_log_v1.jsonl",
+        [
+            {
+                "event_type": "DECISION_INTENT_REJECTED",
+                "nrr_code": "NRR-062",
+                "symbol": "BTCUSDT",
+                "ts_ms": 1000,
+                "rid": "r1",
+            }
+        ],
+    )
+    _write_jsonl(logs / "trade_lifecycle.jsonl",
+                 [{"rid": "r1", "ts_ms": 1500}])
+    _write_jsonl(logs / "shadow_critical_event_journal_v1.jsonl", [])
+    _write_jsonl(logs / "regime_confidence_audit_v1.jsonl", [])
+    if include_decision_ledger:
+        _write_jsonl(
+            logs / "shadow_telemetry" / "decision_ledger_v1.jsonl",
+            [
+                {
+                    "rid": "r1",
+                    "request_ts_ms": 1000,
+                    "response_ts_ms": 1001,
+                    "terminal_status": "REJECTED_UPSTREAM",
+                },
+                {
+                    "rid": "r2",
+                    "request_ts_ms": 2000,
+                    "response_ts_ms": 2001,
+                    "terminal_status": "INVALID_FOR_DATASET",
+                },
+            ],
+        )
+    _write_text(
+        tmp_path / "config" / "aurora" / "domains.yaml",
+        "decision_making:\n  low_vol_cost_floor_gate:\n    enabled: true\n",
+    )
+
+
 def test_build_parser_default_out_dir_logs_frozen() -> None:
     parser = mod.build_parser()
     args = parser.parse_args([])
@@ -173,3 +219,92 @@ def test_main_capture_path_is_under_logs_frozen(tmp_path: Path, monkeypatch) -> 
     )
     assert config_snapshot_manifest["summary"]["required_present"] == 1
     assert "config/aurora/trading.yaml" in config_snapshot_manifest["summary"]["missing_configs"]
+
+
+def test_main_capture_copies_decision_ledger_and_generates_freeze_report(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _write_minimal_capture_fixture(tmp_path, include_decision_ledger=True)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "capture_nrr062_fresh_cohort.py",
+            "--out-dir",
+            "logs/frozen",
+        ],
+    )
+
+    rc = mod.main()
+    assert rc == 0
+
+    capture_dir = next(
+        (tmp_path / "logs" / "frozen").glob("nrr062_fresh_capture_*"))
+    frozen_decision_ledger = (
+        capture_dir / "logs" / "shadow_telemetry" / "decision_ledger_v1.jsonl"
+    )
+    manifest = json.loads(
+        (capture_dir / "MANIFEST.json").read_text(encoding="utf-8"))
+    freeze_report = (
+        capture_dir / "FREEZE_REPORT.md").read_text(encoding="utf-8")
+
+    assert frozen_decision_ledger.is_file()
+    decision_ledger_entry = next(
+        entry
+        for entry in manifest["files"]
+        if entry["source_path"] == "logs/shadow_telemetry/decision_ledger_v1.jsonl"
+    )
+    assert decision_ledger_entry["required"] is True
+    assert decision_ledger_entry["copied_successfully"] is True
+    assert decision_ledger_entry["row_count"] == 2
+    assert decision_ledger_entry["parse_errors"] == 0
+    assert decision_ledger_entry["sha256"] == mod.sha256_file(
+        frozen_decision_ledger)
+    assert manifest["capture_verdict"] == "CAPTURE_COMPLETE"
+    assert manifest["authority_complete"] is True
+    assert manifest["config_snapshot"]["manifest_path"].endswith(
+        "config_snapshot_manifest.json")
+    assert "Capture Verdict | CAPTURE_COMPLETE" in freeze_report
+    assert "Decision Ledger Present | True" in freeze_report
+
+
+def test_main_capture_records_missing_required_decision_ledger(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _write_minimal_capture_fixture(tmp_path, include_decision_ledger=False)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "capture_nrr062_fresh_cohort.py",
+            "--out-dir",
+            "logs/frozen",
+        ],
+    )
+
+    rc = mod.main()
+    assert rc == 0
+
+    capture_dir = next(
+        (tmp_path / "logs" / "frozen").glob("nrr062_fresh_capture_*"))
+    manifest = json.loads(
+        (capture_dir / "MANIFEST.json").read_text(encoding="utf-8"))
+    freeze_report = (
+        capture_dir / "FREEZE_REPORT.md").read_text(encoding="utf-8")
+    decision_ledger_entry = next(
+        entry
+        for entry in manifest["files"]
+        if entry["source_path"] == "logs/shadow_telemetry/decision_ledger_v1.jsonl"
+    )
+
+    assert manifest["capture_verdict"] == "CAPTURE_WITH_MISSING_DECISION_LEDGER"
+    assert manifest["authority_complete"] is False
+    assert manifest["required_missing"] == [
+        "logs/shadow_telemetry/decision_ledger_v1.jsonl"]
+    assert decision_ledger_entry["required"] is True
+    assert decision_ledger_entry["file_exists"] is False
+    assert decision_ledger_entry["copied_successfully"] is False
+    assert "CAPTURE_WITH_MISSING_DECISION_LEDGER" in freeze_report
+    assert "logs/shadow_telemetry/decision_ledger_v1.jsonl" in freeze_report

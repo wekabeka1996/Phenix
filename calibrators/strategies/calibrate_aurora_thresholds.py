@@ -31,6 +31,7 @@ import csv
 import decimal
 import glob
 import json
+import logging
 import math
 import re
 import sys
@@ -47,11 +48,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+LOG = logging.getLogger(__name__)
 
 CALIBRATION_STANDARD = "CALIBRATION_STANDARD_V1"
 CALIBRATION_CLASS = "production"
 PRODUCTION_INPUT_SOURCE = "recorder-features-v2"
 RESEARCH_INPUT_SOURCE = "aurora-logs"
+# PKG-A1 provenance sentinel: bars with pillar_sum recalculated by calibrator carry this class.
+CALIBRATOR_SYNTHETIC_PILLAR_SUM_PROVENANCE = "aurora_calibrator_synthetic_pillar_sum"
 PRIMARY_CANDIDATE_OVERLAY = "candidate_aurora_threshold_overlay.yaml"
 LEGACY_CANDIDATE_OVERLAY = "candidate_threshold_overlay.yaml"
 RECOMMENDED_ARTIFACTS = (
@@ -181,6 +185,11 @@ class RecorderBar:
     spread_bps: float | None
     volatility_state: float | None
     price_motion_norm: float | None
+    # PKG-A1 provenance: empty string = live-feature-derived; non-empty = synthetic.
+    # Set to CALIBRATOR_SYNTHETIC_PILLAR_SUM_PROVENANCE when pillar_sum is mutated
+    # by the pillar_weights recalculation block. Downstream readers must check this
+    # field before treating pillar_sum as a live feature-derived value.
+    pillar_sum_provenance_class: str = ""
 
 
 @dataclass(frozen=True)
@@ -1845,11 +1854,16 @@ def _load_recorder_bars(
                             price_motion_norm=_safe_float(row.get("pm_norm")),
                         )
                     )
-    # Recalculate pillar_sum from raw pillars if pillar_weights override provided
+    # Recalculate pillar_sum from raw pillars if pillar_weights override provided.
+    # PROVENANCE: object.__setattr__ bypasses frozen dataclass to mutate pillar_sum
+    # in-place. This is calibrator-only — live Aurora pillar_sum is set by feature
+    # assembly and must NOT be mutated at runtime. Any replay consuming these bars
+    # inherits calibrator-overridden pillar_sum, not the original live value.
     if pillar_weights:
         w_t = pillar_weights.get("tactician", 0.60)
         w_o = pillar_weights.get("operator", 0.25)
         w_s = pillar_weights.get("strategist", 0.15)
+        mutated_count = 0
         for symbol in symbols:
             for bar in bars_by_symbol[symbol]:
                 t = bar.pillar_tactician
@@ -1858,6 +1872,20 @@ def _load_recorder_bars(
                 if t is not None and o is not None and s is not None:
                     new_sum = t * w_t + o * w_o + s * w_s
                     object.__setattr__(bar, "pillar_sum", new_sum)
+                    object.__setattr__(
+                        bar,
+                        "pillar_sum_provenance_class",
+                        CALIBRATOR_SYNTHETIC_PILLAR_SUM_PROVENANCE,
+                    )
+                    mutated_count += 1
+        LOG.warning(
+            "SYNTHETIC_PILLAR_SUM: pillar_sum recalculated from raw pillars; "
+            "provenance_class=%s live_feature_derived=False mutated_fields=['pillar_sum'] "
+            "mutation_reason=pillar_weights_recalculation mutated_bars=%d pillar_weights=%s",
+            CALIBRATOR_SYNTHETIC_PILLAR_SUM_PROVENANCE,
+            mutated_count,
+            pillar_weights,
+        )
     for symbol in symbols:
         bars_by_symbol[symbol].sort(key=lambda item: item.timestamp_ms)
     return bars_by_symbol

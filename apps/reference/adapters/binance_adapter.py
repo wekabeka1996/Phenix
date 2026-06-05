@@ -1066,7 +1066,15 @@ class BinanceAdapter(AbstractExchangeAdapter):
 
     # --- Additional convenience methods (for backward compatibility) ---
 
-    async def get_klines(self, symbol: str, interval: str, limit: int = 100) -> list:
+    async def get_klines(
+        self,
+        symbol: str,
+        interval: str,
+        limit: int = 100,
+        *,
+        start_ms: int | None = None,
+        end_ms: int | None = None,
+    ) -> list:
         """
         Get Kline/candlestick data.
 
@@ -1074,12 +1082,18 @@ class BinanceAdapter(AbstractExchangeAdapter):
             symbol: The trading symbol (e.g., BTCUSDT).
             interval: The kline interval (e.g., 1m, 5m, 1h).
             limit: The number of klines to retrieve.
+            start_ms: Optional inclusive open-time lower bound in ms epoch.
+            end_ms: Optional inclusive close-time upper bound in ms epoch.
 
         Returns:
             A list of kline data.
         """
         path = "/fapi/v1/klines"
         params = {"symbol": symbol, "interval": interval, "limit": limit}
+        if start_ms is not None:
+            params["startTime"] = int(start_ms)
+        if end_ms is not None:
+            params["endTime"] = int(end_ms)
         return await self._request("GET", path, params)
 
     async def get_book_ticker(self, symbol: str) -> Dict[str, Any]:

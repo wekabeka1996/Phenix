@@ -210,8 +210,6 @@ class AlphaSearchBacktestPlugin:
             return AuroraAlphaAdapter(
                 essential_features=cfg.adapter.essential_features,
                 scoring_version=cfg.adapter.scoring_version,
-                signal_weights=dict(cfg.adapter.signal_weights),
-                feature_neutrals=dict(cfg.adapter.feature_neutrals),
                 direction_strength_cfg=direction_strength_cfg,
                 regime_thresholds=dict(cfg.adapter.regime_thresholds),
                 base_threshold=cfg.adapter.base_threshold,

@@ -8,15 +8,24 @@ import sys
 import json
 import glob
 import warnings
-import csv
 import math
 from pathlib import Path
 from collections import defaultdict, Counter
 import numpy as np
 
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from apps.reference.shared.data_primitives.market_bar_contract import read_named_csv_rows
+from apps.reference.shared.data_primitives.ohlc_validator import (
+    GAP_RESET_STATES,
+    compute_true_range,
+    validate_ohlc,
+)
+
 warnings.filterwarnings("ignore")
 
-ROOT = Path(r"c:\Users\user\Music\Phenix")
 REC = ROOT / "data" / "recorder"
 OUT = ROOT / "reports" / "FULL_SURFACE_CALIBRATION_RESULTS.json"
 
@@ -78,38 +87,82 @@ def pf(v):
 def load_symbol_bars(symbol, tf):
     """Load all recorder CSVs for symbol at given timeframe, return structured arrays."""
     all_rows = []
+    accounting = {"bad_lines": 0, "missing_columns": Counter()}
+    requested_columns = (
+        "timestamp",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "ready",
+        "regime",
+        "regime_conf",
+        "gap_state",
+        "feat_obi",
+        "feat_tfi",
+        "feat_delta_price",
+        "feat_absorption",
+        "feat_ema_bias",
+        "feat_volume_spike",
+        "feat_depth_imbalance",
+        "feat_volatility_state",
+    )
     for dd in sorted(glob.glob(str(REC / "*"))):
         fn = os.path.join(dd, f"{symbol}_{tf}.csv")
         if not os.path.exists(fn):
             continue
         try:
-            with open(fn, "r", encoding="utf-8") as f:
-                for row in csv.DictReader(f):
-                    all_rows.append(row)
+            rows, stats = read_named_csv_rows(fn, requested_columns=requested_columns)
+            all_rows.extend(rows)
+            accounting["bad_lines"] += int(stats.get("bad_lines", 0))
+            for column in stats.get("missing_columns", []):
+                accounting["missing_columns"][column] += 1
         except:
             continue
     if not all_rows:
         return None
 
-    n = len(all_rows)
+    filtered_rows = []
+    invalid_rows = 0
+    for row in all_rows:
+        valid_ohlc, _ = validate_ohlc(
+            row.get("open", 0),
+            row.get("high", 0),
+            row.get("low", 0),
+            row.get("close", 0),
+        )
+        if not valid_ohlc:
+            invalid_rows += 1
+            continue
+        filtered_rows.append(row)
+    n = len(filtered_rows)
+    if n == 0:
+        return None
     d = {
         "n": n,
         "ts": np.zeros(n), "o": np.zeros(n), "h": np.zeros(n),
         "l": np.zeros(n), "c": np.zeros(n), "v": np.zeros(n),
         "ready": np.zeros(n, dtype=bool),
         "regime": [""]*n, "regime_conf": np.zeros(n),
+        "gap_state": [""]*n,
         "obi": np.full(n, np.nan), "tfi": np.full(n, np.nan),
         "dp": np.full(n, np.nan), "ab": np.full(n, np.nan),
         "eb": np.full(n, np.nan), "vs": np.full(n, np.nan),
         "di": np.full(n, np.nan), "vst": np.full(n, np.nan),
+        "reader_accounting": {
+            **accounting,
+            "invalid_ohlc_rows": invalid_rows,
+        },
     }
-    for i, r in enumerate(all_rows):
+    for i, r in enumerate(filtered_rows):
         d["ts"][i] = pf(r.get("timestamp", 0))
         d["o"][i] = pf(r.get("open", 0))
         d["h"][i] = pf(r.get("high", 0))
         d["l"][i] = pf(r.get("low", 0))
         d["c"][i] = pf(r.get("close", 0))
         d["v"][i] = pf(r.get("volume", 0))
+        d["gap_state"][i] = str(r.get("gap_state", "") or "")
         rd = r.get("ready", "")
         d["ready"][i] = rd in ("True", "true", "1")
         # regime: prefer feat_regime, fallback to regime column
@@ -130,20 +183,33 @@ def load_symbol_bars(symbol, tf):
         d["vs"][i] = pf(r.get("feat_volume_spike"))
         d["di"][i] = pf(r.get("feat_depth_imbalance"))
         d["vst"][i] = pf(r.get("feat_volatility_state"))
+    d["valid_rows"] = n
     return d
 
 
-def calc_atr(h, l, c, period=14):
+def calc_atr(h, l, c, gap_states=None, period=14):
     n = len(c)
     tr = np.zeros(n)
     tr[0] = h[0]-l[0]
     for i in range(1, n):
-        tr[i] = max(h[i]-l[i], abs(h[i]-c[i-1]), abs(l[i]-c[i-1]))
+        gap_state = gap_states[i] if gap_states is not None else ""
+        tr[i] = float(
+            compute_true_range(
+                high_price=h[i],
+                low_price=l[i],
+                prev_close=c[i-1],
+                gap_state=gap_state,
+            )
+        )
     atr = np.full(n, np.nan)
     if n >= period:
-        atr[period-1] = np.mean(tr[:period])
-        for i in range(period, n):
-            atr[i] = (atr[i-1]*(period-1)+tr[i])/period
+        reset_idx = 0
+        for i in range(n):
+            gap_state = gap_states[i] if gap_states is not None else ""
+            if i > 0 and str(gap_state or "") in GAP_RESET_STATES:
+                reset_idx = i
+            if i - reset_idx + 1 >= period:
+                atr[i] = np.mean(tr[i - period + 1:i + 1])
     return atr, tr
 
 
@@ -410,11 +476,11 @@ def main():
             print("  No 5m data")
             continue
 
-        atr5, _ = calc_atr(B5["h"], B5["l"], B5["c"], 14)
+        atr5, _ = calc_atr(B5["h"], B5["l"], B5["c"], B5.get("gap_state"), period=14)
         buckets = vol_bucket(atr5, B5["c"])
         atr15 = None
         if B15:
-            atr15, _ = calc_atr(B15["h"], B15["l"], B15["c"], 14)
+            atr15, _ = calc_atr(B15["h"], B15["l"], B15["c"], B15.get("gap_state"), period=14)
 
         n5 = B5["n"]
         rdy = int(np.sum(B5["ready"]))
