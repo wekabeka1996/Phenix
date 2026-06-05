@@ -1,0 +1,1532 @@
+{
+  "task": "AURORA_R7Y_RERUN_FEE_AWARE_SHADOW_POST_PAYLOAD_REPAIR_RUNTIME_CONFIRMATION",
+  "boundary": {
+    "requested_boundary": "2026-05-21T08:36:57.039051Z",
+    "effective_boundary": "2026-05-22T07:46:31Z",
+    "method": "git_commit",
+    "confidence": "high",
+    "git_commit": "34db9a74027833fa4031c232600371664cadb3fe"
+  },
+  "summary": {
+    "identity_join_ok": 84,
+    "timestamp_drift_but_identity_join_ok": 0,
+    "trade_lifecycle_only": 0,
+    "critical_journal_only": 0,
+    "unjoinable": 0,
+    "malformed": 0
+  },
+  "rows": [
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:05:15.853000Z",
+      "journal_timestamp": "2026-05-28T23:05:15.854000Z",
+      "trade_ts_ms": 1780009515853,
+      "journal_ts_ms": 1780009515853,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 289093,
+      "journal_line": 91688
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:05:15.853000Z",
+      "journal_timestamp": "2026-05-28T23:05:15.855000Z",
+      "trade_ts_ms": 1780009515853,
+      "journal_ts_ms": 1780009515853,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 289094,
+      "journal_line": 91689
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:05:15.853000Z",
+      "journal_timestamp": "2026-05-28T23:05:15.857000Z",
+      "trade_ts_ms": 1780009515853,
+      "journal_ts_ms": 1780009515853,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 289095,
+      "journal_line": 91690
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:05:15.853000Z",
+      "journal_timestamp": "2026-05-28T23:05:15.858000Z",
+      "trade_ts_ms": 1780009515853,
+      "journal_ts_ms": 1780009515853,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 289096,
+      "journal_line": 91691
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:05:15.853000Z",
+      "journal_timestamp": "2026-05-28T23:05:15.860000Z",
+      "trade_ts_ms": 1780009515853,
+      "journal_ts_ms": 1780009515853,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 289097,
+      "journal_line": 91692
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:05:15.853000Z",
+      "journal_timestamp": "2026-05-28T23:05:15.862000Z",
+      "trade_ts_ms": 1780009515853,
+      "journal_ts_ms": 1780009515853,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 289098,
+      "journal_line": 91693
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:05:21.619000Z",
+      "journal_timestamp": "2026-05-28T23:05:21.619000Z",
+      "trade_ts_ms": 1780009521619,
+      "journal_ts_ms": 1780009521619,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 289355,
+      "journal_line": 91872
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:05:21.619000Z",
+      "journal_timestamp": "2026-05-28T23:05:21.621000Z",
+      "trade_ts_ms": 1780009521619,
+      "journal_ts_ms": 1780009521619,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 289356,
+      "journal_line": 91873
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:05:21.619000Z",
+      "journal_timestamp": "2026-05-28T23:05:21.622000Z",
+      "trade_ts_ms": 1780009521619,
+      "journal_ts_ms": 1780009521619,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 289357,
+      "journal_line": 91874
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:05:21.619000Z",
+      "journal_timestamp": "2026-05-28T23:05:21.623000Z",
+      "trade_ts_ms": 1780009521619,
+      "journal_ts_ms": 1780009521619,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 289358,
+      "journal_line": 91875
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:05:21.619000Z",
+      "journal_timestamp": "2026-05-28T23:05:21.625000Z",
+      "trade_ts_ms": 1780009521619,
+      "journal_ts_ms": 1780009521619,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 289359,
+      "journal_line": 91876
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:05:21.619000Z",
+      "journal_timestamp": "2026-05-28T23:05:21.626000Z",
+      "trade_ts_ms": 1780009521619,
+      "journal_ts_ms": 1780009521619,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 289360,
+      "journal_line": 91877
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T14:57:21.345000Z",
+      "journal_timestamp": "2026-05-26T14:57:21.346000Z",
+      "trade_ts_ms": 1779807441345,
+      "journal_ts_ms": 1779807441345,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 23773,
+      "journal_line": 7937
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T14:57:27.213000Z",
+      "journal_timestamp": "2026-05-26T14:57:27.213000Z",
+      "trade_ts_ms": 1779807447213,
+      "journal_ts_ms": 1779807447213,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 23781,
+      "journal_line": 7940
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T14:57:33.106000Z",
+      "journal_timestamp": "2026-05-26T14:57:33.106000Z",
+      "trade_ts_ms": 1779807453106,
+      "journal_ts_ms": 1779807453106,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 23789,
+      "journal_line": 7943
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T14:57:33.106000Z",
+      "journal_timestamp": "2026-05-26T14:57:33.109000Z",
+      "trade_ts_ms": 1779807453106,
+      "journal_ts_ms": 1779807453106,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 23790,
+      "journal_line": 7944
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T14:57:33.106000Z",
+      "journal_timestamp": "2026-05-26T14:57:33.111000Z",
+      "trade_ts_ms": 1779807453106,
+      "journal_ts_ms": 1779807453106,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 23791,
+      "journal_line": 7945
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T14:57:33.106000Z",
+      "journal_timestamp": "2026-05-26T14:57:33.113000Z",
+      "trade_ts_ms": 1779807453106,
+      "journal_ts_ms": 1779807453106,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 23792,
+      "journal_line": 7946
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T14:58:14.425000Z",
+      "journal_timestamp": "2026-05-26T14:58:14.426000Z",
+      "trade_ts_ms": 1779807494425,
+      "journal_ts_ms": 1779807494425,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 23842,
+      "journal_line": 7961
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T14:58:14.425000Z",
+      "journal_timestamp": "2026-05-26T14:58:14.428000Z",
+      "trade_ts_ms": 1779807494425,
+      "journal_ts_ms": 1779807494425,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 23843,
+      "journal_line": 7962
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T14:58:14.425000Z",
+      "journal_timestamp": "2026-05-26T14:58:14.429000Z",
+      "trade_ts_ms": 1779807494425,
+      "journal_ts_ms": 1779807494425,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 23844,
+      "journal_line": 7963
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T14:58:14.425000Z",
+      "journal_timestamp": "2026-05-26T14:58:14.431000Z",
+      "trade_ts_ms": 1779807494425,
+      "journal_ts_ms": 1779807494425,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 23845,
+      "journal_line": 7964
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T14:58:14.425000Z",
+      "journal_timestamp": "2026-05-26T14:58:14.433000Z",
+      "trade_ts_ms": 1779807494425,
+      "journal_ts_ms": 1779807494425,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 23846,
+      "journal_line": 7965
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T14:58:14.425000Z",
+      "journal_timestamp": "2026-05-26T14:58:14.434000Z",
+      "trade_ts_ms": 1779807494425,
+      "journal_ts_ms": 1779807494425,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 23847,
+      "journal_line": 7966
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:15:57.860000Z",
+      "journal_timestamp": "2026-05-26T20:15:57.861000Z",
+      "trade_ts_ms": 1779826557860,
+      "journal_ts_ms": 1779826557860,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48229,
+      "journal_line": 15437
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:16:09.928000Z",
+      "journal_timestamp": "2026-05-26T20:16:09.929000Z",
+      "trade_ts_ms": 1779826569928,
+      "journal_ts_ms": 1779826569928,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48247,
+      "journal_line": 15444
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:17:03.268000Z",
+      "journal_timestamp": "2026-05-26T20:17:03.268000Z",
+      "trade_ts_ms": 1779826623268,
+      "journal_ts_ms": 1779826623268,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48314,
+      "journal_line": 15466
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:17:03.268000Z",
+      "journal_timestamp": "2026-05-26T20:17:03.270000Z",
+      "trade_ts_ms": 1779826623268,
+      "journal_ts_ms": 1779826623268,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48315,
+      "journal_line": 15467
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:17:56.508000Z",
+      "journal_timestamp": "2026-05-26T20:17:56.509000Z",
+      "trade_ts_ms": 1779826676508,
+      "journal_ts_ms": 1779826676508,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48379,
+      "journal_line": 15486
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:17:56.508000Z",
+      "journal_timestamp": "2026-05-26T20:17:56.517000Z",
+      "trade_ts_ms": 1779826676508,
+      "journal_ts_ms": 1779826676508,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48380,
+      "journal_line": 15487
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:17:56.508000Z",
+      "journal_timestamp": "2026-05-26T20:17:56.519000Z",
+      "trade_ts_ms": 1779826676508,
+      "journal_ts_ms": 1779826676508,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48381,
+      "journal_line": 15488
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:17:56.508000Z",
+      "journal_timestamp": "2026-05-26T20:17:56.522000Z",
+      "trade_ts_ms": 1779826676508,
+      "journal_ts_ms": 1779826676508,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48382,
+      "journal_line": 15489
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:18:43.897000Z",
+      "journal_timestamp": "2026-05-26T20:18:43.898000Z",
+      "trade_ts_ms": 1779826723897,
+      "journal_ts_ms": 1779826723897,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48446,
+      "journal_line": 15506
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:18:43.897000Z",
+      "journal_timestamp": "2026-05-26T20:18:43.899000Z",
+      "trade_ts_ms": 1779826723897,
+      "journal_ts_ms": 1779826723897,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48447,
+      "journal_line": 15507
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:18:43.897000Z",
+      "journal_timestamp": "2026-05-26T20:18:43.901000Z",
+      "trade_ts_ms": 1779826723897,
+      "journal_ts_ms": 1779826723897,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48448,
+      "journal_line": 15508
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:18:43.897000Z",
+      "journal_timestamp": "2026-05-26T20:18:43.903000Z",
+      "trade_ts_ms": 1779826723897,
+      "journal_ts_ms": 1779826723897,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48449,
+      "journal_line": 15509
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:15:28.435000Z",
+      "journal_timestamp": "2026-05-26T20:15:28.436000Z",
+      "trade_ts_ms": 1779826528435,
+      "journal_ts_ms": 1779826528435,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48171,
+      "journal_line": 15407
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:15:37.672000Z",
+      "journal_timestamp": "2026-05-26T20:15:37.673000Z",
+      "trade_ts_ms": 1779826537672,
+      "journal_ts_ms": 1779826537672,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48189,
+      "journal_line": 15415
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:15:51.973000Z",
+      "journal_timestamp": "2026-05-26T20:15:51.973000Z",
+      "trade_ts_ms": 1779826551973,
+      "journal_ts_ms": 1779826551973,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48222,
+      "journal_line": 15434
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:15:57.864000Z",
+      "journal_timestamp": "2026-05-26T20:15:57.864000Z",
+      "trade_ts_ms": 1779826557864,
+      "journal_ts_ms": 1779826557864,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48231,
+      "journal_line": 15438
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:15:57.864000Z",
+      "journal_timestamp": "2026-05-26T20:15:57.867000Z",
+      "trade_ts_ms": 1779826557864,
+      "journal_ts_ms": 1779826557864,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48232,
+      "journal_line": 15439
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:16:27.755000Z",
+      "journal_timestamp": "2026-05-26T20:16:27.756000Z",
+      "trade_ts_ms": 1779826587755,
+      "journal_ts_ms": 1779826587755,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48270,
+      "journal_line": 15451
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:16:27.755000Z",
+      "journal_timestamp": "2026-05-26T20:16:27.757000Z",
+      "trade_ts_ms": 1779826587755,
+      "journal_ts_ms": 1779826587755,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48271,
+      "journal_line": 15452
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:16:27.755000Z",
+      "journal_timestamp": "2026-05-26T20:16:27.759000Z",
+      "trade_ts_ms": 1779826587755,
+      "journal_ts_ms": 1779826587755,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48272,
+      "journal_line": 15453
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:19:25.123000Z",
+      "journal_timestamp": "2026-05-26T20:19:25.124000Z",
+      "trade_ts_ms": 1779826765123,
+      "journal_ts_ms": 1779826765123,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48500,
+      "journal_line": 15524
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:19:25.123000Z",
+      "journal_timestamp": "2026-05-26T20:19:25.126000Z",
+      "trade_ts_ms": 1779826765123,
+      "journal_ts_ms": 1779826765123,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48501,
+      "journal_line": 15525
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:23:46.510000Z",
+      "journal_timestamp": "2026-05-26T20:23:46.510000Z",
+      "trade_ts_ms": 1779827026510,
+      "journal_ts_ms": 1779827026510,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48831,
+      "journal_line": 15629
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-26T20:23:46.510000Z",
+      "journal_timestamp": "2026-05-26T20:23:46.512000Z",
+      "trade_ts_ms": 1779827026510,
+      "journal_ts_ms": 1779827026510,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 48832,
+      "journal_line": 15630
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T18:20:13.386000Z",
+      "journal_timestamp": "2026-05-28T18:20:13.386000Z",
+      "trade_ts_ms": 1779992413386,
+      "journal_ts_ms": 1779992413386,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 265367,
+      "journal_line": 82568
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T18:20:13.386000Z",
+      "journal_timestamp": "2026-05-28T18:20:13.388000Z",
+      "trade_ts_ms": 1779992413386,
+      "journal_ts_ms": 1779992413386,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 265368,
+      "journal_line": 82569
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T18:20:25.181000Z",
+      "journal_timestamp": "2026-05-28T18:20:25.181000Z",
+      "trade_ts_ms": 1779992425181,
+      "journal_ts_ms": 1779992425181,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 265383,
+      "journal_line": 82574
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T18:20:25.181000Z",
+      "journal_timestamp": "2026-05-28T18:20:25.182000Z",
+      "trade_ts_ms": 1779992425181,
+      "journal_ts_ms": 1779992425181,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 265384,
+      "journal_line": 82575
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T18:21:47.812000Z",
+      "journal_timestamp": "2026-05-28T18:21:47.813000Z",
+      "trade_ts_ms": 1779992507812,
+      "journal_ts_ms": 1779992507812,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 265491,
+      "journal_line": 82604
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T18:21:47.812000Z",
+      "journal_timestamp": "2026-05-28T18:21:47.814000Z",
+      "trade_ts_ms": 1779992507812,
+      "journal_ts_ms": 1779992507812,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 265492,
+      "journal_line": 82605
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T18:21:47.812000Z",
+      "journal_timestamp": "2026-05-28T18:21:47.815000Z",
+      "trade_ts_ms": 1779992507812,
+      "journal_ts_ms": 1779992507812,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 265493,
+      "journal_line": 82606
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T18:21:47.812000Z",
+      "journal_timestamp": "2026-05-28T18:21:47.816000Z",
+      "trade_ts_ms": 1779992507812,
+      "journal_ts_ms": 1779992507812,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 265494,
+      "journal_line": 82607
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T18:22:11.929000Z",
+      "journal_timestamp": "2026-05-28T18:22:11.929000Z",
+      "trade_ts_ms": 1779992531929,
+      "journal_ts_ms": 1779992531929,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 265523,
+      "journal_line": 82616
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T18:22:11.929000Z",
+      "journal_timestamp": "2026-05-28T18:22:11.931000Z",
+      "trade_ts_ms": 1779992531929,
+      "journal_ts_ms": 1779992531929,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 265524,
+      "journal_line": 82617
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T18:22:11.929000Z",
+      "journal_timestamp": "2026-05-28T18:22:11.932000Z",
+      "trade_ts_ms": 1779992531929,
+      "journal_ts_ms": 1779992531929,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 265525,
+      "journal_line": 82618
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T18:22:11.929000Z",
+      "journal_timestamp": "2026-05-28T18:22:11.933000Z",
+      "trade_ts_ms": 1779992531929,
+      "journal_ts_ms": 1779992531929,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 265526,
+      "journal_line": 82619
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T22:07:14.032000Z",
+      "journal_timestamp": "2026-05-28T22:07:14.033000Z",
+      "trade_ts_ms": 1780006034032,
+      "journal_ts_ms": 1780006034032,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 284253,
+      "journal_line": 89930
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T22:07:14.032000Z",
+      "journal_timestamp": "2026-05-28T22:07:14.035000Z",
+      "trade_ts_ms": 1780006034032,
+      "journal_ts_ms": 1780006034032,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 284254,
+      "journal_line": 89931
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T22:07:31.797000Z",
+      "journal_timestamp": "2026-05-28T22:07:31.798000Z",
+      "trade_ts_ms": 1780006051797,
+      "journal_ts_ms": 1780006051797,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 284276,
+      "journal_line": 89938
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T22:07:31.797000Z",
+      "journal_timestamp": "2026-05-28T22:07:31.799000Z",
+      "trade_ts_ms": 1780006051797,
+      "journal_ts_ms": 1780006051797,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 284277,
+      "journal_line": 89939
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T22:07:31.797000Z",
+      "journal_timestamp": "2026-05-28T22:07:31.801000Z",
+      "trade_ts_ms": 1780006051797,
+      "journal_ts_ms": 1780006051797,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 284278,
+      "journal_line": 89940
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T22:07:31.797000Z",
+      "journal_timestamp": "2026-05-28T22:07:31.803000Z",
+      "trade_ts_ms": 1780006051797,
+      "journal_ts_ms": 1780006051797,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 284279,
+      "journal_line": 89941
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-29T00:00:49.312000Z",
+      "journal_timestamp": "2026-05-29T00:00:49.312000Z",
+      "trade_ts_ms": 1780012849312,
+      "journal_ts_ms": 1780012849312,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 293994,
+      "journal_line": 93501
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-29T00:00:49.312000Z",
+      "journal_timestamp": "2026-05-29T00:00:49.314000Z",
+      "trade_ts_ms": 1780012849312,
+      "journal_ts_ms": 1780012849312,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 293995,
+      "journal_line": 93502
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-29T00:00:49.312000Z",
+      "journal_timestamp": "2026-05-29T00:00:49.316000Z",
+      "trade_ts_ms": 1780012849312,
+      "journal_ts_ms": 1780012849312,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 293996,
+      "journal_line": 93503
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-29T00:00:49.312000Z",
+      "journal_timestamp": "2026-05-29T00:00:49.317000Z",
+      "trade_ts_ms": 1780012849312,
+      "journal_ts_ms": 1780012849312,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 293997,
+      "journal_line": 93504
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-29T00:00:49.312000Z",
+      "journal_timestamp": "2026-05-29T00:00:49.318000Z",
+      "trade_ts_ms": 1780012849312,
+      "journal_ts_ms": 1780012849312,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 293998,
+      "journal_line": 93505
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-29T00:00:49.312000Z",
+      "journal_timestamp": "2026-05-29T00:00:49.320000Z",
+      "trade_ts_ms": 1780012849312,
+      "journal_ts_ms": 1780012849312,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 293999,
+      "journal_line": 93506
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:01:05.733000Z",
+      "journal_timestamp": "2026-05-28T23:01:05.733000Z",
+      "trade_ts_ms": 1780009265733,
+      "journal_ts_ms": 1780009265733,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 288530,
+      "journal_line": 91400
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:01:05.733000Z",
+      "journal_timestamp": "2026-05-28T23:01:05.735000Z",
+      "trade_ts_ms": 1780009265733,
+      "journal_ts_ms": 1780009265733,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 288531,
+      "journal_line": 91401
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:01:05.733000Z",
+      "journal_timestamp": "2026-05-28T23:01:05.736000Z",
+      "trade_ts_ms": 1780009265733,
+      "journal_ts_ms": 1780009265733,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 288532,
+      "journal_line": 91402
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:01:05.733000Z",
+      "journal_timestamp": "2026-05-28T23:01:05.738000Z",
+      "trade_ts_ms": 1780009265733,
+      "journal_ts_ms": 1780009265733,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 288533,
+      "journal_line": 91403
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:01:05.733000Z",
+      "journal_timestamp": "2026-05-28T23:01:05.739000Z",
+      "trade_ts_ms": 1780009265733,
+      "journal_ts_ms": 1780009265733,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 288534,
+      "journal_line": 91404
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:01:05.733000Z",
+      "journal_timestamp": "2026-05-28T23:01:05.742000Z",
+      "trade_ts_ms": 1780009265733,
+      "journal_ts_ms": 1780009265733,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 288535,
+      "journal_line": 91405
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:01:53.470000Z",
+      "journal_timestamp": "2026-05-28T23:01:53.470000Z",
+      "trade_ts_ms": 1780009313470,
+      "journal_ts_ms": 1780009313470,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 288592,
+      "journal_line": 91422
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:01:53.470000Z",
+      "journal_timestamp": "2026-05-28T23:01:53.472000Z",
+      "trade_ts_ms": 1780009313470,
+      "journal_ts_ms": 1780009313470,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 288593,
+      "journal_line": 91423
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:01:53.470000Z",
+      "journal_timestamp": "2026-05-28T23:01:53.473000Z",
+      "trade_ts_ms": 1780009313470,
+      "journal_ts_ms": 1780009313470,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 288594,
+      "journal_line": 91424
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:01:53.470000Z",
+      "journal_timestamp": "2026-05-28T23:01:53.475000Z",
+      "trade_ts_ms": 1780009313470,
+      "journal_ts_ms": 1780009313470,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 288595,
+      "journal_line": 91425
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:01:53.470000Z",
+      "journal_timestamp": "2026-05-28T23:01:53.477000Z",
+      "trade_ts_ms": 1780009313470,
+      "journal_ts_ms": 1780009313470,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 288596,
+      "journal_line": 91426
+    },
+    {
+      "classification": "BOTH_SINKS_IDENTITY_JOIN_OK",
+      "trade_timestamp": "2026-05-28T23:01:53.470000Z",
+      "journal_timestamp": "2026-05-28T23:01:53.479000Z",
+      "trade_ts_ms": 1780009313470,
+      "journal_ts_ms": 1780009313470,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "trade_line": 288597,
+      "journal_line": 91427
+    }
+  ]
+}

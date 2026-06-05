@@ -1,0 +1,3381 @@
+{
+  "task": "AURORA_R7Y_RERUN_FEE_AWARE_SHADOW_POST_PAYLOAD_REPAIR_RUNTIME_CONFIRMATION",
+  "boundary": {
+    "requested_boundary": "2026-05-21T08:36:57.039051Z",
+    "effective_boundary": "2026-05-22T07:46:31Z",
+    "method": "git_commit",
+    "confidence": "high",
+    "git_commit": "34db9a74027833fa4031c232600371664cadb3fe"
+  },
+  "summary": {
+    "ok": 84,
+    "missing_transitions": 0,
+    "missing_candidate_identity": 0,
+    "missing_fee_context": 0,
+    "missing_safety_flags": 0,
+    "bloat_regression": 0,
+    "malformed": 0
+  },
+  "rows": [
+    {
+      "line": 7937,
+      "timestamp": "2026-05-26T14:57:21.346000Z",
+      "journal_ts_ms": 1779807441346,
+      "payload_ts_ms": 1779807441345,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.230952,
+      "required_edge_usd": 0.23095200000000002,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 7940,
+      "timestamp": "2026-05-26T14:57:27.213000Z",
+      "journal_ts_ms": 1779807447213,
+      "payload_ts_ms": 1779807447213,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.230952,
+      "required_edge_usd": 0.34642799999999996,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 7943,
+      "timestamp": "2026-05-26T14:57:33.106000Z",
+      "journal_ts_ms": 1779807453106,
+      "payload_ts_ms": 1779807453106,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.230952,
+      "required_edge_usd": 0.57738,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 7944,
+      "timestamp": "2026-05-26T14:57:33.109000Z",
+      "journal_ts_ms": 1779807453109,
+      "payload_ts_ms": 1779807453106,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.230952,
+      "required_edge_usd": 0.57738,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 7945,
+      "timestamp": "2026-05-26T14:57:33.111000Z",
+      "journal_ts_ms": 1779807453111,
+      "payload_ts_ms": 1779807453106,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.230952,
+      "required_edge_usd": 0.461904,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 7946,
+      "timestamp": "2026-05-26T14:57:33.113000Z",
+      "journal_ts_ms": 1779807453113,
+      "payload_ts_ms": 1779807453106,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.230952,
+      "required_edge_usd": 0.57738,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 7961,
+      "timestamp": "2026-05-26T14:58:14.426000Z",
+      "journal_ts_ms": 1779807494426,
+      "payload_ts_ms": 1779807494425,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.230952,
+      "required_edge_usd": 0.23095200000000002,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 7962,
+      "timestamp": "2026-05-26T14:58:14.428000Z",
+      "journal_ts_ms": 1779807494428,
+      "payload_ts_ms": 1779807494425,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.230952,
+      "required_edge_usd": 0.57738,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 7963,
+      "timestamp": "2026-05-26T14:58:14.429000Z",
+      "journal_ts_ms": 1779807494429,
+      "payload_ts_ms": 1779807494425,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.230952,
+      "required_edge_usd": 0.34642799999999996,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 7964,
+      "timestamp": "2026-05-26T14:58:14.431000Z",
+      "journal_ts_ms": 1779807494431,
+      "payload_ts_ms": 1779807494425,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.230952,
+      "required_edge_usd": 0.57738,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 7965,
+      "timestamp": "2026-05-26T14:58:14.433000Z",
+      "journal_ts_ms": 1779807494433,
+      "payload_ts_ms": 1779807494425,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.230952,
+      "required_edge_usd": 0.461904,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 7966,
+      "timestamp": "2026-05-26T14:58:14.434000Z",
+      "journal_ts_ms": 1779807494434,
+      "payload_ts_ms": 1779807494425,
+      "symbol": "BTCUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.230952,
+      "required_edge_usd": 0.57738,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15407,
+      "timestamp": "2026-05-26T20:15:28.436000Z",
+      "journal_ts_ms": 1779826528436,
+      "payload_ts_ms": 1779826528435,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.13741332,
+      "required_edge_usd": 0.137413326,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15415,
+      "timestamp": "2026-05-26T20:15:37.673000Z",
+      "journal_ts_ms": 1779826537673,
+      "payload_ts_ms": 1779826537672,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.13741332,
+      "required_edge_usd": 0.137413326,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15434,
+      "timestamp": "2026-05-26T20:15:51.973000Z",
+      "journal_ts_ms": 1779826551973,
+      "payload_ts_ms": 1779826551973,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.62022811,
+      "required_edge_usd": 0.62022811,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15437,
+      "timestamp": "2026-05-26T20:15:57.861000Z",
+      "journal_ts_ms": 1779826557861,
+      "payload_ts_ms": 1779826557860,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.50441974,
+      "required_edge_usd": 0.504419748,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15438,
+      "timestamp": "2026-05-26T20:15:57.864000Z",
+      "journal_ts_ms": 1779826557864,
+      "payload_ts_ms": 1779826557864,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.62022811,
+      "required_edge_usd": 0.930342165,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15439,
+      "timestamp": "2026-05-26T20:15:57.867000Z",
+      "journal_ts_ms": 1779826557867,
+      "payload_ts_ms": 1779826557864,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.62022811,
+      "required_edge_usd": 0.930342165,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15444,
+      "timestamp": "2026-05-26T20:16:09.929000Z",
+      "journal_ts_ms": 1779826569929,
+      "payload_ts_ms": 1779826569928,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.50441974,
+      "required_edge_usd": 0.7566296100000001,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15451,
+      "timestamp": "2026-05-26T20:16:27.756000Z",
+      "journal_ts_ms": 1779826587756,
+      "payload_ts_ms": 1779826587755,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.62022811,
+      "required_edge_usd": 0.62022811,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15452,
+      "timestamp": "2026-05-26T20:16:27.757000Z",
+      "journal_ts_ms": 1779826587757,
+      "payload_ts_ms": 1779826587755,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.62022811,
+      "required_edge_usd": 0.930342165,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15453,
+      "timestamp": "2026-05-26T20:16:27.759000Z",
+      "journal_ts_ms": 1779826587759,
+      "payload_ts_ms": 1779826587755,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.62022811,
+      "required_edge_usd": 0.930342165,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15466,
+      "timestamp": "2026-05-26T20:17:03.268000Z",
+      "journal_ts_ms": 1779826623268,
+      "payload_ts_ms": 1779826623268,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.50441974,
+      "required_edge_usd": 0.504419748,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15467,
+      "timestamp": "2026-05-26T20:17:03.270000Z",
+      "journal_ts_ms": 1779826623270,
+      "payload_ts_ms": 1779826623268,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.50441974,
+      "required_edge_usd": 0.7566296100000001,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15486,
+      "timestamp": "2026-05-26T20:17:56.509000Z",
+      "journal_ts_ms": 1779826676509,
+      "payload_ts_ms": 1779826676508,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.50441974,
+      "required_edge_usd": 1.26104937,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15487,
+      "timestamp": "2026-05-26T20:17:56.517000Z",
+      "journal_ts_ms": 1779826676517,
+      "payload_ts_ms": 1779826676508,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.50441974,
+      "required_edge_usd": 1.26104937,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15488,
+      "timestamp": "2026-05-26T20:17:56.519000Z",
+      "journal_ts_ms": 1779826676519,
+      "payload_ts_ms": 1779826676508,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.50441974,
+      "required_edge_usd": 1.00883948,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15489,
+      "timestamp": "2026-05-26T20:17:56.522000Z",
+      "journal_ts_ms": 1779826676522,
+      "payload_ts_ms": 1779826676508,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.50441974,
+      "required_edge_usd": 1.26104937,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15506,
+      "timestamp": "2026-05-26T20:18:43.898000Z",
+      "journal_ts_ms": 1779826723898,
+      "payload_ts_ms": 1779826723897,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.50441974,
+      "required_edge_usd": 1.26104937,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15507,
+      "timestamp": "2026-05-26T20:18:43.899000Z",
+      "journal_ts_ms": 1779826723899,
+      "payload_ts_ms": 1779826723897,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.50441974,
+      "required_edge_usd": 1.26104937,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15508,
+      "timestamp": "2026-05-26T20:18:43.901000Z",
+      "journal_ts_ms": 1779826723901,
+      "payload_ts_ms": 1779826723897,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.50441974,
+      "required_edge_usd": 1.00883948,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15509,
+      "timestamp": "2026-05-26T20:18:43.903000Z",
+      "journal_ts_ms": 1779826723903,
+      "payload_ts_ms": 1779826723897,
+      "symbol": "DOGEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.50441974,
+      "required_edge_usd": 1.26104937,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15524,
+      "timestamp": "2026-05-26T20:19:25.124000Z",
+      "journal_ts_ms": 1779826765124,
+      "payload_ts_ms": 1779826765123,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.62022811,
+      "required_edge_usd": 1.24045622,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15525,
+      "timestamp": "2026-05-26T20:19:25.126000Z",
+      "journal_ts_ms": 1779826765126,
+      "payload_ts_ms": 1779826765123,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.62022811,
+      "required_edge_usd": 1.24045622,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15629,
+      "timestamp": "2026-05-26T20:23:46.510000Z",
+      "journal_ts_ms": 1779827026510,
+      "payload_ts_ms": 1779827026510,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.62022811,
+      "required_edge_usd": 1.24045622,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 15630,
+      "timestamp": "2026-05-26T20:23:46.512000Z",
+      "journal_ts_ms": 1779827026512,
+      "payload_ts_ms": 1779827026510,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.62022811,
+      "required_edge_usd": 1.24045622,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 82568,
+      "timestamp": "2026-05-28T18:20:13.386000Z",
+      "journal_ts_ms": 1779992413386,
+      "payload_ts_ms": 1779992413386,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.8096805300000001,
+      "required_edge_usd": 0.8096805300000001,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 82569,
+      "timestamp": "2026-05-28T18:20:13.388000Z",
+      "journal_ts_ms": 1779992413388,
+      "payload_ts_ms": 1779992413386,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.8096805300000001,
+      "required_edge_usd": 0.8096805300000001,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 82574,
+      "timestamp": "2026-05-28T18:20:25.181000Z",
+      "journal_ts_ms": 1779992425181,
+      "payload_ts_ms": 1779992425181,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.8096805300000001,
+      "required_edge_usd": 0.8096805300000001,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 82575,
+      "timestamp": "2026-05-28T18:20:25.182000Z",
+      "journal_ts_ms": 1779992425182,
+      "payload_ts_ms": 1779992425181,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.8096805300000001,
+      "required_edge_usd": 0.8096805300000001,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 82604,
+      "timestamp": "2026-05-28T18:21:47.813000Z",
+      "journal_ts_ms": 1779992507813,
+      "payload_ts_ms": 1779992507812,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.8096805300000001,
+      "required_edge_usd": 1.214520795,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 82605,
+      "timestamp": "2026-05-28T18:21:47.814000Z",
+      "journal_ts_ms": 1779992507814,
+      "payload_ts_ms": 1779992507812,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.8096805300000001,
+      "required_edge_usd": 1.214520795,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 82606,
+      "timestamp": "2026-05-28T18:21:47.815000Z",
+      "journal_ts_ms": 1779992507815,
+      "payload_ts_ms": 1779992507812,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.8096805300000001,
+      "required_edge_usd": 1.6193610600000001,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 82607,
+      "timestamp": "2026-05-28T18:21:47.816000Z",
+      "journal_ts_ms": 1779992507816,
+      "payload_ts_ms": 1779992507812,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.8096805300000001,
+      "required_edge_usd": 1.6193610600000001,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 82616,
+      "timestamp": "2026-05-28T18:22:11.929000Z",
+      "journal_ts_ms": 1779992531929,
+      "payload_ts_ms": 1779992531929,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.8096805300000001,
+      "required_edge_usd": 1.214520795,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 82617,
+      "timestamp": "2026-05-28T18:22:11.931000Z",
+      "journal_ts_ms": 1779992531931,
+      "payload_ts_ms": 1779992531929,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.8096805300000001,
+      "required_edge_usd": 1.214520795,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 82618,
+      "timestamp": "2026-05-28T18:22:11.932000Z",
+      "journal_ts_ms": 1779992531932,
+      "payload_ts_ms": 1779992531929,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.8096805300000001,
+      "required_edge_usd": 1.6193610600000001,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 82619,
+      "timestamp": "2026-05-28T18:22:11.933000Z",
+      "journal_ts_ms": 1779992531933,
+      "payload_ts_ms": 1779992531929,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.8096805300000001,
+      "required_edge_usd": 1.6193610600000001,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 89930,
+      "timestamp": "2026-05-28T22:07:14.033000Z",
+      "journal_ts_ms": 1780006034033,
+      "payload_ts_ms": 1780006034032,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.6146185099999998,
+      "required_edge_usd": 0.6146185099999998,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 89931,
+      "timestamp": "2026-05-28T22:07:14.035000Z",
+      "journal_ts_ms": 1780006034035,
+      "payload_ts_ms": 1780006034032,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.6146185099999998,
+      "required_edge_usd": 0.6146185099999998,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 89938,
+      "timestamp": "2026-05-28T22:07:31.798000Z",
+      "journal_ts_ms": 1780006051798,
+      "payload_ts_ms": 1780006051797,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.6146185099999998,
+      "required_edge_usd": 0.9219277649999997,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 89939,
+      "timestamp": "2026-05-28T22:07:31.799000Z",
+      "journal_ts_ms": 1780006051799,
+      "payload_ts_ms": 1780006051797,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.6146185099999998,
+      "required_edge_usd": 0.9219277649999997,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 89940,
+      "timestamp": "2026-05-28T22:07:31.801000Z",
+      "journal_ts_ms": 1780006051801,
+      "payload_ts_ms": 1780006051797,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.6146185099999998,
+      "required_edge_usd": 1.2292370199999996,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 89941,
+      "timestamp": "2026-05-28T22:07:31.803000Z",
+      "journal_ts_ms": 1780006051803,
+      "payload_ts_ms": 1780006051797,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.6146185099999998,
+      "required_edge_usd": 1.2292370199999996,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91400,
+      "timestamp": "2026-05-28T23:01:05.733000Z",
+      "journal_ts_ms": 1780009265733,
+      "payload_ts_ms": 1780009265733,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.4302551,
+      "required_edge_usd": 0.4302551,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91401,
+      "timestamp": "2026-05-28T23:01:05.735000Z",
+      "journal_ts_ms": 1780009265735,
+      "payload_ts_ms": 1780009265733,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.4302551,
+      "required_edge_usd": 0.4302551,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91402,
+      "timestamp": "2026-05-28T23:01:05.736000Z",
+      "journal_ts_ms": 1780009265736,
+      "payload_ts_ms": 1780009265733,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.4302551,
+      "required_edge_usd": 0.64538265,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91403,
+      "timestamp": "2026-05-28T23:01:05.738000Z",
+      "journal_ts_ms": 1780009265738,
+      "payload_ts_ms": 1780009265733,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.4302551,
+      "required_edge_usd": 0.64538265,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91404,
+      "timestamp": "2026-05-28T23:01:05.739000Z",
+      "journal_ts_ms": 1780009265739,
+      "payload_ts_ms": 1780009265733,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.4302551,
+      "required_edge_usd": 0.8605102,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91405,
+      "timestamp": "2026-05-28T23:01:05.742000Z",
+      "journal_ts_ms": 1780009265742,
+      "payload_ts_ms": 1780009265733,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.4302551,
+      "required_edge_usd": 0.8605102,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91422,
+      "timestamp": "2026-05-28T23:01:53.470000Z",
+      "journal_ts_ms": 1780009313470,
+      "payload_ts_ms": 1780009313470,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.4302551,
+      "required_edge_usd": 0.4302551,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91423,
+      "timestamp": "2026-05-28T23:01:53.472000Z",
+      "journal_ts_ms": 1780009313472,
+      "payload_ts_ms": 1780009313470,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.4302551,
+      "required_edge_usd": 0.4302551,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91424,
+      "timestamp": "2026-05-28T23:01:53.473000Z",
+      "journal_ts_ms": 1780009313473,
+      "payload_ts_ms": 1780009313470,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.4302551,
+      "required_edge_usd": 0.64538265,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91425,
+      "timestamp": "2026-05-28T23:01:53.475000Z",
+      "journal_ts_ms": 1780009313475,
+      "payload_ts_ms": 1780009313470,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.4302551,
+      "required_edge_usd": 0.64538265,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91426,
+      "timestamp": "2026-05-28T23:01:53.477000Z",
+      "journal_ts_ms": 1780009313477,
+      "payload_ts_ms": 1780009313470,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.4302551,
+      "required_edge_usd": 0.8605102,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91427,
+      "timestamp": "2026-05-28T23:01:53.479000Z",
+      "journal_ts_ms": 1780009313479,
+      "payload_ts_ms": 1780009313470,
+      "symbol": "XRPUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.4302551,
+      "required_edge_usd": 0.8605102,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91688,
+      "timestamp": "2026-05-28T23:05:15.854000Z",
+      "journal_ts_ms": 1780009515854,
+      "payload_ts_ms": 1780009515853,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.020070329999999997,
+      "required_edge_usd": 0.020070329999999997,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91689,
+      "timestamp": "2026-05-28T23:05:15.855000Z",
+      "journal_ts_ms": 1780009515855,
+      "payload_ts_ms": 1780009515853,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.020070329999999997,
+      "required_edge_usd": 0.020070329999999997,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91690,
+      "timestamp": "2026-05-28T23:05:15.857000Z",
+      "journal_ts_ms": 1780009515857,
+      "payload_ts_ms": 1780009515853,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.020070329999999997,
+      "required_edge_usd": 0.030105494999999996,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91691,
+      "timestamp": "2026-05-28T23:05:15.858000Z",
+      "journal_ts_ms": 1780009515858,
+      "payload_ts_ms": 1780009515853,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.020070329999999997,
+      "required_edge_usd": 0.030105494999999996,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91692,
+      "timestamp": "2026-05-28T23:05:15.860000Z",
+      "journal_ts_ms": 1780009515860,
+      "payload_ts_ms": 1780009515853,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.020070329999999997,
+      "required_edge_usd": 0.040140659999999995,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91693,
+      "timestamp": "2026-05-28T23:05:15.862000Z",
+      "journal_ts_ms": 1780009515862,
+      "payload_ts_ms": 1780009515853,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "ARMED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.020070329999999997,
+      "required_edge_usd": 0.040140659999999995,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91872,
+      "timestamp": "2026-05-28T23:05:21.619000Z",
+      "journal_ts_ms": 1780009521619,
+      "payload_ts_ms": 1780009521619,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.04414875000000001,
+      "required_edge_usd": 0.04414875000000001,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91873,
+      "timestamp": "2026-05-28T23:05:21.621000Z",
+      "journal_ts_ms": 1780009521621,
+      "payload_ts_ms": 1780009521619,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.04414875000000001,
+      "required_edge_usd": 0.04414875000000001,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91874,
+      "timestamp": "2026-05-28T23:05:21.622000Z",
+      "journal_ts_ms": 1780009521622,
+      "payload_ts_ms": 1780009521619,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.04414875000000001,
+      "required_edge_usd": 0.06622312500000001,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91875,
+      "timestamp": "2026-05-28T23:05:21.623000Z",
+      "journal_ts_ms": 1780009521623,
+      "payload_ts_ms": 1780009521619,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.04414875000000001,
+      "required_edge_usd": 0.06622312500000001,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91876,
+      "timestamp": "2026-05-28T23:05:21.625000Z",
+      "journal_ts_ms": 1780009521625,
+      "payload_ts_ms": 1780009521619,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.04414875000000001,
+      "required_edge_usd": 0.08829750000000001,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 91877,
+      "timestamp": "2026-05-28T23:05:21.626000Z",
+      "journal_ts_ms": 1780009521626,
+      "payload_ts_ms": 1780009521619,
+      "symbol": "1000PEPEUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.04414875000000001,
+      "required_edge_usd": 0.08829750000000001,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 93501,
+      "timestamp": "2026-05-29T00:00:49.312000Z",
+      "journal_ts_ms": 1780012849312,
+      "payload_ts_ms": 1780012849312,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.6146185099999998,
+      "required_edge_usd": 0.6146185099999998,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 93502,
+      "timestamp": "2026-05-29T00:00:49.314000Z",
+      "journal_ts_ms": 1780012849314,
+      "payload_ts_ms": 1780012849312,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.6146185099999998,
+      "required_edge_usd": 0.6146185099999998,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 93503,
+      "timestamp": "2026-05-29T00:00:49.316000Z",
+      "journal_ts_ms": 1780012849316,
+      "payload_ts_ms": 1780012849312,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.6146185099999998,
+      "required_edge_usd": 0.9219277649999997,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 93504,
+      "timestamp": "2026-05-29T00:00:49.317000Z",
+      "journal_ts_ms": 1780012849317,
+      "payload_ts_ms": 1780012849312,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 1.5,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.6146185099999998,
+      "required_edge_usd": 0.9219277649999997,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 93505,
+      "timestamp": "2026-05-29T00:00:49.318000Z",
+      "journal_ts_ms": 1780012849318,
+      "payload_ts_ms": 1780012849312,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.02
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.6146185099999998,
+      "required_edge_usd": 1.2292370199999996,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    },
+    {
+      "line": 93506,
+      "timestamp": "2026-05-29T00:00:49.320000Z",
+      "journal_ts_ms": 1780012849320,
+      "payload_ts_ms": 1780012849312,
+      "symbol": "ETHUSDT",
+      "transitions": [
+        "TRIGGERED"
+      ],
+      "candidate_identity": {
+        "fee_multiple": 2.0,
+        "optional_pct_candidate": 0.05
+      },
+      "fee_source": "realized_lifecycle_fee",
+      "estimated_fee_usd": 0.6146185099999998,
+      "required_edge_usd": 1.2292370199999996,
+      "shadow_only": true,
+      "authority_applied": false,
+      "no_effect": true,
+      "classification": "JOURNAL_PAYLOAD_IDENTITY_OK",
+      "bloat_keys_present": [],
+      "payload_keys": [
+        "authority_applied",
+        "candidate_identity",
+        "estimated_fee_usd",
+        "fee_multiple",
+        "fee_source",
+        "is_armed",
+        "no_effect",
+        "null_reasons",
+        "optional_pct_candidate",
+        "required_edge_usd",
+        "shadow_only",
+        "symbol",
+        "transitions",
+        "ts_ms",
+        "would_trigger"
+      ],
+      "null_reasons": {}
+    }
+  ]
+}

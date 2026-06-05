@@ -128,6 +128,24 @@ class TAEnsembleConfig(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+<<<<<<< HEAD
+=======
+class JudgeExpertProviderConfig(BaseModel):
+    """Configuration for a judge expert provider.
+
+    Specifies which judge expert type to instantiate. The detailed expert
+    config (weights, neutrals, etc.) lives in judge.experts config block.
+    """
+
+    expert_type: str = Field(
+        ...,
+        description="Expert type key: 'signal_weights' or 'feature_neutrals'"
+    )
+
+    model_config = {"extra": "forbid"}
+
+
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 class ProviderConfig(BaseModel):
     """Configuration for a single alpha provider."""
 
@@ -155,11 +173,16 @@ class ProviderConfig(BaseModel):
     # Provider-specific config (only one should be set)
     adapter: Optional[AuroraAdapterConfig] = None
     ensemble: Optional[TAEnsembleConfig] = None
+<<<<<<< HEAD
+=======
+    judge_expert: Optional["JudgeExpertProviderConfig"] = None
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
     model_config = {"extra": "forbid"}
 
     @model_validator(mode="after")
     def validate_provider_type(self):
+<<<<<<< HEAD
         """Ensure exactly one provider type is configured."""
         has_adapter = self.adapter is not None
         has_ensemble = self.ensemble is not None
@@ -168,6 +191,20 @@ class ProviderConfig(BaseModel):
             raise ValueError(
                 "Provider cannot have both 'adapter' and 'ensemble' config")
         if not has_adapter and not has_ensemble:
+=======
+        """Ensure at most one provider type is configured."""
+        has_adapter = self.adapter is not None
+        has_ensemble = self.ensemble is not None
+        has_judge = self.judge_expert is not None
+        count = sum([has_adapter, has_ensemble, has_judge])
+
+        if count > 1:
+            raise ValueError(
+                "Provider must have at most one of 'adapter', 'ensemble', "
+                "or 'judge_expert' config"
+            )
+        if count == 0:
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
             # Default to ensemble if neither specified (for backwards compat)
             pass  # OK, will use default ensemble
         return self
@@ -308,6 +345,42 @@ class AlphaSearchSystemConfig(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+<<<<<<< HEAD
+=======
+from apps.reference.domains.alpha_search.judge.config_models import JudgeCortexConfig  # noqa: E402
+
+
+class SimulatorShutdownExportConfig(BaseModel):
+    """Phase 5 Package 5G — config for automatic simulator export on shutdown.
+
+    When enabled, backtest_plugin.shutdown() invokes the offline simulator
+    pipeline using the referenced config file and writes calibration + summary
+    artifacts.  Disabled by default (fail-closed).
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="If True, simulator runs automatically on shutdown."
+    )
+    config_path: str = Field(
+        default="",
+        description="Path to judge_simulator.yaml (must be non-empty when enabled)."
+    )
+
+    model_config = {"extra": "forbid"}
+
+    @model_validator(mode="after")
+    def validate_config_path_when_enabled(self):
+        """Fail-closed: enabled=True requires a non-empty config_path."""
+        if self.enabled and (not self.config_path or not self.config_path.strip()):
+            raise ValueError(
+                "simulator_shutdown_export.config_path must be a non-empty "
+                "string when enabled=True"
+            )
+        return self
+
+
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 class AlphaSearchConfig(BaseModel):
     """
     Root configuration for alpha_search domain.
@@ -343,6 +416,23 @@ class AlphaSearchConfig(BaseModel):
         default_factory=ObjectiveFeedbackConfig
     )
 
+<<<<<<< HEAD
+=======
+    # LLM Judge cortex config (Phase 1: contracts-only, mode='off' enforced)
+    judge: Optional[JudgeCortexConfig] = Field(
+        default=None,
+        description="LLM Judge cortex configuration. None = judge not configured."
+    )
+
+    # Phase 5 Package 5G: Simulator shutdown export config.
+    # When enabled, backtest_plugin.shutdown() will invoke the offline simulator
+    # and write calibration + summary artifacts.
+    simulator_shutdown_export: Optional["SimulatorShutdownExportConfig"] = Field(
+        default=None,
+        description="Phase 5 simulator auto-export on shutdown. None or disabled = no-op."
+    )
+
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     # Explicit legacy bucket — allows old fields without breaking strict validation.
     # Migration: move augmenter/signals/models/ensemble here, then remove them.
     legacy: Optional[Dict[str, Any]] = Field(
@@ -367,6 +457,46 @@ class AlphaSearchConfig(BaseModel):
                 )
         return self
 
+<<<<<<< HEAD
+=======
+    @model_validator(mode="after")
+    def validate_judge_provider_threshold_alignment(self):
+        """Judge provider thresholds must match their bound expert config."""
+        judge_providers = {
+            provider_id: provider_cfg
+            for provider_id, provider_cfg in self.providers.items()
+            if provider_cfg.judge_expert is not None
+        }
+        if not judge_providers:
+            return self
+
+        if self.judge is None or self.judge.experts is None:
+            raise ValueError(
+                "Judge expert providers require judge.experts config to be present"
+            )
+
+        for provider_id, provider_cfg in judge_providers.items():
+            expert_type = provider_cfg.judge_expert.expert_type
+            if expert_type == "signal_weights":
+                expert_threshold = self.judge.experts.signal_weights.signal_threshold
+            elif expert_type == "feature_neutrals":
+                expert_threshold = self.judge.experts.feature_neutrals.signal_threshold
+            else:
+                raise ValueError(
+                    f"Unsupported judge_expert.expert_type '{expert_type}' "
+                    f"for provider '{provider_id}'"
+                )
+
+            if abs(float(provider_cfg.threshold) - float(expert_threshold)) > 1e-12:
+                raise ValueError(
+                    "Judge provider threshold drift detected for "
+                    f"provider '{provider_id}': provider threshold "
+                    f"{provider_cfg.threshold} != expert signal_threshold "
+                    f"{expert_threshold}"
+                )
+        return self
+
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
 def load_alpha_search_config(config_path: str) -> AlphaSearchConfig:
     """

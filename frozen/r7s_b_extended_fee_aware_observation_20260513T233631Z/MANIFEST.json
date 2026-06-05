@@ -1,0 +1,89 @@
+{
+  "bundle_root": "frozen/r7s_b_extended_fee_aware_observation_20260513T233631Z",
+  "bundle_path": "C:/Users/user/Music/Phenix/frozen/r7s_b_extended_fee_aware_observation_20260513T233631Z",
+  "bundle_created_utc": "2026-05-13T23:36:31Z",
+  "primary_artifacts": [
+    {
+      "original_path": "logs/trade_lifecycle.jsonl",
+      "frozen_path": "logs/trade_lifecycle.jsonl",
+      "exists": true,
+      "size_bytes": 2427423798,
+      "raw_line_count": 253098,
+      "sha256": "21db138b86824868283bd86a422e04565f678f0db92739453c00169330a149b5",
+      "modified_time_utc": "2026-05-13T23:36:27Z",
+      "copy_time_utc": "2026-05-13T23:36:31Z"
+    },
+    {
+      "original_path": "logs/order_log_v1.jsonl",
+      "frozen_path": "logs/order_log_v1.jsonl",
+      "exists": true,
+      "size_bytes": 2740827,
+      "raw_line_count": 812,
+      "sha256": "7775b1251251529023c63d4636456e0001030f6a0214859415b8ce712b44ade6",
+      "modified_time_utc": "2026-05-13T23:35:01Z",
+      "copy_time_utc": "2026-05-13T23:36:31Z"
+    },
+    {
+      "original_path": "logs/shadow_critical_event_journal_v1.jsonl",
+      "frozen_path": "logs/shadow_critical_event_journal_v1.jsonl",
+      "exists": true,
+      "size_bytes": 104875735,
+      "raw_line_count": 82660,
+      "sha256": "d3f4fda6d33d9a8b9c9de2992dade106900b57e1ad6b0875d83f79afed004521",
+      "modified_time_utc": "2026-05-13T23:37:08Z",
+      "copy_time_utc": "2026-05-13T23:36:31Z"
+    },
+    {
+      "original_path": "logs/execution_lifecycle_stats_v1.jsonl",
+      "frozen_path": "logs/execution_lifecycle_stats_v1.jsonl",
+      "exists": true,
+      "size_bytes": 23827762,
+      "raw_line_count": 24308,
+      "sha256": "c0f92c2484d75e5b695b3631baa7b2c1001dc6932f8cca68527fd3da19a71c98",
+      "modified_time_utc": "2026-05-13T20:35:36Z",
+      "copy_time_utc": "2026-05-13T23:36:31Z"
+    },
+    {
+      "original_path": "logs/aurora_events.jsonl",
+      "frozen_path": "logs/aurora_events.jsonl",
+      "exists": true,
+      "size_bytes": 94397,
+      "raw_line_count": 279,
+      "sha256": "6a6cd1f652162222a22aff4edc19d4688195994502154591d762e9c7f133b178",
+      "modified_time_utc": "2026-05-13T15:18:55Z",
+      "copy_time_utc": "2026-05-13T23:36:31Z"
+    },
+    {
+      "original_path": "logs/event_chain.log",
+      "frozen_path": "logs/event_chain.log",
+      "exists": true,
+      "size_bytes": 7285320,
+      "raw_line_count": 39344,
+      "sha256": "278493991e618809207449267079f67a2eea50d91bd2e7778b57278cba008fc8",
+      "modified_time_utc": "2026-05-13T23:36:02Z",
+      "copy_time_utc": "2026-05-13T23:36:31Z"
+    }
+  ],
+  "supporting_sets": [
+    {
+      "pattern": "logs/domain_execution_position.log*",
+      "file_count": 5,
+      "total_size_bytes": 21599298,
+      "matched_files": [
+        "logs/domain_execution_position.log",
+        "logs/domain_execution_position.log.1",
+        "logs/domain_execution_position.log.2",
+        "logs/domain_execution_position.log.3",
+        "logs/domain_execution_position.log.4"
+      ]
+    },
+    {
+      "pattern": "logs/order_guardian.log*",
+      "file_count": 1,
+      "total_size_bytes": 14768469,
+      "matched_files": [
+        "logs/order_guardian.log"
+      ]
+    }
+  ]
+}

@@ -1,11 +1,10 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
-*$py.class
-
+*$py.class*
 # C extensions
 *.so
-
+*.db
 # Distribution / packaging
 .Python
 build/
@@ -25,6 +24,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+<<<<<<< HEAD
 reports/
 # PyInstaller
 *.manifest
@@ -34,6 +34,17 @@ tmpcla*
 pip-log.txt
 pip-delete-this-directory.txt
 data/
+=======
+reports/backtests/*
+# PyInstaller
+*.manifest
+*.spec
+deepseek_workspace/
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+tmpclaude-*
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 # Unit test / coverage reports
 htmlcov/
 .tox/
@@ -48,27 +59,34 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
+<<<<<<< HEAD
 artifacts/
+=======
+reports/arhive/*
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 # Translations
 *.mo
 *.pot
-
 # Django stuff:
 *.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+<<<<<<< HEAD
 ops/
+=======
+logs/*
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 # Flask stuff:
 instance/
 .webassets-cache
-
+ops/wal/*
 # Scrapy stuff:
 .scrapy
-
+node_modules/*
 # Sphinx documentation
 docs/_build/
-
+node_modules
 # PyBuilder
 .pybuilder/
 target/
@@ -88,7 +106,7 @@ Pipfile.lock
 
 # poetry
 poetry.lock
-
+frozen/*
 # pdm
 .pdm.toml
 
@@ -117,15 +135,15 @@ venv.bak/
 
 # Rope project settings
 .ropeproject
-
+reports/*
 # mkdocs documentation
 /site
-
+ops/
 # mypy
 .mypy_cache/
 .dmypy.json
 dmypy.json
-
+artifacts/
 # Pyre type checker
 .pyre/
 
@@ -162,14 +180,15 @@ checkpoints/
 *.pth
 *.pt
 *.ckpt
+data/
 data/raw/
 data/interim/
 data/processed/*.parquet
 data/processed/*.json
-logs/
+#logs/
 *.log
-*.jsonl
-test_logs/
+#*.jsonl
+test_#logs/
 test_results/
 manifests/
 ledger.json
@@ -186,14 +205,25 @@ debug_*.txt
 caller_*.txt
 *_output.txt
 safety_guard_dump_*.json
+scratch/
+
+# Keep the debug API module (used by tests and local dev)
+!vfoundation/obs/debug_api.py
 
 # Coverage
 coverage*.xml
+coverage*.json
 .coverage*
+
+# Test/CI generated outputs
+.pytest_junit.xml
+async_inventory.json
 
 # Analysis results
 analyzer*.json
 analysis_results.json
+results_phase*.txt
+results_phase*.log
 
 .gemini/
 gha-creds-*.json
@@ -201,3 +231,13 @@ gha-creds-*.json
 .git.orig/
 
 .git.orig/
+
+# Data files
+*.csv
+best_aurora*.json
+regime_filters*.json
+best_metrics*.json
+
+# deepseek-terminal-agent run logs
+.agent_runs/
+

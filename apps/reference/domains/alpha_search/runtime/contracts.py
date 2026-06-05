@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 ﻿"""
+=======
+"""
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 Alpha Search Runtime Contracts
 ==============================
 
@@ -50,6 +54,12 @@ class AlphaInputV1(BaseModel):
         default="DEFAULT",
         description="Current regime: HIGH_VOLATILITY|LOW_VOLATILITY|MEAN_REVERSION|TREND_UP|TREND_DOWN|UNCERTAIN|DEFAULT",
     )
+<<<<<<< HEAD
+=======
+    regime_confidence: Optional[float] = Field(default=None)
+    regime_ts_ms: Optional[int] = Field(default=None)
+    regime_source: Optional[str] = Field(default=None)
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     warmup_status: Dict[str, bool] = Field(
         default_factory=dict,
         description="Per-feature warmup readiness flags",
@@ -75,8 +85,11 @@ class AlphaShadowResultV1(BaseModel):
 
     scenario_id: str
     strategy_type: str
+<<<<<<< HEAD
     version: Optional[str] = None
     family: Optional[str] = None
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     ts_ms: int
     symbol: str
     score: float = Field(ge=-1.0, le=1.0)
@@ -89,9 +102,12 @@ class AlphaShadowResultV1(BaseModel):
     features_used: List[str] = Field(default_factory=list)
     shadow: bool = Field(
         default=True, description="Always True for shadow results")
+<<<<<<< HEAD
     shadow_only: bool = Field(default=True)
     authority_applied: bool = Field(default=False)
     no_effect: bool = Field(default=True)
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     regime: str = Field(default="DEFAULT")
 
 
@@ -114,6 +130,7 @@ class ScenarioSpec(BaseModel):
         min_length=1,
         description="Unique ID, e.g. S01_AURORA_BASELINE",
     )
+<<<<<<< HEAD
     version: Optional[str] = Field(
         default=None,
         description="Optional per-scenario version label for runtime reporting",
@@ -129,6 +146,8 @@ class ScenarioSpec(BaseModel):
     shadow_only: bool = Field(default=True)
     authority_applied: bool = Field(default=False)
     no_effect: bool = Field(default=True)
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     enabled: bool = True
     strategy_type: Literal["aurora", "mean_reversion", "ensemble"] = Field(
         description="Strategy family for this scenario",

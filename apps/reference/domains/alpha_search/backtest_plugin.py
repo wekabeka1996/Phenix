@@ -16,8 +16,11 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from decimal import Decimal
 
+<<<<<<< HEAD
 from apps.reference.config_models import ExitManagerConfig
 from apps.reference.domains.decision_making.exit_manager import ExitManager
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 from apps.reference.domains.ta_features.contracts import (
     TA_WARMUP_KEY,
     extract_ta_feature_vector,
@@ -31,6 +34,25 @@ from .config_models import (
     load_alpha_search_config,
     get_default_config,
 )
+<<<<<<< HEAD
+=======
+from .judge.experts.expert_output_bridge import (
+    alpha_score_to_expert_output,
+    write_jsonl_chamber_log,
+    write_jsonl_envelope_log,
+    write_jsonl_policy_cortex_log,
+    write_jsonl_shadow_log,
+    write_jsonl_verdict_log,
+)
+from .judge.chamber import ChamberAggregator
+from .judge.envelope import assemble_evidence_envelope
+from .judge.policy_cortex.cortex_evaluator import evaluate_policy_cortex
+from .judge.shadow_entry_plan import (
+    derive_shadow_entry_plans,
+    write_jsonl_shadow_entry_plan_log,
+)
+from .judge.verdict import synthesize_verdict
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
 LOG = logging.getLogger(__name__)
 
@@ -60,6 +82,7 @@ class VirtualPosition:
     signal_id: str
     model_signal_id: Optional[str] = None
     bars_held: int = 0
+<<<<<<< HEAD
     entry_regime: str = "UNKNOWN"
     stop_price: Optional[float] = None
     target_price: Optional[float] = None
@@ -67,6 +90,8 @@ class VirtualPosition:
     low_water_price: Optional[float] = None
     latest_score: Optional[float] = None
     policy_snapshot: Dict[str, Any] = field(default_factory=dict)
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
 
 @dataclass
@@ -161,10 +186,13 @@ class AlphaSearchBacktestPlugin:
         }
         self._signal_provider: Dict[str, str] = {}
         self._pending_objective_events: Dict[str, Dict[str, Any]] = {}
+<<<<<<< HEAD
         self._aurora_decision_exit_cfg: Dict[str, Any] = {}
         self._aurora_symbol_exit_configs: Dict[str, Dict[str, Any]] = {}
         self._aurora_symbol_trailing_stop_configs: Dict[str, Dict[str, Any]] = {}
         self._aurora_symbol_take_profit_configs: Dict[str, Dict[str, Any]] = {}
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
         # Signal counter for IDs
         self._signal_counter = 0
@@ -207,8 +235,11 @@ class AlphaSearchBacktestPlugin:
             return AuroraAlphaAdapter(
                 essential_features=cfg.adapter.essential_features,
                 scoring_version=cfg.adapter.scoring_version,
+<<<<<<< HEAD
                 signal_weights=dict(cfg.adapter.signal_weights),
                 feature_neutrals=dict(cfg.adapter.feature_neutrals),
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
                 direction_strength_cfg=direction_strength_cfg,
                 regime_thresholds=dict(cfg.adapter.regime_thresholds),
                 base_threshold=cfg.adapter.base_threshold,
@@ -264,10 +295,54 @@ class AlphaSearchBacktestPlugin:
                 ),
             )
             return EnsembleModel(config=ensemble_cfg, models=models)
+<<<<<<< HEAD
+=======
+        elif cfg.judge_expert:
+            # Judge expert (Phase 2 shadow expert)
+            return self._create_judge_expert(name, cfg)
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
         else:
             LOG.warning(f"Provider '{name}' has no adapter or ensemble config")
             return None
 
+<<<<<<< HEAD
+=======
+    def _create_judge_expert(self, name: str, cfg: ProviderConfig) -> Optional[AlphaModel]:
+        """Create a judge expert model from judge config.
+
+        Reads expert config from self.config.judge.experts and instantiates
+        the appropriate expert class.
+        """
+        judge_cfg = self.config.judge
+        if judge_cfg is None or judge_cfg.mode == "off":
+            LOG.debug(f"Judge mode is off, skipping judge expert '{name}'")
+            return None
+
+        experts_cfg = judge_cfg.experts
+        if experts_cfg is None:
+            LOG.warning(f"Judge experts config is None, skipping '{name}'")
+            return None
+
+        expert_type = cfg.judge_expert.expert_type
+        if expert_type == "signal_weights":
+            if not experts_cfg.signal_weights.enabled:
+                LOG.debug(f"signal_weights expert disabled, skipping '{name}'")
+                return None
+            from .judge.experts.signal_weights_expert import SignalWeightsExpert
+            return SignalWeightsExpert(experts_cfg.signal_weights)
+        elif expert_type == "feature_neutrals":
+            if not experts_cfg.feature_neutrals.enabled:
+                LOG.debug(
+                    f"feature_neutrals expert disabled, skipping '{name}'")
+                return None
+            from .judge.experts.feature_neutrals_expert import FeatureNeutralsExpert
+            return FeatureNeutralsExpert(experts_cfg.feature_neutrals)
+        else:
+            LOG.warning(
+                f"Unknown judge expert type '{expert_type}' for '{name}'")
+            return None
+
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     def _register_listeners(self) -> None:
         """Register event listeners for two-phase bridge."""
         if hasattr(self.event_bus, "listen"):
@@ -569,7 +644,42 @@ class AlphaSearchBacktestPlugin:
 
         # Cache hit!
         self._cache_hits += 1
+<<<<<<< HEAD
         features = cache_entry.features
+=======
+        # Create a local copy to avoid contaminating the canonical feature cache
+        features = dict(cache_entry.features) if cache_entry.features else {}
+
+        # J6-S11 Envelope Regime Propagation Repair: Option A
+        # Extract regime context from trigger payload and safely pass through
+        regime_snapshot = payload.get("regime")
+        if isinstance(regime_snapshot, dict):
+            features["regime"] = regime_snapshot.get("regime")
+            features["regime_confidence"] = regime_snapshot.get("confidence")
+            features["regime_ts_ms"] = regime_snapshot.get(
+                "ts_ms") or regime_snapshot.get("ts")
+            features["regime_source"] = regime_snapshot.get("source_model")
+
+            if features["regime_confidence"] is None:
+                features["regime_missing_reason"] = "REGIME_CONFIDENCE_MISSING"
+        else:
+            features["regime_missing_reason"] = "REGIME_CONTEXT_MISSING"
+
+        current_price = cache_entry.price or self._get_price_from_features(
+            features
+        )
+
+        # Phase 3: Build solicited expert roster and output collection
+        solicited_expert_ids = []
+        judge_expert_outputs = []
+        for pid, pcfg in self.provider_configs.items():
+            if pcfg.judge_expert is not None and self._is_symbol_allowed(symbol, pcfg):
+                # Resolve expert_id from judge expert config block
+                expert_id = self._resolve_judge_expert_id(
+                    pcfg.judge_expert.expert_type)
+                if expert_id:
+                    solicited_expert_ids.append(expert_id)
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
         # Run each enabled provider
         for provider_id, model in self.providers.items():
@@ -637,6 +747,7 @@ class AlphaSearchBacktestPlugin:
                         provider_id, symbol, tf_sec, bar_close_ts)
                 continue
 
+<<<<<<< HEAD
             # Get current price for virtual trader
             current_price = cache_entry.price or self._get_price_from_features(
                 normalized_features
@@ -654,10 +765,15 @@ class AlphaSearchBacktestPlugin:
                 warmup_readiness = payload.get("warmup_readiness")
                 if not isinstance(warmup_readiness, dict):
                     warmup_readiness = cache_entry.warmup_status
+=======
+            # Calculate score
+            try:
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
                 score = model.calculate_alpha(
                     symbol=symbol,
                     market_data={"close": current_price},
                     features=normalized_features,
+<<<<<<< HEAD
                     context={
                         "mode": "backtest",
                         "shadow": self.shadow_mode,
@@ -667,6 +783,12 @@ class AlphaSearchBacktestPlugin:
                 )
 
                 self._process_score(
+=======
+                    context={"mode": "backtest", "shadow": self.shadow_mode}
+                )
+
+                expert_output = self._process_score(
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
                     provider_id=provider_id,
                     symbol=symbol,
                     score=score,
@@ -675,9 +797,15 @@ class AlphaSearchBacktestPlugin:
                     current_ts=cache_entry.ts,
                     tf_sec=tf_sec,
                     bar_close_ts=bar_close_ts,
+<<<<<<< HEAD
                     regime=regime,
                     features=normalized_features,
                 )
+=======
+                )
+                if expert_output is not None:
+                    judge_expert_outputs.append(expert_output)
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
             except Exception as e:
                 LOG.warning(f"[{symbol}] Provider {provider_id} error: {e}")
@@ -685,6 +813,21 @@ class AlphaSearchBacktestPlugin:
                     self._emit_fail_closed_score(
                         provider_id, symbol, tf_sec, bar_close_ts)
 
+<<<<<<< HEAD
+=======
+        # Phase 3: Chamber aggregation after provider loop
+        if solicited_expert_ids:
+            self._run_chamber_aggregation(
+                symbol=symbol,
+                tf_sec=tf_sec,
+                bar_close_ts=bar_close_ts,
+                solicited_expert_ids=solicited_expert_ids,
+                judge_expert_outputs=judge_expert_outputs,
+                features=features,
+                current_price=current_price,
+            )
+
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     def _normalize_features_for_provider(
         self,
         *,
@@ -832,6 +975,7 @@ class AlphaSearchBacktestPlugin:
             return True  # None means all symbols
         return symbol in cfg.symbols
 
+<<<<<<< HEAD
     def configure_aurora_virtual_policy(
         self,
         *,
@@ -855,6 +999,8 @@ class AlphaSearchBacktestPlugin:
             for symbol, config in (symbol_take_profit_configs or {}).items()
         }
 
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     def _extract_model_signal_id(self, score: AlphaScore) -> Optional[str]:
         """Extract underlying model signal_id from why-chain when available."""
         for reason in score.why:
@@ -874,10 +1020,19 @@ class AlphaSearchBacktestPlugin:
         current_ts: int,
         tf_sec: int,
         bar_close_ts: int,
+<<<<<<< HEAD
         regime: Optional[str] = None,
         features: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Process calculated score: emit event, update virtual trader."""
+=======
+    ) -> Optional["ExpertOutput"]:
+        """Process calculated score: emit event, update virtual trader.
+
+        Returns ExpertOutput for judge expert providers (Phase 3 chamber
+        collection), None for all others.
+        """
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
         stats = self.provider_stats[provider_id]
         stats.signals_generated += 1
 
@@ -892,6 +1047,7 @@ class AlphaSearchBacktestPlugin:
         self._signal_provider[signal_id] = provider_id
         model_signal_id = self._extract_model_signal_id(score)
 
+<<<<<<< HEAD
         # Emit event
         self._emit_score_event(
             provider_id=provider_id,
@@ -902,6 +1058,29 @@ class AlphaSearchBacktestPlugin:
             bar_close_ts=bar_close_ts,
             signal_id=signal_id,
         )
+=======
+        # Emit event — judge experts use dedicated shadow path
+        expert_output = None
+        cfg = self.provider_configs[provider_id]
+        if cfg.judge_expert is not None:
+            expert_output = self._process_judge_expert_score(
+                provider_id=provider_id,
+                symbol=symbol,
+                score=score,
+                tf_sec=tf_sec,
+                bar_close_ts=bar_close_ts,
+            )
+        else:
+            self._emit_score_event(
+                provider_id=provider_id,
+                symbol=symbol,
+                score=score,
+                threshold=threshold,
+                tf_sec=tf_sec,
+                bar_close_ts=bar_close_ts,
+                signal_id=signal_id,
+            )
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
         # Virtual trader logic
         if self.config.virtual_trader.enabled and current_price > 0:
@@ -910,9 +1089,12 @@ class AlphaSearchBacktestPlugin:
                 symbol=symbol,
                 current_price=current_price,
                 current_ts=current_ts,
+<<<<<<< HEAD
                 current_score=float(score.score),
                 regime=regime,
                 features=features,
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
             )
 
             # Entry logic
@@ -925,9 +1107,16 @@ class AlphaSearchBacktestPlugin:
                     current_ts=current_ts,
                     signal_id=signal_id,
                     model_signal_id=model_signal_id,
+<<<<<<< HEAD
                     regime=regime,
                 )
 
+=======
+                )
+
+        return expert_output
+
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     def _emit_score_event(
         self,
         provider_id: str,
@@ -965,6 +1154,450 @@ class AlphaSearchBacktestPlugin:
             f"conf={score.confidence:.4f} thr={threshold}"
         )
 
+<<<<<<< HEAD
+=======
+    def _process_judge_expert_score(
+        self,
+        provider_id: str,
+        symbol: str,
+        score: AlphaScore,
+        tf_sec: int,
+        bar_close_ts: int,
+    ) -> Optional["ExpertOutput"]:
+        """Phase 2+3 shadow path for judge expert outputs.
+
+        Layer 2 integration:
+        1. Translate AlphaScore → ExpertOutput via bridge
+        2. Emit EVT:JUDGE_EXPERT_PRODUCED_V1
+        3. Write JSONL shadow log when enabled
+        4. Return ExpertOutput for Phase 3 chamber collection
+        Does NOT emit EVT:ALPHA_SCORE_CALCULATED.
+        """
+        cfg = self.provider_configs[provider_id]
+        judge_cfg = self.config.judge
+
+        # Resolve expert_version from judge expert config
+        expert_type = cfg.judge_expert.expert_type
+        expert_version = "1.0.0"
+        signal_threshold = self._resolve_judge_expert_signal_threshold(
+            expert_type)
+        if judge_cfg and judge_cfg.experts:
+            if expert_type == "signal_weights":
+                expert_version = judge_cfg.experts.signal_weights.expert_version
+            elif expert_type == "feature_neutrals":
+                expert_version = judge_cfg.experts.feature_neutrals.expert_version
+
+        # 1. Bridge: AlphaScore → ExpertOutput
+        expert_output = alpha_score_to_expert_output(
+            score,
+            expert_version=expert_version,
+            signal_threshold=signal_threshold,
+            tf_sec=tf_sec,
+            ts_ms=bar_close_ts,
+        )
+
+        # 2. Emit EVT:JUDGE_EXPERT_PRODUCED_V1
+        self.event_bus.emit(
+            event_name="EVT:JUDGE_EXPERT_PRODUCED_V1",
+            payload=expert_output.model_dump(),
+            why=f"judge_expert_{provider_id}",
+        )
+
+        # 3. Write JSONL shadow log when enabled
+        if (
+            judge_cfg
+            and judge_cfg.shadow_log
+            and judge_cfg.shadow_log.enabled
+        ):
+            try:
+                write_jsonl_shadow_log(
+                    expert_output,
+                    log_dir=judge_cfg.shadow_log.log_dir,
+                )
+            except Exception:
+                LOG.exception(
+                    "[%s] Failed to write judge shadow log for %s",
+                    symbol,
+                    provider_id,
+                )
+
+        LOG.debug(
+            "[%s] %s: judge expert → %s conf=%.4f (shadow)",
+            symbol,
+            provider_id,
+            expert_output.entry_verdict,
+            expert_output.confidence,
+        )
+
+        # 4. Return for Phase 3 chamber collection
+        return expert_output
+
+    def _resolve_judge_expert_id(self, expert_type: str) -> Optional[str]:
+        """Resolve expert_id from the judge expert config block by expert_type."""
+        judge_cfg = self.config.judge
+        if not judge_cfg or not judge_cfg.experts:
+            return None
+        if expert_type == "signal_weights":
+            return judge_cfg.experts.signal_weights.expert_id
+        elif expert_type == "feature_neutrals":
+            return judge_cfg.experts.feature_neutrals.expert_id
+        return None
+
+    def _resolve_judge_expert_signal_threshold(self, expert_type: str) -> float:
+        """Resolve the authoritative signal_threshold from the judge expert config."""
+        judge_cfg = self.config.judge
+        if not judge_cfg or not judge_cfg.experts:
+            raise ValueError(
+                "Judge expert provider requires judge.experts config to be present"
+            )
+        if expert_type == "signal_weights":
+            return judge_cfg.experts.signal_weights.signal_threshold
+        if expert_type == "feature_neutrals":
+            return judge_cfg.experts.feature_neutrals.signal_threshold
+        raise ValueError(f"Unsupported judge expert_type '{expert_type}'")
+
+    def _run_chamber_aggregation(
+        self,
+        symbol: str,
+        tf_sec: int,
+        bar_close_ts: int,
+        solicited_expert_ids: list,
+        judge_expert_outputs: list,
+        features: Optional[Dict[str, Any]] = None,
+        current_price: float = 0.0,
+    ) -> None:
+        """Phase 3+4: Run chamber aggregation and verdict synthesis.
+
+        Aggregates collected expert outputs, emits chamber event,
+        writes chamber JSONL log. Then assembles evidence envelope and
+        synthesizes verdict (Phase 4). Shadow-only — never consumed by
+        decision_making or execution_position.
+        """
+        judge_cfg = self.config.judge
+        if not judge_cfg or judge_cfg.mode != "shadow":
+            return
+        chamber_cfg = judge_cfg.chamber
+        if not chamber_cfg:
+            return
+
+        # Entry chamber
+        if chamber_cfg.entry_enabled:
+            entry_agg = ChamberAggregator("ENTRY", chamber_cfg)
+            entry_result = entry_agg.aggregate(
+                judge_expert_outputs,
+                expected_expert_ids=solicited_expert_ids,
+                symbol=symbol,
+                tf_sec=tf_sec,
+                ts_ms=bar_close_ts,
+            )
+            self.event_bus.emit(
+                event_name="EVT:JUDGE_CHAMBER_AGGREGATED_V1",
+                payload=entry_result.model_dump(),
+                why=f"judge_chamber_entry_{symbol}",
+            )
+            if judge_cfg.shadow_log and judge_cfg.shadow_log.enabled:
+                try:
+                    write_jsonl_chamber_log(
+                        entry_result,
+                        log_dir=judge_cfg.shadow_log.log_dir,
+                    )
+                except Exception:
+                    LOG.exception(
+                        "[%s] Failed to write chamber log", symbol
+                    )
+            LOG.debug(
+                "[%s] Entry chamber: %s experts, %s responding, %s → %s (shadow)",
+                symbol,
+                entry_result.expert_count,
+                entry_result.responding_count,
+                entry_result.admissibility,
+                entry_result.consensus_direction,
+            )
+
+            # Phase 4: Entry verdict path
+            if judge_cfg.verdict and judge_cfg.verdict.entry_enabled:
+                self._assemble_and_emit_verdict(
+                    chamber_result=entry_result,
+                    judge_cfg=judge_cfg,
+                    bar_close_ts=bar_close_ts,
+                    features=features,
+                    current_price=current_price,
+                    verdict_event="EVT:JUDGE_ENTRY_VERDICT_V1",
+                )
+
+        # Lifecycle chamber stub (only when explicitly enabled)
+        if chamber_cfg.lifecycle_enabled:
+            lifecycle_agg = ChamberAggregator("LIFECYCLE", chamber_cfg)
+            lifecycle_result = lifecycle_agg.aggregate(
+                [],
+                expected_expert_ids=[],
+                symbol=symbol,
+                tf_sec=tf_sec,
+                ts_ms=bar_close_ts,
+            )
+            self.event_bus.emit(
+                event_name="EVT:JUDGE_CHAMBER_AGGREGATED_V1",
+                payload=lifecycle_result.model_dump(),
+                why=f"judge_chamber_lifecycle_{symbol}",
+            )
+            if judge_cfg.shadow_log and judge_cfg.shadow_log.enabled:
+                try:
+                    write_jsonl_chamber_log(
+                        lifecycle_result,
+                        log_dir=judge_cfg.shadow_log.log_dir,
+                    )
+                except Exception:
+                    LOG.exception(
+                        "[%s] Failed to write lifecycle chamber log", symbol
+                    )
+
+            # Phase 4: Lifecycle verdict path
+            if judge_cfg.verdict and judge_cfg.verdict.lifecycle_enabled:
+                self._assemble_and_emit_verdict(
+                    chamber_result=lifecycle_result,
+                    judge_cfg=judge_cfg,
+                    bar_close_ts=bar_close_ts,
+                    features=features,
+                    current_price=current_price,
+                    verdict_event="EVT:JUDGE_LIFECYCLE_VERDICT_V1",
+                )
+
+    def _assemble_and_emit_verdict(
+        self,
+        chamber_result,
+        judge_cfg,
+        bar_close_ts: int,
+        features: Optional[Dict[str, Any]],
+        current_price: float,
+        verdict_event: str,
+    ) -> None:
+        """Phase 4: Assemble evidence envelope and synthesize verdict.
+
+        Fail-closed: if envelope assembly or verdict synthesis fails,
+        log WARNING and do NOT emit. The chamber event was already emitted.
+
+        Authority: docs/LLM_JUDGE/LLM_JUDGE_PHASE4_IMPLEMENTATION_BLUEPRINT.md §12, §13.4
+        """
+        symbol = chamber_result.symbol
+        try:
+            # Extract regime metadata (optional enrichment, §13.2.1)
+            regime = None
+            regime_confidence = None
+            regime_ts_ms = None
+            regime_source = None
+            regime_missing_reason = None
+
+            if features:
+                regime = features.get("regime")
+                raw_rc = features.get("regime_confidence")
+                if raw_rc is not None:
+                    try:
+                        regime_confidence = float(raw_rc)
+                    except (TypeError, ValueError):
+                        regime_confidence = None
+
+                raw_ts = features.get("regime_ts_ms")
+                if raw_ts is not None:
+                    try:
+                        regime_ts_ms = int(raw_ts)
+                    except (TypeError, ValueError):
+                        regime_ts_ms = None
+
+                regime_source = features.get("regime_source")
+                regime_missing_reason = features.get("regime_missing_reason")
+
+            # Build features_ref
+            features_ref = f"bar:{symbol}:{chamber_result.tf_sec}:{bar_close_ts}"
+
+            # Assemble envelope
+            envelope = assemble_evidence_envelope(
+                chamber_result,
+                verdict_config=judge_cfg.verdict,
+                chamber_config=judge_cfg.chamber,
+                features_ref=features_ref,
+                regime=regime,
+                regime_confidence=regime_confidence,
+                regime_ts_ms=regime_ts_ms,
+                regime_source=regime_source,
+                regime_missing_reason=regime_missing_reason,
+            )
+
+            # Emit envelope event
+            self.event_bus.emit(
+                event_name="EVT:JUDGE_EVIDENCE_ASSEMBLED_V1",
+                payload=envelope.model_dump(),
+                why=f"judge_envelope_{chamber_result.verdict_scope.lower()}_{symbol}",
+            )
+
+            # Envelope JSONL
+            if judge_cfg.shadow_log and judge_cfg.shadow_log.enabled:
+                try:
+                    write_jsonl_envelope_log(
+                        envelope,
+                        log_dir=judge_cfg.shadow_log.log_dir,
+                    )
+                except Exception:
+                    LOG.exception("[%s] Failed to write envelope log", symbol)
+
+            # Synthesize verdict
+            verdict = synthesize_verdict(
+                envelope,
+                verdict_config=judge_cfg.verdict,
+            )
+
+            # Emit verdict event
+            self.event_bus.emit(
+                event_name=verdict_event,
+                payload=verdict.model_dump(),
+                why=f"judge_verdict_{chamber_result.verdict_scope.lower()}_{symbol}",
+            )
+
+            # Verdict JSONL
+            if judge_cfg.shadow_log and judge_cfg.shadow_log.enabled:
+                try:
+                    write_jsonl_verdict_log(
+                        verdict,
+                        log_dir=judge_cfg.shadow_log.log_dir,
+                    )
+                except Exception:
+                    LOG.exception("[%s] Failed to write verdict log", symbol)
+
+            shadow_plan_cfg = getattr(judge_cfg.verdict, "shadow_plan", None)
+            if (
+                chamber_result.verdict_scope == "ENTRY"
+                and shadow_plan_cfg is not None
+                and shadow_plan_cfg.enabled
+            ):
+                plans = derive_shadow_entry_plans(
+                    verdict,
+                    price_ref=current_price,
+                    shadow_plan_config=shadow_plan_cfg,
+                )
+                for plan in plans:
+                    self.event_bus.emit(
+                        event_name="EVT:JUDGE_SHADOW_ENTRY_PLAN_V1",
+                        payload=plan.model_dump(),
+                        why=f"judge_shadow_plan_{plan.confidence_tier}_{symbol}",
+                    )
+                    if judge_cfg.shadow_log and judge_cfg.shadow_log.enabled:
+                        try:
+                            write_jsonl_shadow_entry_plan_log(
+                                plan,
+                                log_dir=judge_cfg.shadow_log.log_dir,
+                            )
+                        except Exception:
+                            LOG.exception(
+                                "[%s] Failed to write shadow entry plan log",
+                                symbol,
+                            )
+
+            LOG.debug(
+                "[%s] %s verdict: %s conf=%.4f dissent=%s (shadow)",
+                symbol,
+                chamber_result.verdict_scope,
+                verdict.entry_verdict or verdict.lifecycle_verdict,
+                verdict.confidence,
+                verdict.dissent_noted,
+            )
+
+            # ── J6-S16.1 Policy Cortex Shadow Annotation ─────────────────────
+            # Called AFTER verdict and shadow plan are emitted.
+            # Does NOT change verdict output or shadow plan logic.
+            # Produces EVT:JUDGE_POLICY_CORTEX_EVALUATED_V1 (shadow-only).
+            # Linked to verdict/shadow-plan by cycle_key.
+            if chamber_result.verdict_scope == "ENTRY":
+                self._emit_policy_cortex_annotation(
+                    verdict=verdict,
+                    judge_cfg=judge_cfg,
+                    regime=regime,
+                    ts_ms=bar_close_ts,
+                )
+            # ─────────────────────────────────────────────────────────────────
+
+        except Exception:
+            LOG.warning(
+                "[%s] Phase 4 verdict assembly failed for %s chamber (fail-closed)",
+                symbol,
+                chamber_result.verdict_scope,
+                exc_info=True,
+            )
+
+    def _emit_policy_cortex_annotation(
+        self,
+        verdict: "JudgeVerdict",
+        judge_cfg: Any,
+        regime: Optional[str],
+        ts_ms: int,
+    ) -> None:
+        """J6-S16.1 — Evaluate and emit the Policy Cortex shadow annotation.
+
+        Called once per ENTRY verdict cycle, AFTER verdict and shadow plans
+        are fully emitted. Does NOT alter any verdict field or shadow plan.
+
+        Emits: EVT:JUDGE_POLICY_CORTEX_EVALUATED_V1 (shadow-only)
+        Writes: policy_cortex_{symbol}_{date}.jsonl (when shadow_log.enabled)
+
+        Fail-closed:
+        - Any exception inside evaluate_policy_cortex() already degrades to UNKNOWN.
+        - Any exception in this method is caught and logged — never propagated.
+        - If judge_cfg is missing or invalid, skips silently with a DEBUG log.
+        """
+        symbol = verdict.symbol
+        try:
+            # Resolve entry side from verdict
+            side: Optional[str] = None
+            if verdict.entry_verdict == "OPEN_LONG":
+                side = "BUY"
+            elif verdict.entry_verdict == "OPEN_SHORT":
+                side = "SELL"
+
+            # evaluate_policy_cortex is already error-safe (degrades to UNKNOWN)
+            annotation = evaluate_policy_cortex(
+                symbol=symbol,
+                tf_sec=verdict.tf_sec,
+                side=side,
+                regime=regime,
+                strategy_id=verdict.strategy_id,
+                cycle_key=verdict.cycle_key,
+            )
+
+            # Emit EVT:JUDGE_POLICY_CORTEX_EVALUATED_V1 (shadow-only)
+            payload = annotation.model_dump()
+            self.event_bus.emit(
+                event_name="EVT:JUDGE_POLICY_CORTEX_EVALUATED_V1",
+                payload=payload,
+                why=f"judge_policy_cortex_{symbol}",
+            )
+
+            # Write sidecar JSONL log (same guard as all other judge shadow logs)
+            if judge_cfg and judge_cfg.shadow_log and judge_cfg.shadow_log.enabled:
+                try:
+                    write_jsonl_policy_cortex_log(
+                        annotation,
+                        log_dir=judge_cfg.shadow_log.log_dir,
+                        ts_ms=ts_ms,
+                    )
+                except Exception:
+                    LOG.exception(
+                        "[%s] Failed to write policy cortex log", symbol
+                    )
+
+            LOG.debug(
+                "[%s] Policy cortex: surface=%s label=%s output=%s (shadow)",
+                symbol,
+                annotation.surface_key,
+                annotation.matched_surface_label,
+                annotation.classifier_output,
+            )
+
+        except Exception:
+            LOG.warning(
+                "[%s] Policy cortex annotation failed (shadow-only, skipped)",
+                symbol,
+                exc_info=True,
+            )
+
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     def _emit_fail_closed_score(
         self,
         provider_id: str,
@@ -973,7 +1606,23 @@ class AlphaSearchBacktestPlugin:
         bar_close_ts: int,
         reason: str = "missing_features_for_bar",
     ) -> None:
+<<<<<<< HEAD
         """Emit fail-closed score (score=0) when features unavailable."""
+=======
+        """Emit fail-closed score (score=0) when features unavailable.
+
+        Judge expert providers are silently suppressed — they must not leak
+        into the generic EVT:ALPHA_SCORE_CALCULATED stream.
+        """
+        cfg = self.provider_configs.get(provider_id)
+        if cfg and cfg.judge_expert is not None:
+            LOG.debug(
+                "[%s] Judge expert %s fail-closed suppressed: %s",
+                symbol, provider_id, reason,
+            )
+            return
+
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
         payload = {
             "provider_id": provider_id,
             "model_name": f"{provider_id}_fail_closed",
@@ -1005,9 +1654,12 @@ class AlphaSearchBacktestPlugin:
         symbol: str,
         current_price: float,
         current_ts: int,
+<<<<<<< HEAD
         current_score: Optional[float] = None,
         regime: Optional[str] = None,
         features: Optional[Dict[str, Any]] = None,
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     ) -> None:
         """Check exits for open virtual positions."""
         positions = self.open_positions[provider_id]
@@ -1019,6 +1671,7 @@ class AlphaSearchBacktestPlugin:
                 continue
 
             pos.bars_held += 1
+<<<<<<< HEAD
             if current_score is not None:
                 pos.latest_score = current_score
             self._update_virtual_position_extrema(pos, current_price)
@@ -1090,6 +1743,10 @@ class AlphaSearchBacktestPlugin:
                     positions.pop(i)
                     continue
 
+=======
+            duration_sec = (current_ts - pos.entry_ts) / 1000.0
+
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
             drawdown_exit = getattr(exit_cfg, "max_drawdown_exit", None)
             drawdown_hit = False
             if drawdown_exit is not None and pos.entry_price > 0:
@@ -1127,7 +1784,10 @@ class AlphaSearchBacktestPlugin:
         current_ts: int,
         signal_id: str,
         model_signal_id: Optional[str],
+<<<<<<< HEAD
         regime: Optional[str] = None,
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     ) -> None:
         """Open virtual position if allowed."""
         positions = self.open_positions[provider_id]
@@ -1139,6 +1799,7 @@ class AlphaSearchBacktestPlugin:
             return
 
         side = "BUY" if score.score > 0 else "SELL"
+<<<<<<< HEAD
         policy_snapshot = self._resolve_aurora_policy_snapshot(symbol)
         stop_price, target_price = self._compute_aurora_price_levels(
             symbol=symbol,
@@ -1146,6 +1807,8 @@ class AlphaSearchBacktestPlugin:
             entry_price=current_price,
             regime=regime,
         )
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
         positions.append(VirtualPosition(
             provider_id=provider_id,
@@ -1155,6 +1818,7 @@ class AlphaSearchBacktestPlugin:
             entry_ts=current_ts,
             signal_id=signal_id,
             model_signal_id=model_signal_id,
+<<<<<<< HEAD
             entry_regime=str(regime or "UNKNOWN"),
             stop_price=stop_price,
             target_price=target_price,
@@ -1162,6 +1826,8 @@ class AlphaSearchBacktestPlugin:
             low_water_price=current_price,
             latest_score=float(score.score),
             policy_snapshot=policy_snapshot,
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
         ))
 
         LOG.debug(
@@ -1204,11 +1870,14 @@ class AlphaSearchBacktestPlugin:
             "pnl": notional_pnl,
             "signal_id": pos.signal_id,
             "model_signal_id": pos.model_signal_id,
+<<<<<<< HEAD
             "entry_regime": pos.entry_regime,
             "stop_price": pos.stop_price,
             "target_price": pos.target_price,
             "high_water_price": pos.high_water_price,
             "low_water_price": pos.low_water_price,
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
             "exit_reason": exit_reason,
         }
         self.closed_positions[provider_id].append(closed_record)
@@ -1238,6 +1907,7 @@ class AlphaSearchBacktestPlugin:
             f"PnL={notional_pnl:.2f} (held {pos.bars_held} bars)"
         )
 
+<<<<<<< HEAD
     def _resolve_aurora_policy_snapshot(self, symbol: str) -> Dict[str, Any]:
         """Return the Aurora virtual-exit policy applicable to the symbol."""
         return {
@@ -1449,6 +2119,8 @@ class AlphaSearchBacktestPlugin:
             return None
         return self._coerce_optional_float(asset_exit.get("max_hold_sec"))
 
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     def _find_closed_record(
         self,
         *,
@@ -1717,6 +2389,70 @@ class AlphaSearchBacktestPlugin:
             except Exception as e:
                 LOG.warning(f"Failed to generate diagnostics: {e}")
 
+<<<<<<< HEAD
+=======
+        # PHASE5-5G: Simulator shutdown auto-export
+        self._run_simulator_shutdown_export()
+
+    def _run_simulator_shutdown_export(self) -> None:
+        """Phase 5 Package 5G — bounded simulator invocation on shutdown.
+
+        Config-gated: does nothing when simulator_shutdown_export is None or
+        disabled.  When enabled, loads SimulatorConfig from the referenced
+        YAML file, runs the simulator once via the existing 5F run_from_config
+        path, and writes calibration + summary artifacts via existing 5D/5E
+        writers.  Fails closed: any error is logged and does not crash the
+        broader shutdown sequence.
+        """
+        export_cfg = getattr(self.config, "simulator_shutdown_export", None)
+        if export_cfg is None or not export_cfg.enabled:
+            return
+
+        LOG.info("PHASE5_5G: simulator shutdown export enabled, starting...")
+
+        try:
+            from .judge.simulator.cli import load_simulator_config, run_from_config
+        except ImportError as exc:
+            LOG.error(f"PHASE5_5G: failed to import simulator modules: {exc}")
+            return
+
+        # 1. Load simulator config
+        try:
+            sim_config = load_simulator_config(export_cfg.config_path)
+        except (FileNotFoundError, ValueError) as exc:
+            LOG.error(
+                f"PHASE5_5G: invalid simulator config "
+                f"(path={export_cfg.config_path!r}): {exc}"
+            )
+            return
+        except Exception as exc:
+            LOG.error(f"PHASE5_5G: unexpected config load error: {exc}")
+            return
+
+        if not sim_config.enabled:
+            LOG.info(
+                "PHASE5_5G: simulator config loaded but simulator "
+                "enabled=False in judge_simulator.yaml, skipping."
+            )
+            return
+
+        # 2. Run simulation + write outputs (reuses 5F run_from_config)
+        try:
+            result = run_from_config(sim_config)
+        except Exception as exc:
+            LOG.error(f"PHASE5_5G: simulation/export failed: {exc}")
+            return
+
+        LOG.info(
+            f"PHASE5_5G: done — "
+            f"verdicts={result.total_verdict_records_loaded} "
+            f"outcomes={result.total_outcome_records_loaded} "
+            f"matched={result.matched_count} "
+            f"calibration={sim_config.calibration_dataset_path} "
+            f"summary={sim_config.summary_report_path}"
+        )
+
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
 # Backwards compatibility: factory function
 def create_plugin_from_config(

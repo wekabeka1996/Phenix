@@ -12,7 +12,11 @@ import logging
 from typing import Dict, Any, Optional, List
 
 from ..alpha_model import AlphaModel, AlphaScore
+<<<<<<< HEAD
 from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
+=======
+from apps.reference.shared.decision_primitives.scoring_kernel import (
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     QuadraticScoringKernel,
     ScoringResult,
 )
@@ -33,6 +37,7 @@ class AuroraAlphaAdapter(AlphaModel):
     # Default essential features (from aurora.yaml:decision.essential_features)
     DEFAULT_ESSENTIAL_FEATURES = ["obi", "delta_price", "macro_resid"]
 
+<<<<<<< HEAD
     # Default signal weights (from aurora.yaml:decision.signal_weights)
     DEFAULT_SIGNAL_WEIGHTS = {
         "obi": 0.15,
@@ -60,6 +65,8 @@ class AuroraAlphaAdapter(AlphaModel):
         "absorption": 0.0,   # R2: SIGNED feature, neutral is 0.0
     }
 
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     # Default direction/strength config
     DEFAULT_DIRECTION_STRENGTH_CFG = {
         "directional_features": [
@@ -87,8 +94,11 @@ class AuroraAlphaAdapter(AlphaModel):
         self,
         config: Optional[Dict[str, Any]] = None,
         essential_features: Optional[List[str]] = None,
+<<<<<<< HEAD
         signal_weights: Optional[Dict[str, float]] = None,
         feature_neutrals: Optional[Dict[str, float]] = None,
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
         direction_strength_cfg: Optional[Dict[str, Any]] = None,
         regime_thresholds: Optional[Dict[str, float]] = None,
         base_threshold: float = 0.12,
@@ -101,8 +111,11 @@ class AuroraAlphaAdapter(AlphaModel):
         Args:
             config: Base model config (optional)
             essential_features: Required features for scoring
+<<<<<<< HEAD
             signal_weights: Feature weights for scoring
             feature_neutrals: Neutral values for features
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
             direction_strength_cfg: Direction/strength scoring config
             regime_thresholds: Regime-based threshold multipliers
             base_threshold: Base signal threshold
@@ -113,17 +126,23 @@ class AuroraAlphaAdapter(AlphaModel):
         self._scoring_version = scoring_version
 
         self._essential_features = essential_features or self.DEFAULT_ESSENTIAL_FEATURES
+<<<<<<< HEAD
         self._signal_weights = signal_weights or self.DEFAULT_SIGNAL_WEIGHTS
         self._feature_neutrals = feature_neutrals or self.DEFAULT_FEATURE_NEUTRALS
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
         self._direction_strength_cfg = direction_strength_cfg or self.DEFAULT_DIRECTION_STRENGTH_CFG
         self._regime_thresholds = regime_thresholds or self.DEFAULT_REGIME_THRESHOLDS
         self._base_threshold = decimal.Decimal(str(base_threshold))
         self._delta_price_cap_pct = decimal.Decimal(str(delta_price_cap_pct))
+<<<<<<< HEAD
         self._blocked_regimes: set[str] = set()
         self._symbol_allowed_regimes: Dict[str, set[str]] = {}
         self._symbol_signal_weights: Dict[str, Dict[str, float]] = {}
         self._symbol_feature_neutrals: Dict[str, Dict[str, float]] = {}
         self._symbol_regime_thresholds: Dict[str, Dict[str, float]] = {}
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
         super().__init__(config or {})
 
@@ -188,6 +207,7 @@ class AuroraAlphaAdapter(AlphaModel):
         # Get regime (default to "DEFAULT" if not provided)
         regime = context.get("regime", "DEFAULT")
 
+<<<<<<< HEAD
         if regime in (self._blocked_regimes or set()):
             return self._fail_closed_score(
                 symbol,
@@ -208,25 +228,39 @@ class AuroraAlphaAdapter(AlphaModel):
         regime_thresholds = self._resolve_symbol_regime_thresholds(symbol)
 
         # Run Quadratic kernel
+=======
+        # Run Quadratic kernel — signal_weights/feature_neutrals intentionally
+        # omitted: QuadraticScoringKernel reads pillar_sum only.
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
         try:
             result: ScoringResult = QuadraticScoringKernel.compute(
                 symbol=symbol,
                 features=features,
                 warmup_readiness=warmup_readiness,
                 price=decimal.Decimal(str(price)),
+<<<<<<< HEAD
                 signal_weights=signal_weights,
                 feature_neutrals=feature_neutrals,
                 essential_features=self._essential_features,
                 base_threshold=self._base_threshold,
                 regime_name=regime,
                 regime_thresholds=regime_thresholds,
+=======
+                essential_features=self._essential_features,
+                base_threshold=self._base_threshold,
+                regime_name=regime,
+                regime_thresholds=self._regime_thresholds,
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
                 side_bias_state=None,  # No side bias for alpha_search
                 direction_strength_cfg=self._direction_strength_cfg,
                 delta_price_cap_pct=self._delta_price_cap_pct,
                 scoring_version=self._scoring_version,
                 neutral_threshold=None,
                 current_side="",
+<<<<<<< HEAD
                 admission_mode="linear",  # Match live aurora.yaml decision_geometry.admission_mode
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
             )
         except Exception as e:
             LOG.warning(f"[{symbol}] Aurora kernel error: {e}")
@@ -333,6 +367,7 @@ class AuroraAlphaAdapter(AlphaModel):
             why.append(w)
 
         return why
+<<<<<<< HEAD
 
     def _resolve_symbol_signal_weights(self, symbol: str) -> Dict[str, float]:
         weights = (self._symbol_signal_weights or {}).get(symbol)
@@ -351,3 +386,5 @@ class AuroraAlphaAdapter(AlphaModel):
         if thresholds:
             return dict(thresholds)
         return dict(self._regime_thresholds)
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b

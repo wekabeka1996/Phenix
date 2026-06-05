@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, Tuple, Optional
 
 import yaml
+<<<<<<< HEAD
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from apps.reference.config_models import (
@@ -24,6 +25,8 @@ from apps.reference.config_models import (
     AuroraInstrumentConfig,
     CANONICAL_WEIGHT_KEYS,
 )
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
 from ..config_models import (
     AlphaSearchConfig,
@@ -37,6 +40,7 @@ from .override_allowlist import validate_overrides, warn_partial_aurora_override
 LOG = logging.getLogger(__name__)
 
 
+<<<<<<< HEAD
 SUPPORTED_AURORA_DECISION_FIELDS = {
     "signal_threshold",
     "signal_weights",
@@ -91,6 +95,8 @@ class AuroraScenarioStrategyConfig(BaseModel):
     assets: Dict[str, AuroraInstrumentConfig] = Field(default_factory=dict)
 
 
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 class ConfigResolutionError(RuntimeError):
     """Raised when scenario config resolution fails (fail-closed)."""
 
@@ -333,7 +339,11 @@ def _extract_strategy_config(
 ) -> Dict[str, Any]:
     """Extract strategy-specific raw config dict for adapter injection."""
     if strategy_type == "aurora":
+<<<<<<< HEAD
         return _validate_aurora_strategy_subset(raw_configs.get("aurora", {}))
+=======
+        return copy.deepcopy(raw_configs.get("aurora", {}))
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     elif strategy_type == "mean_reversion":
         return copy.deepcopy(raw_configs.get("mean_reversion", {}))
     elif strategy_type == "ensemble":
@@ -342,6 +352,7 @@ def _extract_strategy_config(
     return {}
 
 
+<<<<<<< HEAD
 def _validate_aurora_strategy_subset(raw_strategy: Dict[str, Any]) -> Dict[str, Any]:
     """Validate the Aurora surfaces consumed by alpha_search scenarios."""
     if not raw_strategy:
@@ -379,6 +390,8 @@ def _validate_aurora_strategy_subset(raw_strategy: Dict[str, Any]) -> Dict[str, 
     return validated
 
 
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 # =============================================================================
 # Config persistence
 # =============================================================================

@@ -6,6 +6,7 @@ Plugin for the main Aurora process that writes a canonical
 alpha_input_v1.jsonl stream for standalone alpha_search consumption.
 
 Subscribes to:
+<<<<<<< HEAD
 - EVT:FEATURES_CALCULATED: base feature plane + symbol + tf_sec
 - EVT:TA_FEATURES_CALCULATED: supplemental TA feature plane for the same bar
 - EVT:REGIME_DETECTED: current regime per symbol
@@ -15,15 +16,28 @@ snapshots with regime context and explicit TA warmup state.
 
 IMPORTANT: This is the ONLY file that interacts with apps/reference/main.py.
 It's an optional plugin - the standalone domain works with replay without it.
+=======
+- EVT:FEATURES_CALCULATED: features + symbol + tf_sec
+- EVT:REGIME_DETECTED: current regime per symbol
+
+Correlates events by symbol to produce complete snapshots with regime context.
+
+IMPORTANT: This is the ONLY file that interacts with apps/reference/main.py.
+It's an optional plugin ΓÇö the standalone domain works with replay without it.
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 """
 
 import json
 import logging
 import time
 from pathlib import Path
+<<<<<<< HEAD
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from apps.reference.domains.ta_features.contracts import extract_ta_feature_vector
+=======
+from typing import Any, Dict, List, Optional, Set
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
 LOG = logging.getLogger(__name__)
 
@@ -36,9 +50,14 @@ class FeatureMirrorWriter:
     Usage in main.py:
         mirror = FeatureMirrorWriter(event_bus=fsm, symbols=["BTCUSDT", "ETHUSDT"])
 
+<<<<<<< HEAD
     The writer is stateless beyond caches. A line is written only when the base
     FEATURES_CALCULATED payload and the TA supplement for the same bar are both
     available, so ta_ensemble can consume the same alpha_input stream as aurora.
+=======
+    The writer is stateless beyond caches. Every EVT:FEATURES_CALCULATED produces
+    a line in the output JSONL with the latest known regime for that symbol.
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     """
 
     def __init__(
@@ -57,10 +76,13 @@ class FeatureMirrorWriter:
         self._regime_cache: Dict[str, str] = {}  # symbol -> last known regime
         # symbol -> warmup flags
         self._warmup_cache: Dict[str, Dict[str, bool]] = {}
+<<<<<<< HEAD
         # (symbol, tf_sec, bar_close_ts) -> pending base snapshot pieces
         self._feature_cache: Dict[Tuple[str, int, int], Dict[str, Any]] = {}
         # (symbol, tf_sec, bar_close_ts) -> pending TA supplement
         self._ta_cache: Dict[Tuple[str, int, int], Dict[str, Any]] = {}
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
         # Stats
         self._snapshots_written = 0
@@ -82,7 +104,10 @@ class FeatureMirrorWriter:
         """Subscribe to required events on the main event bus."""
         if hasattr(self._bus, "listen"):
             self._bus.listen("EVT:FEATURES_CALCULATED", self._on_features)
+<<<<<<< HEAD
             self._bus.listen("EVT:TA_FEATURES_CALCULATED", self._on_ta_features)
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
             self._bus.listen("EVT:REGIME_DETECTED", self._on_regime)
             LOG.debug("FeatureMirrorWriter listeners registered")
 
@@ -90,8 +115,13 @@ class FeatureMirrorWriter:
         """
         Handle EVT:FEATURES_CALCULATED.
 
+<<<<<<< HEAD
         Extracts the base feature plane and caches it until the matching
         EVT:TA_FEATURES_CALCULATED payload arrives for the same bar.
+=======
+        Extracts features and writes a complete alpha_input_v1 record
+        with the latest cached regime for the symbol.
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
         """
         payload = self._extract_payload(event)
         if not payload:
@@ -124,18 +154,35 @@ class FeatureMirrorWriter:
             return
         ts = payload.get("ts", 0) or int(time.time() * 1000)
 
+<<<<<<< HEAD
         bar_close_ts = self._bar_close_ts(payload, ts)
+=======
+        # bar_close_ts from bar or payload
+        bar = payload.get("bar") or {}
+        bar_close_ts = (
+            bar.get("close_ts")
+            or bar.get("ts")
+            or payload.get("bar_close_ts")
+            or ts
+        )
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
         # Extract price from features
         price = self._extract_price(features)
 
+<<<<<<< HEAD
         key = self._snapshot_key(symbol, tf_sec, bar_close_ts)
         self._feature_cache[key] = {
+=======
+        # Build alpha_input_v1 record
+        record = {
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
             "ts_ms": ts,
             "symbol": symbol,
             "tf_sec": tf_sec,
             "bar_close_ts": bar_close_ts,
             "price": price,
+<<<<<<< HEAD
             "features": dict(features),
             "regime": self._regime_cache.get(symbol, "DEFAULT"),
             "warmup_status": dict(payload.get("warmup_status") or self._warmup_cache.get(symbol, {})),
@@ -182,6 +229,17 @@ class FeatureMirrorWriter:
             "source_trace_id": payload.get("trace_id", payload.get("rid", "")),
         }
         self._maybe_write_snapshot(key)
+=======
+            "features": features,
+            "regime": self._regime_cache.get(symbol, "DEFAULT"),
+            "warmup_status": self._warmup_cache.get(symbol, {}),
+            "source_verb": "FEATURES_CALCULATED",
+            "source_trace_id": payload.get("trace_id", payload.get("rid", "")),
+        }
+
+        self._write_record(record)
+        self._snapshots_written += 1
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
     def _on_regime(self, event: Any) -> None:
         """
@@ -200,6 +258,7 @@ class FeatureMirrorWriter:
             self._regime_cache[symbol] = regime
             LOG.debug(f"[{symbol}] Regime updated: {regime}")
 
+<<<<<<< HEAD
     def _maybe_write_snapshot(self, key: Tuple[str, int, int]) -> None:
         feature_record = self._feature_cache.get(key)
         ta_record = self._ta_cache.get(key)
@@ -225,6 +284,8 @@ class FeatureMirrorWriter:
         self._feature_cache.pop(key, None)
         self._ta_cache.pop(key, None)
 
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     def _write_record(self, record: Dict[str, Any]) -> None:
         """Append a single JSONL record with immediate flush."""
         try:
@@ -255,6 +316,7 @@ class FeatureMirrorWriter:
             return event.pld
         return None
 
+<<<<<<< HEAD
     @staticmethod
     def _bar_close_ts(payload: Dict[str, Any], ts_ms: int) -> int:
         bar = payload.get("bar") or {}
@@ -269,13 +331,18 @@ class FeatureMirrorWriter:
     def _snapshot_key(symbol: str, tf_sec: int, bar_close_ts: int) -> Tuple[str, int, int]:
         return symbol, int(tf_sec), int(bar_close_ts)
 
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     @property
     def stats(self) -> Dict[str, Any]:
         return {
             "snapshots_written": self._snapshots_written,
             "snapshots_skipped": self._snapshots_skipped,
             "regime_cache": dict(self._regime_cache),
+<<<<<<< HEAD
             "pending_feature_snapshots": len(self._feature_cache),
             "pending_ta_snapshots": len(self._ta_cache),
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
             "output_path": str(self._output_path),
         }

@@ -6,7 +6,10 @@ Cross-scenario comparison metrics written to aggregate CSV and JSONL.
 Follows TelemetryLogger pattern from neocortex domain.
 """
 
+<<<<<<< HEAD
 from collections import Counter
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 import csv
 import json
 import time
@@ -17,8 +20,11 @@ CSV_COLUMNS = [
     "timestamp",
     "scenario_id",
     "strategy_type",
+<<<<<<< HEAD
     "version",
     "family",
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     "symbol",
     "ts_ms",
     "score",
@@ -26,6 +32,7 @@ CSV_COLUMNS = [
     "threshold",
     "side",
     "provider_id",
+<<<<<<< HEAD
     "shadow_only",
     "authority_applied",
     "no_effect",
@@ -51,6 +58,11 @@ SCENARIO_MATRIX_COLUMNS = [
     "init_error",
 ]
 
+=======
+    "regime",
+]
+
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
 class AggregateReporter:
     """
@@ -70,6 +82,7 @@ class AggregateReporter:
         self._csv_path = self._agg_dir / "aggregate_metrics.csv"
         self._health_path = self._agg_dir / "health.jsonl"
         self._summary_path = self._agg_dir / "summary.jsonl"
+<<<<<<< HEAD
         self._scenario_matrix_path = self._agg_dir / "scenario_runtime_matrix.csv"
 
         self._csv_initialized = False
@@ -100,6 +113,11 @@ class AggregateReporter:
                 "_missing_features": set(),
             }
         self._write_scenario_matrix()
+=======
+
+        self._csv_initialized = False
+        self._rows_written = 0
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
     def log_result(self, result: Dict[str, Any]) -> None:
         """Append a single score result to aggregate CSV."""
@@ -114,16 +132,22 @@ class AggregateReporter:
             writer.writerow(row)
 
         self._rows_written += 1
+<<<<<<< HEAD
         self._update_scenario_runtime(result)
         self._write_scenario_matrix()
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
     def log_health(self, event: Dict[str, Any]) -> None:
         """Append health event to aggregate health.jsonl."""
         record = {"ts": time.time(), **event}
         with open(self._health_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, default=str) + "\n")
+<<<<<<< HEAD
         self._update_health_runtime(event)
         self._write_scenario_matrix()
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
     def log_summary(self, summaries: Dict[str, Dict[str, Any]]) -> None:
         """Write periodic summary from all scenarios."""
@@ -142,6 +166,7 @@ class AggregateReporter:
                 writer.writeheader()
         self._csv_initialized = True
 
+<<<<<<< HEAD
     def _ensure_scenario_runtime(self, scenario_id: str) -> Dict[str, Any]:
         runtime = self._scenario_runtime.setdefault(
             scenario_id,
@@ -214,10 +239,15 @@ class AggregateReporter:
                 row = self._scenario_runtime[scenario_id]
                 writer.writerow({col: row.get(col, "") for col in SCENARIO_MATRIX_COLUMNS})
 
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     @property
     def stats(self) -> Dict[str, Any]:
         return {
             "csv_rows": self._rows_written,
             "csv_path": str(self._csv_path),
+<<<<<<< HEAD
             "scenario_matrix_path": str(self._scenario_matrix_path),
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
         }

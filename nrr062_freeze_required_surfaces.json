@@ -1,0 +1,86 @@
+{
+  "package": "O",
+  "surface_contract": [
+    {
+      "surface": "logs/order_log_v1.jsonl",
+      "role": "Primary NRR-062 reject and override-admission evidence surface",
+      "required": true,
+      "bundle_path": "logs/order_log_v1.jsonl",
+      "row_count_method": "jsonl_valid_object_rows",
+      "timestamp_range_method": "generic_jsonl_timestamp_scan",
+      "missing_behavior": "block_capture_before_bundle_creation"
+    },
+    {
+      "surface": "logs/shadow_telemetry/decision_ledger_v1.jsonl",
+      "role": "Decision-terminal authority surface",
+      "required": true,
+      "bundle_path": "logs/shadow_telemetry/decision_ledger_v1.jsonl",
+      "row_count_method": "jsonl_valid_object_rows",
+      "timestamp_range_method": "generic_jsonl_timestamp_scan_with_request_response_fields",
+      "missing_behavior": "required_missing plus CAPTURE_WITH_MISSING_DECISION_LEDGER and authority_complete_false"
+    },
+    {
+      "surface": "logs/trade_lifecycle.jsonl",
+      "role": "Downstream lifecycle, fill, and close evidence surface",
+      "required": true,
+      "bundle_path": "logs/trade_lifecycle.jsonl",
+      "row_count_method": "jsonl_valid_object_rows",
+      "timestamp_range_method": "generic_jsonl_timestamp_scan",
+      "missing_behavior": "required_missing plus CAPTURE_WITH_MISSING_REQUIRED_SURFACES"
+    },
+    {
+      "surface": "logs/shadow_critical_event_journal_v1.jsonl",
+      "role": "Raw shadow/critical journal override truth and diagnostics",
+      "required": false,
+      "bundle_path": "logs/shadow_critical_event_journal_v1.jsonl",
+      "row_count_method": "jsonl_valid_object_rows",
+      "timestamp_range_method": "generic_jsonl_timestamp_scan",
+      "missing_behavior": "optional_missing_only"
+    },
+    {
+      "surface": "logs/regime_confidence_audit_v1.jsonl",
+      "role": "Regime-confidence diagnostics",
+      "required": false,
+      "bundle_path": "logs/regime_confidence_audit_v1.jsonl",
+      "row_count_method": "jsonl_valid_object_rows",
+      "timestamp_range_method": "generic_jsonl_timestamp_scan",
+      "missing_behavior": "optional_missing_only"
+    },
+    {
+      "surface": "data/recorder/... when --include-recorder is requested",
+      "role": "Recorder bar evidence for coverage and replay support",
+      "required": false,
+      "bundle_path": "data/recorder/<date>/<symbol>_<tf>.csv",
+      "row_count_method": "csv_data_rows_excluding_header",
+      "timestamp_range_method": "min_max_open_time_or_timestamp_column",
+      "missing_behavior": "not_requested_unless_include_recorder"
+    },
+    {
+      "surface": "config_snapshot/ + config_snapshot_manifest.json",
+      "role": "Frozen config authority snapshot and manifest",
+      "required": true,
+      "bundle_path": "config_snapshot/ plus config_snapshot_manifest.json",
+      "row_count_method": "not_applicable",
+      "timestamp_range_method": "not_applicable",
+      "missing_behavior": "generated_by_capture_and_summary_records_missing_config_files"
+    },
+    {
+      "surface": "MANIFEST.json",
+      "role": "Machine-readable freeze manifest",
+      "required": true,
+      "bundle_path": "MANIFEST.json",
+      "row_count_method": "not_applicable",
+      "timestamp_range_method": "not_applicable",
+      "missing_behavior": "generated_at_capture_end"
+    },
+    {
+      "surface": "FREEZE_REPORT.md",
+      "role": "Human-readable freeze verdict and missing-surface summary",
+      "required": true,
+      "bundle_path": "FREEZE_REPORT.md",
+      "row_count_method": "not_applicable",
+      "timestamp_range_method": "not_applicable",
+      "missing_behavior": "generated_at_capture_end"
+    }
+  ]
+}

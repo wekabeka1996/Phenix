@@ -1,0 +1,140 @@
+{
+  "task": "AURORA_R7Y_RERUN_FEE_AWARE_SHADOW_POST_PAYLOAD_REPAIR_RUNTIME_CONFIRMATION",
+  "boundary": {
+    "requested_boundary": "2026-05-21T08:36:57.039051Z",
+    "effective_boundary": "2026-05-22T07:46:31Z",
+    "method": "git_commit",
+    "confidence": "high",
+    "git_commit": "34db9a74027833fa4031c232600371664cadb3fe"
+  },
+  "trade_lifecycle": {
+    "count": 84,
+    "first_timestamp": "2026-05-26T14:57:21.345000Z",
+    "last_timestamp": "2026-05-29T00:00:49.312000Z",
+    "symbols": [
+      "1000PEPEUSDT",
+      "BTCUSDT",
+      "DOGEUSDT",
+      "ETHUSDT",
+      "XRPUSDT"
+    ],
+    "transitions": [
+      [
+        "ARMED"
+      ],
+      [
+        "TRIGGERED"
+      ]
+    ]
+  },
+  "shadow_critical_journal": {
+    "count": 84,
+    "first_timestamp": "2026-05-26T14:57:21.346000Z",
+    "last_timestamp": "2026-05-29T00:00:49.320000Z",
+    "symbols": [
+      "1000PEPEUSDT",
+      "BTCUSDT",
+      "DOGEUSDT",
+      "ETHUSDT",
+      "XRPUSDT"
+    ],
+    "transitions": [
+      [
+        "ARMED"
+      ],
+      [
+        "TRIGGERED"
+      ]
+    ]
+  },
+  "samples": {
+    "trade_lifecycle_first3": [
+      {
+        "timestamp": "2026-05-26T14:57:21.345000Z",
+        "ts_ms": 1779807441345,
+        "symbol": "BTCUSDT",
+        "transitions": [
+          "ARMED"
+        ],
+        "candidate_identity": {
+          "fee_multiple": 1.0,
+          "optional_pct_candidate": 0.02
+        },
+        "fee_source": "realized_lifecycle_fee"
+      },
+      {
+        "timestamp": "2026-05-26T14:57:27.213000Z",
+        "ts_ms": 1779807447213,
+        "symbol": "BTCUSDT",
+        "transitions": [
+          "ARMED"
+        ],
+        "candidate_identity": {
+          "fee_multiple": 1.5,
+          "optional_pct_candidate": 0.02
+        },
+        "fee_source": "realized_lifecycle_fee"
+      },
+      {
+        "timestamp": "2026-05-26T14:57:33.106000Z",
+        "ts_ms": 1779807453106,
+        "symbol": "BTCUSDT",
+        "transitions": [
+          "ARMED"
+        ],
+        "candidate_identity": {
+          "fee_multiple": 1.0,
+          "optional_pct_candidate": 0.05
+        },
+        "fee_source": "realized_lifecycle_fee"
+      }
+    ],
+    "shadow_critical_journal_first3": [
+      {
+        "timestamp": "2026-05-26T14:57:21.346000Z",
+        "journal_ts_ms": 1779807441346,
+        "payload_ts_ms": 1779807441345,
+        "symbol": "BTCUSDT",
+        "transitions": [
+          "ARMED"
+        ],
+        "candidate_identity": {
+          "fee_multiple": 1.0,
+          "optional_pct_candidate": 0.02
+        },
+        "fee_source": "realized_lifecycle_fee",
+        "classification": "JOURNAL_PAYLOAD_IDENTITY_OK"
+      },
+      {
+        "timestamp": "2026-05-26T14:57:27.213000Z",
+        "journal_ts_ms": 1779807447213,
+        "payload_ts_ms": 1779807447213,
+        "symbol": "BTCUSDT",
+        "transitions": [
+          "ARMED"
+        ],
+        "candidate_identity": {
+          "fee_multiple": 1.5,
+          "optional_pct_candidate": 0.02
+        },
+        "fee_source": "realized_lifecycle_fee",
+        "classification": "JOURNAL_PAYLOAD_IDENTITY_OK"
+      },
+      {
+        "timestamp": "2026-05-26T14:57:33.106000Z",
+        "journal_ts_ms": 1779807453106,
+        "payload_ts_ms": 1779807453106,
+        "symbol": "BTCUSDT",
+        "transitions": [
+          "ARMED"
+        ],
+        "candidate_identity": {
+          "fee_multiple": 1.0,
+          "optional_pct_candidate": 0.05
+        },
+        "fee_source": "realized_lifecycle_fee",
+        "classification": "JOURNAL_PAYLOAD_IDENTITY_OK"
+      }
+    ]
+  }
+}

@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 ﻿"""
+=======
+"""
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 Scenario Worker
 ===============
 
@@ -56,13 +60,19 @@ class ScenarioWorker:
         log_dir: Path,
         shadow_book: Optional[Any] = None,
     ):
+<<<<<<< HEAD
         self._spec = spec
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
         self._scenario_id = spec.scenario_id
         self._strategy_type = spec.strategy_type
         self._log_dir = log_dir
         self._strategy_config = strategy_config
         self._aurora_base_threshold: Optional[float] = None
+<<<<<<< HEAD
         self._aurora_default_base_threshold: Optional[float] = None
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
         # --- Isolated event bus (no cross-scenario contamination) ---
         self._bus = LocalBus()
@@ -83,8 +93,12 @@ class ScenarioWorker:
         if self._strategy_type == "aurora" and strategy_config:
             self._inject_aurora_params(strategy_config)
         if self._strategy_type == "aurora":
+<<<<<<< HEAD
             self._aurora_default_base_threshold = self._capture_aurora_base_threshold()
             self._aurora_base_threshold = self._aurora_default_base_threshold
+=======
+            self._aurora_base_threshold = self._capture_aurora_base_threshold()
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
         # --- Stats ---
         self._snapshots_processed = 0
@@ -123,6 +137,21 @@ class ScenarioWorker:
         self._result_buffer.clear()
 
         try:
+<<<<<<< HEAD
+=======
+            # --- Normalize regime for backend (J6-S11 compliant) ---
+            regime_str = snapshot.regime
+            if regime_str and regime_str not in ("PENDING", "DEFAULT", ""):
+                regime_dict = {
+                    "regime": regime_str,
+                    "confidence": getattr(snapshot, "regime_confidence", None),
+                    "ts_ms": getattr(snapshot, "regime_ts_ms", None) or snapshot.ts_ms,
+                    "source_model": getattr(snapshot, "regime_source", None) or "alpha_input_v1",
+                }
+            else:
+                regime_dict = None
+
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
             # --- Phase 1: cache features ---
             feature_event_name = self._plugin.config.triggers.feature_event
             feature_payload = {
@@ -133,7 +162,11 @@ class ScenarioWorker:
                 "ts": snapshot.ts_ms,
                 "bar": {"close_ts": snapshot.bar_close_ts},
                 # Inject regime context for aurora scoring
+<<<<<<< HEAD
                 "regime": snapshot.regime,
+=======
+                "regime": regime_dict,
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
                 "warmup_readiness": snapshot.warmup_status,
             }
 
@@ -168,11 +201,15 @@ class ScenarioWorker:
                 )
 
             if self._strategy_type == "aurora":
+<<<<<<< HEAD
                 self._prepare_aurora_symbol_policy(snapshot.symbol)
                 self._apply_regime_adaptive_threshold(
                     snapshot.regime,
                     symbol=snapshot.symbol,
                 )
+=======
+                self._apply_regime_adaptive_threshold(snapshot.regime)
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
             # --- Phase 2: self-trigger scoring ---
             decision_payload = {
@@ -180,7 +217,11 @@ class ScenarioWorker:
                 "tf_sec": snapshot.tf_sec,
                 "bar_close_ts": snapshot.bar_close_ts,
                 # Pass regime through decision payload too
+<<<<<<< HEAD
                 "regime": snapshot.regime,
+=======
+                "regime": regime_dict,
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
             }
 
             self._bus.emit(
@@ -193,11 +234,17 @@ class ScenarioWorker:
             results = []
             for raw_result in self._result_buffer:
                 pld = raw_result.get("pld", raw_result)
+<<<<<<< HEAD
                 enriched = AlphaShadowResultV1.model_validate({
                     "scenario_id": self._scenario_id,
                     "strategy_type": self._strategy_type,
                     "version": self._spec.version,
                     "family": self._spec.family or self._strategy_type,
+=======
+                enriched = {
+                    "scenario_id": self._scenario_id,
+                    "strategy_type": self._strategy_type,
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
                     "ts_ms": snapshot.ts_ms,
                     "symbol": pld.get("symbol", snapshot.symbol),
                     "score": pld.get("score", 0.0),
@@ -211,11 +258,16 @@ class ScenarioWorker:
                     "why": pld.get("why", []),
                     "features_used": pld.get("features_used", []),
                     "shadow": True,
+<<<<<<< HEAD
                     "shadow_only": self._spec.shadow_only,
                     "authority_applied": self._spec.authority_applied,
                     "no_effect": self._spec.no_effect,
                     "regime": snapshot.regime,
                 }).model_dump()
+=======
+                    "regime": snapshot.regime,
+                }
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
                 results.append(enriched)
 
             self._snapshots_processed += 1
@@ -245,6 +297,7 @@ class ScenarioWorker:
         - _base_threshold
         - _direction_strength_cfg
         - _delta_price_cap_pct
+<<<<<<< HEAD
         - _blocked_regimes
         - _symbol_allowed_regimes
         - _symbol_signal_weights
@@ -255,6 +308,8 @@ class ScenarioWorker:
         - _symbol_exit_configs
         - _symbol_trailing_stop_configs
         - _symbol_take_profit_configs
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
         We override these from the resolved aurora.yaml decision section.
         """
@@ -310,6 +365,7 @@ class ScenarioWorker:
                 f"[{self._scenario_id}] Gates config available: {list(gates.keys())}"
             )
 
+<<<<<<< HEAD
         decision_exit = decision.get("exit") or {}
         aurora_provider._decision_exit_cfg = (
             dict(decision_exit) if isinstance(decision_exit, dict) else {}
@@ -386,6 +442,8 @@ class ScenarioWorker:
                 symbol_take_profit_configs=symbol_take_profit_configs,
             )
 
+=======
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     def _capture_aurora_base_threshold(self) -> Optional[float]:
         """Capture initial aurora threshold once for regime scaling."""
         provider_cfg = self._plugin.provider_configs.get("aurora")
@@ -397,6 +455,7 @@ class ScenarioWorker:
             return None
         return max(0.0, min(1.0, base_thr))
 
+<<<<<<< HEAD
     def _prepare_aurora_symbol_policy(self, symbol: str) -> None:
         """Apply per-symbol Aurora threshold state before scoring the snapshot."""
         provider_cfg = self._plugin.provider_configs.get("aurora")
@@ -455,6 +514,9 @@ class ScenarioWorker:
         regime: str,
         symbol: Optional[str] = None,
     ) -> None:
+=======
+    def _apply_regime_adaptive_threshold(self, regime: str) -> None:
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
         """Apply per-snapshot effective threshold: base * regime_factor."""
         if self._aurora_base_threshold is None:
             return
@@ -464,7 +526,12 @@ class ScenarioWorker:
         if provider_cfg is None or aurora_provider is None:
             return
 
+<<<<<<< HEAD
         regime_thresholds = self._resolve_aurora_regime_thresholds(symbol)
+=======
+        regime_thresholds = getattr(
+            aurora_provider, "_regime_thresholds", {}) or {}
+>>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
         raw_factor = regime_thresholds.get(
             regime, regime_thresholds.get("DEFAULT", 1.0)
         )
