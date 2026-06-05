@@ -16,6 +16,8 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from decimal import Decimal
 
+from apps.reference.config_models import ExitManagerConfig
+from apps.reference.domains.decision_making.exit_manager import ExitManager
 from apps.reference.domains.ta_features.contracts import (
     TA_WARMUP_KEY,
     extract_ta_feature_vector,
@@ -58,6 +60,13 @@ class VirtualPosition:
     signal_id: str
     model_signal_id: Optional[str] = None
     bars_held: int = 0
+    entry_regime: str = "UNKNOWN"
+    stop_price: Optional[float] = None
+    target_price: Optional[float] = None
+    high_water_price: Optional[float] = None
+    low_water_price: Optional[float] = None
+    latest_score: Optional[float] = None
+    policy_snapshot: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -152,6 +161,10 @@ class AlphaSearchBacktestPlugin:
         }
         self._signal_provider: Dict[str, str] = {}
         self._pending_objective_events: Dict[str, Dict[str, Any]] = {}
+        self._aurora_decision_exit_cfg: Dict[str, Any] = {}
+        self._aurora_symbol_exit_configs: Dict[str, Dict[str, Any]] = {}
+        self._aurora_symbol_trailing_stop_configs: Dict[str, Dict[str, Any]] = {}
+        self._aurora_symbol_take_profit_configs: Dict[str, Dict[str, Any]] = {}
 
         # Signal counter for IDs
         self._signal_counter = 0
@@ -631,11 +644,26 @@ class AlphaSearchBacktestPlugin:
 
             # Calculate score
             try:
+                regime = payload.get("regime")
+                if isinstance(regime, dict):
+                    regime = (
+                        regime.get("regime")
+                        or regime.get("overall_regime")
+                        or "DEFAULT"
+                    )
+                warmup_readiness = payload.get("warmup_readiness")
+                if not isinstance(warmup_readiness, dict):
+                    warmup_readiness = cache_entry.warmup_status
                 score = model.calculate_alpha(
                     symbol=symbol,
                     market_data={"close": current_price},
                     features=normalized_features,
-                    context={"mode": "backtest", "shadow": self.shadow_mode}
+                    context={
+                        "mode": "backtest",
+                        "shadow": self.shadow_mode,
+                        "regime": regime,
+                        "warmup_readiness": warmup_readiness or {},
+                    }
                 )
 
                 self._process_score(
@@ -647,6 +675,8 @@ class AlphaSearchBacktestPlugin:
                     current_ts=cache_entry.ts,
                     tf_sec=tf_sec,
                     bar_close_ts=bar_close_ts,
+                    regime=regime,
+                    features=normalized_features,
                 )
 
             except Exception as e:
@@ -802,6 +832,29 @@ class AlphaSearchBacktestPlugin:
             return True  # None means all symbols
         return symbol in cfg.symbols
 
+    def configure_aurora_virtual_policy(
+        self,
+        *,
+        decision_exit: Optional[Dict[str, Any]] = None,
+        symbol_exit_configs: Optional[Dict[str, Dict[str, Any]]] = None,
+        symbol_trailing_stop_configs: Optional[Dict[str, Dict[str, Any]]] = None,
+        symbol_take_profit_configs: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> None:
+        """Store Aurora exit policy surfaces for later virtual-trader evaluation."""
+        self._aurora_decision_exit_cfg = dict(decision_exit or {})
+        self._aurora_symbol_exit_configs = {
+            symbol: dict(config or {})
+            for symbol, config in (symbol_exit_configs or {}).items()
+        }
+        self._aurora_symbol_trailing_stop_configs = {
+            symbol: dict(config or {})
+            for symbol, config in (symbol_trailing_stop_configs or {}).items()
+        }
+        self._aurora_symbol_take_profit_configs = {
+            symbol: dict(config or {})
+            for symbol, config in (symbol_take_profit_configs or {}).items()
+        }
+
     def _extract_model_signal_id(self, score: AlphaScore) -> Optional[str]:
         """Extract underlying model signal_id from why-chain when available."""
         for reason in score.why:
@@ -821,6 +874,8 @@ class AlphaSearchBacktestPlugin:
         current_ts: int,
         tf_sec: int,
         bar_close_ts: int,
+        regime: Optional[str] = None,
+        features: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Process calculated score: emit event, update virtual trader."""
         stats = self.provider_stats[provider_id]
@@ -855,6 +910,9 @@ class AlphaSearchBacktestPlugin:
                 symbol=symbol,
                 current_price=current_price,
                 current_ts=current_ts,
+                current_score=float(score.score),
+                regime=regime,
+                features=features,
             )
 
             # Entry logic
@@ -867,6 +925,7 @@ class AlphaSearchBacktestPlugin:
                     current_ts=current_ts,
                     signal_id=signal_id,
                     model_signal_id=model_signal_id,
+                    regime=regime,
                 )
 
     def _emit_score_event(
@@ -946,6 +1005,9 @@ class AlphaSearchBacktestPlugin:
         symbol: str,
         current_price: float,
         current_ts: int,
+        current_score: Optional[float] = None,
+        regime: Optional[str] = None,
+        features: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Check exits for open virtual positions."""
         positions = self.open_positions[provider_id]
@@ -957,7 +1019,76 @@ class AlphaSearchBacktestPlugin:
                 continue
 
             pos.bars_held += 1
+            if current_score is not None:
+                pos.latest_score = current_score
+            self._update_virtual_position_extrema(pos, current_price)
             duration_sec = (current_ts - pos.entry_ts) / 1000.0
+
+            price_exit_reason = self._check_aurora_price_exit(
+                pos=pos,
+                current_price=current_price,
+            )
+            if price_exit_reason is not None:
+                self._close_virtual_position(
+                    provider_id=provider_id,
+                    pos=pos,
+                    exit_price=current_price,
+                    exit_ts=current_ts,
+                    exit_reason=price_exit_reason,
+                )
+                positions.pop(i)
+                continue
+
+            asset_time_limit = self._get_aurora_asset_max_hold_sec(symbol)
+            if asset_time_limit is not None and duration_sec >= asset_time_limit:
+                self._close_virtual_position(
+                    provider_id=provider_id,
+                    pos=pos,
+                    exit_price=current_price,
+                    exit_ts=current_ts,
+                    exit_reason="asset_time_exit",
+                )
+                positions.pop(i)
+                continue
+
+            aurora_exit_manager = self._build_aurora_exit_manager(symbol)
+            if aurora_exit_manager is not None:
+                mfe_price = pos.high_water_price if pos.side == "BUY" else pos.low_water_price
+                atr_value = self._extract_atr_value(features, current_price)
+                should_exit, aurora_reason, _ = aurora_exit_manager.check_exit(
+                    symbol=symbol,
+                    current_position_side=pos.side,
+                    entry_price=Decimal(str(pos.entry_price)),
+                    current_price=Decimal(str(current_price)),
+                    hold_time_sec=duration_sec,
+                    final_score=float(pos.latest_score or 0.0),
+                    danger_zone_active=False,
+                    current_stop_loss=(
+                        Decimal(str(pos.stop_price))
+                        if pos.stop_price is not None
+                        else None
+                    ),
+                    mfe_price=(
+                        Decimal(str(mfe_price))
+                        if mfe_price is not None
+                        else None
+                    ),
+                    atr=(
+                        Decimal(str(atr_value))
+                        if atr_value is not None
+                        else None
+                    ),
+                )
+                if should_exit:
+                    self._close_virtual_position(
+                        provider_id=provider_id,
+                        pos=pos,
+                        exit_price=current_price,
+                        exit_ts=current_ts,
+                        exit_reason=self._normalize_aurora_exit_reason(aurora_reason),
+                    )
+                    positions.pop(i)
+                    continue
 
             drawdown_exit = getattr(exit_cfg, "max_drawdown_exit", None)
             drawdown_hit = False
@@ -996,6 +1127,7 @@ class AlphaSearchBacktestPlugin:
         current_ts: int,
         signal_id: str,
         model_signal_id: Optional[str],
+        regime: Optional[str] = None,
     ) -> None:
         """Open virtual position if allowed."""
         positions = self.open_positions[provider_id]
@@ -1007,6 +1139,13 @@ class AlphaSearchBacktestPlugin:
             return
 
         side = "BUY" if score.score > 0 else "SELL"
+        policy_snapshot = self._resolve_aurora_policy_snapshot(symbol)
+        stop_price, target_price = self._compute_aurora_price_levels(
+            symbol=symbol,
+            side=side,
+            entry_price=current_price,
+            regime=regime,
+        )
 
         positions.append(VirtualPosition(
             provider_id=provider_id,
@@ -1016,6 +1155,13 @@ class AlphaSearchBacktestPlugin:
             entry_ts=current_ts,
             signal_id=signal_id,
             model_signal_id=model_signal_id,
+            entry_regime=str(regime or "UNKNOWN"),
+            stop_price=stop_price,
+            target_price=target_price,
+            high_water_price=current_price,
+            low_water_price=current_price,
+            latest_score=float(score.score),
+            policy_snapshot=policy_snapshot,
         ))
 
         LOG.debug(
@@ -1058,6 +1204,11 @@ class AlphaSearchBacktestPlugin:
             "pnl": notional_pnl,
             "signal_id": pos.signal_id,
             "model_signal_id": pos.model_signal_id,
+            "entry_regime": pos.entry_regime,
+            "stop_price": pos.stop_price,
+            "target_price": pos.target_price,
+            "high_water_price": pos.high_water_price,
+            "low_water_price": pos.low_water_price,
             "exit_reason": exit_reason,
         }
         self.closed_positions[provider_id].append(closed_record)
@@ -1086,6 +1237,217 @@ class AlphaSearchBacktestPlugin:
             f"[{pos.symbol}] {provider_id} CLOSE VIRTUAL {pos.side} "
             f"PnL={notional_pnl:.2f} (held {pos.bars_held} bars)"
         )
+
+    def _resolve_aurora_policy_snapshot(self, symbol: str) -> Dict[str, Any]:
+        """Return the Aurora virtual-exit policy applicable to the symbol."""
+        return {
+            "decision_exit": dict(self._aurora_decision_exit_cfg),
+            "asset_exit": dict(self._aurora_symbol_exit_configs.get(symbol, {})),
+            "trailing_stop": dict(
+                self._aurora_symbol_trailing_stop_configs.get(symbol, {})
+            ),
+            "take_profit": dict(
+                self._aurora_symbol_take_profit_configs.get(symbol, {})
+            ),
+        }
+
+    def _coerce_optional_float(self, value: Any) -> Optional[float]:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _resolve_regime_value(
+        self,
+        values: Any,
+        regime: Optional[str],
+        *,
+        default: float,
+    ) -> float:
+        if not isinstance(values, dict):
+            return default
+        regime_key = str(regime or "DEFAULT")
+        raw = values.get(regime_key, values.get("DEFAULT", default))
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return default
+
+    def _compute_aurora_price_levels(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        entry_price: float,
+        regime: Optional[str],
+    ) -> Tuple[Optional[float], Optional[float]]:
+        """Compute Aurora stop/target levels at virtual entry time."""
+        if entry_price <= 0:
+            return None, None
+
+        policy = self._resolve_aurora_policy_snapshot(symbol)
+        asset_exit = policy.get("asset_exit", {})
+        if not isinstance(asset_exit, dict):
+            return None, None
+
+        sl_pct = self._coerce_optional_float(asset_exit.get("sl_pct"))
+        stop_price: Optional[float] = None
+        if sl_pct is not None and sl_pct > 0:
+            if side == "BUY":
+                stop_price = entry_price * (1.0 - sl_pct)
+            else:
+                stop_price = entry_price * (1.0 + sl_pct)
+
+        regime_tpsl = asset_exit.get("regime_tpsl")
+        take_profit = policy.get("take_profit", {})
+        if not isinstance(regime_tpsl, dict) or not regime_tpsl.get("enabled"):
+            return stop_price, None
+        if str(regime_tpsl.get("mode", "pct_mult")) != "pct_mult":
+            return stop_price, None
+
+        tp_low_ratio = self._coerce_optional_float(
+            take_profit.get("tp_low_ratio") if isinstance(take_profit, dict) else None
+        )
+        if sl_pct is None or sl_pct <= 0 or tp_low_ratio is None or tp_low_ratio <= 0:
+            return stop_price, None
+
+        sl_mult = self._resolve_regime_value(
+            regime_tpsl.get("sl_mult"),
+            regime,
+            default=1.0,
+        )
+        tp_mult = self._resolve_regime_value(
+            regime_tpsl.get("tp_mult"),
+            regime,
+            default=1.0,
+        )
+
+        min_sl_pct = self._coerce_optional_float(regime_tpsl.get("min_sl_pct")) or 0.003
+        max_sl_pct = self._coerce_optional_float(regime_tpsl.get("max_sl_pct")) or 0.06
+        min_tp_rr = self._coerce_optional_float(regime_tpsl.get("min_tp_rr")) or 0.3
+        max_tp_rr = self._coerce_optional_float(regime_tpsl.get("max_tp_rr")) or 3.0
+        min_dist_bps = self._coerce_optional_float(regime_tpsl.get("min_dist_bps")) or 15.0
+
+        sl_pct_eff = min(max(sl_pct * sl_mult, min_sl_pct), max_sl_pct)
+        tp_rr = min(max(tp_low_ratio * tp_mult, min_tp_rr), max_tp_rr)
+        tp_pct_eff = sl_pct_eff * tp_rr
+
+        if side == "BUY":
+            candidate_stop = entry_price * (1.0 - sl_pct_eff)
+            candidate_target = entry_price * (1.0 + tp_pct_eff)
+        else:
+            candidate_stop = entry_price * (1.0 + sl_pct_eff)
+            candidate_target = entry_price * (1.0 - tp_pct_eff)
+
+        stop_dist_bps = abs(entry_price - candidate_stop) / entry_price * 10000.0
+        target_dist_bps = abs(entry_price - candidate_target) / entry_price * 10000.0
+        if stop_dist_bps < min_dist_bps or target_dist_bps < min_dist_bps:
+            return stop_price, None
+
+        return candidate_stop, candidate_target
+
+    def _update_virtual_position_extrema(
+        self,
+        pos: VirtualPosition,
+        current_price: float,
+    ) -> None:
+        if pos.high_water_price is None:
+            pos.high_water_price = pos.entry_price
+        if pos.low_water_price is None:
+            pos.low_water_price = pos.entry_price
+        pos.high_water_price = max(pos.high_water_price, current_price)
+        pos.low_water_price = min(pos.low_water_price, current_price)
+
+    def _check_aurora_price_exit(
+        self,
+        *,
+        pos: VirtualPosition,
+        current_price: float,
+    ) -> Optional[str]:
+        """Apply Aurora hard stop/target exits before generic virtual trader rules."""
+        if pos.stop_price is not None:
+            if pos.side == "BUY" and current_price <= pos.stop_price:
+                return "regime_tpsl_stop" if pos.target_price is not None else "stop_loss_exit"
+            if pos.side == "SELL" and current_price >= pos.stop_price:
+                return "regime_tpsl_stop" if pos.target_price is not None else "stop_loss_exit"
+
+        if pos.target_price is not None:
+            if pos.side == "BUY" and current_price >= pos.target_price:
+                return "regime_tpsl_target"
+            if pos.side == "SELL" and current_price <= pos.target_price:
+                return "regime_tpsl_target"
+
+        return None
+
+    def _build_aurora_exit_manager(self, symbol: str) -> Optional[ExitManager]:
+        trailing_cfg = self._aurora_symbol_trailing_stop_configs.get(symbol, {})
+        if not self._aurora_decision_exit_cfg and not trailing_cfg:
+            return None
+
+        config_payload = dict(self._aurora_decision_exit_cfg)
+        if not config_payload:
+            config_payload = {
+                "signal_exit_enabled": False,
+                "time_exit_enabled": False,
+            }
+
+        try:
+            exit_cfg = ExitManagerConfig.model_validate(config_payload)
+        except Exception:
+            return None
+
+        return ExitManager(
+            exit_cfg,
+            trailing_enabled=bool(trailing_cfg.get("enabled")),
+            trailing_activation_pct=(
+                self._coerce_optional_float(trailing_cfg.get("activation_pct"))
+                or 0.0
+            ),
+            trailing_atr_mult=self._coerce_optional_float(
+                trailing_cfg.get("trail_atr_mult")
+            ),
+            trailing_pct=self._coerce_optional_float(trailing_cfg.get("trail_pct")),
+        )
+
+    def _extract_atr_value(
+        self,
+        features: Optional[Dict[str, Any]],
+        current_price: float,
+    ) -> Optional[float]:
+        if not isinstance(features, dict):
+            return None
+
+        atr_raw = features.get("atr")
+        if atr_raw is not None:
+            return self._coerce_optional_float(atr_raw)
+
+        atr_pct = self._coerce_optional_float(features.get("atr_pct"))
+        if atr_pct is not None and current_price > 0:
+            return current_price * atr_pct
+
+        volatility = features.get("volatility")
+        if isinstance(volatility, dict):
+            return self._coerce_optional_float(volatility.get("atr_14"))
+        return None
+
+    def _normalize_aurora_exit_reason(self, reason: Optional[str]) -> str:
+        if not reason:
+            return "aurora_exit"
+        if reason.startswith("EXIT_TRAILING"):
+            return "trailing_stop_exit"
+        if reason.startswith("EXIT_SIGNAL_REVERSAL"):
+            return "signal_exit"
+        if reason.startswith("EXIT_TIME_LIMIT"):
+            return "aurora_time_exit"
+        if reason.startswith("EXIT_DANGER_ZONE"):
+            return "danger_zone_exit"
+        return "aurora_exit"
+
+    def _get_aurora_asset_max_hold_sec(self, symbol: str) -> Optional[float]:
+        asset_exit = self._aurora_symbol_exit_configs.get(symbol, {})
+        if not isinstance(asset_exit, dict):
+            return None
+        return self._coerce_optional_float(asset_exit.get("max_hold_sec"))
 
     def _find_closed_record(
         self,

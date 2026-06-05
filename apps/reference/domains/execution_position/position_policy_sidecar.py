@@ -11,6 +11,12 @@ from apps.reference.config_models import (
 )
 from apps.reference.contracts.runtime_regime_layers import normalize_structural_regime_label
 from apps.reference.core.time import get_clock
+from apps.reference.domains.execution_position.microstructure_snapshot import (
+    MicrostructurePressureV1,
+    attach_microstructure_snapshot,
+    build_microstructure_pressure,
+    get_microstructure_snapshot,
+)
 from apps.reference.telemetry.trade_lifecycle_logger import append_trade_lifecycle_record
 
 if TYPE_CHECKING:
@@ -25,6 +31,7 @@ POLICY_RECORD_KIND = "position_policy_sidecar"
 ACTION_PACKAGE_VERSION = "phase2_action_package_v1"
 CLOSE_REQUEST_EVENT_TYPE = "POSITION_POLICY_SIDECAR_CLOSE_REQUESTED"
 CLOSE_REQUEST_COMMAND_TOPIC = "CMD:POSITION_POLICY_SIDECAR_CLOSE_REQUEST"
+MICROSTRUCTURE_PRESSURE_EVENT_TOPIC = "EVT:POSITION_POLICY_MICROSTRUCTURE_PRESSURE_EVALUATED"
 
 
 @dataclass(frozen=True)
@@ -278,12 +285,14 @@ class PositionPolicySidecar:
         bus: Any,
         manage_flow_getter: Callable[[str], Optional["ManageFlowFSM"]],
         known_symbols_getter: Callable[[], Iterable[str]],
+        execution_domain_mode: str = "testnet",
     ) -> None:
         self.config = config
         self.mode = config.mode
         self._bus = bus
         self._manage_flow_getter = manage_flow_getter
         self._known_symbols_getter = known_symbols_getter
+        self._execution_domain_mode = str(execution_domain_mode or "unknown").strip().lower() or "unknown"
         self._states: Dict[str, _SymbolState] = {}
         self._started_at_ms = get_clock().now_ms()
         self._trace_counter = 0
@@ -297,6 +306,7 @@ class PositionPolicySidecar:
             "mode": self.mode.value,
             "evaluation_mode": EVALUATION_MODE,
             "event_type": "POSITION_POLICY_SIDECAR_MODE_ACTIVE",
+            "execution_domain_mode": self._execution_domain_mode,
             "reason_codes": ["sidecar_initialized"],
             "position_snapshot": {},
             "feature_ref": {},
@@ -307,12 +317,22 @@ class PositionPolicySidecar:
 
     def on_features_calculated(self, event: "Message") -> None:
         symbol = _normalize_symbol((event.pld or {}).get("symbol"))
+        trigger_event = str(
+            getattr(event, "verb", None) or "FEATURES_CALCULATED"
+        ).strip().upper() or "FEATURES_CALCULATED"
         if not symbol:
             self._publish_malformed_payload(
-                "FEATURES_CALCULATED", "missing_symbol")
+                trigger_event, "missing_symbol")
             return
-        self._update_envelope(symbol, "features", event.pld or {})
-        self._evaluate_symbol(symbol, trigger_event="FEATURES_CALCULATED")
+        previous_snapshot = get_microstructure_snapshot(
+            self._state(symbol).features.payload or {}
+        )
+        enriched_payload = attach_microstructure_snapshot(
+            event.pld or {},
+            previous_snapshot=previous_snapshot,
+        )
+        self._update_envelope(symbol, "features", enriched_payload)
+        self._evaluate_symbol(symbol, trigger_event=trigger_event)
 
     def on_regime_detected(self, event: "Message") -> None:
         symbol = _normalize_symbol((event.pld or {}).get("symbol"))
@@ -445,6 +465,16 @@ class PositionPolicySidecar:
             state=state,
             manage_flow=manage_flow,
         )
+        snapshot, microstructure_pressure = self._build_microstructure_pressure(
+            state=state,
+            position_snapshot=base_payload["position_snapshot"],
+        )
+        self._emit_microstructure_pressure_event(
+            base_payload=base_payload,
+            trigger_event=trigger_event,
+            snapshot=snapshot,
+            microstructure_pressure=microstructure_pressure,
+        )
 
         suppression = self._determine_suppression(
             now_ms=now_ms,
@@ -466,7 +496,10 @@ class PositionPolicySidecar:
             return
 
         score_snapshot = self._compute_scores(
-            state=state, manage_flow=manage_flow)
+            state=state,
+            manage_flow=manage_flow,
+            microstructure_pressure=microstructure_pressure,
+        )
         state.last_evaluation_ts_ms = now_ms
 
         scores_payload = dict(base_payload)
@@ -526,10 +559,13 @@ class PositionPolicySidecar:
             "recommend_soft_close_threshold_met",
         ]
         recommended_payload["score_snapshot"] = score_snapshot
+        recommended_payload["authority_state"] = microstructure_pressure.authority_state
+        recommended_payload["authority_reason"] = microstructure_pressure.authority_reason
+        recommended_payload["execution_domain_mode"] = self._execution_domain_mode
         self._publish("EVT:POSITION_POLICY_SIDECAR_RECOMMENDED",
                       recommended_payload)
 
-        if self.mode == PositionPolicySidecarMode.ENABLE:
+        if self._close_request_authorized(microstructure_pressure):
             close_request = self.position_policy_close_request_type(
                 ts_ms=now_ms,
                 request_id=f"ppsreq:{trace_id}",
@@ -663,12 +699,14 @@ class PositionPolicySidecar:
         *,
         state: _SymbolState,
         manage_flow: Optional["ManageFlowFSM"],
+        microstructure_pressure: Optional[MicrostructurePressureV1] = None,
     ) -> Dict[str, float]:
         position_snapshot = self._position_snapshot(state, manage_flow)
         side_sign = 1.0 if position_snapshot.get("side") == "BUY" else -1.0
 
         feature_payload = state.features.payload
         regime_payload = state.regime.payload
+        snapshot = get_microstructure_snapshot(feature_payload)
 
         microstructure_from_payload = _lookup_nested_numeric(
             feature_payload,
@@ -677,11 +715,17 @@ class PositionPolicySidecar:
         if microstructure_from_payload is not None:
             microstructure_adverse_pressure = _clamp(
                 microstructure_from_payload)
-        else:
-            imbalance = _lookup_nested_numeric(
-                feature_payload,
-                ("orderbook_imbalance", "book_imbalance", "microstructure_imbalance"),
+        elif microstructure_pressure is not None:
+            microstructure_adverse_pressure = _clamp(
+                microstructure_pressure.microstructure_adverse_pressure
             )
+        else:
+            imbalance = snapshot.orderbook_imbalance if snapshot is not None else None
+            if imbalance is None:
+                imbalance = _lookup_nested_numeric(
+                    feature_payload,
+                    ("orderbook_imbalance", "book_imbalance", "microstructure_imbalance"),
+                )
             adverse_price_distance_bps = _lookup_nested_numeric(
                 feature_payload,
                 ("price_vs_vwap_bps", "distance_from_vwap_bps", "vwap_distance_bps"),
@@ -828,6 +872,7 @@ class PositionPolicySidecar:
             "sidecar_version": SIDECAR_VERSION,
             "mode": self.mode.value,
             "evaluation_mode": EVALUATION_MODE,
+            "execution_domain_mode": self._execution_domain_mode,
             "trigger_event": trigger_event,
             "reason_codes": [f"trigger:{trigger_event.lower()}"],
             "position_snapshot": self._position_snapshot(state, manage_flow),
@@ -1000,6 +1045,65 @@ class PositionPolicySidecar:
     def _next_trace_id(self, symbol: str) -> str:
         self._trace_counter += 1
         return f"pps:{symbol}:{get_clock().now_ms()}:{self._trace_counter}"
+
+    def _microstructure_authority_state(self) -> tuple[str, str]:
+        cfg = self.config.microstructure_exit_v1
+        if not cfg.enabled:
+            return "disabled", "microstructure_exit_v1_disabled"
+        if self.mode != PositionPolicySidecarMode.ENABLE:
+            return "observe_only", f"sidecar_mode_{self.mode.value}"
+        if self._execution_domain_mode not in set(cfg.authoritative_domain_modes):
+            return "observe_only", f"domain_mode_{self._execution_domain_mode}_observe_only"
+        return "soft_close_allowed", "domain_mode_authorized"
+
+    def _build_microstructure_pressure(
+        self,
+        *,
+        state: _SymbolState,
+        position_snapshot: Dict[str, Any],
+    ) -> tuple[Optional[Any], MicrostructurePressureV1]:
+        snapshot = get_microstructure_snapshot(state.features.payload or {})
+        authority_state, authority_reason = self._microstructure_authority_state()
+        pressure = build_microstructure_pressure(
+            snapshot,
+            side=str(position_snapshot.get("side") or ""),
+            enabled=self.config.microstructure_exit_v1.enabled,
+            authority_state=authority_state,
+            authority_reason=authority_reason,
+            adverse_obi_full_pressure=self.config.microstructure_exit_v1.adverse_obi_full_pressure,
+            adverse_pm_norm_full_pressure=self.config.microstructure_exit_v1.adverse_pm_norm_full_pressure,
+            spread_bps_full_pressure=self.config.microstructure_exit_v1.spread_bps_full_pressure,
+            liquidity_kappa_floor=self.config.microstructure_exit_v1.liquidity_kappa_floor,
+        )
+        return snapshot, pressure
+
+    def _emit_microstructure_pressure_event(
+        self,
+        *,
+        base_payload: Dict[str, Any],
+        trigger_event: str,
+        snapshot: Optional[Any],
+        microstructure_pressure: MicrostructurePressureV1,
+    ) -> None:
+        payload = dict(base_payload)
+        payload["event_type"] = "POSITION_POLICY_MICROSTRUCTURE_PRESSURE_EVALUATED"
+        payload["reason_codes"] = [
+            f"trigger:{trigger_event.lower()}",
+            "microstructure_pressure_evaluated",
+        ]
+        payload["authority_state"] = microstructure_pressure.authority_state
+        payload["authority_reason"] = microstructure_pressure.authority_reason
+        payload["microstructure_snapshot"] = (
+            snapshot.model_dump() if snapshot is not None else {}
+        )
+        payload["pressure_snapshot"] = microstructure_pressure.model_dump()
+        self._publish(MICROSTRUCTURE_PRESSURE_EVENT_TOPIC, payload)
+
+    def _close_request_authorized(
+        self,
+        microstructure_pressure: MicrostructurePressureV1,
+    ) -> bool:
+        return microstructure_pressure.authority_state == "soft_close_allowed"
 
     @property
     def position_policy_close_request_type(self) -> type[PositionPolicyCloseRequest]:

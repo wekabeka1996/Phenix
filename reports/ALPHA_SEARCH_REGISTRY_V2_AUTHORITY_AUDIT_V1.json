@@ -1,0 +1,43 @@
+{
+  "task": "ALPHA_SEARCH_REGISTRY_V2_AND_TA_PLANE_ACTIVATION_P0",
+  "authority_contract": {
+    "shadow_only_required": true,
+    "authority_applied_required": false,
+    "no_effect_required": true
+  },
+  "sessions": {
+    "synthetic_ta_probe": {
+      "session_id": "20260518_115438_registry_v2_ta_probe",
+      "matrix_rows": 30,
+      "ta_missing_rows": 0,
+      "evaluated_rows_total": 120,
+      "buy_total": 17,
+      "sell_total": 16,
+      "neutral_total": 87,
+      "metric_rows": 120,
+      "non_neutral_metric_rows": 33,
+      "shadow_flag_violations": 0,
+      "providers": [
+        "aurora",
+        "ta_ensemble"
+      ]
+    },
+    "default_launcher_partial_replay": {
+      "session_id": "20260518_114623",
+      "matrix_rows": 30,
+      "ta_missing_rows": 30,
+      "evaluated_rows_total": 211230,
+      "buy_total": 0,
+      "sell_total": 12204,
+      "neutral_total": 199026,
+      "metric_rows": 211230,
+      "non_neutral_metric_rows": 12204,
+      "shadow_flag_violations": 0,
+      "providers": [
+        "aurora",
+        "ta_ensemble"
+      ]
+    }
+  },
+  "violations": []
+}

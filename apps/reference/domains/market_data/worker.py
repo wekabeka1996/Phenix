@@ -158,6 +158,27 @@ class MarketDataWorker:
         macro_sync = _dget(market_data_cfg, "macro_sync", {})
         self._anchors = _dget(macro_sync, "anchors", [])
         self._poll_interval = _dget(market_data_cfg, "poll_interval_sec", 1)
+        websocket_streams = _dget(market_data_cfg, "websocket_streams", None)
+        if not isinstance(websocket_streams, list) or not websocket_streams:
+            raise ValueError(
+                "Missing required config: trading.market_data.websocket_streams")
+        self._websocket_streams = []
+        for stream_name in websocket_streams:
+            if not isinstance(stream_name, str) or not stream_name:
+                raise ValueError(
+                    "Invalid required config: trading.market_data.websocket_streams (must be non-empty strings)")
+            self._websocket_streams.append(stream_name)
+        if "bookTicker" not in self._websocket_streams:
+            raise ValueError(
+                "Invalid required config: trading.market_data.websocket_streams must include bookTicker")
+        self._trade_stream_names = {
+            stream_name
+            for stream_name in self._websocket_streams
+            if stream_name in {"trade", "aggTrade"}
+        }
+        if not self._trade_stream_names:
+            raise ValueError(
+                "Invalid required config: trading.market_data.websocket_streams must include trade or aggTrade")
 
         # System-level market data settings (strict: no defaults/fallbacks)
         system = _dget(config_dict, "system", None)
@@ -287,15 +308,15 @@ class MarketDataWorker:
         streams = []
         for symbol in self._symbols:
             symbol_lower = symbol.lower()
-            streams.append(f"{symbol_lower}@bookTicker")
-            streams.append(f"{symbol_lower}@aggTrade")
+            for stream_name in self._websocket_streams:
+                streams.append(f"{symbol_lower}@{stream_name}")
 
         # Add anchors if different from trading symbols
         for anchor in self._anchors:
             if anchor not in self._symbols:
                 anchor_lower = anchor.lower()
-                streams.append(f"{anchor_lower}@bookTicker")
-                streams.append(f"{anchor_lower}@aggTrade")
+                for stream_name in self._websocket_streams:
+                    streams.append(f"{anchor_lower}@{stream_name}")
 
         return {"method": "SUBSCRIBE", "params": streams, "id": 1}
 
@@ -360,7 +381,7 @@ class MarketDataWorker:
                 )
                 # State updated, periodic_emit will handle emission
 
-            elif event_type == "aggTrade":
+            elif event_type in self._trade_stream_names:
                 self._last_trade_mono = time.monotonic()
                 ts_ms = _dget(msg, "T", 0)
                 if ts_ms <= 0:
@@ -373,7 +394,7 @@ class MarketDataWorker:
                     quantity=_dget(msg, "q", "0"),
                     is_buyer_maker=_dget(msg, "m", False),
                     ts=ts_ms,
-                    trade_id=msg.get("a")
+                    trade_id=msg.get("a") if event_type == "aggTrade" else msg.get("t")
                 )
                 self._ticks_received += 1
                 # State updated, periodic_emit will handle emission

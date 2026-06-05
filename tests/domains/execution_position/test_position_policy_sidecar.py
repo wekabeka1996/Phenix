@@ -115,6 +115,15 @@ def _sidecar_config(
                 "bracket_mutation": False,
                 "exact_targeting": False,
             },
+            "microstructure_exit_v1": {
+                "enabled": True,
+                "authoritative_domain_modes": ["testnet"],
+                "require_warmup_full_ready": False,
+                "adverse_obi_full_pressure": 0.35,
+                "adverse_pm_norm_full_pressure": 1.0,
+                "spread_bps_full_pressure": 12.0,
+                "liquidity_kappa_floor": 0.35,
+            },
         }
     )
 
@@ -338,6 +347,116 @@ def test_position_policy_sidecar_recommends_at_threshold_boundary(tmp_path: Path
 
     recommended = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_RECOMMENDED")[-1]
     assert recommended["score_snapshot"]["soft_close_pressure"] == 0.3
+
+
+def test_position_policy_sidecar_consumes_fe_style_payload_without_aliases(tmp_path: Path) -> None:
+    bus = RecordingBus()
+    manage_flow = DummyManageFlow()
+    now_ms = get_clock().now_ms()
+    sidecar = PositionPolicySidecar(
+        config=_sidecar_config(
+            tmp_path,
+            mode="shadow",
+            recommend_soft_close_at=0.45,
+            profitability_guard_enabled=False,
+        ),
+        bus=bus,
+        manage_flow_getter=lambda symbol: manage_flow,
+        known_symbols_getter=lambda: {"BTCUSDT"},
+    )
+
+    sidecar.on_portfolio_state_updated(
+        _event(
+            positions_last_ts_ms=now_ms,
+            positions=[
+                {
+                    "symbol": "BTCUSDT",
+                    "positionAmt": "0.10",
+                    "entryPrice": "100.0",
+                    "markPrice": "99.2",
+                    "unrealizedProfit": "-0.08",
+                }
+            ],
+        )
+    )
+    sidecar.on_features_calculated(
+        _event(
+            symbol="BTCUSDT",
+            ts_ms=now_ms + 1,
+            features={
+                "price": "99.2",
+                "obi": "-1.0",
+                "spread_bps": "4.0",
+                "liquidity_kappa": "0.70",
+            },
+            price_motion={
+                "pm_norm_10s": "-0.2",
+                "pm_norm_60s": "-0.5",
+            },
+            warmup={"full_ready": True},
+        )
+    )
+    sidecar.on_regime_detected(
+        _event(symbol="BTCUSDT", ts_ms=now_ms + 2, regime="TREND_DOWN", confidence=0.10)
+    )
+
+    recommended = _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_RECOMMENDED")[-1]
+    assert recommended["score_snapshot"]["microstructure_adverse_pressure"] == 1.0
+    assert recommended["score_snapshot"]["soft_close_pressure"] > 0.45
+
+    pressure = _payloads(bus, "EVT:POSITION_POLICY_MICROSTRUCTURE_PRESSURE_EVALUATED")[-1]
+    assert pressure["authority_state"] == "observe_only"
+    assert pressure["pressure_snapshot"]["orderbook_pressure"] == 1.0
+
+
+def test_position_policy_sidecar_enable_mode_stays_observe_only_in_live_domain_mode(tmp_path: Path) -> None:
+    bus = RecordingBus()
+    manage_flow = DummyManageFlow()
+    now_ms = get_clock().now_ms()
+    sidecar = PositionPolicySidecar(
+        config=_sidecar_config(tmp_path, mode="enable", recommend_soft_close_at=0.45),
+        bus=bus,
+        manage_flow_getter=lambda symbol: manage_flow,
+        known_symbols_getter=lambda: {"BTCUSDT"},
+        execution_domain_mode="live",
+    )
+
+    sidecar.on_portfolio_state_updated(
+        _event(
+            positions_last_ts_ms=now_ms,
+            positions=[
+                {
+                    "symbol": "BTCUSDT",
+                    "positionAmt": "0.10",
+                    "entryPrice": "100.0",
+                    "markPrice": "99.2",
+                    "unrealizedProfit": "-0.08",
+                }
+            ],
+        )
+    )
+    sidecar.on_features_calculated(
+        _event(
+            symbol="BTCUSDT",
+            ts_ms=now_ms + 1,
+            features={
+                "price": "99.2",
+                "obi": "-1.0",
+                "spread_bps": "4.0",
+                "liquidity_kappa": "0.70",
+            },
+        )
+    )
+    sidecar.on_regime_detected(
+        _event(symbol="BTCUSDT", ts_ms=now_ms + 2, regime="TREND_DOWN", confidence=0.10)
+    )
+
+    assert "EVT:POSITION_POLICY_SIDECAR_RECOMMENDED" in _topics(bus)
+    assert "CMD:POSITION_POLICY_SIDECAR_CLOSE_REQUEST" not in _topics(bus)
+    pressure = _payloads(bus, "EVT:POSITION_POLICY_MICROSTRUCTURE_PRESSURE_EVALUATED")[-1]
+    assert pressure["execution_domain_mode"] == "live"
+    assert pressure["authority_state"] == "observe_only"
+    assert pressure["authority_reason"] == "domain_mode_live_observe_only"
 
 
 def test_position_policy_sidecar_profitability_guard_suppresses(tmp_path: Path) -> None:

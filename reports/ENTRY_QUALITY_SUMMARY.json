@@ -1,0 +1,127 @@
+{
+  "generated_at_utc": "2026-05-16T09:11:58.635692+00:00",
+  "activated_entries": 27,
+  "no_entry_orders": 6,
+  "symbols": {
+    "ETHUSDT": 6,
+    "DOGEUSDT": 11,
+    "XRPUSDT": 3,
+    "BTCUSDT": 3,
+    "BNBUSDT": 3,
+    "SOLUSDT": 1
+  },
+  "strategies": {
+    "aurora": 10,
+    "mean_reversion": 11,
+    "md_amr": 6
+  },
+  "outcomes": {
+    "SL_LOSS": 19,
+    "TP_WIN": 4,
+    "OPEN": 4
+  },
+  "close_kinds": {
+    "SL": 19,
+    "TP": 4,
+    "unresolved": 4
+  },
+  "entry_timing_counts": {
+    "MID_TREND_CONTINUATION": 5,
+    "MEAN_REVERSION_VALID": 8,
+    "REVERSAL_TRAP": 11,
+    "LATE_TREND_CHASE": 1,
+    "LOCAL_TOP_BUY": 2
+  },
+  "microstructure_state_counts": {
+    "STALE_OR_MISSING": 12,
+    "WEAK_CONFIRMATION": 4,
+    "STRONG_CONFIRMATION": 5,
+    "MIXED_SIGNAL": 5,
+    "EXHAUSTION_WARNING": 1
+  },
+  "feature_usage_counts": {
+    "PARTIALLY_USED": 21,
+    "PIPELINE_ONLY": 6
+  },
+  "position_management_counts": {
+    "STATIC_ONLY": 11,
+    "UNPROVEN": 1,
+    "ADAPTIVE": 1,
+    "WARNING_IGNORED": 11,
+    "NO_WARNING_AVAILABLE": 3
+  },
+  "entry_semantic_counts": {
+    "GOOD_ENTRY_MARKET_REVERSAL": 5,
+    "WEAK_EDGE_ENTRY": 11,
+    "GOOD_ENTRY_BAD_EXIT": 4,
+    "BAD_ENTRY_LATE_CHASE": 3,
+    "BAD_ENTRY_CONTRADICTED_BY_MICROSTRUCTURE": 4
+  },
+  "pnl_by_entry_timing_class": {
+    "MID_TREND_CONTINUATION": -29.492169,
+    "MEAN_REVERSION_VALID": -174.62159,
+    "REVERSAL_TRAP": -202.349668,
+    "LATE_TREND_CHASE": -46.497211,
+    "LOCAL_TOP_BUY": -113.302746
+  },
+  "tp_sl_count_by_entry_timing_class": {
+    "MID_TREND_CONTINUATION": {
+      "TP": 1,
+      "SL": 3
+    },
+    "MEAN_REVERSION_VALID": {
+      "TP": 1,
+      "SL": 7
+    },
+    "REVERSAL_TRAP": {
+      "TP": 2,
+      "SL": 6
+    },
+    "LATE_TREND_CHASE": {
+      "TP": 0,
+      "SL": 1
+    },
+    "LOCAL_TOP_BUY": {
+      "TP": 0,
+      "SL": 2
+    }
+  },
+  "pnl_by_microstructure_state": {
+    "STALE_OR_MISSING": -171.958664,
+    "WEAK_CONFIRMATION": -94.86291,
+    "STRONG_CONFIRMATION": -0.910429,
+    "MIXED_SIGNAL": -206.171666,
+    "EXHAUSTION_WARNING": -92.359715
+  },
+  "pnl_by_feature_usage_verdict": {
+    "PARTIALLY_USED": -429.407999,
+    "PIPELINE_ONLY": -136.855385
+  },
+  "pnl_by_regime_symbol": {
+    "TREND_DOWN::ETHUSDT": 2.314691,
+    "LOW_VOLATILITY::DOGEUSDT": -316.948067,
+    "LOW_VOLATILITY::XRPUSDT": -46.000953,
+    "MEAN_REVERSION::XRPUSDT": 0.0,
+    "MEAN_REVERSION::ETHUSDT": -77.420241,
+    "MEAN_REVERSION::DOGEUSDT": 83.062708,
+    "TREND_UP::BTCUSDT": -82.135835,
+    "TREND_UP::BNBUSDT": 0.0,
+    "TREND_DOWN::BTCUSDT": -38.281254,
+    "LOW_VOLATILITY::BNBUSDT": -90.854433,
+    "TREND_DOWN::SOLUSDT": 0.0
+  },
+  "microstructure_opposed_side_count": 5,
+  "warning_visible_before_sl_count": 11,
+  "microstructure_visible_but_unused_count": 11,
+  "likely_late_chase_count": 3,
+  "likely_noise_count": 0,
+  "trade_lifecycle_present": true,
+  "decision_ledger_present": false,
+  "recorder_timeframes_available": [
+    180,
+    300,
+    900
+  ],
+  "log_offset_hours_for_feature_logs": 3,
+  "final_verdict_code": "POSITION_MANAGEMENT_STATIC_GAP"
+}

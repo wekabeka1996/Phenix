@@ -52,6 +52,7 @@
     {"event_name": "EVT:POSITION_POLICY_SIDECAR_SCORES", "target_domains": ["monitoring"]},
     {"event_name": "EVT:POSITION_POLICY_SIDECAR_SUPPRESSED", "target_domains": ["monitoring"]},
     {"event_name": "EVT:POSITION_POLICY_SIDECAR_RECOMMENDED", "target_domains": ["monitoring"]},
+    {"event_name": "EVT:POSITION_POLICY_MICROSTRUCTURE_PRESSURE_EVALUATED", "target_domains": ["monitoring"]},
     {"event_name": "EVT:POSITION_POLICY_SIDECAR_ACTION_SKIPPED", "target_domains": ["monitoring"]},
     {"event_name": "EVT:POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE", "target_domains": ["monitoring"]},
     {"event_name": "ERR:OPEN", "target_domains": ["decision_making", "monitoring"]},

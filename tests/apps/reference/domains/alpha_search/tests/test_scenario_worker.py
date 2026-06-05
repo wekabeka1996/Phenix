@@ -202,6 +202,8 @@ class TestProcessSnapshot:
             {
                 "scenario_id": "S_PIPE",
                 "strategy_type": "aurora",
+                "version": None,
+                "family": "aurora",
                 "ts_ms": snapshot.ts_ms,
                 "symbol": "ETHUSDT",
                 "score": 0.33,
@@ -213,6 +215,9 @@ class TestProcessSnapshot:
                 "why": ["score-ready"],
                 "features_used": ["obi", "delta_price"],
                 "shadow": True,
+                "shadow_only": True,
+                "authority_applied": False,
+                "no_effect": True,
                 "regime": "TREND_UP",
             }
         ]
@@ -314,6 +319,65 @@ class TestInjectAuroraParams:
         if aurora:
             assert aurora._regime_thresholds.get("HIGH_VOLATILITY") == 1.5
 
+    def test_asset_level_policy_maps_injected(self):
+        """Asset-level Aurora policy surfaces are cached on the adapter."""
+        strategy_config = {
+            "decision": {
+                "blocked_regimes": ["HIGH_VOLATILITY"],
+                "exit": {
+                    "time_exit_enabled": True,
+                    "max_hold_time_sec": 7200,
+                    "signal_exit_enabled": True,
+                    "signal_reversal_threshold": -0.15,
+                },
+            },
+            "assets": {
+                "BTCUSDT": {
+                    "enabled": True,
+                    "allowed_regimes": ["TREND_UP"],
+                    "weights": {"obi": 0.6, "delta_price": 0.2, "macro_resid": 0.2},
+                    "signal_threshold": {"enabled": True, "value": 0.25},
+                    "regime_thresholds": {"HIGH_VOLATILITY": 1.5, "DEFAULT": 0.9},
+                    "exit": {
+                        "sl_pct": 0.008,
+                        "max_hold_sec": 1800,
+                        "regime_tpsl": {
+                            "enabled": True,
+                            "mode": "pct",
+                            "sl_mult": {"DEFAULT": 1.1},
+                            "tp_mult": {"DEFAULT": 2.0},
+                        },
+                    },
+                    "trailing_stop": {
+                        "enabled": True,
+                        "activation_pct": 0.004,
+                        "trail_pct": 0.002,
+                    },
+                    "take_profit": {
+                        "tp_low_ratio": 1.2,
+                        "tp_high_ratio": 2.0,
+                    },
+                }
+            },
+        }
+        worker = _make_worker(strategy_config=strategy_config)
+        aurora = worker._plugin.providers.get("aurora")
+        if aurora is None:
+            aurora = SimpleNamespace()
+            worker._plugin.providers["aurora"] = aurora
+            worker._plugin.provider_configs["aurora"] = SimpleNamespace(threshold=0.10)
+            worker._inject_aurora_params(strategy_config)
+
+        assert aurora._blocked_regimes == {"HIGH_VOLATILITY"}
+        assert aurora._decision_exit_cfg["signal_reversal_threshold"] == pytest.approx(-0.15)
+        assert aurora._symbol_allowed_regimes["BTCUSDT"] == {"TREND_UP"}
+        assert aurora._symbol_signal_weights["BTCUSDT"]["obi"] == 0.6
+        assert aurora._symbol_signal_thresholds["BTCUSDT"] == pytest.approx(0.25)
+        assert aurora._symbol_exit_configs["BTCUSDT"]["sl_pct"] == pytest.approx(0.008)
+        assert aurora._symbol_exit_configs["BTCUSDT"]["regime_tpsl"]["tp_mult"]["DEFAULT"] == pytest.approx(2.0)
+        assert aurora._symbol_trailing_stop_configs["BTCUSDT"]["activation_pct"] == pytest.approx(0.004)
+        assert aurora._symbol_take_profit_configs["BTCUSDT"]["tp_low_ratio"] == pytest.approx(1.2)
+
     def test_direction_strength_injected(self):
         """Direction strength config injected."""
         strategy_config = {
@@ -386,6 +450,40 @@ class TestAdaptiveThreshold:
         worker._apply_regime_adaptive_threshold("LOW_VOLATILITY")
         assert worker._plugin.provider_configs["aurora"].threshold == pytest.approx(
             0.25)
+
+    def test_asset_threshold_and_regime_thresholds_override_global(self):
+        worker = _make_worker(
+            strategy_config={
+                "decision": {
+                    "signal_threshold": 0.10,
+                    "regime_threshold_multipliers": {"DEFAULT": 1.0},
+                },
+                "assets": {
+                    "BTCUSDT": {
+                        "enabled": True,
+                        "signal_threshold": {"enabled": True, "value": 0.25},
+                        "regime_thresholds": {"HIGH_VOLATILITY": 1.5, "DEFAULT": 0.9},
+                    }
+                },
+            }
+        )
+
+        if "aurora" not in worker._plugin.providers:
+            worker._plugin.providers["aurora"] = SimpleNamespace()
+            worker._plugin.provider_configs["aurora"] = SimpleNamespace(threshold=0.10)
+            worker._inject_aurora_params(worker._strategy_config)
+            worker._aurora_default_base_threshold = 0.10
+
+        worker._prepare_aurora_symbol_policy("BTCUSDT")
+        assert worker._plugin.provider_configs["aurora"].threshold == pytest.approx(
+            0.25)
+
+        worker._apply_regime_adaptive_threshold(
+            "HIGH_VOLATILITY",
+            symbol="BTCUSDT",
+        )
+        assert worker._plugin.provider_configs["aurora"].threshold == pytest.approx(
+            0.375)
 
 
 # ---------------------------------------------------------------------------

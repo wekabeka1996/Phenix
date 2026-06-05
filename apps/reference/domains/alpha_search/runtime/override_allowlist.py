@@ -33,14 +33,26 @@ AURORA_OVERRIDE_PATHS: Set[str] = {
     "aurora.decision.feature_neutrals.*",
     # Regime threshold multipliers in aurora.yaml
     "aurora.decision.regime_threshold_multipliers.*",
+    # Regime blocking policy in aurora.yaml
+    "aurora.decision.blocked_regimes",
     # Direction strength scoring in aurora.yaml
     "aurora.decision.direction_strength_scoring.strength_alpha",
     "aurora.decision.direction_strength_scoring.strength_cap",
     "aurora.decision.direction_strength_scoring.strength_exp",
+    "aurora.decision.exit.time_exit_enabled",
+    "aurora.decision.exit.max_hold_time_sec",
+    "aurora.decision.exit.signal_exit_enabled",
+    "aurora.decision.exit.signal_reversal_threshold",
     # Per-asset overrides in aurora.yaml
     "aurora.assets.*.weights.*",
+    "aurora.assets.*.feature_neutrals.*",
     "aurora.assets.*.regime_thresholds.*",
-    "aurora.assets.*.signal_threshold",
+    "aurora.assets.*.signal_threshold.*",
+    "aurora.assets.*.allowed_regimes",
+    "aurora.assets.*.exit.sl_pct",
+    "aurora.assets.*.exit.max_hold_sec",
+    "aurora.assets.*.exit.regime_tpsl.*",
+    "aurora.assets.*.trailing_stop.*",
     # ------------------------------------------------------------------
     # alpha_search adapter params (SSOT for alpha_search scoring).
     # These override the adapter directly ΓÇö no need to touch aurora.yaml.

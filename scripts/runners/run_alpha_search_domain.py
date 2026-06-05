@@ -9,6 +9,7 @@ No dependency on apps/reference/main.py.
 Usage:
     python scripts/run_alpha_search_domain.py
     python scripts/run_alpha_search_domain.py --matrix config/alpha_search/scenario_matrix.yaml
+    python scripts/run_alpha_search_domain.py --source-mode live_tail
     python scripts/run_alpha_search_domain.py --log-level DEBUG
 """
 
@@ -31,11 +32,14 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run with default matrix (config/alpha_search/scenario_matrix.yaml)
+    # Run with default registry_v2 in live shadow mode
   python scripts/run_alpha_search_domain.py
 
   # Run with custom matrix
   python scripts/run_alpha_search_domain.py --matrix path/to/matrix.yaml
+
+    # Force registry replay instead of live tail
+    python scripts/run_alpha_search_domain.py --source-mode replay
 
   # Debug mode
   python scripts/run_alpha_search_domain.py --log-level DEBUG
@@ -45,7 +49,14 @@ Examples:
         "--matrix",
         type=str,
         default=None,
-        help="Path to scenario_matrix.yaml (default: config/alpha_search/scenario_matrix.yaml)",
+        help="Path to scenario_registry_v2.yaml or scenario_matrix.yaml (default: config/alpha_search/scenario_registry_v2.yaml)",
+    )
+    parser.add_argument(
+        "--source-mode",
+        type=str,
+        default=None,
+        choices=["live_tail", "replay"],
+        help="Override registry input mode (default runner behavior: live_tail)",
     )
     parser.add_argument(
         "--log-level",
@@ -61,6 +72,7 @@ Examples:
         asyncio.run(run(
             matrix_path=args.matrix,
             log_level=args.log_level,
+            source_mode=args.source_mode,
         ))
     except KeyboardInterrupt:
         print("\nAlpha Search Domain stopped.")

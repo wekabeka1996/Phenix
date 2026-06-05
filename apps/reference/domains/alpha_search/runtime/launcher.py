@@ -32,20 +32,51 @@ from .logger_factory import ScenarioLoggerFactory
 
 LOG = logging.getLogger(__name__)
 
+DEFAULT_REGISTRY_PATH = Path("config") / "alpha_search" / "scenario_registry_v2.yaml"
+LEGACY_MATRIX_PATH = Path("config") / "alpha_search" / "scenario_matrix.yaml"
 
-def load_matrix_config(matrix_path: Path) -> ScenarioMatrixConfig:
+
+def _is_shadow_registry(raw: dict) -> bool:
+    """Return True if YAML has registry_id key (ShadowScenarioRegistry format)."""
+    return "registry_id" in raw and "matrix_id" not in raw
+
+
+def load_matrix_config(
+    matrix_path: Path,
+    *,
+    registry_source_mode: Optional[str] = None,
+) -> ScenarioMatrixConfig:
     """
-    Load and validate scenario matrix config (fail-closed).
+    Load and validate scenario matrix or shadow registry config (fail-closed).
+
+    Auto-detects format:
+    - If YAML has `registry_id` key → ShadowScenarioRegistry (scenario_registry_v2.yaml)
+    - Otherwise → ScenarioMatrixConfig (scenario_matrix.yaml)
 
     Raises:
-        FileNotFoundError: if matrix YAML not found
+        FileNotFoundError: if file not found
         pydantic.ValidationError: if schema invalid
+        ValueError: if registry conversion fails
     """
     if not matrix_path.exists():
         raise FileNotFoundError(f"Scenario matrix not found: {matrix_path}")
 
     with open(matrix_path, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f)
+
+    if _is_shadow_registry(raw):
+        LOG.info(
+            "Detected ShadowScenarioRegistry format — converting via registry_adapter: %s",
+            matrix_path,
+        )
+        from apps.reference.domains.alpha_search.shadow.registry_adapter import (
+            load_registry_as_matrix_config,
+        )
+        return load_registry_as_matrix_config(
+            str(matrix_path),
+            source_mode=registry_source_mode or "replay",
+            stream_path="logs/alpha_input/alpha_input_v1.jsonl",
+        )
 
     return ScenarioMatrixConfig.model_validate(raw)
 
@@ -243,6 +274,7 @@ async def main_reactor(
 async def run(
     matrix_path: Optional[str] = None,
     log_level: str = "INFO",
+    source_mode: Optional[str] = None,
 ) -> None:
     """
     Top-level entry point.
@@ -256,10 +288,9 @@ async def run(
     # apps/reference/domains/alpha_search/runtime/launcher.py -> project root
     project_root = Path(__file__).resolve().parents[5]
 
-    # Default matrix path
+    # Default runtime source: registry_v2 is primary; legacy matrix is explicit opt-in.
     if matrix_path is None:
-        matrix_path_resolved = project_root / "config" / \
-            "alpha_search" / "scenario_matrix.yaml"
+        matrix_path_resolved = project_root / DEFAULT_REGISTRY_PATH
     else:
         matrix_path_resolved = Path(matrix_path)
         if not matrix_path_resolved.is_absolute():
@@ -273,16 +304,34 @@ async def run(
         os.environ["ALPHA_SEARCH_LOG_DIR"] = str(session_dir / "aggregate")
 
     # Load config (fail-closed)
-    config = load_matrix_config(matrix_path_resolved)
+    config = load_matrix_config(
+        matrix_path_resolved,
+        registry_source_mode=source_mode or "live_tail",
+    )
+    config_source = "registry_v2" if config.matrix_id.startswith("registry:") else "legacy_matrix"
 
     # Setup logging
     logger = setup_logging(session_dir, log_level=log_level)
 
+    if config_source == "legacy_matrix":
+        logger.warning(
+            "Alpha Search Standalone Domain running in LEGACY matrix mode; registry_v2 is not active\n"
+            f"  source=legacy_matrix\n"
+            f"  config_file_loaded={matrix_path_resolved}"
+        )
+
     logger.info(
         f"Alpha Search Standalone Domain starting\n"
-        f"  matrix: {matrix_path_resolved}\n"
+        f"  config_file_loaded: {matrix_path_resolved}\n"
+        f"  registry_file_loaded: {str(config_source == 'registry_v2').lower()}\n"
+        f"  source: {config_source}\n"
+        f"  input_source_mode: {config.input.source_mode}\n"
+        f"  matrix_id: {config.matrix_id}\n"
         f"  session: {session_dir}\n"
-        f"  scenarios: {len([s for s in config.scenarios if s.enabled])} enabled\n"
+        f"  scenario_count_registered: {len(config.scenarios)}\n"
+        f"  scenario_count_loaded: {len(config.scenarios)}\n"
+        f"  scenario_count_enabled: {len([s for s in config.scenarios if s.enabled])}\n"
+        f"  scenario_ids_loaded: {[s.scenario_id for s in config.scenarios]}\n"
         f"  parallelism: {config.runtime.parallelism}"
     )
 

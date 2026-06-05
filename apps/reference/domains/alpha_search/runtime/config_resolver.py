@@ -17,6 +17,13 @@ from pathlib import Path
 from typing import Any, Dict, Tuple, Optional
 
 import yaml
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+
+from apps.reference.config_models import (
+    ExitManagerConfig,
+    AuroraInstrumentConfig,
+    CANONICAL_WEIGHT_KEYS,
+)
 
 from ..config_models import (
     AlphaSearchConfig,
@@ -28,6 +35,60 @@ from .contracts import ScenarioSpec
 from .override_allowlist import validate_overrides, warn_partial_aurora_overrides
 
 LOG = logging.getLogger(__name__)
+
+
+SUPPORTED_AURORA_DECISION_FIELDS = {
+    "signal_threshold",
+    "signal_weights",
+    "feature_neutrals",
+    "regime_threshold_multipliers",
+    "blocked_regimes",
+    "direction_strength_scoring",
+    "gates",
+    "exit",
+}
+
+
+class AuroraScenarioDecisionConfig(BaseModel):
+    """Strict subset of Aurora decision config consumed by alpha_search runtime."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    signal_threshold: Optional[float] = None
+    signal_weights: Optional[Dict[str, float]] = None
+    feature_neutrals: Optional[Dict[str, float]] = None
+    regime_threshold_multipliers: Optional[Dict[str, float]] = None
+    blocked_regimes: Optional[list[str]] = None
+    direction_strength_scoring: Optional[Dict[str, Any]] = None
+    gates: Optional[Dict[str, Any]] = None
+    exit: Optional[ExitManagerConfig] = None
+
+    @field_validator("signal_weights")
+    @classmethod
+    def validate_signal_weight_keys(
+        cls,
+        value: Optional[Dict[str, float]],
+    ) -> Optional[Dict[str, float]]:
+        if value is None:
+            return value
+        invalid_keys = sorted(set(value.keys()) - CANONICAL_WEIGHT_KEYS)
+        if invalid_keys:
+            raise ValueError(
+                "Invalid decision.signal_weights keys: "
+                f"{invalid_keys}. Valid keys: {sorted(CANONICAL_WEIGHT_KEYS)}"
+            )
+        return value
+
+
+class AuroraScenarioStrategyConfig(BaseModel):
+    """Strict Aurora strategy subset needed by alpha_search scenario runtime."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    decision: AuroraScenarioDecisionConfig = Field(
+        default_factory=AuroraScenarioDecisionConfig
+    )
+    assets: Dict[str, AuroraInstrumentConfig] = Field(default_factory=dict)
 
 
 class ConfigResolutionError(RuntimeError):
@@ -272,13 +333,50 @@ def _extract_strategy_config(
 ) -> Dict[str, Any]:
     """Extract strategy-specific raw config dict for adapter injection."""
     if strategy_type == "aurora":
-        return copy.deepcopy(raw_configs.get("aurora", {}))
+        return _validate_aurora_strategy_subset(raw_configs.get("aurora", {}))
     elif strategy_type == "mean_reversion":
         return copy.deepcopy(raw_configs.get("mean_reversion", {}))
     elif strategy_type == "ensemble":
         # Ensemble uses alpha_search + alpha_search_system (no separate strategy file)
         return {}
     return {}
+
+
+def _validate_aurora_strategy_subset(raw_strategy: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate the Aurora surfaces consumed by alpha_search scenarios."""
+    if not raw_strategy:
+        return {}
+
+    decision = copy.deepcopy(raw_strategy.get("decision", {}))
+    if "signal_threshold" not in decision and "threshold" in decision:
+        decision["signal_threshold"] = decision.pop("threshold")
+
+    decision_subset = {
+        key: value
+        for key, value in decision.items()
+        if key in SUPPORTED_AURORA_DECISION_FIELDS
+    }
+
+    try:
+        subset = AuroraScenarioStrategyConfig.model_validate(
+            {
+                "decision": decision_subset,
+                "assets": raw_strategy.get("assets", {}),
+            }
+        )
+    except ValidationError as exc:
+        raise ConfigResolutionError(
+            "aurora",
+            f"Aurora strategy subset validation failed: {exc}",
+        ) from exc
+
+    validated = copy.deepcopy(raw_strategy)
+    validated["decision"] = subset.decision.model_dump(exclude_none=True)
+    validated["assets"] = {
+        symbol: asset.model_dump(exclude_none=True)
+        for symbol, asset in subset.assets.items()
+    }
+    return validated
 
 
 # =============================================================================

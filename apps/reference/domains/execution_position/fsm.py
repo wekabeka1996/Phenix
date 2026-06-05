@@ -61,6 +61,7 @@ from apps.reference.telemetry.trade_lifecycle_logger import (
     POSITION_POLICY_SIDECAR_RECORD_KIND,
     append_trade_lifecycle_record,
 )
+from apps.reference.utils.trading_modes import get_domain_mode_from_mapping
 
 # FIX-LIFECYCLE-01: Trade lifecycle source-of-truth logger
 try:
@@ -98,6 +99,9 @@ from apps.reference.domains.execution_position.lifecycle import LifecycleManager
 from apps.reference.domains.execution_position.intent_router import IntentRouter
 from apps.reference.domains.execution_position.event_handlers import EPEventHandlers
 from apps.reference.domains.execution_position.close_executor import CloseExecutor
+from apps.reference.domains.execution_position.microstructure_snapshot import (
+    get_microstructure_snapshot,
+)
 from apps.reference.domains.execution_position.open_executor import OpenExecutor
 from apps.reference.domains.execution_position.bracket_manager import BracketManager
 from apps.reference.domains.execution_position.position_policy_sidecar import (
@@ -574,6 +578,8 @@ class ExecPosFSM(
                         self._on_order_state_changed)
         self.bus.listen("EVT:FEATURES_CALCULATED",
                         self._on_features_calculated)
+        self.bus.listen("CMD:PROCESS_STRATEGY",
+                self._on_process_strategy_snapshot)
         # EP-01: Subscribe to regime changes for dynamic risk adaptation
         self.bus.listen("EVT:REGIME_DETECTED", self._on_regime_detected)
         self.bus.listen("EVT:EXECUTION_CLOSE_RECONCILED",
@@ -871,8 +877,12 @@ class ExecPosFSM(
         features_snap = self._last_features_cache.get(symbol) or {}
         feats = features_snap.get("features", {}) if isinstance(
             features_snap, dict) else {}
+        snapshot = get_microstructure_snapshot(features_snap) if isinstance(
+            features_snap, dict) else None
         atr_14 = None
-        atr_raw = feats.get("atr_14")
+        atr_raw = snapshot.atr_14 if snapshot is not None else None
+        if atr_raw is None:
+            atr_raw = feats.get("atr_14")
         if atr_raw not in (None, ""):
             try:
                 atr_14 = Decimal(str(atr_raw))
@@ -976,8 +986,14 @@ class ExecPosFSM(
             if features_snap is None:
                 continue
             feats = features_snap.get("features", {})
-            price_raw = feats.get("price")
-            atr_raw = feats.get("atr_14")
+            snapshot = get_microstructure_snapshot(features_snap) if isinstance(
+                features_snap, dict) else None
+            price_raw = snapshot.price if snapshot is not None else None
+            atr_raw = snapshot.atr_14 if snapshot is not None else None
+            if price_raw is None:
+                price_raw = feats.get("price")
+            if atr_raw is None:
+                atr_raw = feats.get("atr_14")
             if price_raw is None or atr_raw is None:
                 continue
             try:
@@ -3134,16 +3150,70 @@ class ExecPosFSM(
         if self._position_policy_sidecar is not None:
             self._position_policy_sidecar.on_features_calculated(event)
 
+    def _on_process_strategy_snapshot(self, event: Message) -> None:
+        """Observe FE bar-semantic payloads so EP caches nested volatility/liquidity semantics."""
+        self._evt_handlers.on_features_calculated(event)
+        if self._position_policy_sidecar is not None:
+            self._position_policy_sidecar.on_features_calculated(event)
+
     def _on_order_state_changed(self, event: Message) -> None:
         """Preserve incumbent cancel-state handling, then forward to the sidecar."""
         self._handle_cancel_event(event)
         if self._position_policy_sidecar is not None:
             self._position_policy_sidecar.on_order_state_changed(event)
 
+    def _clear_local_lifecycle_after_close_reconcile(self, symbol: str) -> None:
+        """Drop stale local lifecycle truth after authoritative flat reconcile."""
+        symbol_key = str(symbol or "").strip().upper()
+        if not symbol_key:
+            return
+
+        manage_flow = self.manage_flows.get(symbol_key)
+        if manage_flow is not None:
+            manage_flow.reset()
+            self._set_manage_truth_source(symbol_key, TRUTH_SOURCE_RUNTIME_LOCAL)
+
+        close_flow = self.close_flows.get(symbol_key)
+        if close_flow is not None:
+            close_flow.state = CloseState.FLAT
+            close_flow.position_active = False
+
+        self._clear_symbol_brackets(symbol_key)
+        self._last_lifecycle_rid_by_symbol.pop(symbol_key, None)
+        self._last_lifecycle_ikey_by_symbol.pop(symbol_key, None)
+        self._last_entry_side_by_symbol.pop(symbol_key, None)
+        self._last_trade_id_by_symbol.pop(symbol_key, None)
+        self._accumulated_fees_by_symbol.pop(symbol_key, None)
+
+        for entry_order_id, pending in list(self._pending_brackets.items()):
+            pending_symbol = str((pending or {}).get("symbol") or "").strip().upper()
+            if pending_symbol != symbol_key:
+                continue
+            self._pending_brackets.pop(entry_order_id, None)
+            try:
+                write_pending_brackets_cleared(
+                    entry_order_id=entry_order_id,
+                    reason="close_reconciled",
+                    symbol=symbol_key,
+                )
+            except Exception as exc:
+                LOG.warning(
+                    "Failed to clear pending brackets WAL during close reconcile for %s/%s: %s",
+                    symbol_key,
+                    entry_order_id,
+                    exc,
+                )
+
     def _on_execution_close_reconciled(self, event: Message) -> None:
         """Forward authoritative close reconciliation after incumbent ownership resolves."""
         payload = dict(getattr(event, "pld", None) or {})
         symbol = str(payload.get("symbol") or "").strip().upper()
+        if symbol:
+            self._clear_local_lifecycle_after_close_reconcile(symbol)
+            self._persist_restore_artifact_snapshot(
+                trigger="execution_close_reconciled",
+                allow_empty=True,
+            )
         request_context = self._position_policy_close_requests.get(symbol)
         if request_context is not None:
             self._emit_position_policy_close_request_state(
@@ -3476,12 +3546,42 @@ class ExecPosFSM(
         if candidate.mode.value == "disable":
             return None
 
+        execution_domain_mode = "unknown"
+        try:
+            execution_domain_mode = get_domain_mode_from_mapping(
+                self.config,
+                "execution_position",
+            )
+        except Exception as exc:
+            raw_mode = ""
+            try:
+                trading_section = getattr(self.config, "trading", None)
+                raw_mode = str(
+                    getattr(trading_section, "mode", None)
+                    or getattr(self.config, "trading_mode", "")
+                    or ""
+                ).strip().lower()
+            except Exception:
+                raw_mode = ""
+            if raw_mode in {"testnet", "live", "backtest"}:
+                execution_domain_mode = raw_mode
+                LOG.warning(
+                    "PositionPolicySidecar resolved direct execution domain mode literal %s; prefer trading.mode profile names in SSOT config",
+                    raw_mode,
+                )
+            else:
+                LOG.warning(
+                    "PositionPolicySidecar could not resolve execution domain mode; defaulting observe-only authority (%s)",
+                    exc,
+                )
+
         return PositionPolicySidecar(
             config=candidate,
             bus=self.bus,
             manage_flow_getter=lambda symbol: self.manage_flows.get(
                 str(symbol).upper()),
             known_symbols_getter=self._position_policy_known_symbols,
+            execution_domain_mode=execution_domain_mode,
         )
 
     def shutdown(self):

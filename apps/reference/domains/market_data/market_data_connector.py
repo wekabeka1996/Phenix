@@ -97,7 +97,20 @@ class MarketDataConnector:
 
         # Poll interval: Direct access (validated by Pydantic).
         self.poll_interval_sec: int = trading.market_data.poll_interval_sec
-        self.websocket_streams = ["bookTicker", "aggTrade"]
+        self.websocket_streams = list(trading.market_data.websocket_streams)
+        if "bookTicker" not in self.websocket_streams:
+            raise ValueError(
+                "trading.market_data.websocket_streams must include bookTicker"
+            )
+        self.trade_event_names = {
+            stream_name
+            for stream_name in self.websocket_streams
+            if stream_name in {"trade", "aggTrade"}
+        }
+        if not self.trade_event_names:
+            raise ValueError(
+                "trading.market_data.websocket_streams must include trade or aggTrade"
+            )
 
         # Resolve domain mode (live vs testnet).
         mode = get_domain_mode_from_mapping(self.config, "market_data")
@@ -168,8 +181,8 @@ class MarketDataConnector:
         for symbol in self.symbols:
             # Binance requires lowercase symbols for streams
             symbol_lower = symbol.lower()
-            streams.append(f"{symbol_lower}@bookTicker")
-            streams.append(f"{symbol_lower}@aggTrade")
+            for stream_name in self.websocket_streams:
+                streams.append(f"{symbol_lower}@{stream_name}")
 
         return {
             "method": "SUBSCRIBE",
@@ -217,8 +230,8 @@ class MarketDataConnector:
                 )
                 # Removed LOG.debug for hot path optimization
 
-            elif event_type == "aggTrade":
-                # Aggregated Trade Event (replaces raw 'trade' for performance)
+            elif event_type in self.trade_event_names:
+                # Trade event: support both raw trade and aggTrade contracts.
                 symbol = msg["s"] if "s" in msg else ""
                 price = msg["p"] if "p" in msg else "0"
                 qty = msg["q"] if "q" in msg else "0"
@@ -229,7 +242,7 @@ class MarketDataConnector:
                 if ts <= 0:
                     return
                 # Aggregate Trade ID for deduplication
-                trade_id = msg.get("a")
+                trade_id = msg.get("a") if event_type == "aggTrade" else msg.get("t")
 
                 self.aggregator.on_trade(
                     symbol=symbol,

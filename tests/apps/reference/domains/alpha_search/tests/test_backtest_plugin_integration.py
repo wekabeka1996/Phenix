@@ -9,7 +9,9 @@ Tests for apps/reference/domains/alpha_search/backtest_plugin.py
 import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
+from decimal import Decimal
 
+from apps.reference.domains.alpha_search.alpha_model import AlphaScore
 from apps.reference.domains.alpha_search.backtest_plugin import AlphaSearchBacktestPlugin
 from apps.reference.domains.alpha_search.config_models import (
     get_default_config,
@@ -328,9 +330,7 @@ class TestMultiProvider:
 class TestVirtualTraderExits:
     """Test virtual trader risk exits."""
 
-    def test_drawdown_exit_closes_position(self):
-        """Adverse move >= max_drawdown_exit closes open virtual position."""
-        from apps.reference.domains.alpha_search.backtest_plugin import VirtualPosition
+    def _make_plugin(self):
         from apps.reference.domains.alpha_search.config_models import (
             AuroraAdapterConfig,
             ProviderConfig,
@@ -347,9 +347,13 @@ class TestVirtualTraderExits:
             adapter=AuroraAdapterConfig(),
         )
         cfg.virtual_trader.enabled = True
-        cfg.virtual_trader.exit.max_drawdown_exit = 1.2
+        return AlphaSearchBacktestPlugin(event_bus=bus, config=cfg)
 
-        plugin = AlphaSearchBacktestPlugin(event_bus=bus, config=cfg)
+    def test_drawdown_exit_closes_position(self):
+        """Adverse move >= max_drawdown_exit closes open virtual position."""
+        from apps.reference.domains.alpha_search.backtest_plugin import VirtualPosition
+        plugin = self._make_plugin()
+        plugin.config.virtual_trader.exit.max_drawdown_exit = 1.2
 
         provider_id = next(iter(plugin.providers.keys()))
         plugin.open_positions[provider_id].append(
@@ -374,3 +378,155 @@ class TestVirtualTraderExits:
         assert plugin.open_positions[provider_id] == []
         assert len(plugin.closed_positions[provider_id]) == 1
         assert plugin.closed_positions[provider_id][0]["exit_reason"] == "drawdown_exit"
+
+    def test_signal_exit_closes_position_on_reversal(self):
+        """Aurora signal-exit policy closes an open long on reversal score."""
+        from apps.reference.domains.alpha_search.backtest_plugin import VirtualPosition
+
+        plugin = self._make_plugin()
+        provider_id = next(iter(plugin.providers.keys()))
+        plugin.configure_aurora_virtual_policy(
+            decision_exit={
+                "time_exit_enabled": False,
+                "signal_exit_enabled": True,
+                "signal_reversal_threshold": -0.1,
+            },
+        )
+
+        plugin.open_positions[provider_id].append(
+            VirtualPosition(
+                provider_id=provider_id,
+                symbol="BTCUSDT",
+                side="BUY",
+                entry_price=100.0,
+                entry_ts=1740000000000,
+                signal_id="sig_test_signal_exit",
+                latest_score=0.4,
+                high_water_price=101.0,
+                low_water_price=100.0,
+            )
+        )
+
+        plugin._manage_virtual_positions(
+            provider_id=provider_id,
+            symbol="BTCUSDT",
+            current_price=100.2,
+            current_ts=1740000060000,
+            current_score=-0.2,
+        )
+
+        assert plugin.open_positions[provider_id] == []
+        assert plugin.closed_positions[provider_id][0]["exit_reason"] == "signal_exit"
+
+    def test_trailing_stop_closes_after_profit_retrace(self):
+        """Aurora trailing stop exits after activation and retrace from the high-water mark."""
+        from apps.reference.domains.alpha_search.backtest_plugin import VirtualPosition
+
+        plugin = self._make_plugin()
+        provider_id = next(iter(plugin.providers.keys()))
+        plugin.configure_aurora_virtual_policy(
+            decision_exit={
+                "time_exit_enabled": False,
+                "signal_exit_enabled": False,
+            },
+            symbol_trailing_stop_configs={
+                "BTCUSDT": {
+                    "enabled": True,
+                    "activation_pct": 0.01,
+                    "trail_pct": 0.01,
+                }
+            },
+        )
+
+        plugin.open_positions[provider_id].append(
+            VirtualPosition(
+                provider_id=provider_id,
+                symbol="BTCUSDT",
+                side="BUY",
+                entry_price=100.0,
+                entry_ts=1740000000000,
+                signal_id="sig_test_trailing",
+                latest_score=0.3,
+                high_water_price=103.0,
+                low_water_price=100.0,
+            )
+        )
+
+        plugin._manage_virtual_positions(
+            provider_id=provider_id,
+            symbol="BTCUSDT",
+            current_price=101.5,
+            current_ts=1740000060000,
+            current_score=0.15,
+        )
+
+        assert plugin.open_positions[provider_id] == []
+        assert plugin.closed_positions[provider_id][0]["exit_reason"] == "trailing_stop_exit"
+
+    def test_regime_tpsl_target_closes_position(self):
+        """Aurora regime TP/SL initializes target on open and closes when target is reached."""
+        plugin = self._make_plugin()
+        provider_id = next(iter(plugin.providers.keys()))
+        plugin.configure_aurora_virtual_policy(
+            decision_exit={
+                "time_exit_enabled": False,
+                "signal_exit_enabled": False,
+            },
+            symbol_exit_configs={
+                "BTCUSDT": {
+                    "sl_pct": 0.01,
+                    "regime_tpsl": {
+                        "enabled": True,
+                        "mode": "pct_mult",
+                        "sl_mult": {"DEFAULT": 1.0},
+                        "tp_mult": {"DEFAULT": 2.0},
+                        "min_sl_pct": 0.003,
+                        "max_sl_pct": 0.06,
+                        "min_tp_rr": 0.3,
+                        "max_tp_rr": 3.0,
+                        "min_dist_bps": 15,
+                    },
+                }
+            },
+            symbol_take_profit_configs={
+                "BTCUSDT": {
+                    "tp_low_ratio": 1.0,
+                    "tp_high_ratio": 2.0,
+                }
+            },
+        )
+
+        score = AlphaScore(
+            model_name="aurora_adapter",
+            symbol="BTCUSDT",
+            score=Decimal("0.30"),
+            confidence=Decimal("0.95"),
+            features_used=["obi"],
+            why=["test-entry"],
+        )
+
+        plugin._maybe_open_virtual_position(
+            provider_id=provider_id,
+            symbol="BTCUSDT",
+            score=score,
+            current_price=100.0,
+            current_ts=1740000000000,
+            signal_id="sig_test_tpsl",
+            model_signal_id=None,
+            regime="TREND_UP",
+        )
+
+        assert len(plugin.open_positions[provider_id]) == 1
+        assert plugin.open_positions[provider_id][0].stop_price == pytest.approx(99.0)
+        assert plugin.open_positions[provider_id][0].target_price == pytest.approx(102.0)
+
+        plugin._manage_virtual_positions(
+            provider_id=provider_id,
+            symbol="BTCUSDT",
+            current_price=102.1,
+            current_ts=1740000060000,
+            current_score=0.2,
+        )
+
+        assert plugin.open_positions[provider_id] == []
+        assert plugin.closed_positions[provider_id][0]["exit_reason"] == "regime_tpsl_target"

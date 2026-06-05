@@ -169,7 +169,7 @@ mean_reversion:
     # --- DOGE (CHAMPION ) ---
     DOGEUSDT:
       enabled: true
-      position_mode: "STRICT"
+      position_mode: "DYNAMIC"
 
       # P1: Active Leverage Management
       leverage:
@@ -190,8 +190,8 @@ mean_reversion:
 
     # --- BTC (BRONZE ) ---
     BTCUSDT:
-      enabled: false
-      position_mode: "STRICT"
+      enabled: true
+      position_mode: "DYNAMIC"
 
       # P1: Active Leverage Management
       leverage:
@@ -211,8 +211,8 @@ mean_reversion:
 
     # --- XRP (SILVER ) ---
     XRPUSDT:
-      enabled: false
-      position_mode: "STRICT"
+      enabled: true
+      position_mode: "DYNAMIC"
 
       # P1: Active Leverage Management
       leverage:
@@ -232,8 +232,8 @@ mean_reversion:
 
     # --- Optional assets (disabled) ---
     ETHUSDT:
-      enabled: false
-      position_mode: "STRICT"
+      enabled: true
+      position_mode: "DYNAMIC"
       strategy:
         bb_window: null
         bb_num_std: null
@@ -245,8 +245,8 @@ mean_reversion:
       allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
 
     SOLUSDT:
-      enabled: false
-      position_mode: "STRICT"
+      enabled: true
+      position_mode: "DYNAMIC"
       strategy:
         bb_window: 24
         bb_num_std: 1.8
@@ -255,6 +255,16 @@ mean_reversion:
         tp_to_mid: true
         sl_atr_mult: 1.0
         cooldown_sec: 210
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
+
+    BNBUSDT:
+      enabled: true
+      position_mode: "DYNAMIC"
+      allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
+
+    1000PEPEUSDT:
+      enabled: true
+      position_mode: "DYNAMIC"
       allowed_regimes: ["FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH", "MEAN_REVERSION"]
 
   #

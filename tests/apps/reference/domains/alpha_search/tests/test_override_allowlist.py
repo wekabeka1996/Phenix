@@ -68,6 +68,16 @@ class TestValidateOverrides:
         overrides = {"aurora.decision.signal_weights.obi": 0.3}
         assert validate_overrides("aurora", overrides) == []
 
+    def test_aurora_asset_policy_paths_allowed(self):
+        overrides = {
+            "aurora.assets.BTCUSDT.allowed_regimes": ["TREND_UP"],
+            "aurora.assets.BTCUSDT.signal_threshold.value": 0.22,
+            "aurora.assets.BTCUSDT.exit.regime_tpsl.sl_mult.DEFAULT": 1.1,
+            "aurora.assets.BTCUSDT.trailing_stop.enabled": True,
+            "aurora.decision.exit.signal_exit_enabled": True,
+        }
+        assert validate_overrides("aurora", overrides) == []
+
     def test_aurora_rejected_path(self):
         overrides = {"aurora.internal.secret": True}
         rejected = validate_overrides("aurora", overrides)
@@ -155,6 +165,17 @@ class TestAllowlistStructure:
 
     def test_aurora_provider_threshold_in_allowlist(self):
         assert "alpha_search.providers.aurora.threshold" in AURORA_OVERRIDE_PATHS
+
+    def test_aurora_asset_signal_threshold_wildcard_is_allowlisted(self):
+        assert "aurora.assets.*.signal_threshold.*" in AURORA_OVERRIDE_PATHS
+
+    def test_aurora_blocked_regimes_is_allowlisted(self):
+        assert "aurora.decision.blocked_regimes" in AURORA_OVERRIDE_PATHS
+
+    def test_aurora_exit_policy_paths_are_allowlisted(self):
+        assert "aurora.decision.exit.signal_exit_enabled" in AURORA_OVERRIDE_PATHS
+        assert "aurora.assets.*.exit.regime_tpsl.*" in AURORA_OVERRIDE_PATHS
+        assert "aurora.assets.*.trailing_stop.*" in AURORA_OVERRIDE_PATHS
 
     def test_ensemble_system_model_tuning_wildcard(self):
         assert "alpha_search_system.momentum.*" in ENSEMBLE_OVERRIDE_PATHS

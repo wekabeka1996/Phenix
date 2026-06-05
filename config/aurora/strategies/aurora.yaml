@@ -210,6 +210,8 @@ aurora:
       - SOLUSDT
       - DOGEUSDT
       - XRPUSDT
+      - BNBUSDT
+      - 1000PEPEUSDT
     behavior_fsm:
       enable: false
       high_vol_multiplier: 2.0
@@ -418,7 +420,7 @@ aurora:
     # Source: aurora_optimal_full_v1.yaml, aurora_phase3_production.yaml
     ETHUSDT:
       enabled: true
-      position_mode: "STRICT"
+      position_mode: "DYNAMIC"
 
       # P1: Active Leverage Management
       leverage:
@@ -515,7 +517,7 @@ aurora:
         trail_pct: 0.01                 # P1.5: was 0.006
         min_update_interval_sec: 5
 
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY"]  # P1.5: LOW_VOLATILITY removed — worst regime by net PnL (-141 USDT)
+      allowed_regimes: ["HIGH_VOLATILITY", "LOW_VOLATILITY", "TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "UNCERTAIN", "FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
       signal_threshold:
         enabled: false  # P1.5: mirror BTC (BTC has signal_threshold disabled)
         value: null     # P1.5: mirror BTC
@@ -565,7 +567,7 @@ aurora:
         delta_price: 0.294059
         absorption: 0.0562502 # R2: placeholder, calibrate in Phase 2
       enabled: true
-      position_mode: "STRICT"
+      position_mode: "DYNAMIC"
 
       liquidity_gate:
         enabled: true
@@ -627,7 +629,7 @@ aurora:
         tp_high_ratio: 0.60
         partial_exit_pct: 0.31
 
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY"]  # P1.5: LOW_VOLATILITY removed
+      allowed_regimes: ["HIGH_VOLATILITY", "LOW_VOLATILITY", "TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "UNCERTAIN", "FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
 
       trailing_stop:
         enabled: true
@@ -655,18 +657,16 @@ aurora:
       timeframe_sec: null
 
     # =========================================================================
-    # P2-2: DOGE/XRP REMOVED - MR-only symbols per strategies.yaml registry
+    # DOGE/XRP HYBRID ROLLOUT
     # =========================================================================
-    # DOGEUSDT and XRPUSDT are assigned to mean_reversion ONLY in strategies.yaml.
-    # Keeping them in aurora.assets was a source of confusion.
-    # Registry SSOT (strategies_registry.assignments) now controls activation.
-    # See: dm_strategy_ssot_implement_01.md, P1-1 fix.
+    # Registry SSOT (strategies_registry.assignments) now activates aurora
+    # for DOGEUSDT and XRPUSDT alongside MR, MD-AMR and LLM shadow ingress.
     # =========================================================================
 
     # BTCUSDT - Golden Run Configuration (CLEAN SLATE RESTORE)
     BTCUSDT:
       enabled: true
-      position_mode: "STRICT"
+      position_mode: "DYNAMIC"
 
       # 1. Leverage & Sizing
       leverage:
@@ -759,7 +759,7 @@ aurora:
         trail_pct: 0.01
         min_update_interval_sec: 5
 
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "HIGH_VOLATILITY", "MEAN_REVERSION"]  # P1.5: LOW_VOLATILITY removed
+      allowed_regimes: ["HIGH_VOLATILITY", "LOW_VOLATILITY", "TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "UNCERTAIN", "FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
       signal_threshold:
         enabled: false
         value: null
@@ -785,7 +785,7 @@ aurora:
     # =========================================================================
     BNBUSDT:
       enabled: true
-      position_mode: "STRICT"
+      position_mode: "DYNAMIC"
 
       leverage:
         target: 20
@@ -873,7 +873,7 @@ aurora:
         trail_pct: 0.018
         min_update_interval_sec: 5
 
-      allowed_regimes: ["FLAT_NORMAL", "MEAN_REVERSION"]  # patched5: LOW_VOLATILITY removed (CUM Jun-Sep: n=67, -235.63 USDT); patched3: TREND_DOWN removed
+      allowed_regimes: ["HIGH_VOLATILITY", "LOW_VOLATILITY", "TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "UNCERTAIN", "FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
 
       signal_threshold:
         enabled: true
@@ -897,8 +897,8 @@ aurora:
     # 1000PEPEUSDT  based on SOLUSDT aurora config (meme token, high volatility)
     # =========================================================================
     1000PEPEUSDT:
-      enabled: false  # patched4a: BLOCK  Sep closed: 662 USDT, ev/t=4.27; sim artifact (2.1B-unit position)
-      position_mode: "STRICT"
+      enabled: true
+      position_mode: "DYNAMIC"
 
       leverage:
         target: 20
@@ -986,7 +986,7 @@ aurora:
         trail_pct: 0.018
         min_update_interval_sec: 5
 
-      allowed_regimes: ["TREND_DOWN", "LOW_VOLATILITY", "FLAT_NORMAL", "MEAN_REVERSION", "TREND_UP"]  # disabled here; regime list kept non-empty to satisfy strict allowlist contract
+      allowed_regimes: ["HIGH_VOLATILITY", "LOW_VOLATILITY", "TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "UNCERTAIN", "FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
 
       signal_threshold:
         enabled: true
@@ -1011,7 +1011,7 @@ aurora:
     # =========================================================================
     DOGEUSDT:
       enabled: true
-      position_mode: "STRICT"
+      position_mode: "DYNAMIC"
 
       leverage:
         target: 20
@@ -1099,7 +1099,7 @@ aurora:
         trail_pct: 0.018
         min_update_interval_sec: 5
 
-      allowed_regimes: ["TREND_DOWN", "LOW_VOLATILITY", "FLAT_NORMAL", "MEAN_REVERSION", "TREND_UP"]
+      allowed_regimes: ["HIGH_VOLATILITY", "LOW_VOLATILITY", "TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "UNCERTAIN", "FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
 
       signal_threshold:
         enabled: true
@@ -1124,7 +1124,7 @@ aurora:
     # =========================================================================
     XRPUSDT:
       enabled: true
-      position_mode: "STRICT"
+      position_mode: "DYNAMIC"
 
       leverage:
         target: 20
@@ -1212,7 +1212,7 @@ aurora:
         trail_pct: 0.018
         min_update_interval_sec: 5
 
-      allowed_regimes: ["TREND_DOWN", "LOW_VOLATILITY", "FLAT_NORMAL", "MEAN_REVERSION", "TREND_UP"]
+      allowed_regimes: ["HIGH_VOLATILITY", "LOW_VOLATILITY", "TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "UNCERTAIN", "FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
 
       signal_threshold:
         enabled: true

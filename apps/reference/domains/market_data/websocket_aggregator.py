@@ -132,12 +132,19 @@ class WebSocketAggregator:
             return
 
         state = self.state[symbol]
+        ts_ms = int(ts) if ts else 0
+        last_book_ts_ms = int(state["last_book_ts_ms"] or 0)
+        if ts_ms <= 0:
+            return
+        if last_book_ts_ms > 0 and ts_ms < last_book_ts_ms:
+            return
+
         state["bid_price"] = decimal.Decimal(bid_price)
         state["bid_size"] = decimal.Decimal(bid_size)
         state["ask_price"] = decimal.Decimal(ask_price)
         state["ask_size"] = decimal.Decimal(ask_size)
-        state["bid_ask_time"] = ts
-        state["last_book_ts_ms"] = int(ts) if ts else 0
+        state["bid_ask_time"] = ts_ms
+        state["last_book_ts_ms"] = ts_ms
 
         # Removed LOG.debug for hot path optimization
 
@@ -279,6 +286,14 @@ class WebSocketAggregator:
         if state["bid_ask_time"] is None or not state["prices"]:
             return None
 
+        tick_ts_ms = max(
+            int(state["last_book_ts_ms"] or 0),
+            int(state["last_trade_ts_ms"] or 0),
+            int(state["last_price_ts_ms"] or 0),
+        )
+        if tick_ts_ms <= 0:
+            return None
+
         # Calculate features
         bid_size = state["bid_size"]
         ask_size = state["ask_size"]
@@ -313,7 +328,7 @@ class WebSocketAggregator:
             delta_price = 0.0
 
         return {
-            "ts": state["bid_ask_time"],
+            "ts": tick_ts_ms,
             "symbol": symbol,
             "price": str(state["latest_price"]),
             "bid": str(state["bid_price"]),

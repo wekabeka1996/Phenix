@@ -75,6 +75,8 @@ class AlphaShadowResultV1(BaseModel):
 
     scenario_id: str
     strategy_type: str
+    version: Optional[str] = None
+    family: Optional[str] = None
     ts_ms: int
     symbol: str
     score: float = Field(ge=-1.0, le=1.0)
@@ -87,6 +89,9 @@ class AlphaShadowResultV1(BaseModel):
     features_used: List[str] = Field(default_factory=list)
     shadow: bool = Field(
         default=True, description="Always True for shadow results")
+    shadow_only: bool = Field(default=True)
+    authority_applied: bool = Field(default=False)
+    no_effect: bool = Field(default=True)
     regime: str = Field(default="DEFAULT")
 
 
@@ -109,6 +114,21 @@ class ScenarioSpec(BaseModel):
         min_length=1,
         description="Unique ID, e.g. S01_AURORA_BASELINE",
     )
+    version: Optional[str] = Field(
+        default=None,
+        description="Optional per-scenario version label for runtime reporting",
+    )
+    family: Optional[str] = Field(
+        default=None,
+        description="Optional scenario family metadata for runtime reporting",
+    )
+    provider: Optional[str] = Field(
+        default=None,
+        description="Optional score provider metadata for runtime reporting",
+    )
+    shadow_only: bool = Field(default=True)
+    authority_applied: bool = Field(default=False)
+    no_effect: bool = Field(default=True)
     enabled: bool = True
     strategy_type: Literal["aurora", "mean_reversion", "ensemble"] = Field(
         description="Strategy family for this scenario",

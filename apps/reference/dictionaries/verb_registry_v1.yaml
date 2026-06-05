@@ -172,6 +172,13 @@ registry:
   schema: apps/reference/domains/execution_position/schemas/position_policy_sidecar_recommended_v1.json
   since: '2026-04-03'
 - op: EVT
+  verb: POSITION_POLICY_MICROSTRUCTURE_PRESSURE_EVALUATED
+  owner: execution_position
+  status: experimental
+  schema: apps/reference/domains/execution_position/schemas/position_policy_microstructure_pressure_evaluated_v1.json
+  since: '2026-05-16'
+  note: "FE-to-position-management semantic bridge verdict for bounded microstructure soft-close pressure"
+- op: EVT
   verb: POSITION_POLICY_SIDECAR_ACTION_SKIPPED
   owner: execution_position
   status: experimental

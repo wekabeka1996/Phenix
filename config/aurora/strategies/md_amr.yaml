@@ -247,8 +247,8 @@ md_amr:
     BTCUSDT:
       enabled: true
       cooldown_sec: 60
-      position_mode: "STRICT"
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
+      position_mode: "DYNAMIC"
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY", "UNCERTAIN", "FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
       # MD-AMR-TPSL-01: TP/SL  values from aurora.yaml BTCUSDT (verbatim)
       exit:
         sl_pct: 0.005       # 0.5% base SL
@@ -277,8 +277,8 @@ md_amr:
     ETHUSDT:
       enabled: true
       cooldown_sec: 60
-      position_mode: "STRICT"
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
+      position_mode: "DYNAMIC"
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY", "UNCERTAIN", "FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
       # MD-AMR-TPSL-01: TP/SL  values from aurora.yaml ETHUSDT (verbatim)
       exit:
         sl_pct: 0.0095      # 0.95% base SL
@@ -315,8 +315,8 @@ md_amr:
     SOLUSDT:
       enabled: true
       cooldown_sec: 60
-      position_mode: "STRICT"
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
+      position_mode: "DYNAMIC"
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY", "UNCERTAIN", "FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
       # MD-AMR-TPSL-01: TP/SL  values from aurora.yaml SOLUSDT (verbatim)
       exit:
         sl_pct: 0.00675     # 0.675% base SL
@@ -353,8 +353,8 @@ md_amr:
     DOGEUSDT:
       enabled: true
       cooldown_sec: 60
-      position_mode: "STRICT"
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
+      position_mode: "DYNAMIC"
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY", "UNCERTAIN", "FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
       # MD-AMR-TPSL-01: TP/SL  averaged values from BTC+ETH+SOL aurora configs
       exit:
         sl_pct: 0.0065      # 0.65% base SL (halved)
@@ -391,8 +391,8 @@ md_amr:
     XRPUSDT:
       enabled: true
       cooldown_sec: 60
-      position_mode: "STRICT"
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
+      position_mode: "DYNAMIC"
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY", "UNCERTAIN", "FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
       # MD-AMR-TPSL-01: TP/SL  averaged values from BTC+ETH+SOL aurora configs (same as DOGE)
       exit:
         sl_pct: 0.013       # avg(0.005, 0.019, 0.0135)
@@ -429,11 +429,49 @@ md_amr:
     BNBUSDT:
       enabled: true
       cooldown_sec: 60
-      position_mode: "STRICT"
-      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"]
+      position_mode: "DYNAMIC"
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY", "UNCERTAIN", "FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
       exit:
         sl_pct: 0.013
         tp_rr: 0.60
+        regime_tpsl:
+          enabled: true
+          mode: "pct_mult"
+          sl_mult:
+            DEFAULT: 1.00
+            FLAT_LOW: 0.62
+            LOW_VOLATILITY: 0.72
+            FLAT_NORMAL: 0.78
+            MEAN_REVERSION: 0.88
+            TREND_UP: 1.07
+            TREND_DOWN: 1.07
+            HIGH_VOLATILITY: 1.30
+            UNCERTAIN: 1.00
+          tp_mult:
+            DEFAULT: 1.20
+            FLAT_LOW: 0.68
+            LOW_VOLATILITY: 1.00
+            FLAT_NORMAL: 0.85
+            MEAN_REVERSION: 0.78
+            TREND_UP: 2.00
+            TREND_DOWN: 2.00
+            HIGH_VOLATILITY: 1.60
+            UNCERTAIN: 1.00
+          min_sl_pct: 0.0025
+          max_sl_pct: 0.030
+          min_tp_rr: 0.35
+          max_tp_rr: 4.0
+          min_dist_bps: 15
+
+    1000PEPEUSDT:
+      enabled: true
+      cooldown_sec: 60
+      position_mode: "DYNAMIC"
+      allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY", "UNCERTAIN", "FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH"]
+      # MD-AMR-TPSL-01: base values anchored to aurora 1000PEPEUSDT profile.
+      exit:
+        sl_pct: 0.01512
+        tp_rr: 0.36
         regime_tpsl:
           enabled: true
           mode: "pct_mult"

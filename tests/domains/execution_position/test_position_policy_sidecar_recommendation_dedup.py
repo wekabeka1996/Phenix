@@ -121,6 +121,15 @@ def _sidecar_config(
                 "bracket_mutation": False,
                 "exact_targeting": False,
             },
+            "microstructure_exit_v1": {
+                "enabled": True,
+                "authoritative_domain_modes": ["testnet"],
+                "require_warmup_full_ready": False,
+                "adverse_obi_full_pressure": 0.35,
+                "adverse_pm_norm_full_pressure": 1.0,
+                "spread_bps_full_pressure": 12.0,
+                "liquidity_kappa_floor": 0.35,
+            },
         }
     )
 

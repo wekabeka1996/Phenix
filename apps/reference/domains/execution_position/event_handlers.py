@@ -16,6 +16,10 @@ from apps.reference.contracts.runtime_regime_layers import (
     normalize_structural_regime_label,
     should_apply_global_execution_regime,
 )
+from apps.reference.domains.execution_position.microstructure_snapshot import (
+    attach_microstructure_snapshot,
+    get_microstructure_snapshot,
+)
 from apps.reference.domains.execution_position.truth_hardening import (
     build_position_signature,
     get_execution_truth_hardening,
@@ -80,7 +84,15 @@ class EPEventHandlers:
         symbol = payload.get("symbol")
         if not symbol:
             return
-        self._fsm._last_features_cache[str(symbol)] = dict(payload)
+        cache_key = str(symbol)
+        previous_payload = self._fsm._last_features_cache.get(cache_key)
+        previous_snapshot = None
+        if isinstance(previous_payload, dict):
+            previous_snapshot = get_microstructure_snapshot(previous_payload)
+        self._fsm._last_features_cache[cache_key] = attach_microstructure_snapshot(
+            payload,
+            previous_snapshot=previous_snapshot,
+        )
 
     def on_regime_detected(self, event: "Message") -> None:
         """

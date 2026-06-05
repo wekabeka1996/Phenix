@@ -20,30 +20,50 @@ version: "1.0.0"
 # Valid strategy_id values:
 # - "aurora": Bar-driven multi-signal strategy (5m basis)
 # - "mean_reversion": Bar-based Bollinger Bands strategy (1m bars)
+# - "md_amr": Multi-dimensional asymmetric mean reversion strategy
+# - "llm_microstructure": External-intent LLM bridge strategy
 # ==============================================================================
 assignments:
   ETHUSDT:
     - aurora
+    - mean_reversion
+    - md_amr
+    - llm_microstructure
 
   SOLUSDT:
     - aurora
-
-  # Package 4: Testnet Activation — XRPUSDT assigned to md_amr.
-  # Asset config exists and validated in md_amr.yaml line 382+.
-  XRPUSDT:
+    - mean_reversion
     - md_amr
+    - llm_microstructure
+
+  XRPUSDT:
+    - aurora
+    - mean_reversion
+    - md_amr
+    - llm_microstructure
 
   BTCUSDT:
     - aurora
-
-  # Package 4: Testnet Activation — BNBUSDT assigned to md_amr.
-  # Asset config exists and validated in md_amr.yaml line 420+.
-  BNBUSDT:
+    - mean_reversion
     - md_amr
+    - llm_microstructure
+
+  BNBUSDT:
+    - aurora
+    - mean_reversion
+    - md_amr
+    - llm_microstructure
 
   DOGEUSDT:
-      - mean_reversion
+    - aurora
+    - mean_reversion
+    - md_amr
+    - llm_microstructure
+
   1000PEPEUSDT:
+    - aurora
+    - mean_reversion
+    - md_amr
     - llm_microstructure
 
 

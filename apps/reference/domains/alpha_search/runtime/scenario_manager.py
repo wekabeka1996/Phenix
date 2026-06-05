@@ -62,6 +62,7 @@ class ScenarioManager:
 
         # Aggregate reporter
         self._reporter = AggregateReporter(session_dir)
+        self._reporter.register_scenarios(self._config.scenarios)
 
         # Stats
         self._snapshots_dispatched = 0
@@ -83,6 +84,10 @@ class ScenarioManager:
         for spec in enabled:
             try:
                 self._init_worker(spec)
+                self._reporter.log_health({
+                    "event": "SCENARIO_INIT_OK",
+                    "scenario_id": spec.scenario_id,
+                })
                 initialized += 1
             except ConfigResolutionError as e:
                 LOG.error(

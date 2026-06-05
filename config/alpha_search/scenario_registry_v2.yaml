@@ -1,0 +1,987 @@
+# ==============================================================================
+# Alpha Search Shadow Scenario Registry v2
+# ==============================================================================
+# registry_id: shadow_expansion_v2_20260516
+#
+# 30 genuinely distinct shadow scenarios across 6 families.
+# ALL scenarios: shadow_only=true, authority_applied=false, no_effect=true
+#
+# No scenario here touches real execution, real orders, real position FSM,
+# real risk authority, or real exchange paths.
+#
+# Naming: S01-S06 MR | S07-S12 TREND | S13-S17 VOL | S18-S23 MICRO | S24-S28 REGIME | S29-S30 COST
+# ==============================================================================
+
+registry_id: shadow_expansion_v2_20260516
+version: 2
+description: "30 shadow-only scenarios for alpha_search parallel laboratory. Zero real authority."
+
+scenarios:
+
+  # ============================================================================
+  # FAMILY 1: MEAN REVERSION (S01-S06)
+  # ============================================================================
+
+  - scenario_id: S01_MR_RSI_HEAVY
+    name: "MR RSI Heavy"
+    family: mean_reversion
+    version: "2.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, DOGEUSDT, BNBUSDT, XRPUSDT]
+    allowed_regimes: [LOW_VOLATILITY, MEAN_REVERSION, UNCERTAIN, TREND_UP, TREND_DOWN]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 900
+    entry_threshold: 0.08
+    confidence_model: score_magnitude
+    score_provider: ta_ensemble
+    exit:
+      model: horizon_3_bar
+      max_hold_bars: 6
+    fee_model: taker_10bps
+    slippage_model: spread_half
+    score_overrides:
+      mean_reversion.weights.rsi: 0.55
+      mean_reversion.weights.bb: 0.25
+      mean_reversion.weights.sma: 0.10
+      mean_reversion.weights.stoch: 0.10
+      mean_reversion.rsi.oversold: 28
+      mean_reversion.rsi.overbought: 72
+    description: "RSI-dominant mean reversion. Shadow threshold 0.08 vs runtime 0.28."
+    expected_edge_hypothesis: "Oversold/overbought RSI in LOW_VOLATILITY regime with high conviction."
+
+  - scenario_id: S02_MR_BB_ZSCORE
+    name: "MR Bollinger ZScore"
+    family: mean_reversion
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, DOGEUSDT, BNBUSDT, XRPUSDT]
+    allowed_regimes: [LOW_VOLATILITY, MEAN_REVERSION, UNCERTAIN]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 1500
+    entry_threshold: 0.07
+    confidence_model: score_magnitude
+    score_provider: ta_ensemble
+    exit:
+      model: fixed_tp_sl
+      tp_bps: 25.0
+      sl_bps: 15.0
+      max_hold_bars: 8
+    fee_model: taker_10bps
+    slippage_model: spread_half
+    score_overrides:
+      mean_reversion.weights.bb: 0.65
+      mean_reversion.weights.rsi: 0.15
+      mean_reversion.weights.sma: 0.12
+      mean_reversion.weights.stoch: 0.08
+    description: "Bollinger Band Z-score dominant MR. Extreme deviation entry with fixed TP/SL."
+    expected_edge_hypothesis: "Mean reversion from BB extremes ≥2σ in compression phase."
+
+  - scenario_id: S03_MR_RSI_BB_COMBO
+    name: "MR RSI+BB Combo"
+    family: mean_reversion
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT]
+    allowed_regimes: [LOW_VOLATILITY, MEAN_REVERSION]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 900
+    entry_threshold: 0.10
+    confidence_model: ensemble_agreement
+    score_provider: ta_ensemble
+    exit:
+      model: horizon_3_bar
+      max_hold_bars: 4
+    fee_model: maker_5bps
+    slippage_model: zero
+    score_overrides:
+      mean_reversion.weights.bb: 0.40
+      mean_reversion.weights.rsi: 0.40
+      mean_reversion.weights.sma: 0.10
+      mean_reversion.weights.stoch: 0.10
+      mean_reversion.rsi.oversold: 30
+      mean_reversion.rsi.overbought: 70
+    description: "Equal weight RSI+BB combo. Requires both signals to confirm. Maker-only execution."
+    expected_edge_hypothesis: "RSI and BB both confirming extreme reversion captures cleaner entries."
+
+  - scenario_id: S04_MR_LOW_VOL_ONLY
+    name: "MR Low Volatility Gate"
+    family: mean_reversion
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, DOGEUSDT, BNBUSDT, XRPUSDT]
+    allowed_regimes: [LOW_VOLATILITY]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 1800
+    entry_threshold: 0.06
+    confidence_model: regime_weighted
+    score_provider: ta_ensemble
+    exit:
+      model: trailing_giveback
+      trail_activation_bps: 15.0
+      trail_distance_bps: 8.0
+      max_hold_bars: 12
+    fee_model: taker_7bps
+    slippage_model: spread_half
+    score_overrides:
+      mean_reversion.weights.bb: 0.35
+      mean_reversion.weights.rsi: 0.35
+      mean_reversion.weights.sma: 0.20
+      mean_reversion.weights.stoch: 0.10
+    description: "MR active ONLY in LOW_VOLATILITY regime. Trailing exit locks in trend continuation."
+    expected_edge_hypothesis: "Compression regime provides tightest MR windows with fewest false breaks."
+
+  - scenario_id: S05_MR_MICROSTRUCTURE_VETO
+    name: "MR Microstructure Veto"
+    family: mean_reversion
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT]
+    allowed_regimes: [LOW_VOLATILITY, MEAN_REVERSION, UNCERTAIN]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 1200
+    entry_threshold: 0.09
+    confidence_model: microstructure_aligned
+    score_provider: ta_ensemble
+    exit:
+      model: fixed_tp_sl
+      tp_bps: 20.0
+      sl_bps: 12.0
+      max_hold_bars: 6
+    fee_model: taker_10bps
+    slippage_model: spread_half
+    score_overrides:
+      mean_reversion.weights.bb: 0.35
+      mean_reversion.weights.rsi: 0.30
+      mean_reversion.weights.sma: 0.20
+      mean_reversion.weights.stoch: 0.15
+    description: "MR with microstructure veto: OBI/TFI misalignment blocks entry."
+    expected_edge_hypothesis: "OBI confirming reversion direction filters false MR signals by 30%."
+
+  - scenario_id: S06_MR_EXTREME_DEVIATION_ONLY
+    name: "MR Extreme Deviation Filter"
+    family: mean_reversion
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, DOGEUSDT, XRPUSDT]
+    allowed_regimes: [LOW_VOLATILITY, MEAN_REVERSION, HIGH_VOLATILITY]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 600
+    entry_threshold: 0.18
+    confidence_model: score_magnitude
+    score_provider: ta_ensemble
+    exit:
+      model: horizon_1_bar
+      max_hold_bars: 2
+    fee_model: taker_10bps
+    slippage_model: spread_full
+    score_overrides:
+      mean_reversion.weights.bb: 0.50
+      mean_reversion.weights.rsi: 0.30
+      mean_reversion.weights.sma: 0.12
+      mean_reversion.weights.stoch: 0.08
+      mean_reversion.rsi.oversold: 20
+      mean_reversion.rsi.overbought: 80
+    description: "Only extreme deviations (score≥0.18). Very short hold. High threshold as guard."
+    expected_edge_hypothesis: "Extreme BB+RSI extremes ≥3σ have higher-probability snap-back within 1 bar."
+
+  # ============================================================================
+  # FAMILY 2: TREND CONTINUATION (S07-S12)
+  # ============================================================================
+
+  - scenario_id: S07_TREND_5M_MOMENTUM
+    name: "Trend 5m Momentum"
+    family: trend_continuation
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT]
+    allowed_regimes: [TREND_UP, TREND_DOWN, HIGH_VOLATILITY]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 900
+    entry_threshold: 0.08
+    confidence_model: score_magnitude
+    score_provider: ta_ensemble
+    exit:
+      model: horizon_3_bar
+      max_hold_bars: 6
+    fee_model: taker_10bps
+    slippage_model: spread_half
+    score_overrides:
+      ensemble.momentum_v1.weight: 0.70
+      ensemble.mean_reversion_v1.weight: 0.15
+      ensemble.volatility_v1.weight: 0.15
+    description: "Momentum-dominant ensemble on 5m bars in trending regimes."
+    expected_edge_hypothesis: "Short-term 5m momentum persists for 1-3 bars in TREND regimes."
+
+  - scenario_id: S08_TREND_15M_MOMENTUM
+    name: "Trend 15m Momentum Approx"
+    family: trend_continuation
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT]
+    allowed_regimes: [TREND_UP, TREND_DOWN]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 1800
+    entry_threshold: 0.10
+    confidence_model: regime_weighted
+    score_provider: aurora
+    exit:
+      model: horizon_6_bar
+      max_hold_bars: 12
+    fee_model: taker_7bps
+    slippage_model: spread_half
+    score_overrides:
+      aurora.decision.signal_weights.ema_bias: 0.35
+      aurora.decision.signal_weights.tfi: 0.28
+      aurora.decision.signal_weights.macro_resid: 0.22
+      aurora.decision.signal_weights.obi: 0.10
+      aurora.decision.signal_weights.delta_price: 0.05
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 1.50
+      aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 1.20
+    description: "Aurora 15m trend approximation via ema_bias+tfi dominance. Lower UNCERTAIN multiplier."
+    expected_edge_hypothesis: "Medium-term trend signals extracted from 5m bars by weighting ema_bias."
+
+  - scenario_id: S09_TREND_PULLBACK_CONTINUATION
+    name: "Trend Pullback Continuation"
+    family: trend_continuation
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT]
+    allowed_regimes: [TREND_UP, TREND_DOWN, LOW_VOLATILITY]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 1500
+    entry_threshold: 0.07
+    confidence_model: ensemble_agreement
+    score_provider: ta_ensemble
+    exit:
+      model: fixed_tp_sl
+      tp_bps: 30.0
+      sl_bps: 15.0
+      max_hold_bars: 8
+    fee_model: taker_7bps
+    slippage_model: spread_half
+    score_overrides:
+      ensemble.momentum_v1.weight: 0.50
+      ensemble.mean_reversion_v1.weight: 0.35
+      ensemble.volatility_v1.weight: 0.15
+    description: "Buy pullbacks in uptrend, sell pullbacks in downtrend. Momentum+MR combo."
+    expected_edge_hypothesis: "Pullback within trend has higher TP probability with 2:1 R:R ratio."
+
+  - scenario_id: S10_TREND_BREAKOUT_CONFIRMATION
+    name: "Trend Breakout Confirmation"
+    family: trend_continuation
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT]
+    allowed_regimes: [TREND_UP, TREND_DOWN, HIGH_VOLATILITY]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 1200
+    entry_threshold: 0.12
+    confidence_model: score_magnitude
+    score_provider: aurora
+    exit:
+      model: trailing_giveback
+      trail_activation_bps: 20.0
+      trail_distance_bps: 10.0
+      max_hold_bars: 10
+    fee_model: taker_10bps
+    slippage_model: market_impact_05bps
+    score_overrides:
+      aurora.decision.signal_weights.delta_price: 0.35
+      aurora.decision.signal_weights.ema_bias: 0.25
+      aurora.decision.signal_weights.volume_spike: 0.22
+      aurora.decision.signal_weights.tfi: 0.12
+      aurora.decision.signal_weights.obi: 0.06
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 1.50
+    description: "Breakout from range with volume spike confirmation. Trailing exit."
+    expected_edge_hypothesis: "High-volume breakouts confirmed by delta_price persist for 2-4 bars."
+
+  - scenario_id: S11_TREND_HIGH_CONFIDENCE_ONLY
+    name: "Trend High Confidence Only"
+    family: trend_continuation
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT]
+    allowed_regimes: [TREND_UP, TREND_DOWN]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 1800
+    entry_threshold: 0.15
+    confidence_model: regime_weighted
+    score_provider: aurora
+    exit:
+      model: fixed_tp_sl
+      tp_bps: 40.0
+      sl_bps: 20.0
+      max_hold_bars: 12
+    fee_model: maker_5bps
+    slippage_model: zero
+    score_overrides:
+      aurora.decision.signal_weights.ema_bias: 0.30
+      aurora.decision.signal_weights.tfi: 0.25
+      aurora.decision.signal_weights.obi: 0.20
+      aurora.decision.signal_weights.macro_resid: 0.15
+      aurora.decision.signal_weights.delta_price: 0.10
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 2.00
+    description: "Only very strong trend signals (0.15 threshold). Maker fill. Limited regime scope."
+    expected_edge_hypothesis: "High-conviction trend signals have significantly better TP rate (>70%)."
+
+  - scenario_id: S12_TREND_ANTI_LATE_CHASE
+    name: "Trend Anti Late Chase"
+    family: trend_continuation
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, DOGEUSDT]
+    allowed_regimes: [TREND_UP, TREND_DOWN, MEAN_REVERSION]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 900
+    entry_threshold: 0.08
+    confidence_model: feature_completeness
+    score_provider: ta_ensemble
+    exit:
+      model: horizon_1_bar
+      max_hold_bars: 2
+    fee_model: taker_10bps
+    slippage_model: spread_half
+    score_overrides:
+      ensemble.momentum_v1.weight: 0.60
+      ensemble.volatility_v1.weight: 0.30
+      ensemble.mean_reversion_v1.weight: 0.10
+    description: "Short hold anti-chase: enter early trend signal before exhaustion. 1-bar exit."
+    expected_edge_hypothesis: "Early-stage trend signals outperform late-chase entries with 1-bar hold."
+
+  # ============================================================================
+  # FAMILY 3: VOLATILITY / BREAKOUT (S13-S17)
+  # ============================================================================
+
+  - scenario_id: S13_VOL_EXPANSION_BREAKOUT
+    name: "Vol Expansion Breakout"
+    family: volatility_breakout
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, DOGEUSDT]
+    allowed_regimes: [HIGH_VOLATILITY, TREND_UP, TREND_DOWN]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 900
+    entry_threshold: 0.08
+    confidence_model: score_magnitude
+    score_provider: ta_ensemble
+    exit:
+      model: fixed_tp_sl
+      tp_bps: 35.0
+      sl_bps: 20.0
+      max_hold_bars: 6
+    fee_model: taker_10bps
+    slippage_model: market_impact_05bps
+    score_overrides:
+      ensemble.volatility_v1.weight: 0.70
+      ensemble.momentum_v1.weight: 0.20
+      ensemble.mean_reversion_v1.weight: 0.10
+    description: "Volatility expansion breakout. Vol model dominant. HIGH_VOL regime preferred."
+    expected_edge_hypothesis: "ATR expansion breakouts in HIGH_VOL have 40%+ continuation rate."
+
+  - scenario_id: S14_LOW_VOL_COMPRESSION_BREAKOUT
+    name: "Low Vol Compression Breakout"
+    family: volatility_breakout
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT]
+    allowed_regimes: [LOW_VOLATILITY, MEAN_REVERSION]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 1200
+    entry_threshold: 0.07
+    confidence_model: feature_completeness
+    score_provider: ta_ensemble
+    exit:
+      model: trailing_giveback
+      trail_activation_bps: 18.0
+      trail_distance_bps: 9.0
+      max_hold_bars: 10
+    fee_model: taker_7bps
+    slippage_model: spread_half
+    score_overrides:
+      ensemble.volatility_v1.weight: 0.55
+      ensemble.momentum_v1.weight: 0.30
+      ensemble.mean_reversion_v1.weight: 0.15
+    description: "Breakout from volatility compression (tight BB). Trailing exit to capture move."
+    expected_edge_hypothesis: "Narrow BB (compression) precedes breakout with direction from momentum."
+
+  - scenario_id: S15_HIGH_VOL_FAST_EXIT
+    name: "High Vol Fast Exit"
+    family: volatility_breakout
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, XRPUSDT, DOGEUSDT]
+    allowed_regimes: [HIGH_VOLATILITY]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 300
+    entry_threshold: 0.10
+    confidence_model: score_magnitude
+    score_provider: ta_ensemble
+    exit:
+      model: horizon_1_bar
+      max_hold_bars: 1
+    fee_model: taker_10bps
+    slippage_model: spread_full
+    score_overrides:
+      ensemble.volatility_v1.weight: 0.60
+      ensemble.momentum_v1.weight: 0.30
+      ensemble.mean_reversion_v1.weight: 0.10
+    description: "Very short hold in HIGH_VOL. 1-bar exit. Accepts wide slippage."
+    expected_edge_hypothesis: "Scalping volatility spikes with 1-bar hold avoids adverse overnight."
+
+  - scenario_id: S16_ATR_EXPANSION_CONTINUATION
+    name: "ATR Expansion Continuation"
+    family: volatility_breakout
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT]
+    allowed_regimes: [HIGH_VOLATILITY, TREND_UP, TREND_DOWN]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 1500
+    entry_threshold: 0.09
+    confidence_model: regime_weighted
+    score_provider: ta_ensemble
+    exit:
+      model: fixed_tp_sl
+      tp_bps: 45.0
+      sl_bps: 22.0
+      max_hold_bars: 8
+    fee_model: taker_7bps
+    slippage_model: spread_half
+    score_overrides:
+      ensemble.volatility_v1.weight: 0.45
+      ensemble.momentum_v1.weight: 0.40
+      ensemble.mean_reversion_v1.weight: 0.15
+    description: "ATR expanding + momentum confirming = continuation. 2:1 TP:SL ratio."
+    expected_edge_hypothesis: "ATR expansion with momentum alignment has 50%+ TP rate at 2:1 R:R."
+
+  - scenario_id: S17_RANGE_BREAK_FAILURE_REVERSAL
+    name: "Range Break Failure Reversal"
+    family: volatility_breakout
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, DOGEUSDT]
+    allowed_regimes: [LOW_VOLATILITY, MEAN_REVERSION, HIGH_VOLATILITY]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 900
+    entry_threshold: 0.08
+    confidence_model: ensemble_agreement
+    score_provider: ta_ensemble
+    exit:
+      model: horizon_3_bar
+      max_hold_bars: 4
+    fee_model: taker_10bps
+    slippage_model: spread_half
+    score_overrides:
+      ensemble.mean_reversion_v1.weight: 0.50
+      ensemble.volatility_v1.weight: 0.35
+      ensemble.momentum_v1.weight: 0.15
+    description: "Failed breakout → reversal. MR+Vol signals for fade after break failure."
+    expected_edge_hypothesis: "False breakouts (vol spike + MR score) revert 60% of the time within 3 bars."
+
+  # ============================================================================
+  # FAMILY 4: MICROSTRUCTURE (S18-S23)
+  # ============================================================================
+
+  - scenario_id: S18_OBI_TFI_ALIGNMENT
+    name: "OBI TFI Aligned"
+    family: microstructure
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT]
+    allowed_regimes: [TREND_UP, TREND_DOWN, LOW_VOLATILITY, MEAN_REVERSION, UNCERTAIN]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 600
+    entry_threshold: 0.08
+    confidence_model: microstructure_aligned
+    score_provider: aurora
+    exit:
+      model: horizon_1_bar
+      max_hold_bars: 3
+    fee_model: taker_7bps
+    slippage_model: spread_half
+    score_overrides:
+      aurora.decision.signal_weights.obi: 0.48
+      aurora.decision.signal_weights.tfi: 0.32
+      aurora.decision.signal_weights.delta_price: 0.10
+      aurora.decision.signal_weights.depth_imbalance: -0.15
+      aurora.decision.signal_weights.ema_bias: 0.05
+      aurora.decision.signal_weights.macro_resid: 0.00
+      aurora.decision.signal_weights.volume_spike: 0.00
+      aurora.decision.signal_weights.volatility_state: 0.00
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 1.20
+      aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 0.90
+    description: "OBI+TFI aligned direction (both positive or both negative). Microstructure edge."
+    expected_edge_hypothesis: "OBI/TFI alignment predicts 1-bar direction 55% of the time."
+
+  - scenario_id: S19_OBI_TFI_DIVERGENCE_FADE
+    name: "OBI TFI Divergence Fade"
+    family: microstructure
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT]
+    allowed_regimes: [LOW_VOLATILITY, MEAN_REVERSION, UNCERTAIN]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 600
+    entry_threshold: 0.07
+    confidence_model: microstructure_aligned
+    score_provider: aurora
+    exit:
+      model: horizon_3_bar
+      max_hold_bars: 3
+    fee_model: taker_10bps
+    slippage_model: spread_half
+    score_overrides:
+      aurora.decision.signal_weights.obi: 0.40
+      aurora.decision.signal_weights.tfi: -0.30
+      aurora.decision.signal_weights.depth_imbalance: -0.20
+      aurora.decision.signal_weights.delta_price: 0.10
+      aurora.decision.signal_weights.ema_bias: 0.00
+      aurora.decision.signal_weights.macro_resid: 0.00
+      aurora.decision.signal_weights.volume_spike: 0.00
+      aurora.decision.signal_weights.volatility_state: 0.00
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 1.30
+    description: "OBI vs TFI divergence fade: OBI positive but TFI negative → mean reversion."
+    expected_edge_hypothesis: "OBI/TFI divergence predicts orderbook exhaustion and fade within 3 bars."
+
+  - scenario_id: S20_LIQUIDITY_KAPPA_FILTERED
+    name: "Liquidity Kappa Depth Filtered"
+    family: microstructure
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT]
+    allowed_regimes: [TREND_UP, TREND_DOWN, HIGH_VOLATILITY, LOW_VOLATILITY]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 900
+    entry_threshold: 0.08
+    confidence_model: microstructure_aligned
+    score_provider: aurora
+    exit:
+      model: horizon_3_bar
+      max_hold_bars: 4
+    fee_model: taker_10bps
+    slippage_model: market_impact_05bps
+    score_overrides:
+      aurora.decision.signal_weights.obi: 0.35
+      aurora.decision.signal_weights.depth_imbalance: -0.32
+      aurora.decision.signal_weights.tfi: 0.18
+      aurora.decision.signal_weights.delta_price: 0.10
+      aurora.decision.signal_weights.volume_spike: 0.22
+      aurora.decision.signal_weights.ema_bias: -0.03
+      aurora.decision.signal_weights.macro_resid: 0.00
+      aurora.decision.signal_weights.volatility_state: 0.00
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 1.80
+      aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 1.10
+    description: "Depth imbalance + OBI microstructure with volume spike kappa filter."
+    expected_edge_hypothesis: "Depth liquidity asymmetry with volume spikes predicts direction."
+
+  - scenario_id: S21_SPREAD_SAFE_MOMENTUM
+    name: "Spread Safe Momentum"
+    family: microstructure
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT]
+    allowed_regimes: [TREND_UP, TREND_DOWN, LOW_VOLATILITY]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 900
+    entry_threshold: 0.09
+    confidence_model: feature_completeness
+    score_provider: aurora
+    exit:
+      model: fixed_tp_sl
+      tp_bps: 25.0
+      sl_bps: 12.0
+      max_hold_bars: 6
+    fee_model: maker_5bps
+    slippage_model: zero
+    score_overrides:
+      aurora.decision.signal_weights.obi: 0.25
+      aurora.decision.signal_weights.tfi: 0.25
+      aurora.decision.signal_weights.ema_bias: 0.20
+      aurora.decision.signal_weights.delta_price: 0.15
+      aurora.decision.signal_weights.depth_imbalance: -0.10
+      aurora.decision.signal_weights.macro_resid: 0.05
+      aurora.decision.signal_weights.volume_spike: 0.10
+      aurora.decision.signal_weights.volatility_state: 0.00
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 1.60
+    description: "Maker-only spread-safe momentum: only enters when spread is acceptable."
+    expected_edge_hypothesis: "Maker fills with spread gate eliminates slippage-heavy losing entries."
+
+  - scenario_id: S22_VOLUME_SPIKE_EXHAUSTION_FADE
+    name: "Volume Spike Exhaustion Fade"
+    family: microstructure
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, DOGEUSDT, XRPUSDT]
+    allowed_regimes: [HIGH_VOLATILITY, TREND_UP, TREND_DOWN, LOW_VOLATILITY]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 600
+    entry_threshold: 0.07
+    confidence_model: score_magnitude
+    score_provider: aurora
+    exit:
+      model: horizon_3_bar
+      max_hold_bars: 4
+    fee_model: taker_10bps
+    slippage_model: spread_half
+    score_overrides:
+      aurora.decision.signal_weights.volume_spike: 0.45
+      aurora.decision.signal_weights.obi: -0.20
+      aurora.decision.signal_weights.tfi: -0.15
+      aurora.decision.signal_weights.delta_price: -0.10
+      aurora.decision.signal_weights.depth_imbalance: 0.10
+      aurora.decision.signal_weights.ema_bias: 0.00
+      aurora.decision.signal_weights.macro_resid: 0.00
+      aurora.decision.signal_weights.volatility_state: 0.00
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 1.40
+    description: "Volume exhaustion fade: high volume_spike + OBI reversal = exhaustion signal."
+    expected_edge_hypothesis: "Volume spikes with OBI reversal indicate exhaustion and 3-bar fade."
+
+  - scenario_id: S23_DELTA_PRICE_CONTINUATION
+    name: "Delta Price Continuation"
+    family: microstructure
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT]
+    allowed_regimes: [TREND_UP, TREND_DOWN, HIGH_VOLATILITY, UNCERTAIN]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 900
+    entry_threshold: 0.09
+    confidence_model: score_magnitude
+    score_provider: aurora
+    exit:
+      model: horizon_3_bar
+      max_hold_bars: 5
+    fee_model: taker_10bps
+    slippage_model: spread_half
+    score_overrides:
+      aurora.decision.signal_weights.delta_price: 0.50
+      aurora.decision.signal_weights.ema_bias: 0.20
+      aurora.decision.signal_weights.tfi: 0.15
+      aurora.decision.signal_weights.obi: 0.10
+      aurora.decision.signal_weights.depth_imbalance: -0.05
+      aurora.decision.signal_weights.macro_resid: 0.00
+      aurora.decision.signal_weights.volume_spike: 0.10
+      aurora.decision.signal_weights.volatility_state: 0.00
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 1.40
+    description: "Delta price continuation: strong price impulse continuation for 3 bars."
+    expected_edge_hypothesis: "Large delta_price moves persist for 1-3 bars in most regimes."
+
+  # ============================================================================
+  # FAMILY 5: REGIME ADAPTIVE (S24-S28)
+  # ============================================================================
+
+  - scenario_id: S24_REGIME_ADAPTIVE_BALANCED
+    name: "Regime Adaptive Balanced"
+    family: regime_adaptive
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, DOGEUSDT]
+    allowed_regimes: [TREND_UP, TREND_DOWN, LOW_VOLATILITY, MEAN_REVERSION, HIGH_VOLATILITY]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 900
+    entry_threshold: 0.08
+    confidence_model: regime_weighted
+    score_provider: ta_ensemble
+    exit:
+      model: horizon_3_bar
+      max_hold_bars: 6
+    fee_model: taker_7bps
+    slippage_model: spread_half
+    score_overrides:
+      ensemble.momentum_v1.weight: 0.35
+      ensemble.mean_reversion_v1.weight: 0.35
+      ensemble.volatility_v1.weight: 0.30
+    description: "Balanced ensemble active in all non-UNCERTAIN regimes. Adapts to regime."
+    expected_edge_hypothesis: "Equal-weight ensemble outperforms single-model in mixed-regime environments."
+
+  - scenario_id: S25_LOW_VOL_NOISE_AVOIDER
+    name: "Low Vol Noise Avoider"
+    family: regime_adaptive
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, DOGEUSDT]
+    allowed_regimes: [LOW_VOLATILITY, MEAN_REVERSION]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 1200
+    entry_threshold: 0.06
+    confidence_model: feature_completeness
+    score_provider: ta_ensemble
+    exit:
+      model: fixed_tp_sl
+      tp_bps: 15.0
+      sl_bps: 8.0
+      max_hold_bars: 8
+    fee_model: maker_5bps
+    slippage_model: zero
+    score_overrides:
+      ensemble.mean_reversion_v1.weight: 0.60
+      ensemble.volatility_v1.weight: 0.25
+      ensemble.momentum_v1.weight: 0.15
+    description: "Noise avoider: only trades LOW_VOL/MR regimes with maker execution."
+    expected_edge_hypothesis: "Low volatility regimes with tight spreads provide best TP/fee ratio."
+
+  - scenario_id: S26_TREND_DOWN_SHORT_ONLY
+    name: "Trend Down Short Only"
+    family: regime_adaptive
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, DOGEUSDT]
+    allowed_regimes: [TREND_DOWN]
+    allowed_sides: [SELL]
+    timeframe_sec: 300
+    horizon_sec: 1800
+    entry_threshold: 0.07
+    confidence_model: regime_weighted
+    score_provider: aurora
+    exit:
+      model: trailing_giveback
+      trail_activation_bps: 25.0
+      trail_distance_bps: 12.0
+      max_hold_bars: 12
+    fee_model: taker_7bps
+    slippage_model: spread_half
+    score_overrides:
+      aurora.decision.signal_weights.ema_bias: 0.30
+      aurora.decision.signal_weights.tfi: 0.25
+      aurora.decision.signal_weights.obi: 0.20
+      aurora.decision.signal_weights.macro_resid: 0.15
+      aurora.decision.signal_weights.delta_price: 0.10
+      aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.75
+    description: "Pure short-only in TREND_DOWN regime. Trailing exit locks in downside."
+    expected_edge_hypothesis: "TREND_DOWN regime SELL-only with trailing exit captures macro downside."
+
+  - scenario_id: S27_TREND_UP_BUY_ONLY
+    name: "Trend Up Buy Only"
+    family: regime_adaptive
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, DOGEUSDT]
+    allowed_regimes: [TREND_UP]
+    allowed_sides: [BUY]
+    timeframe_sec: 300
+    horizon_sec: 1800
+    entry_threshold: 0.07
+    confidence_model: regime_weighted
+    score_provider: aurora
+    exit:
+      model: trailing_giveback
+      trail_activation_bps: 25.0
+      trail_distance_bps: 12.0
+      max_hold_bars: 12
+    fee_model: taker_7bps
+    slippage_model: spread_half
+    score_overrides:
+      aurora.decision.signal_weights.ema_bias: 0.30
+      aurora.decision.signal_weights.tfi: 0.25
+      aurora.decision.signal_weights.obi: 0.20
+      aurora.decision.signal_weights.macro_resid: 0.15
+      aurora.decision.signal_weights.delta_price: 0.10
+      aurora.decision.regime_threshold_multipliers.TREND_UP: 0.75
+    description: "Pure buy-only in TREND_UP regime. Mirror of S26."
+    expected_edge_hypothesis: "TREND_UP regime BUY-only with trailing exit captures macro upside."
+
+  - scenario_id: S28_MEAN_REVERSION_ONLY_STRICT
+    name: "Mean Reversion Regime Strict"
+    family: regime_adaptive
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, DOGEUSDT]
+    allowed_regimes: [MEAN_REVERSION]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 1200
+    entry_threshold: 0.06
+    confidence_model: ensemble_agreement
+    score_provider: ta_ensemble
+    exit:
+      model: fixed_tp_sl
+      tp_bps: 20.0
+      sl_bps: 10.0
+      max_hold_bars: 6
+    fee_model: maker_5bps
+    slippage_model: zero
+    score_overrides:
+      ensemble.mean_reversion_v1.weight: 0.70
+      ensemble.volatility_v1.weight: 0.20
+      ensemble.momentum_v1.weight: 0.10
+    description: "Strictly MEAN_REVERSION regime only. Highest MR weight possible."
+    expected_edge_hypothesis: "Pure MR regime provides the cleanest mean-reversion entries."
+
+  # ============================================================================
+  # FAMILY 6: COST / EXECUTION AWARE (S29-S30)
+  # ============================================================================
+
+  - scenario_id: S29_FEE_AWARE_EDGE_ONLY
+    name: "Fee Aware Edge Only"
+    family: cost_execution
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, DOGEUSDT]
+    allowed_regimes: [TREND_UP, TREND_DOWN, LOW_VOLATILITY, MEAN_REVERSION, HIGH_VOLATILITY, UNCERTAIN]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 900
+    entry_threshold: 0.12
+    confidence_model: score_magnitude
+    score_provider: ta_ensemble
+    exit:
+      model: fixed_tp_sl
+      tp_bps: 30.0
+      sl_bps: 15.0
+      max_hold_bars: 6
+    fee_model: taker_10bps
+    slippage_model: spread_half
+    score_overrides:
+      ensemble.momentum_v1.weight: 0.40
+      ensemble.mean_reversion_v1.weight: 0.35
+      ensemble.volatility_v1.weight: 0.25
+    description: "Fee-aware: higher threshold (0.12) ensures net edge after 20bps round-trip cost."
+    expected_edge_hypothesis: "Threshold set above fee cost ensures every signal has positive expectancy."
+
+  - scenario_id: S30_FILL_PROBABILITY_AWARE_LIMIT_ENTRY
+    name: "Fill Probability Limit Entry"
+    family: cost_execution
+    version: "1.0.0"
+    enabled: true
+    shadow_only: true
+    authority_applied: false
+    no_effect: true
+    allowed_symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT]
+    allowed_regimes: [TREND_UP, TREND_DOWN, LOW_VOLATILITY, MEAN_REVERSION]
+    allowed_sides: [BUY, SELL]
+    timeframe_sec: 300
+    horizon_sec: 1200
+    entry_threshold: 0.09
+    confidence_model: feature_completeness
+    score_provider: aurora
+    exit:
+      model: fixed_tp_sl
+      tp_bps: 22.0
+      sl_bps: 11.0
+      max_hold_bars: 8
+    fee_model: maker_5bps
+    slippage_model: zero
+    score_overrides:
+      aurora.decision.signal_weights.obi: 0.30
+      aurora.decision.signal_weights.depth_imbalance: -0.25
+      aurora.decision.signal_weights.tfi: 0.20
+      aurora.decision.signal_weights.ema_bias: 0.15
+      aurora.decision.signal_weights.delta_price: 0.10
+      aurora.decision.signal_weights.macro_resid: 0.00
+      aurora.decision.signal_weights.volume_spike: 0.00
+      aurora.decision.signal_weights.volatility_state: 0.00
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 1.60
+    description: "Limit order only (maker, zero slippage). Fill probability modeled via depth+OBI."
+    expected_edge_hypothesis: "Limit entries with depth alignment have 70%+ fill probability and 2:1 R:R."

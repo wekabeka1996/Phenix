@@ -59,7 +59,11 @@ def test_llm_mode_rejects_unassigned_owned_symbol(tmp_path: Path) -> None:
 
     strategies_path = cfg_dir / "strategies.yaml"
     strategies_data = yaml.safe_load(strategies_path.read_text(encoding="utf-8"))
-    strategies_data["assignments"]["BTCUSDT"] = ["llm_microstructure"]
+    strategies_data["assignments"]["BNBUSDT"] = [
+        "aurora",
+        "mean_reversion",
+        "md_amr",
+    ]
     _write_yaml(strategies_path, strategies_data)
 
     with pytest.raises(ValueError, match=r"llm_microstructure not assigned for symbol BNBUSDT"):

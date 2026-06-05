@@ -119,6 +119,11 @@ class AuroraAlphaAdapter(AlphaModel):
         self._regime_thresholds = regime_thresholds or self.DEFAULT_REGIME_THRESHOLDS
         self._base_threshold = decimal.Decimal(str(base_threshold))
         self._delta_price_cap_pct = decimal.Decimal(str(delta_price_cap_pct))
+        self._blocked_regimes: set[str] = set()
+        self._symbol_allowed_regimes: Dict[str, set[str]] = {}
+        self._symbol_signal_weights: Dict[str, Dict[str, float]] = {}
+        self._symbol_feature_neutrals: Dict[str, Dict[str, float]] = {}
+        self._symbol_regime_thresholds: Dict[str, Dict[str, float]] = {}
 
         super().__init__(config or {})
 
@@ -183,6 +188,25 @@ class AuroraAlphaAdapter(AlphaModel):
         # Get regime (default to "DEFAULT" if not provided)
         regime = context.get("regime", "DEFAULT")
 
+        if regime in (self._blocked_regimes or set()):
+            return self._fail_closed_score(
+                symbol,
+                reason="blocked_regime",
+                why=[f"Regime {regime} blocked by aurora.decision.blocked_regimes"],
+            )
+
+        allowed_regimes = (self._symbol_allowed_regimes or {}).get(symbol)
+        if allowed_regimes and regime not in allowed_regimes:
+            return self._fail_closed_score(
+                symbol,
+                reason="regime_not_allowed",
+                why=[f"Regime {regime} not in allowed_regimes for {symbol}"],
+            )
+
+        signal_weights = self._resolve_symbol_signal_weights(symbol)
+        feature_neutrals = self._resolve_symbol_feature_neutrals(symbol)
+        regime_thresholds = self._resolve_symbol_regime_thresholds(symbol)
+
         # Run Quadratic kernel
         try:
             result: ScoringResult = QuadraticScoringKernel.compute(
@@ -190,18 +214,19 @@ class AuroraAlphaAdapter(AlphaModel):
                 features=features,
                 warmup_readiness=warmup_readiness,
                 price=decimal.Decimal(str(price)),
-                signal_weights=self._signal_weights,
-                feature_neutrals=self._feature_neutrals,
+                signal_weights=signal_weights,
+                feature_neutrals=feature_neutrals,
                 essential_features=self._essential_features,
                 base_threshold=self._base_threshold,
                 regime_name=regime,
-                regime_thresholds=self._regime_thresholds,
+                regime_thresholds=regime_thresholds,
                 side_bias_state=None,  # No side bias for alpha_search
                 direction_strength_cfg=self._direction_strength_cfg,
                 delta_price_cap_pct=self._delta_price_cap_pct,
                 scoring_version=self._scoring_version,
                 neutral_threshold=None,
                 current_side="",
+                admission_mode="linear",  # Match live aurora.yaml decision_geometry.admission_mode
             )
         except Exception as e:
             LOG.warning(f"[{symbol}] Aurora kernel error: {e}")
@@ -308,3 +333,21 @@ class AuroraAlphaAdapter(AlphaModel):
             why.append(w)
 
         return why
+
+    def _resolve_symbol_signal_weights(self, symbol: str) -> Dict[str, float]:
+        weights = (self._symbol_signal_weights or {}).get(symbol)
+        if weights:
+            return dict(weights)
+        return dict(self._signal_weights)
+
+    def _resolve_symbol_feature_neutrals(self, symbol: str) -> Dict[str, float]:
+        neutrals = (self._symbol_feature_neutrals or {}).get(symbol)
+        if neutrals:
+            return dict(neutrals)
+        return dict(self._feature_neutrals)
+
+    def _resolve_symbol_regime_thresholds(self, symbol: str) -> Dict[str, float]:
+        thresholds = (self._symbol_regime_thresholds or {}).get(symbol)
+        if thresholds:
+            return dict(thresholds)
+        return dict(self._regime_thresholds)

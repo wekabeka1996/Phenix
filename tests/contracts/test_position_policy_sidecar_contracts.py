@@ -14,6 +14,7 @@ SIDECAR_EVENT_VERBS = {
     "POSITION_POLICY_SIDECAR_SCORES": "apps/reference/domains/execution_position/schemas/position_policy_sidecar_scores_v1.json",
     "POSITION_POLICY_SIDECAR_SUPPRESSED": "apps/reference/domains/execution_position/schemas/position_policy_sidecar_suppressed_v1.json",
     "POSITION_POLICY_SIDECAR_RECOMMENDED": "apps/reference/domains/execution_position/schemas/position_policy_sidecar_recommended_v1.json",
+    "POSITION_POLICY_MICROSTRUCTURE_PRESSURE_EVALUATED": "apps/reference/domains/execution_position/schemas/position_policy_microstructure_pressure_evaluated_v1.json",
     "POSITION_POLICY_SIDECAR_ACTION_SKIPPED": "apps/reference/domains/execution_position/schemas/position_policy_sidecar_action_skipped_v1.json",
     "POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE": "apps/reference/domains/execution_position/schemas/position_policy_sidecar_close_request_state_v1.json",
 }

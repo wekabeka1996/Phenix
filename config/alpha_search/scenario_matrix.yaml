@@ -18,8 +18,8 @@ matrix_id: v6b_dedup_noflip_cooldown_20260307
 version: 8
 
 runtime:
-  max_scenarios: 12
-  max_concurrent_scenarios: 12
+  max_scenarios: 30
+  max_concurrent_scenarios: 30
   parallelism: thread_pool          # sequential | thread_pool
   max_workers: 4
   queue_maxsize: 4000
@@ -77,6 +77,8 @@ scenarios:
       alpha_search: config/alpha_search.yaml
     overrides:
       aurora.decision.signal_threshold: 0.26       # v6: 0.16→0.26 (reduce trades ~55%)
+      aurora.decision.exit.signal_exit_enabled: true
+      aurora.decision.exit.signal_reversal_threshold: -0.06
       aurora.decision.signal_weights.obi: 0.18
       aurora.decision.signal_weights.tfi: 0.28
       aurora.decision.signal_weights.delta_price: 0.12
@@ -92,6 +94,15 @@ scenarios:
       aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 0.88
       aurora.decision.regime_threshold_multipliers.UNCERTAIN: 3.00       # v6: 2.00→3.00
       aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
+      aurora.assets.BTCUSDT.allowed_regimes: ["TREND_UP", "TREND_DOWN", "HIGH_VOLATILITY"]
+      aurora.assets.BTCUSDT.signal_threshold.enabled: true
+      aurora.assets.BTCUSDT.signal_threshold.value: 0.24
+      aurora.assets.BTCUSDT.exit.regime_tpsl.sl_mult.TREND_UP: 0.90
+      aurora.assets.BTCUSDT.exit.regime_tpsl.tp_mult.TREND_UP: 2.60
+      aurora.assets.BTCUSDT.exit.regime_tpsl.tp_mult.TREND_DOWN: 2.20
+      aurora.assets.BTCUSDT.trailing_stop.enabled: true
+      aurora.assets.BTCUSDT.trailing_stop.activation_pct: 0.012
+      aurora.assets.BTCUSDT.trailing_stop.trail_pct: 0.008
 
   - scenario_id: S05_AURORA_MACRO_RESIDUAL
     # macro_resid DOMINANT (0.38): bets on coin-specific alpha — move NOT explained by BTC macro.
@@ -105,6 +116,10 @@ scenarios:
       alpha_search: config/alpha_search.yaml
     overrides:
       aurora.decision.signal_threshold: 0.22       # v6: 0.11→0.22 (reduce trades ~55%)
+      aurora.decision.exit.time_exit_enabled: true
+      aurora.decision.exit.max_hold_time_sec: 21600
+      aurora.decision.exit.signal_exit_enabled: true
+      aurora.decision.exit.signal_reversal_threshold: -0.12
       aurora.decision.signal_weights.obi: 0.25
       aurora.decision.signal_weights.tfi: 0.12
       aurora.decision.signal_weights.delta_price: 0.12
@@ -120,6 +135,16 @@ scenarios:
       aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.85
       aurora.decision.regime_threshold_multipliers.UNCERTAIN: 2.50       # v6: 0.85→2.50 (UNCERTAIN regime tightened)
       aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
+      aurora.assets.DOGEUSDT.allowed_regimes: ["TREND_UP", "TREND_DOWN", "HIGH_VOLATILITY"]
+      aurora.assets.DOGEUSDT.signal_threshold.enabled: true
+      aurora.assets.DOGEUSDT.signal_threshold.value: 0.20
+      aurora.assets.DOGEUSDT.exit.max_hold_sec: 14400
+      aurora.assets.DOGEUSDT.exit.regime_tpsl.sl_mult.HIGH_VOLATILITY: 1.10
+      aurora.assets.DOGEUSDT.exit.regime_tpsl.tp_mult.DEFAULT: 1.70
+      aurora.assets.DOGEUSDT.exit.regime_tpsl.tp_mult.TREND_UP: 3.80
+      aurora.assets.DOGEUSDT.trailing_stop.enabled: true
+      aurora.assets.DOGEUSDT.trailing_stop.activation_pct: 0.025
+      aurora.assets.DOGEUSDT.trailing_stop.trail_pct: 0.012
 
   - scenario_id: S06_AURORA_ETH_CALIBRATED
     # Weights = ETH calibrated profile (Optuna ridge 70/30).
@@ -133,6 +158,10 @@ scenarios:
       alpha_search: config/alpha_search.yaml
     overrides:
       aurora.decision.signal_threshold: 0.22       # v6: 0.10→0.22 (reduce trades ~55%)
+      aurora.decision.exit.time_exit_enabled: true
+      aurora.decision.exit.max_hold_time_sec: 14400
+      aurora.decision.exit.signal_exit_enabled: true
+      aurora.decision.exit.signal_reversal_threshold: -0.08
       aurora.decision.signal_weights.obi: 0.19
       aurora.decision.signal_weights.tfi: 0.09
       aurora.decision.signal_weights.delta_price: 0.10
@@ -148,6 +177,15 @@ scenarios:
       aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.88
       aurora.decision.regime_threshold_multipliers.UNCERTAIN: 3.00       # v6: 1.80→3.00
       aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
+      aurora.assets.ETHUSDT.allowed_regimes: ["TREND_UP", "TREND_DOWN", "MEAN_REVERSION"]
+      aurora.assets.ETHUSDT.signal_threshold.enabled: true
+      aurora.assets.ETHUSDT.signal_threshold.value: 0.20
+      aurora.assets.ETHUSDT.exit.max_hold_sec: 14400
+      aurora.assets.ETHUSDT.exit.regime_tpsl.sl_mult.DEFAULT: 0.85
+      aurora.assets.ETHUSDT.exit.regime_tpsl.tp_mult.DEFAULT: 2.40
+      aurora.assets.ETHUSDT.trailing_stop.enabled: true
+      aurora.assets.ETHUSDT.trailing_stop.activation_pct: 0.018
+      aurora.assets.ETHUSDT.trailing_stop.trail_pct: 0.009
 
   - scenario_id: S20_AURORA_MICROSTRUCTURE_DEPTH
     # OBI(0.48) + depth_imbalance(-0.32): order book dominant.
@@ -161,6 +199,10 @@ scenarios:
       alpha_search: config/alpha_search.yaml
     overrides:
       aurora.decision.signal_threshold: 0.15       # v6b: 0.22→0.15 restored (0.22 degraded G/1k from 0.195→0.119)
+      aurora.decision.exit.time_exit_enabled: true
+      aurora.decision.exit.max_hold_time_sec: 7200
+      aurora.decision.exit.signal_exit_enabled: true
+      aurora.decision.exit.signal_reversal_threshold: -0.04
       aurora.decision.signal_weights.obi: 0.48
       aurora.decision.signal_weights.tfi: 0.15
       aurora.decision.signal_weights.delta_price: 0.10
@@ -176,6 +218,15 @@ scenarios:
       aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.82
       aurora.decision.regime_threshold_multipliers.UNCERTAIN: 3.00       # v6: 2.00→3.00
       aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
+      aurora.assets.BTCUSDT.allowed_regimes: ["TREND_UP", "TREND_DOWN", "HIGH_VOLATILITY"]
+      aurora.assets.BTCUSDT.signal_threshold.enabled: true
+      aurora.assets.BTCUSDT.signal_threshold.value: 0.14
+      aurora.assets.BTCUSDT.exit.max_hold_sec: 7200
+      aurora.assets.BTCUSDT.exit.regime_tpsl.sl_mult.HIGH_VOLATILITY: 1.20
+      aurora.assets.BTCUSDT.exit.regime_tpsl.tp_mult.HIGH_VOLATILITY: 1.30
+      aurora.assets.BTCUSDT.trailing_stop.enabled: true
+      aurora.assets.BTCUSDT.trailing_stop.activation_pct: 0.006
+      aurora.assets.BTCUSDT.trailing_stop.trail_pct: 0.004
 
   # ============================================================================
   # MEAN REVERSION FAMILY (S11, S12, S13) - 3 scenarios (unchanged)

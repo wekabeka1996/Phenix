@@ -13,8 +13,8 @@ Contracts:
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any
 from decimal import Decimal
-from pydantic import BaseModel, Field
-from datetime import datetime
+from pydantic import BaseModel, Field, field_serializer
+from datetime import datetime, timezone
 import logging
 from apps.reference.telemetry.metrics import inc_alpha_model_error
 
@@ -31,17 +31,21 @@ class AlphaScore(BaseModel):
     confidence: Decimal = Field(..., ge=0, le=1,
                                 description="Confidence in the score [0.0, 1.0]")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Calculation timestamp")
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Calculation timestamp",
+    )
     features_used: List[str] = Field(
         default_factory=list, description="Feature names used in calculation")
     why: List[str] = Field(default_factory=list,
                            description="Reasoning chain for the score")
 
-    class Config:
-        json_encoders = {
-            Decimal: lambda v: float(v),
-            datetime: lambda v: v.isoformat()
-        }
+    @field_serializer("score", "confidence", when_used="json")
+    def _serialize_decimal_fields(self, value: Decimal) -> float:
+        return float(value)
+
+    @field_serializer("timestamp", when_used="json")
+    def _serialize_timestamp(self, value: datetime) -> str:
+        return value.isoformat()
 
 
 class AlphaModel(ABC):

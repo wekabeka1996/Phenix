@@ -1,0 +1,5352 @@
+[
+  {
+    "asset": "USDT",
+    "income": "-1.99408000",
+    "incomeType": "COMMISSION",
+    "info": "62411907",
+    "symbol": "SOLUSDT",
+    "time": 1778699498000,
+    "tradeId": "62411907",
+    "tranId": 9107062411907
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.07113096",
+    "incomeType": "COMMISSION",
+    "info": "274444623",
+    "symbol": "ETHUSDT",
+    "time": 1778700357000,
+    "tradeId": "274444623",
+    "tranId": 90060274444623
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00810352",
+    "incomeType": "COMMISSION",
+    "info": "274444624",
+    "symbol": "ETHUSDT",
+    "time": 1778700357000,
+    "tradeId": "274444624",
+    "tranId": 90060274444624
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00405176",
+    "incomeType": "COMMISSION",
+    "info": "274444625",
+    "symbol": "ETHUSDT",
+    "time": 1778700358000,
+    "tradeId": "274444625",
+    "tranId": 90060274444625
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00405176",
+    "incomeType": "COMMISSION",
+    "info": "274444626",
+    "symbol": "ETHUSDT",
+    "time": 1778700358000,
+    "tradeId": "274444626",
+    "tranId": 90060274444626
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00630274",
+    "incomeType": "COMMISSION",
+    "info": "274444627",
+    "symbol": "ETHUSDT",
+    "time": 1778700358000,
+    "tradeId": "274444627",
+    "tranId": 90060274444627
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00450196",
+    "incomeType": "COMMISSION",
+    "info": "274444628",
+    "symbol": "ETHUSDT",
+    "time": 1778700359000,
+    "tradeId": "274444628",
+    "tranId": 90060274444628
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00720313",
+    "incomeType": "COMMISSION",
+    "info": "274444629",
+    "symbol": "ETHUSDT",
+    "time": 1778700359000,
+    "tradeId": "274444629",
+    "tranId": 90060274444629
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00585254",
+    "incomeType": "COMMISSION",
+    "info": "274444630",
+    "symbol": "ETHUSDT",
+    "time": 1778700360000,
+    "tradeId": "274444630",
+    "tranId": 90060274444630
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00585254",
+    "incomeType": "COMMISSION",
+    "info": "274444631",
+    "symbol": "ETHUSDT",
+    "time": 1778700360000,
+    "tradeId": "274444631",
+    "tranId": 90060274444631
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00675294",
+    "incomeType": "COMMISSION",
+    "info": "274444634",
+    "symbol": "ETHUSDT",
+    "time": 1778700360000,
+    "tradeId": "274444634",
+    "tranId": 90060274444634
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00405176",
+    "incomeType": "COMMISSION",
+    "info": "274444635",
+    "symbol": "ETHUSDT",
+    "time": 1778700361000,
+    "tradeId": "274444635",
+    "tranId": 90060274444635
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00675294",
+    "incomeType": "COMMISSION",
+    "info": "274444636",
+    "symbol": "ETHUSDT",
+    "time": 1778700361000,
+    "tradeId": "274444636",
+    "tranId": 90060274444636
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00540235",
+    "incomeType": "COMMISSION",
+    "info": "274444637",
+    "symbol": "ETHUSDT",
+    "time": 1778700361000,
+    "tradeId": "274444637",
+    "tranId": 90060274444637
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00585254",
+    "incomeType": "COMMISSION",
+    "info": "274444638",
+    "symbol": "ETHUSDT",
+    "time": 1778700362000,
+    "tradeId": "274444638",
+    "tranId": 90060274444638
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00540235",
+    "incomeType": "COMMISSION",
+    "info": "274444640",
+    "symbol": "ETHUSDT",
+    "time": 1778700363000,
+    "tradeId": "274444640",
+    "tranId": 90060274444640
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00450196",
+    "incomeType": "COMMISSION",
+    "info": "274444641",
+    "symbol": "ETHUSDT",
+    "time": 1778700363000,
+    "tradeId": "274444641",
+    "tranId": 90060274444641
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00810352",
+    "incomeType": "COMMISSION",
+    "info": "274444642",
+    "symbol": "ETHUSDT",
+    "time": 1778700363000,
+    "tradeId": "274444642",
+    "tranId": 90060274444642
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00450196",
+    "incomeType": "COMMISSION",
+    "info": "274444643",
+    "symbol": "ETHUSDT",
+    "time": 1778700363000,
+    "tradeId": "274444643",
+    "tranId": 90060274444643
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00585254",
+    "incomeType": "COMMISSION",
+    "info": "274444645",
+    "symbol": "ETHUSDT",
+    "time": 1778700364000,
+    "tradeId": "274444645",
+    "tranId": 90060274444645
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00675294",
+    "incomeType": "COMMISSION",
+    "info": "274444646",
+    "symbol": "ETHUSDT",
+    "time": 1778700364000,
+    "tradeId": "274444646",
+    "tranId": 90060274444646
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00810352",
+    "incomeType": "COMMISSION",
+    "info": "274444647",
+    "symbol": "ETHUSDT",
+    "time": 1778700365000,
+    "tradeId": "274444647",
+    "tranId": 90060274444647
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00810352",
+    "incomeType": "COMMISSION",
+    "info": "274444648",
+    "symbol": "ETHUSDT",
+    "time": 1778700365000,
+    "tradeId": "274444648",
+    "tranId": 90060274444648
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00810352",
+    "incomeType": "COMMISSION",
+    "info": "274444649",
+    "symbol": "ETHUSDT",
+    "time": 1778700365000,
+    "tradeId": "274444649",
+    "tranId": 90060274444649
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00585254",
+    "incomeType": "COMMISSION",
+    "info": "274444650",
+    "symbol": "ETHUSDT",
+    "time": 1778700365000,
+    "tradeId": "274444650",
+    "tranId": 90060274444650
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00585254",
+    "incomeType": "COMMISSION",
+    "info": "274444651",
+    "symbol": "ETHUSDT",
+    "time": 1778700366000,
+    "tradeId": "274444651",
+    "tranId": 90060274444651
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00405176",
+    "incomeType": "COMMISSION",
+    "info": "274444652",
+    "symbol": "ETHUSDT",
+    "time": 1778700366000,
+    "tradeId": "274444652",
+    "tranId": 90060274444652
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01845803",
+    "incomeType": "COMMISSION",
+    "info": "274444653",
+    "symbol": "ETHUSDT",
+    "time": 1778700366000,
+    "tradeId": "274444653",
+    "tranId": 90060274444653
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00765333",
+    "incomeType": "COMMISSION",
+    "info": "274444654",
+    "symbol": "ETHUSDT",
+    "time": 1778700366000,
+    "tradeId": "274444654",
+    "tranId": 90060274444654
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.39977404",
+    "incomeType": "COMMISSION",
+    "info": "274444655",
+    "symbol": "ETHUSDT",
+    "time": 1778700366000,
+    "tradeId": "274444655",
+    "tranId": 90060274444655
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00495215",
+    "incomeType": "COMMISSION",
+    "info": "274444656",
+    "symbol": "ETHUSDT",
+    "time": 1778700366000,
+    "tradeId": "274444656",
+    "tranId": 90060274444656
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00765333",
+    "incomeType": "COMMISSION",
+    "info": "274444657",
+    "symbol": "ETHUSDT",
+    "time": 1778700367000,
+    "tradeId": "274444657",
+    "tranId": 90060274444657
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00540235",
+    "incomeType": "COMMISSION",
+    "info": "274444658",
+    "symbol": "ETHUSDT",
+    "time": 1778700368000,
+    "tradeId": "274444658",
+    "tranId": 90060274444658
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00495215",
+    "incomeType": "COMMISSION",
+    "info": "274444659",
+    "symbol": "ETHUSDT",
+    "time": 1778700368000,
+    "tradeId": "274444659",
+    "tranId": 90060274444659
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00405176",
+    "incomeType": "COMMISSION",
+    "info": "274444660",
+    "symbol": "ETHUSDT",
+    "time": 1778700368000,
+    "tradeId": "274444660",
+    "tranId": 90060274444660
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00765333",
+    "incomeType": "COMMISSION",
+    "info": "274444661",
+    "symbol": "ETHUSDT",
+    "time": 1778700368000,
+    "tradeId": "274444661",
+    "tranId": 90060274444661
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00450196",
+    "incomeType": "COMMISSION",
+    "info": "274444662",
+    "symbol": "ETHUSDT",
+    "time": 1778700369000,
+    "tradeId": "274444662",
+    "tranId": 90060274444662
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00585254",
+    "incomeType": "COMMISSION",
+    "info": "274444663",
+    "symbol": "ETHUSDT",
+    "time": 1778700369000,
+    "tradeId": "274444663",
+    "tranId": 90060274444663
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00405176",
+    "incomeType": "COMMISSION",
+    "info": "274444664",
+    "symbol": "ETHUSDT",
+    "time": 1778700369000,
+    "tradeId": "274444664",
+    "tranId": 90060274444664
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00810352",
+    "incomeType": "COMMISSION",
+    "info": "274444665",
+    "symbol": "ETHUSDT",
+    "time": 1778700369000,
+    "tradeId": "274444665",
+    "tranId": 90060274444665
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00405176",
+    "incomeType": "COMMISSION",
+    "info": "274444666",
+    "symbol": "ETHUSDT",
+    "time": 1778700370000,
+    "tradeId": "274444666",
+    "tranId": 90060274444666
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00585254",
+    "incomeType": "COMMISSION",
+    "info": "274444667",
+    "symbol": "ETHUSDT",
+    "time": 1778700370000,
+    "tradeId": "274444667",
+    "tranId": 90060274444667
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00450196",
+    "incomeType": "COMMISSION",
+    "info": "274444668",
+    "symbol": "ETHUSDT",
+    "time": 1778700371000,
+    "tradeId": "274444668",
+    "tranId": 90060274444668
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00765333",
+    "incomeType": "COMMISSION",
+    "info": "274444669",
+    "symbol": "ETHUSDT",
+    "time": 1778700371000,
+    "tradeId": "274444669",
+    "tranId": 90060274444669
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00720313",
+    "incomeType": "COMMISSION",
+    "info": "274444670",
+    "symbol": "ETHUSDT",
+    "time": 1778700372000,
+    "tradeId": "274444670",
+    "tranId": 90060274444670
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00675294",
+    "incomeType": "COMMISSION",
+    "info": "274444671",
+    "symbol": "ETHUSDT",
+    "time": 1778700372000,
+    "tradeId": "274444671",
+    "tranId": 90060274444671
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00405176",
+    "incomeType": "COMMISSION",
+    "info": "274444672",
+    "symbol": "ETHUSDT",
+    "time": 1778700372000,
+    "tradeId": "274444672",
+    "tranId": 90060274444672
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00450196",
+    "incomeType": "COMMISSION",
+    "info": "274444673",
+    "symbol": "ETHUSDT",
+    "time": 1778700373000,
+    "tradeId": "274444673",
+    "tranId": 90060274444673
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00450196",
+    "incomeType": "COMMISSION",
+    "info": "274444674",
+    "symbol": "ETHUSDT",
+    "time": 1778700373000,
+    "tradeId": "274444674",
+    "tranId": 90060274444674
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00585254",
+    "incomeType": "COMMISSION",
+    "info": "274444675",
+    "symbol": "ETHUSDT",
+    "time": 1778700374000,
+    "tradeId": "274444675",
+    "tranId": 90060274444675
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00810352",
+    "incomeType": "COMMISSION",
+    "info": "274444676",
+    "symbol": "ETHUSDT",
+    "time": 1778700374000,
+    "tradeId": "274444676",
+    "tranId": 90060274444676
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00540235",
+    "incomeType": "COMMISSION",
+    "info": "274444677",
+    "symbol": "ETHUSDT",
+    "time": 1778700374000,
+    "tradeId": "274444677",
+    "tranId": 90060274444677
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00585254",
+    "incomeType": "COMMISSION",
+    "info": "274444678",
+    "symbol": "ETHUSDT",
+    "time": 1778700374000,
+    "tradeId": "274444678",
+    "tranId": 90060274444678
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00405176",
+    "incomeType": "COMMISSION",
+    "info": "274444679",
+    "symbol": "ETHUSDT",
+    "time": 1778700374000,
+    "tradeId": "274444679",
+    "tranId": 90060274444679
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00810352",
+    "incomeType": "COMMISSION",
+    "info": "274444680",
+    "symbol": "ETHUSDT",
+    "time": 1778700375000,
+    "tradeId": "274444680",
+    "tranId": 90060274444680
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00585254",
+    "incomeType": "COMMISSION",
+    "info": "274444681",
+    "symbol": "ETHUSDT",
+    "time": 1778700375000,
+    "tradeId": "274444681",
+    "tranId": 90060274444681
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00540235",
+    "incomeType": "COMMISSION",
+    "info": "274444682",
+    "symbol": "ETHUSDT",
+    "time": 1778700375000,
+    "tradeId": "274444682",
+    "tranId": 90060274444682
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00405176",
+    "incomeType": "COMMISSION",
+    "info": "274444683",
+    "symbol": "ETHUSDT",
+    "time": 1778700375000,
+    "tradeId": "274444683",
+    "tranId": 90060274444683
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00585254",
+    "incomeType": "COMMISSION",
+    "info": "274444684",
+    "symbol": "ETHUSDT",
+    "time": 1778700376000,
+    "tradeId": "274444684",
+    "tranId": 90060274444684
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00765333",
+    "incomeType": "COMMISSION",
+    "info": "274444685",
+    "symbol": "ETHUSDT",
+    "time": 1778700377000,
+    "tradeId": "274444685",
+    "tranId": 90060274444685
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00405176",
+    "incomeType": "COMMISSION",
+    "info": "274444686",
+    "symbol": "ETHUSDT",
+    "time": 1778700377000,
+    "tradeId": "274444686",
+    "tranId": 90060274444686
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00405176",
+    "incomeType": "COMMISSION",
+    "info": "274444687",
+    "symbol": "ETHUSDT",
+    "time": 1778700377000,
+    "tradeId": "274444687",
+    "tranId": 90060274444687
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.09859292",
+    "incomeType": "COMMISSION",
+    "info": "274444688",
+    "symbol": "ETHUSDT",
+    "time": 1778700378000,
+    "tradeId": "274444688",
+    "tranId": 90060274444688
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00135058",
+    "incomeType": "COMMISSION",
+    "info": "274444689",
+    "symbol": "ETHUSDT",
+    "time": 1778700378000,
+    "tradeId": "274444689",
+    "tranId": 90060274444689
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00495215",
+    "incomeType": "COMMISSION",
+    "info": "274444691",
+    "symbol": "ETHUSDT",
+    "time": 1778700378000,
+    "tradeId": "274444691",
+    "tranId": 90060274444691
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00450196",
+    "incomeType": "COMMISSION",
+    "info": "274444692",
+    "symbol": "ETHUSDT",
+    "time": 1778700379000,
+    "tradeId": "274444692",
+    "tranId": 90060274444692
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00540235",
+    "incomeType": "COMMISSION",
+    "info": "274444693",
+    "symbol": "ETHUSDT",
+    "time": 1778700379000,
+    "tradeId": "274444693",
+    "tranId": 90060274444693
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00405176",
+    "incomeType": "COMMISSION",
+    "info": "274444694",
+    "symbol": "ETHUSDT",
+    "time": 1778700379000,
+    "tradeId": "274444694",
+    "tranId": 90060274444694
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00405176",
+    "incomeType": "COMMISSION",
+    "info": "274444695",
+    "symbol": "ETHUSDT",
+    "time": 1778700379000,
+    "tradeId": "274444695",
+    "tranId": 90060274444695
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00585254",
+    "incomeType": "COMMISSION",
+    "info": "274444696",
+    "symbol": "ETHUSDT",
+    "time": 1778700380000,
+    "tradeId": "274444696",
+    "tranId": 90060274444696
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00810352",
+    "incomeType": "COMMISSION",
+    "info": "274444697",
+    "symbol": "ETHUSDT",
+    "time": 1778700380000,
+    "tradeId": "274444697",
+    "tranId": 90060274444697
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00495215",
+    "incomeType": "COMMISSION",
+    "info": "274444698",
+    "symbol": "ETHUSDT",
+    "time": 1778700380000,
+    "tradeId": "274444698",
+    "tranId": 90060274444698
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00450196",
+    "incomeType": "COMMISSION",
+    "info": "274444700",
+    "symbol": "ETHUSDT",
+    "time": 1778700381000,
+    "tradeId": "274444700",
+    "tranId": 90060274444700
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00765333",
+    "incomeType": "COMMISSION",
+    "info": "274444701",
+    "symbol": "ETHUSDT",
+    "time": 1778700381000,
+    "tradeId": "274444701",
+    "tranId": 90060274444701
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.04006744",
+    "incomeType": "COMMISSION",
+    "info": "274444703",
+    "symbol": "ETHUSDT",
+    "time": 1778700381000,
+    "tradeId": "274444703",
+    "tranId": 90060274444703
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.04006744",
+    "incomeType": "COMMISSION",
+    "info": "274444704",
+    "symbol": "ETHUSDT",
+    "time": 1778700381000,
+    "tradeId": "274444704",
+    "tranId": 90060274444704
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.04006744",
+    "incomeType": "COMMISSION",
+    "info": "274444705",
+    "symbol": "ETHUSDT",
+    "time": 1778700381000,
+    "tradeId": "274444705",
+    "tranId": 90060274444705
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00495215",
+    "incomeType": "COMMISSION",
+    "info": "274444706",
+    "symbol": "ETHUSDT",
+    "time": 1778700382000,
+    "tradeId": "274444706",
+    "tranId": 90060274444706
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00450196",
+    "incomeType": "COMMISSION",
+    "info": "274444707",
+    "symbol": "ETHUSDT",
+    "time": 1778700382000,
+    "tradeId": "274444707",
+    "tranId": 90060274444707
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00810352",
+    "incomeType": "COMMISSION",
+    "info": "274444708",
+    "symbol": "ETHUSDT",
+    "time": 1778700382000,
+    "tradeId": "274444708",
+    "tranId": 90060274444708
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00585254",
+    "incomeType": "COMMISSION",
+    "info": "274444709",
+    "symbol": "ETHUSDT",
+    "time": 1778700382000,
+    "tradeId": "274444709",
+    "tranId": 90060274444709
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00585254",
+    "incomeType": "COMMISSION",
+    "info": "274444711",
+    "symbol": "ETHUSDT",
+    "time": 1778700383000,
+    "tradeId": "274444711",
+    "tranId": 90060274444711
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00450196",
+    "incomeType": "COMMISSION",
+    "info": "274444712",
+    "symbol": "ETHUSDT",
+    "time": 1778700383000,
+    "tradeId": "274444712",
+    "tranId": 90060274444712
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00450196",
+    "incomeType": "COMMISSION",
+    "info": "274444713",
+    "symbol": "ETHUSDT",
+    "time": 1778700384000,
+    "tradeId": "274444713",
+    "tranId": 90060274444713
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.85987436",
+    "incomeType": "COMMISSION",
+    "info": "274444714",
+    "symbol": "ETHUSDT",
+    "time": 1778700384000,
+    "tradeId": "274444714",
+    "tranId": 90060274444714
+  },
+  {
+    "asset": "USDT",
+    "income": "-46.01912000",
+    "incomeType": "REALIZED_PNL",
+    "info": "274468887",
+    "symbol": "ETHUSDT",
+    "time": 1778704446000,
+    "tradeId": "274468887",
+    "tranId": 90061274468887
+  },
+  {
+    "asset": "USDT",
+    "income": "-4.01794891",
+    "incomeType": "COMMISSION",
+    "info": "274468887",
+    "symbol": "ETHUSDT",
+    "time": 1778704446000,
+    "tradeId": "274468887",
+    "tranId": 90061274468887
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.00106313",
+    "incomeType": "COMMISSION",
+    "info": "274484889",
+    "symbol": "ETHUSDT",
+    "time": 1778707595000,
+    "tradeId": "274484889",
+    "tranId": 90060274484889
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.17287337",
+    "incomeType": "COMMISSION",
+    "info": "88263532",
+    "symbol": "DOGEUSDT",
+    "time": 1778712900000,
+    "tradeId": "88263532",
+    "tranId": 9065088263532
+  },
+  {
+    "asset": "USDT",
+    "income": "1.00125515",
+    "incomeType": "FUNDING_FEE",
+    "info": "FUNDING_FEE",
+    "symbol": "ETHUSDT",
+    "time": 1778716801000,
+    "tradeId": "",
+    "tranId": 1070949342775951870
+  },
+  {
+    "asset": "USDT",
+    "income": "0.51295314",
+    "incomeType": "FUNDING_FEE",
+    "info": "FUNDING_FEE",
+    "symbol": "DOGEUSDT",
+    "time": 1778716802000,
+    "tradeId": "",
+    "tranId": 1070949382076579870
+  },
+  {
+    "asset": "USDT",
+    "income": "1.00228782",
+    "incomeType": "FUNDING_FEE",
+    "info": "FUNDING_FEE",
+    "symbol": "SOLUSDT",
+    "time": 1778716802000,
+    "tradeId": "",
+    "tranId": 1070949401076777000
+  },
+  {
+    "asset": "USDT",
+    "income": "46.41256000",
+    "incomeType": "REALIZED_PNL",
+    "info": "88291129",
+    "symbol": "DOGEUSDT",
+    "time": 1778716912000,
+    "tradeId": "88291129",
+    "tranId": 9065188291129
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.15430835",
+    "incomeType": "COMMISSION",
+    "info": "88291129",
+    "symbol": "DOGEUSDT",
+    "time": 1778716912000,
+    "tradeId": "88291129",
+    "tranId": 9065188291129
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01320000",
+    "incomeType": "REALIZED_PNL",
+    "info": "62472087",
+    "symbol": "SOLUSDT",
+    "time": 1778717330000,
+    "tradeId": "62472087",
+    "tranId": 9107162472087
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00073040",
+    "incomeType": "COMMISSION",
+    "info": "62472087",
+    "symbol": "SOLUSDT",
+    "time": 1778717330000,
+    "tradeId": "62472087",
+    "tranId": 9107162472087
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.08580000",
+    "incomeType": "REALIZED_PNL",
+    "info": "62472088",
+    "symbol": "SOLUSDT",
+    "time": 1778717330000,
+    "tradeId": "62472088",
+    "tranId": 9107162472088
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00474760",
+    "incomeType": "COMMISSION",
+    "info": "62472088",
+    "symbol": "SOLUSDT",
+    "time": 1778717330000,
+    "tradeId": "62472088",
+    "tranId": 9107162472088
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.09900000",
+    "incomeType": "REALIZED_PNL",
+    "info": "62472089",
+    "symbol": "SOLUSDT",
+    "time": 1778717330000,
+    "tradeId": "62472089",
+    "tranId": 9107162472089
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00547800",
+    "incomeType": "COMMISSION",
+    "info": "62472089",
+    "symbol": "SOLUSDT",
+    "time": 1778717330000,
+    "tradeId": "62472089",
+    "tranId": 9107162472089
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.09900000",
+    "incomeType": "REALIZED_PNL",
+    "info": "62472090",
+    "symbol": "SOLUSDT",
+    "time": 1778717330000,
+    "tradeId": "62472090",
+    "tranId": 9107162472090
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00547800",
+    "incomeType": "COMMISSION",
+    "info": "62472090",
+    "symbol": "SOLUSDT",
+    "time": 1778717330000,
+    "tradeId": "62472090",
+    "tranId": 9107162472090
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.05940000",
+    "incomeType": "REALIZED_PNL",
+    "info": "62472091",
+    "symbol": "SOLUSDT",
+    "time": 1778717330000,
+    "tradeId": "62472091",
+    "tranId": 9107162472091
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00328680",
+    "incomeType": "COMMISSION",
+    "info": "62472091",
+    "symbol": "SOLUSDT",
+    "time": 1778717330000,
+    "tradeId": "62472091",
+    "tranId": 9107162472091
+  },
+  {
+    "asset": "USDT",
+    "income": "-72.24360000",
+    "incomeType": "REALIZED_PNL",
+    "info": "62472092",
+    "symbol": "SOLUSDT",
+    "time": 1778717330000,
+    "tradeId": "62472092",
+    "tranId": 9107162472092
+  },
+  {
+    "asset": "USDT",
+    "income": "-3.99747920",
+    "incomeType": "COMMISSION",
+    "info": "62472092",
+    "symbol": "SOLUSDT",
+    "time": 1778717330000,
+    "tradeId": "62472092",
+    "tranId": 9107162472092
+  },
+  {
+    "asset": "USDT",
+    "income": "-37.25400000",
+    "incomeType": "REALIZED_PNL",
+    "info": "274548413",
+    "symbol": "ETHUSDT",
+    "time": 1778717710000,
+    "tradeId": "274548413",
+    "tranId": 90061274548413
+  },
+  {
+    "asset": "USDT",
+    "income": "-4.01702786",
+    "incomeType": "COMMISSION",
+    "info": "274548413",
+    "symbol": "ETHUSDT",
+    "time": 1778717710000,
+    "tradeId": "274548413",
+    "tranId": 90061274548413
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.00004576",
+    "incomeType": "COMMISSION",
+    "info": "107958315",
+    "symbol": "XRPUSDT",
+    "time": 1778722222000,
+    "tradeId": "107958315",
+    "tranId": 90100107958315
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00118403",
+    "incomeType": "COMMISSION",
+    "info": "88355374",
+    "symbol": "DOGEUSDT",
+    "time": 1778726401000,
+    "tradeId": "88355374",
+    "tranId": 9065188355374
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.13915613",
+    "incomeType": "COMMISSION",
+    "info": "88355375",
+    "symbol": "DOGEUSDT",
+    "time": 1778726401000,
+    "tradeId": "88355375",
+    "tranId": 9065188355375
+  },
+  {
+    "asset": "USDT",
+    "income": "51.67716000",
+    "incomeType": "REALIZED_PNL",
+    "info": "107988350",
+    "symbol": "XRPUSDT",
+    "time": 1778727174000,
+    "tradeId": "107988350",
+    "tranId": 90101107988350
+  },
+  {
+    "asset": "USDT",
+    "income": "-3.97942065",
+    "incomeType": "COMMISSION",
+    "info": "107988350",
+    "symbol": "XRPUSDT",
+    "time": 1778727174000,
+    "tradeId": "107988350",
+    "tranId": 90101107988350
+  },
+  {
+    "asset": "USDT",
+    "income": "-38.53564000",
+    "incomeType": "REALIZED_PNL",
+    "info": "88368607",
+    "symbol": "DOGEUSDT",
+    "time": 1778728135000,
+    "tradeId": "88368607",
+    "tranId": 9065088368607
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.12492592",
+    "incomeType": "COMMISSION",
+    "info": "88368607",
+    "symbol": "DOGEUSDT",
+    "time": 1778728135000,
+    "tradeId": "88368607",
+    "tranId": 9065088368607
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.14155849",
+    "incomeType": "COMMISSION",
+    "info": "88369554",
+    "symbol": "DOGEUSDT",
+    "time": 1778728204000,
+    "tradeId": "88369554",
+    "tranId": 9065188369554
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.99991721",
+    "incomeType": "COMMISSION",
+    "info": "107996990",
+    "symbol": "XRPUSDT",
+    "time": 1778728557000,
+    "tradeId": "107996990",
+    "tranId": 90101107996990
+  },
+  {
+    "asset": "USDT",
+    "income": "-32.22384000",
+    "incomeType": "REALIZED_PNL",
+    "info": "88387968",
+    "symbol": "DOGEUSDT",
+    "time": 1778731078000,
+    "tradeId": "88387968",
+    "tranId": 9065088387968
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.12866896",
+    "incomeType": "COMMISSION",
+    "info": "88387968",
+    "symbol": "DOGEUSDT",
+    "time": 1778731078000,
+    "tradeId": "88387968",
+    "tranId": 9065088387968
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.48760640",
+    "incomeType": "COMMISSION",
+    "info": "274657725",
+    "symbol": "ETHUSDT",
+    "time": 1778735046000,
+    "tradeId": "274657725",
+    "tranId": 90060274657725
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.12361689",
+    "incomeType": "COMMISSION",
+    "info": "88422331",
+    "symbol": "DOGEUSDT",
+    "time": 1778736302000,
+    "tradeId": "88422331",
+    "tranId": 9065088422331
+  },
+  {
+    "asset": "USDT",
+    "income": "-28.91432000",
+    "incomeType": "REALIZED_PNL",
+    "info": "88426939",
+    "symbol": "DOGEUSDT",
+    "time": 1778736860000,
+    "tradeId": "88426939",
+    "tranId": 9065188426939
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.13518262",
+    "incomeType": "COMMISSION",
+    "info": "88426939",
+    "symbol": "DOGEUSDT",
+    "time": 1778736860000,
+    "tradeId": "88426939",
+    "tranId": 9065188426939
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.11015026",
+    "incomeType": "COMMISSION",
+    "info": "88427532",
+    "symbol": "DOGEUSDT",
+    "time": 1778736903000,
+    "tradeId": "88427532",
+    "tranId": 9065088427532
+  },
+  {
+    "asset": "USDT",
+    "income": "51.20439000",
+    "incomeType": "REALIZED_PNL",
+    "info": "108049510",
+    "symbol": "XRPUSDT",
+    "time": 1778736950000,
+    "tradeId": "108049510",
+    "tranId": 90100108049510
+  },
+  {
+    "asset": "USDT",
+    "income": "-4.02031618",
+    "incomeType": "COMMISSION",
+    "info": "108049510",
+    "symbol": "XRPUSDT",
+    "time": 1778736950000,
+    "tradeId": "108049510",
+    "tranId": 90100108049510
+  },
+  {
+    "asset": "USDT",
+    "income": "-34.84929000",
+    "incomeType": "REALIZED_PNL",
+    "info": "274677110",
+    "symbol": "ETHUSDT",
+    "time": 1778737881000,
+    "tradeId": "274677110",
+    "tranId": 90061274677110
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.98915251",
+    "incomeType": "COMMISSION",
+    "info": "274677110",
+    "symbol": "ETHUSDT",
+    "time": 1778737881000,
+    "tradeId": "274677110",
+    "tranId": 90061274677110
+  },
+  {
+    "asset": "USDT",
+    "income": "-24.40385000",
+    "incomeType": "REALIZED_PNL",
+    "info": "88437440",
+    "symbol": "DOGEUSDT",
+    "time": 1778738296000,
+    "tradeId": "88437440",
+    "tranId": 9065188437440
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.11991180",
+    "incomeType": "COMMISSION",
+    "info": "88437440",
+    "symbol": "DOGEUSDT",
+    "time": 1778738296000,
+    "tradeId": "88437440",
+    "tranId": 9065188437440
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.10257203",
+    "incomeType": "COMMISSION",
+    "info": "88490490",
+    "symbol": "DOGEUSDT",
+    "time": 1778745902000,
+    "tradeId": "88490490",
+    "tranId": 9065188490490
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00497620",
+    "incomeType": "COMMISSION",
+    "info": "274780709",
+    "symbol": "ETHUSDT",
+    "time": 1778754363000,
+    "tradeId": "274780709",
+    "tranId": 90060274780709
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00407143",
+    "incomeType": "COMMISSION",
+    "info": "274780710",
+    "symbol": "ETHUSDT",
+    "time": 1778754364000,
+    "tradeId": "274780710",
+    "tranId": 90060274780710
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00497620",
+    "incomeType": "COMMISSION",
+    "info": "274780711",
+    "symbol": "ETHUSDT",
+    "time": 1778754365000,
+    "tradeId": "274780711",
+    "tranId": 90060274780711
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00407143",
+    "incomeType": "COMMISSION",
+    "info": "274780712",
+    "symbol": "ETHUSDT",
+    "time": 1778754365000,
+    "tradeId": "274780712",
+    "tranId": 90060274780712
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00769049",
+    "incomeType": "COMMISSION",
+    "info": "274780713",
+    "symbol": "ETHUSDT",
+    "time": 1778754365000,
+    "tradeId": "274780713",
+    "tranId": 90060274780713
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00452381",
+    "incomeType": "COMMISSION",
+    "info": "274780714",
+    "symbol": "ETHUSDT",
+    "time": 1778754365000,
+    "tradeId": "274780714",
+    "tranId": 90060274780714
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00452381",
+    "incomeType": "COMMISSION",
+    "info": "274780715",
+    "symbol": "ETHUSDT",
+    "time": 1778754366000,
+    "tradeId": "274780715",
+    "tranId": 90060274780715
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00497620",
+    "incomeType": "COMMISSION",
+    "info": "274780716",
+    "symbol": "ETHUSDT",
+    "time": 1778754366000,
+    "tradeId": "274780716",
+    "tranId": 90060274780716
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00407143",
+    "incomeType": "COMMISSION",
+    "info": "274780717",
+    "symbol": "ETHUSDT",
+    "time": 1778754367000,
+    "tradeId": "274780717",
+    "tranId": 90060274780717
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00633334",
+    "incomeType": "COMMISSION",
+    "info": "274780718",
+    "symbol": "ETHUSDT",
+    "time": 1778754367000,
+    "tradeId": "274780718",
+    "tranId": 90060274780718
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00407143",
+    "incomeType": "COMMISSION",
+    "info": "274780719",
+    "symbol": "ETHUSDT",
+    "time": 1778754367000,
+    "tradeId": "274780719",
+    "tranId": 90060274780719
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00588096",
+    "incomeType": "COMMISSION",
+    "info": "274780720",
+    "symbol": "ETHUSDT",
+    "time": 1778754367000,
+    "tradeId": "274780720",
+    "tranId": 90060274780720
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00678573",
+    "incomeType": "COMMISSION",
+    "info": "274780721",
+    "symbol": "ETHUSDT",
+    "time": 1778754368000,
+    "tradeId": "274780721",
+    "tranId": 90060274780721
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00407143",
+    "incomeType": "COMMISSION",
+    "info": "274780722",
+    "symbol": "ETHUSDT",
+    "time": 1778754368000,
+    "tradeId": "274780722",
+    "tranId": 90060274780722
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00542858",
+    "incomeType": "COMMISSION",
+    "info": "274780723",
+    "symbol": "ETHUSDT",
+    "time": 1778754369000,
+    "tradeId": "274780723",
+    "tranId": 90060274780723
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00542858",
+    "incomeType": "COMMISSION",
+    "info": "274780724",
+    "symbol": "ETHUSDT",
+    "time": 1778754369000,
+    "tradeId": "274780724",
+    "tranId": 90060274780724
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00497620",
+    "incomeType": "COMMISSION",
+    "info": "274780725",
+    "symbol": "ETHUSDT",
+    "time": 1778754369000,
+    "tradeId": "274780725",
+    "tranId": 90060274780725
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00407143",
+    "incomeType": "COMMISSION",
+    "info": "274780726",
+    "symbol": "ETHUSDT",
+    "time": 1778754369000,
+    "tradeId": "274780726",
+    "tranId": 90060274780726
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.37931271",
+    "incomeType": "COMMISSION",
+    "info": "274780727",
+    "symbol": "ETHUSDT",
+    "time": 1778754378000,
+    "tradeId": "274780727",
+    "tranId": 90060274780727
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00100527",
+    "incomeType": "COMMISSION",
+    "info": "108173212",
+    "symbol": "XRPUSDT",
+    "time": 1778757412000,
+    "tradeId": "108173212",
+    "tranId": 90100108173212
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00114887",
+    "incomeType": "COMMISSION",
+    "info": "108173213",
+    "symbol": "XRPUSDT",
+    "time": 1778757412000,
+    "tradeId": "108173213",
+    "tranId": 90100108173213
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00117760",
+    "incomeType": "COMMISSION",
+    "info": "108173214",
+    "symbol": "XRPUSDT",
+    "time": 1778757412000,
+    "tradeId": "108173214",
+    "tranId": 90100108173214
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00109143",
+    "incomeType": "COMMISSION",
+    "info": "108173215",
+    "symbol": "XRPUSDT",
+    "time": 1778757412000,
+    "tradeId": "108173215",
+    "tranId": 90100108173215
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00100527",
+    "incomeType": "COMMISSION",
+    "info": "108173216",
+    "symbol": "XRPUSDT",
+    "time": 1778757414000,
+    "tradeId": "108173216",
+    "tranId": 90100108173216
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00112015",
+    "incomeType": "COMMISSION",
+    "info": "108173217",
+    "symbol": "XRPUSDT",
+    "time": 1778757414000,
+    "tradeId": "108173217",
+    "tranId": 90100108173217
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00112015",
+    "incomeType": "COMMISSION",
+    "info": "108173218",
+    "symbol": "XRPUSDT",
+    "time": 1778757414000,
+    "tradeId": "108173218",
+    "tranId": 90100108173218
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00103399",
+    "incomeType": "COMMISSION",
+    "info": "108173219",
+    "symbol": "XRPUSDT",
+    "time": 1778757414000,
+    "tradeId": "108173219",
+    "tranId": 90100108173219
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00126376",
+    "incomeType": "COMMISSION",
+    "info": "108173220",
+    "symbol": "XRPUSDT",
+    "time": 1778757415000,
+    "tradeId": "108173220",
+    "tranId": 90100108173220
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00100527",
+    "incomeType": "COMMISSION",
+    "info": "108173221",
+    "symbol": "XRPUSDT",
+    "time": 1778757415000,
+    "tradeId": "108173221",
+    "tranId": 90100108173221
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00114887",
+    "incomeType": "COMMISSION",
+    "info": "108173222",
+    "symbol": "XRPUSDT",
+    "time": 1778757416000,
+    "tradeId": "108173222",
+    "tranId": 90100108173222
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00126376",
+    "incomeType": "COMMISSION",
+    "info": "108173223",
+    "symbol": "XRPUSDT",
+    "time": 1778757416000,
+    "tradeId": "108173223",
+    "tranId": 90100108173223
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00109143",
+    "incomeType": "COMMISSION",
+    "info": "108173224",
+    "symbol": "XRPUSDT",
+    "time": 1778757417000,
+    "tradeId": "108173224",
+    "tranId": 90100108173224
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00120632",
+    "incomeType": "COMMISSION",
+    "info": "108173225",
+    "symbol": "XRPUSDT",
+    "time": 1778757417000,
+    "tradeId": "108173225",
+    "tranId": 90100108173225
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00126376",
+    "incomeType": "COMMISSION",
+    "info": "108173226",
+    "symbol": "XRPUSDT",
+    "time": 1778757418000,
+    "tradeId": "108173226",
+    "tranId": 90100108173226
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00100527",
+    "incomeType": "COMMISSION",
+    "info": "108173227",
+    "symbol": "XRPUSDT",
+    "time": 1778757418000,
+    "tradeId": "108173227",
+    "tranId": 90100108173227
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00103399",
+    "incomeType": "COMMISSION",
+    "info": "108173228",
+    "symbol": "XRPUSDT",
+    "time": 1778757418000,
+    "tradeId": "108173228",
+    "tranId": 90100108173228
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00109143",
+    "incomeType": "COMMISSION",
+    "info": "108173229",
+    "symbol": "XRPUSDT",
+    "time": 1778757418000,
+    "tradeId": "108173229",
+    "tranId": 90100108173229
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00117760",
+    "incomeType": "COMMISSION",
+    "info": "108173230",
+    "symbol": "XRPUSDT",
+    "time": 1778757418000,
+    "tradeId": "108173230",
+    "tranId": 90100108173230
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00112015",
+    "incomeType": "COMMISSION",
+    "info": "108173231",
+    "symbol": "XRPUSDT",
+    "time": 1778757419000,
+    "tradeId": "108173231",
+    "tranId": 90100108173231
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00112015",
+    "incomeType": "COMMISSION",
+    "info": "108173232",
+    "symbol": "XRPUSDT",
+    "time": 1778757419000,
+    "tradeId": "108173232",
+    "tranId": 90100108173232
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00126376",
+    "incomeType": "COMMISSION",
+    "info": "108173233",
+    "symbol": "XRPUSDT",
+    "time": 1778757419000,
+    "tradeId": "108173233",
+    "tranId": 90100108173233
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00123504",
+    "incomeType": "COMMISSION",
+    "info": "108173234",
+    "symbol": "XRPUSDT",
+    "time": 1778757420000,
+    "tradeId": "108173234",
+    "tranId": 90100108173234
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00103399",
+    "incomeType": "COMMISSION",
+    "info": "108173235",
+    "symbol": "XRPUSDT",
+    "time": 1778757420000,
+    "tradeId": "108173235",
+    "tranId": 90100108173235
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00126376",
+    "incomeType": "COMMISSION",
+    "info": "108173236",
+    "symbol": "XRPUSDT",
+    "time": 1778757421000,
+    "tradeId": "108173236",
+    "tranId": 90100108173236
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00117760",
+    "incomeType": "COMMISSION",
+    "info": "108173237",
+    "symbol": "XRPUSDT",
+    "time": 1778757422000,
+    "tradeId": "108173237",
+    "tranId": 90100108173237
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00120632",
+    "incomeType": "COMMISSION",
+    "info": "108173238",
+    "symbol": "XRPUSDT",
+    "time": 1778757422000,
+    "tradeId": "108173238",
+    "tranId": 90100108173238
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00112015",
+    "incomeType": "COMMISSION",
+    "info": "108173239",
+    "symbol": "XRPUSDT",
+    "time": 1778757423000,
+    "tradeId": "108173239",
+    "tranId": 90100108173239
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00114887",
+    "incomeType": "COMMISSION",
+    "info": "108173240",
+    "symbol": "XRPUSDT",
+    "time": 1778757423000,
+    "tradeId": "108173240",
+    "tranId": 90100108173240
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00117760",
+    "incomeType": "COMMISSION",
+    "info": "108173241",
+    "symbol": "XRPUSDT",
+    "time": 1778757423000,
+    "tradeId": "108173241",
+    "tranId": 90100108173241
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00100527",
+    "incomeType": "COMMISSION",
+    "info": "108173242",
+    "symbol": "XRPUSDT",
+    "time": 1778757424000,
+    "tradeId": "108173242",
+    "tranId": 90100108173242
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00117760",
+    "incomeType": "COMMISSION",
+    "info": "108173266",
+    "symbol": "XRPUSDT",
+    "time": 1778757432000,
+    "tradeId": "108173266",
+    "tranId": 90100108173266
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00117760",
+    "incomeType": "COMMISSION",
+    "info": "108173267",
+    "symbol": "XRPUSDT",
+    "time": 1778757432000,
+    "tradeId": "108173267",
+    "tranId": 90100108173267
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00123504",
+    "incomeType": "COMMISSION",
+    "info": "108173268",
+    "symbol": "XRPUSDT",
+    "time": 1778757434000,
+    "tradeId": "108173268",
+    "tranId": 90100108173268
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00112015",
+    "incomeType": "COMMISSION",
+    "info": "108173269",
+    "symbol": "XRPUSDT",
+    "time": 1778757434000,
+    "tradeId": "108173269",
+    "tranId": 90100108173269
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00123504",
+    "incomeType": "COMMISSION",
+    "info": "108173270",
+    "symbol": "XRPUSDT",
+    "time": 1778757434000,
+    "tradeId": "108173270",
+    "tranId": 90100108173270
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00103399",
+    "incomeType": "COMMISSION",
+    "info": "108173271",
+    "symbol": "XRPUSDT",
+    "time": 1778757434000,
+    "tradeId": "108173271",
+    "tranId": 90100108173271
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00123504",
+    "incomeType": "COMMISSION",
+    "info": "108173272",
+    "symbol": "XRPUSDT",
+    "time": 1778757434000,
+    "tradeId": "108173272",
+    "tranId": 90100108173272
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00120632",
+    "incomeType": "COMMISSION",
+    "info": "108173273",
+    "symbol": "XRPUSDT",
+    "time": 1778757435000,
+    "tradeId": "108173273",
+    "tranId": 90100108173273
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00100527",
+    "incomeType": "COMMISSION",
+    "info": "108173274",
+    "symbol": "XRPUSDT",
+    "time": 1778757435000,
+    "tradeId": "108173274",
+    "tranId": 90100108173274
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00109143",
+    "incomeType": "COMMISSION",
+    "info": "108173275",
+    "symbol": "XRPUSDT",
+    "time": 1778757435000,
+    "tradeId": "108173275",
+    "tranId": 90100108173275
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.95369916",
+    "incomeType": "COMMISSION",
+    "info": "108173276",
+    "symbol": "XRPUSDT",
+    "time": 1778757436000,
+    "tradeId": "108173276",
+    "tranId": 90100108173276
+  },
+  {
+    "asset": "USDT",
+    "income": "-85.66335000",
+    "incomeType": "REALIZED_PNL",
+    "info": "108207073",
+    "symbol": "XRPUSDT",
+    "time": 1778762808000,
+    "tradeId": "108207073",
+    "tranId": 90101108207073
+  },
+  {
+    "asset": "USDT",
+    "income": "-4.03495272",
+    "incomeType": "COMMISSION",
+    "info": "108207073",
+    "symbol": "XRPUSDT",
+    "time": 1778762808000,
+    "tradeId": "108207073",
+    "tranId": 90101108207073
+  },
+  {
+    "asset": "USDT",
+    "income": "85.19936000",
+    "incomeType": "REALIZED_PNL",
+    "info": "88620307",
+    "symbol": "DOGEUSDT",
+    "time": 1778763338000,
+    "tradeId": "88620307",
+    "tranId": 9065088620307
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.13665177",
+    "incomeType": "COMMISSION",
+    "info": "88620307",
+    "symbol": "DOGEUSDT",
+    "time": 1778763338000,
+    "tradeId": "88620307",
+    "tranId": 9065088620307
+  },
+  {
+    "asset": "USDT",
+    "income": "-33.67000000",
+    "incomeType": "REALIZED_PNL",
+    "info": "274885236",
+    "symbol": "ETHUSDT",
+    "time": 1778769981000,
+    "tradeId": "274885236",
+    "tranId": 90061274885236
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.95395100",
+    "incomeType": "COMMISSION",
+    "info": "274885236",
+    "symbol": "ETHUSDT",
+    "time": 1778769981000,
+    "tradeId": "274885236",
+    "tranId": 90061274885236
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.71670808",
+    "incomeType": "COMMISSION",
+    "info": "489511673",
+    "symbol": "BTCUSDT",
+    "time": 1778775304000,
+    "tradeId": "489511673",
+    "tranId": 90031489511673
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.81444100",
+    "incomeType": "COMMISSION",
+    "info": "489511677",
+    "symbol": "BTCUSDT",
+    "time": 1778775305000,
+    "tradeId": "489511677",
+    "tranId": 90031489511677
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01364360",
+    "incomeType": "COMMISSION",
+    "info": "125084371",
+    "symbol": "BNBUSDT",
+    "time": 1778776205000,
+    "tradeId": "125084371",
+    "tranId": 90330125084371
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084372",
+    "symbol": "BNBUSDT",
+    "time": 1778776205000,
+    "tradeId": "125084372",
+    "tranId": 90330125084372
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01364360",
+    "incomeType": "COMMISSION",
+    "info": "125084373",
+    "symbol": "BNBUSDT",
+    "time": 1778776206000,
+    "tradeId": "125084373",
+    "tranId": 90330125084373
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01364360",
+    "incomeType": "COMMISSION",
+    "info": "125084374",
+    "symbol": "BNBUSDT",
+    "time": 1778776206000,
+    "tradeId": "125084374",
+    "tranId": 90330125084374
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084375",
+    "symbol": "BNBUSDT",
+    "time": 1778776206000,
+    "tradeId": "125084375",
+    "tranId": 90330125084375
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00136436",
+    "incomeType": "COMMISSION",
+    "info": "125084376",
+    "symbol": "BNBUSDT",
+    "time": 1778776206000,
+    "tradeId": "125084376",
+    "tranId": 90330125084376
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01227924",
+    "incomeType": "COMMISSION",
+    "info": "125084377",
+    "symbol": "BNBUSDT",
+    "time": 1778776207000,
+    "tradeId": "125084377",
+    "tranId": 90330125084377
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084378",
+    "symbol": "BNBUSDT",
+    "time": 1778776207000,
+    "tradeId": "125084378",
+    "tranId": 90330125084378
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084379",
+    "symbol": "BNBUSDT",
+    "time": 1778776208000,
+    "tradeId": "125084379",
+    "tranId": 90330125084379
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084380",
+    "symbol": "BNBUSDT",
+    "time": 1778776208000,
+    "tradeId": "125084380",
+    "tranId": 90330125084380
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084381",
+    "symbol": "BNBUSDT",
+    "time": 1778776208000,
+    "tradeId": "125084381",
+    "tranId": 90330125084381
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01227924",
+    "incomeType": "COMMISSION",
+    "info": "125084382",
+    "symbol": "BNBUSDT",
+    "time": 1778776209000,
+    "tradeId": "125084382",
+    "tranId": 90330125084382
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084383",
+    "symbol": "BNBUSDT",
+    "time": 1778776209000,
+    "tradeId": "125084383",
+    "tranId": 90330125084383
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01227924",
+    "incomeType": "COMMISSION",
+    "info": "125084384",
+    "symbol": "BNBUSDT",
+    "time": 1778776209000,
+    "tradeId": "125084384",
+    "tranId": 90330125084384
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084385",
+    "symbol": "BNBUSDT",
+    "time": 1778776210000,
+    "tradeId": "125084385",
+    "tranId": 90330125084385
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084386",
+    "symbol": "BNBUSDT",
+    "time": 1778776210000,
+    "tradeId": "125084386",
+    "tranId": 90330125084386
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084387",
+    "symbol": "BNBUSDT",
+    "time": 1778776210000,
+    "tradeId": "125084387",
+    "tranId": 90330125084387
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00136436",
+    "incomeType": "COMMISSION",
+    "info": "125084388",
+    "symbol": "BNBUSDT",
+    "time": 1778776211000,
+    "tradeId": "125084388",
+    "tranId": 90330125084388
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084389",
+    "symbol": "BNBUSDT",
+    "time": 1778776211000,
+    "tradeId": "125084389",
+    "tranId": 90330125084389
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084390",
+    "symbol": "BNBUSDT",
+    "time": 1778776211000,
+    "tradeId": "125084390",
+    "tranId": 90330125084390
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.06139620",
+    "incomeType": "COMMISSION",
+    "info": "125084391",
+    "symbol": "BNBUSDT",
+    "time": 1778776211000,
+    "tradeId": "125084391",
+    "tranId": 90330125084391
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00136436",
+    "incomeType": "COMMISSION",
+    "info": "125084392",
+    "symbol": "BNBUSDT",
+    "time": 1778776212000,
+    "tradeId": "125084392",
+    "tranId": 90330125084392
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01364360",
+    "incomeType": "COMMISSION",
+    "info": "125084393",
+    "symbol": "BNBUSDT",
+    "time": 1778776212000,
+    "tradeId": "125084393",
+    "tranId": 90330125084393
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084394",
+    "symbol": "BNBUSDT",
+    "time": 1778776213000,
+    "tradeId": "125084394",
+    "tranId": 90330125084394
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00136436",
+    "incomeType": "COMMISSION",
+    "info": "125084395",
+    "symbol": "BNBUSDT",
+    "time": 1778776213000,
+    "tradeId": "125084395",
+    "tranId": 90330125084395
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00409308",
+    "incomeType": "COMMISSION",
+    "info": "125084396",
+    "symbol": "BNBUSDT",
+    "time": 1778776214000,
+    "tradeId": "125084396",
+    "tranId": 90330125084396
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084397",
+    "symbol": "BNBUSDT",
+    "time": 1778776214000,
+    "tradeId": "125084397",
+    "tranId": 90330125084397
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084398",
+    "symbol": "BNBUSDT",
+    "time": 1778776214000,
+    "tradeId": "125084398",
+    "tranId": 90330125084398
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084400",
+    "symbol": "BNBUSDT",
+    "time": 1778776215000,
+    "tradeId": "125084400",
+    "tranId": 90330125084400
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01364360",
+    "incomeType": "COMMISSION",
+    "info": "125084401",
+    "symbol": "BNBUSDT",
+    "time": 1778776215000,
+    "tradeId": "125084401",
+    "tranId": 90330125084401
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084403",
+    "symbol": "BNBUSDT",
+    "time": 1778776215000,
+    "tradeId": "125084403",
+    "tranId": 90330125084403
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084404",
+    "symbol": "BNBUSDT",
+    "time": 1778776216000,
+    "tradeId": "125084404",
+    "tranId": 90330125084404
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01364360",
+    "incomeType": "COMMISSION",
+    "info": "125084405",
+    "symbol": "BNBUSDT",
+    "time": 1778776216000,
+    "tradeId": "125084405",
+    "tranId": 90330125084405
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084406",
+    "symbol": "BNBUSDT",
+    "time": 1778776216000,
+    "tradeId": "125084406",
+    "tranId": 90330125084406
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01364360",
+    "incomeType": "COMMISSION",
+    "info": "125084407",
+    "symbol": "BNBUSDT",
+    "time": 1778776217000,
+    "tradeId": "125084407",
+    "tranId": 90330125084407
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00409308",
+    "incomeType": "COMMISSION",
+    "info": "125084408",
+    "symbol": "BNBUSDT",
+    "time": 1778776217000,
+    "tradeId": "125084408",
+    "tranId": 90330125084408
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00409308",
+    "incomeType": "COMMISSION",
+    "info": "125084409",
+    "symbol": "BNBUSDT",
+    "time": 1778776217000,
+    "tradeId": "125084409",
+    "tranId": 90330125084409
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084410",
+    "symbol": "BNBUSDT",
+    "time": 1778776218000,
+    "tradeId": "125084410",
+    "tranId": 90330125084410
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084411",
+    "symbol": "BNBUSDT",
+    "time": 1778776218000,
+    "tradeId": "125084411",
+    "tranId": 90330125084411
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084412",
+    "symbol": "BNBUSDT",
+    "time": 1778776218000,
+    "tradeId": "125084412",
+    "tranId": 90330125084412
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084413",
+    "symbol": "BNBUSDT",
+    "time": 1778776219000,
+    "tradeId": "125084413",
+    "tranId": 90330125084413
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00409308",
+    "incomeType": "COMMISSION",
+    "info": "125084414",
+    "symbol": "BNBUSDT",
+    "time": 1778776219000,
+    "tradeId": "125084414",
+    "tranId": 90330125084414
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01227924",
+    "incomeType": "COMMISSION",
+    "info": "125084415",
+    "symbol": "BNBUSDT",
+    "time": 1778776219000,
+    "tradeId": "125084415",
+    "tranId": 90330125084415
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084416",
+    "symbol": "BNBUSDT",
+    "time": 1778776219000,
+    "tradeId": "125084416",
+    "tranId": 90330125084416
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084417",
+    "symbol": "BNBUSDT",
+    "time": 1778776220000,
+    "tradeId": "125084417",
+    "tranId": 90330125084417
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01091488",
+    "incomeType": "COMMISSION",
+    "info": "125084418",
+    "symbol": "BNBUSDT",
+    "time": 1778776220000,
+    "tradeId": "125084418",
+    "tranId": 90330125084418
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084419",
+    "symbol": "BNBUSDT",
+    "time": 1778776220000,
+    "tradeId": "125084419",
+    "tranId": 90330125084419
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00818616",
+    "incomeType": "COMMISSION",
+    "info": "125084420",
+    "symbol": "BNBUSDT",
+    "time": 1778776221000,
+    "tradeId": "125084420",
+    "tranId": 90330125084420
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01227924",
+    "incomeType": "COMMISSION",
+    "info": "125084421",
+    "symbol": "BNBUSDT",
+    "time": 1778776221000,
+    "tradeId": "125084421",
+    "tranId": 90330125084421
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084422",
+    "symbol": "BNBUSDT",
+    "time": 1778776221000,
+    "tradeId": "125084422",
+    "tranId": 90330125084422
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084423",
+    "symbol": "BNBUSDT",
+    "time": 1778776222000,
+    "tradeId": "125084423",
+    "tranId": 90330125084423
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084424",
+    "symbol": "BNBUSDT",
+    "time": 1778776222000,
+    "tradeId": "125084424",
+    "tranId": 90330125084424
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01091488",
+    "incomeType": "COMMISSION",
+    "info": "125084425",
+    "symbol": "BNBUSDT",
+    "time": 1778776223000,
+    "tradeId": "125084425",
+    "tranId": 90330125084425
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00136436",
+    "incomeType": "COMMISSION",
+    "info": "125084426",
+    "symbol": "BNBUSDT",
+    "time": 1778776223000,
+    "tradeId": "125084426",
+    "tranId": 90330125084426
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084427",
+    "symbol": "BNBUSDT",
+    "time": 1778776224000,
+    "tradeId": "125084427",
+    "tranId": 90330125084427
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084428",
+    "symbol": "BNBUSDT",
+    "time": 1778776224000,
+    "tradeId": "125084428",
+    "tranId": 90330125084428
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084429",
+    "symbol": "BNBUSDT",
+    "time": 1778776224000,
+    "tradeId": "125084429",
+    "tranId": 90330125084429
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084430",
+    "symbol": "BNBUSDT",
+    "time": 1778776224000,
+    "tradeId": "125084430",
+    "tranId": 90330125084430
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00136436",
+    "incomeType": "COMMISSION",
+    "info": "125084431",
+    "symbol": "BNBUSDT",
+    "time": 1778776225000,
+    "tradeId": "125084431",
+    "tranId": 90330125084431
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084432",
+    "symbol": "BNBUSDT",
+    "time": 1778776225000,
+    "tradeId": "125084432",
+    "tranId": 90330125084432
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01091488",
+    "incomeType": "COMMISSION",
+    "info": "125084433",
+    "symbol": "BNBUSDT",
+    "time": 1778776225000,
+    "tradeId": "125084433",
+    "tranId": 90330125084433
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00136436",
+    "incomeType": "COMMISSION",
+    "info": "125084434",
+    "symbol": "BNBUSDT",
+    "time": 1778776226000,
+    "tradeId": "125084434",
+    "tranId": 90330125084434
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00409308",
+    "incomeType": "COMMISSION",
+    "info": "125084435",
+    "symbol": "BNBUSDT",
+    "time": 1778776226000,
+    "tradeId": "125084435",
+    "tranId": 90330125084435
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084436",
+    "symbol": "BNBUSDT",
+    "time": 1778776226000,
+    "tradeId": "125084436",
+    "tranId": 90330125084436
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084437",
+    "symbol": "BNBUSDT",
+    "time": 1778776227000,
+    "tradeId": "125084437",
+    "tranId": 90330125084437
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084438",
+    "symbol": "BNBUSDT",
+    "time": 1778776228000,
+    "tradeId": "125084438",
+    "tranId": 90330125084438
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084439",
+    "symbol": "BNBUSDT",
+    "time": 1778776228000,
+    "tradeId": "125084439",
+    "tranId": 90330125084439
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01091488",
+    "incomeType": "COMMISSION",
+    "info": "125084440",
+    "symbol": "BNBUSDT",
+    "time": 1778776228000,
+    "tradeId": "125084440",
+    "tranId": 90330125084440
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00818616",
+    "incomeType": "COMMISSION",
+    "info": "125084441",
+    "symbol": "BNBUSDT",
+    "time": 1778776229000,
+    "tradeId": "125084441",
+    "tranId": 90330125084441
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01091488",
+    "incomeType": "COMMISSION",
+    "info": "125084442",
+    "symbol": "BNBUSDT",
+    "time": 1778776229000,
+    "tradeId": "125084442",
+    "tranId": 90330125084442
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00409308",
+    "incomeType": "COMMISSION",
+    "info": "125084443",
+    "symbol": "BNBUSDT",
+    "time": 1778776229000,
+    "tradeId": "125084443",
+    "tranId": 90330125084443
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01364360",
+    "incomeType": "COMMISSION",
+    "info": "125084444",
+    "symbol": "BNBUSDT",
+    "time": 1778776229000,
+    "tradeId": "125084444",
+    "tranId": 90330125084444
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01227924",
+    "incomeType": "COMMISSION",
+    "info": "125084445",
+    "symbol": "BNBUSDT",
+    "time": 1778776230000,
+    "tradeId": "125084445",
+    "tranId": 90330125084445
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084446",
+    "symbol": "BNBUSDT",
+    "time": 1778776230000,
+    "tradeId": "125084446",
+    "tranId": 90330125084446
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00409308",
+    "incomeType": "COMMISSION",
+    "info": "125084447",
+    "symbol": "BNBUSDT",
+    "time": 1778776230000,
+    "tradeId": "125084447",
+    "tranId": 90330125084447
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084448",
+    "symbol": "BNBUSDT",
+    "time": 1778776231000,
+    "tradeId": "125084448",
+    "tranId": 90330125084448
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084449",
+    "symbol": "BNBUSDT",
+    "time": 1778776231000,
+    "tradeId": "125084449",
+    "tranId": 90330125084449
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01227924",
+    "incomeType": "COMMISSION",
+    "info": "125084450",
+    "symbol": "BNBUSDT",
+    "time": 1778776231000,
+    "tradeId": "125084450",
+    "tranId": 90330125084450
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01364360",
+    "incomeType": "COMMISSION",
+    "info": "125084451",
+    "symbol": "BNBUSDT",
+    "time": 1778776232000,
+    "tradeId": "125084451",
+    "tranId": 90330125084451
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084452",
+    "symbol": "BNBUSDT",
+    "time": 1778776232000,
+    "tradeId": "125084452",
+    "tranId": 90330125084452
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01227924",
+    "incomeType": "COMMISSION",
+    "info": "125084453",
+    "symbol": "BNBUSDT",
+    "time": 1778776233000,
+    "tradeId": "125084453",
+    "tranId": 90330125084453
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01364360",
+    "incomeType": "COMMISSION",
+    "info": "125084454",
+    "symbol": "BNBUSDT",
+    "time": 1778776233000,
+    "tradeId": "125084454",
+    "tranId": 90330125084454
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084455",
+    "symbol": "BNBUSDT",
+    "time": 1778776233000,
+    "tradeId": "125084455",
+    "tranId": 90330125084455
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00136436",
+    "incomeType": "COMMISSION",
+    "info": "125084456",
+    "symbol": "BNBUSDT",
+    "time": 1778776233000,
+    "tradeId": "125084456",
+    "tranId": 90330125084456
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084457",
+    "symbol": "BNBUSDT",
+    "time": 1778776234000,
+    "tradeId": "125084457",
+    "tranId": 90330125084457
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01091488",
+    "incomeType": "COMMISSION",
+    "info": "125084458",
+    "symbol": "BNBUSDT",
+    "time": 1778776235000,
+    "tradeId": "125084458",
+    "tranId": 90330125084458
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084459",
+    "symbol": "BNBUSDT",
+    "time": 1778776235000,
+    "tradeId": "125084459",
+    "tranId": 90330125084459
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084460",
+    "symbol": "BNBUSDT",
+    "time": 1778776235000,
+    "tradeId": "125084460",
+    "tranId": 90330125084460
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00818616",
+    "incomeType": "COMMISSION",
+    "info": "125084461",
+    "symbol": "BNBUSDT",
+    "time": 1778776235000,
+    "tradeId": "125084461",
+    "tranId": 90330125084461
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00818616",
+    "incomeType": "COMMISSION",
+    "info": "125084462",
+    "symbol": "BNBUSDT",
+    "time": 1778776235000,
+    "tradeId": "125084462",
+    "tranId": 90330125084462
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00136436",
+    "incomeType": "COMMISSION",
+    "info": "125084463",
+    "symbol": "BNBUSDT",
+    "time": 1778776236000,
+    "tradeId": "125084463",
+    "tranId": 90330125084463
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01364360",
+    "incomeType": "COMMISSION",
+    "info": "125084464",
+    "symbol": "BNBUSDT",
+    "time": 1778776237000,
+    "tradeId": "125084464",
+    "tranId": 90330125084464
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00409308",
+    "incomeType": "COMMISSION",
+    "info": "125084465",
+    "symbol": "BNBUSDT",
+    "time": 1778776237000,
+    "tradeId": "125084465",
+    "tranId": 90330125084465
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084466",
+    "symbol": "BNBUSDT",
+    "time": 1778776237000,
+    "tradeId": "125084466",
+    "tranId": 90330125084466
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01364360",
+    "incomeType": "COMMISSION",
+    "info": "125084467",
+    "symbol": "BNBUSDT",
+    "time": 1778776238000,
+    "tradeId": "125084467",
+    "tranId": 90330125084467
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084468",
+    "symbol": "BNBUSDT",
+    "time": 1778776238000,
+    "tradeId": "125084468",
+    "tranId": 90330125084468
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00409308",
+    "incomeType": "COMMISSION",
+    "info": "125084469",
+    "symbol": "BNBUSDT",
+    "time": 1778776238000,
+    "tradeId": "125084469",
+    "tranId": 90330125084469
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01364360",
+    "incomeType": "COMMISSION",
+    "info": "125084470",
+    "symbol": "BNBUSDT",
+    "time": 1778776239000,
+    "tradeId": "125084470",
+    "tranId": 90330125084470
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00136436",
+    "incomeType": "COMMISSION",
+    "info": "125084471",
+    "symbol": "BNBUSDT",
+    "time": 1778776239000,
+    "tradeId": "125084471",
+    "tranId": 90330125084471
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084472",
+    "symbol": "BNBUSDT",
+    "time": 1778776239000,
+    "tradeId": "125084472",
+    "tranId": 90330125084472
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00136436",
+    "incomeType": "COMMISSION",
+    "info": "125084473",
+    "symbol": "BNBUSDT",
+    "time": 1778776240000,
+    "tradeId": "125084473",
+    "tranId": 90330125084473
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084474",
+    "symbol": "BNBUSDT",
+    "time": 1778776240000,
+    "tradeId": "125084474",
+    "tranId": 90330125084474
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00136436",
+    "incomeType": "COMMISSION",
+    "info": "125084475",
+    "symbol": "BNBUSDT",
+    "time": 1778776240000,
+    "tradeId": "125084475",
+    "tranId": 90330125084475
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01364360",
+    "incomeType": "COMMISSION",
+    "info": "125084476",
+    "symbol": "BNBUSDT",
+    "time": 1778776240000,
+    "tradeId": "125084476",
+    "tranId": 90330125084476
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00136436",
+    "incomeType": "COMMISSION",
+    "info": "125084477",
+    "symbol": "BNBUSDT",
+    "time": 1778776241000,
+    "tradeId": "125084477",
+    "tranId": 90330125084477
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01227924",
+    "incomeType": "COMMISSION",
+    "info": "125084478",
+    "symbol": "BNBUSDT",
+    "time": 1778776242000,
+    "tradeId": "125084478",
+    "tranId": 90330125084478
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01227924",
+    "incomeType": "COMMISSION",
+    "info": "125084495",
+    "symbol": "BNBUSDT",
+    "time": 1778776247000,
+    "tradeId": "125084495",
+    "tranId": 90330125084495
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01227924",
+    "incomeType": "COMMISSION",
+    "info": "125084496",
+    "symbol": "BNBUSDT",
+    "time": 1778776247000,
+    "tradeId": "125084496",
+    "tranId": 90330125084496
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084497",
+    "symbol": "BNBUSDT",
+    "time": 1778776247000,
+    "tradeId": "125084497",
+    "tranId": 90330125084497
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00136436",
+    "incomeType": "COMMISSION",
+    "info": "125084498",
+    "symbol": "BNBUSDT",
+    "time": 1778776248000,
+    "tradeId": "125084498",
+    "tranId": 90330125084498
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01091488",
+    "incomeType": "COMMISSION",
+    "info": "125084499",
+    "symbol": "BNBUSDT",
+    "time": 1778776248000,
+    "tradeId": "125084499",
+    "tranId": 90330125084499
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00136436",
+    "incomeType": "COMMISSION",
+    "info": "125084500",
+    "symbol": "BNBUSDT",
+    "time": 1778776248000,
+    "tradeId": "125084500",
+    "tranId": 90330125084500
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00136436",
+    "incomeType": "COMMISSION",
+    "info": "125084504",
+    "symbol": "BNBUSDT",
+    "time": 1778776250000,
+    "tradeId": "125084504",
+    "tranId": 90330125084504
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084505",
+    "symbol": "BNBUSDT",
+    "time": 1778776250000,
+    "tradeId": "125084505",
+    "tranId": 90330125084505
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084506",
+    "symbol": "BNBUSDT",
+    "time": 1778776250000,
+    "tradeId": "125084506",
+    "tranId": 90330125084506
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084507",
+    "symbol": "BNBUSDT",
+    "time": 1778776251000,
+    "tradeId": "125084507",
+    "tranId": 90330125084507
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01091488",
+    "incomeType": "COMMISSION",
+    "info": "125084508",
+    "symbol": "BNBUSDT",
+    "time": 1778776251000,
+    "tradeId": "125084508",
+    "tranId": 90330125084508
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01091488",
+    "incomeType": "COMMISSION",
+    "info": "125084509",
+    "symbol": "BNBUSDT",
+    "time": 1778776252000,
+    "tradeId": "125084509",
+    "tranId": 90330125084509
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01227924",
+    "incomeType": "COMMISSION",
+    "info": "125084510",
+    "symbol": "BNBUSDT",
+    "time": 1778776252000,
+    "tradeId": "125084510",
+    "tranId": 90330125084510
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01091488",
+    "incomeType": "COMMISSION",
+    "info": "125084511",
+    "symbol": "BNBUSDT",
+    "time": 1778776253000,
+    "tradeId": "125084511",
+    "tranId": 90330125084511
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084512",
+    "symbol": "BNBUSDT",
+    "time": 1778776253000,
+    "tradeId": "125084512",
+    "tranId": 90330125084512
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084513",
+    "symbol": "BNBUSDT",
+    "time": 1778776253000,
+    "tradeId": "125084513",
+    "tranId": 90330125084513
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01091488",
+    "incomeType": "COMMISSION",
+    "info": "125084514",
+    "symbol": "BNBUSDT",
+    "time": 1778776253000,
+    "tradeId": "125084514",
+    "tranId": 90330125084514
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084515",
+    "symbol": "BNBUSDT",
+    "time": 1778776254000,
+    "tradeId": "125084515",
+    "tranId": 90330125084515
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01227924",
+    "incomeType": "COMMISSION",
+    "info": "125084516",
+    "symbol": "BNBUSDT",
+    "time": 1778776254000,
+    "tradeId": "125084516",
+    "tranId": 90330125084516
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01227924",
+    "incomeType": "COMMISSION",
+    "info": "125084517",
+    "symbol": "BNBUSDT",
+    "time": 1778776254000,
+    "tradeId": "125084517",
+    "tranId": 90330125084517
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084518",
+    "symbol": "BNBUSDT",
+    "time": 1778776254000,
+    "tradeId": "125084518",
+    "tranId": 90330125084518
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00818616",
+    "incomeType": "COMMISSION",
+    "info": "125084519",
+    "symbol": "BNBUSDT",
+    "time": 1778776255000,
+    "tradeId": "125084519",
+    "tranId": 90330125084519
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084520",
+    "symbol": "BNBUSDT",
+    "time": 1778776255000,
+    "tradeId": "125084520",
+    "tranId": 90330125084520
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084521",
+    "symbol": "BNBUSDT",
+    "time": 1778776255000,
+    "tradeId": "125084521",
+    "tranId": 90330125084521
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00136436",
+    "incomeType": "COMMISSION",
+    "info": "125084522",
+    "symbol": "BNBUSDT",
+    "time": 1778776256000,
+    "tradeId": "125084522",
+    "tranId": 90330125084522
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00409308",
+    "incomeType": "COMMISSION",
+    "info": "125084523",
+    "symbol": "BNBUSDT",
+    "time": 1778776257000,
+    "tradeId": "125084523",
+    "tranId": 90330125084523
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01227924",
+    "incomeType": "COMMISSION",
+    "info": "125084524",
+    "symbol": "BNBUSDT",
+    "time": 1778776257000,
+    "tradeId": "125084524",
+    "tranId": 90330125084524
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00409308",
+    "incomeType": "COMMISSION",
+    "info": "125084525",
+    "symbol": "BNBUSDT",
+    "time": 1778776257000,
+    "tradeId": "125084525",
+    "tranId": 90330125084525
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084526",
+    "symbol": "BNBUSDT",
+    "time": 1778776258000,
+    "tradeId": "125084526",
+    "tranId": 90330125084526
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084527",
+    "symbol": "BNBUSDT",
+    "time": 1778776258000,
+    "tradeId": "125084527",
+    "tranId": 90330125084527
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084528",
+    "symbol": "BNBUSDT",
+    "time": 1778776258000,
+    "tradeId": "125084528",
+    "tranId": 90330125084528
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00818616",
+    "incomeType": "COMMISSION",
+    "info": "125084529",
+    "symbol": "BNBUSDT",
+    "time": 1778776259000,
+    "tradeId": "125084529",
+    "tranId": 90330125084529
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00818616",
+    "incomeType": "COMMISSION",
+    "info": "125084530",
+    "symbol": "BNBUSDT",
+    "time": 1778776259000,
+    "tradeId": "125084530",
+    "tranId": 90330125084530
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084531",
+    "symbol": "BNBUSDT",
+    "time": 1778776260000,
+    "tradeId": "125084531",
+    "tranId": 90330125084531
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084532",
+    "symbol": "BNBUSDT",
+    "time": 1778776260000,
+    "tradeId": "125084532",
+    "tranId": 90330125084532
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00409308",
+    "incomeType": "COMMISSION",
+    "info": "125084533",
+    "symbol": "BNBUSDT",
+    "time": 1778776260000,
+    "tradeId": "125084533",
+    "tranId": 90330125084533
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084534",
+    "symbol": "BNBUSDT",
+    "time": 1778776260000,
+    "tradeId": "125084534",
+    "tranId": 90330125084534
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00818616",
+    "incomeType": "COMMISSION",
+    "info": "125084535",
+    "symbol": "BNBUSDT",
+    "time": 1778776261000,
+    "tradeId": "125084535",
+    "tranId": 90330125084535
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084536",
+    "symbol": "BNBUSDT",
+    "time": 1778776261000,
+    "tradeId": "125084536",
+    "tranId": 90330125084536
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084537",
+    "symbol": "BNBUSDT",
+    "time": 1778776261000,
+    "tradeId": "125084537",
+    "tranId": 90330125084537
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084538",
+    "symbol": "BNBUSDT",
+    "time": 1778776261000,
+    "tradeId": "125084538",
+    "tranId": 90330125084538
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00136436",
+    "incomeType": "COMMISSION",
+    "info": "125084539",
+    "symbol": "BNBUSDT",
+    "time": 1778776262000,
+    "tradeId": "125084539",
+    "tranId": 90330125084539
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01364360",
+    "incomeType": "COMMISSION",
+    "info": "125084540",
+    "symbol": "BNBUSDT",
+    "time": 1778776262000,
+    "tradeId": "125084540",
+    "tranId": 90330125084540
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084541",
+    "symbol": "BNBUSDT",
+    "time": 1778776263000,
+    "tradeId": "125084541",
+    "tranId": 90330125084541
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084542",
+    "symbol": "BNBUSDT",
+    "time": 1778776263000,
+    "tradeId": "125084542",
+    "tranId": 90330125084542
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01227924",
+    "incomeType": "COMMISSION",
+    "info": "125084543",
+    "symbol": "BNBUSDT",
+    "time": 1778776263000,
+    "tradeId": "125084543",
+    "tranId": 90330125084543
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01364360",
+    "incomeType": "COMMISSION",
+    "info": "125084544",
+    "symbol": "BNBUSDT",
+    "time": 1778776263000,
+    "tradeId": "125084544",
+    "tranId": 90330125084544
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084545",
+    "symbol": "BNBUSDT",
+    "time": 1778776264000,
+    "tradeId": "125084545",
+    "tranId": 90330125084545
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00818616",
+    "incomeType": "COMMISSION",
+    "info": "125084546",
+    "symbol": "BNBUSDT",
+    "time": 1778776264000,
+    "tradeId": "125084546",
+    "tranId": 90330125084546
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00409308",
+    "incomeType": "COMMISSION",
+    "info": "125084547",
+    "symbol": "BNBUSDT",
+    "time": 1778776264000,
+    "tradeId": "125084547",
+    "tranId": 90330125084547
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084548",
+    "symbol": "BNBUSDT",
+    "time": 1778776265000,
+    "tradeId": "125084548",
+    "tranId": 90330125084548
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01091488",
+    "incomeType": "COMMISSION",
+    "info": "125084549",
+    "symbol": "BNBUSDT",
+    "time": 1778776265000,
+    "tradeId": "125084549",
+    "tranId": 90330125084549
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084550",
+    "symbol": "BNBUSDT",
+    "time": 1778776265000,
+    "tradeId": "125084550",
+    "tranId": 90330125084550
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00818616",
+    "incomeType": "COMMISSION",
+    "info": "125084551",
+    "symbol": "BNBUSDT",
+    "time": 1778776266000,
+    "tradeId": "125084551",
+    "tranId": 90330125084551
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084552",
+    "symbol": "BNBUSDT",
+    "time": 1778776266000,
+    "tradeId": "125084552",
+    "tranId": 90330125084552
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01091488",
+    "incomeType": "COMMISSION",
+    "info": "125084553",
+    "symbol": "BNBUSDT",
+    "time": 1778776266000,
+    "tradeId": "125084553",
+    "tranId": 90330125084553
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084554",
+    "symbol": "BNBUSDT",
+    "time": 1778776267000,
+    "tradeId": "125084554",
+    "tranId": 90330125084554
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084555",
+    "symbol": "BNBUSDT",
+    "time": 1778776267000,
+    "tradeId": "125084555",
+    "tranId": 90330125084555
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084556",
+    "symbol": "BNBUSDT",
+    "time": 1778776268000,
+    "tradeId": "125084556",
+    "tranId": 90330125084556
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084557",
+    "symbol": "BNBUSDT",
+    "time": 1778776268000,
+    "tradeId": "125084557",
+    "tranId": 90330125084557
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00955052",
+    "incomeType": "COMMISSION",
+    "info": "125084558",
+    "symbol": "BNBUSDT",
+    "time": 1778776269000,
+    "tradeId": "125084558",
+    "tranId": 90330125084558
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01091488",
+    "incomeType": "COMMISSION",
+    "info": "125084568",
+    "symbol": "BNBUSDT",
+    "time": 1778776272000,
+    "tradeId": "125084568",
+    "tranId": 90330125084568
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.26741456",
+    "incomeType": "COMMISSION",
+    "info": "125084575",
+    "symbol": "BNBUSDT",
+    "time": 1778776273000,
+    "tradeId": "125084575",
+    "tranId": 90330125084575
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.02865156",
+    "incomeType": "COMMISSION",
+    "info": "125084586",
+    "symbol": "BNBUSDT",
+    "time": 1778776276000,
+    "tradeId": "125084586",
+    "tranId": 90330125084586
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00682180",
+    "incomeType": "COMMISSION",
+    "info": "125084590",
+    "symbol": "BNBUSDT",
+    "time": 1778776277000,
+    "tradeId": "125084590",
+    "tranId": 90330125084590
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.02865156",
+    "incomeType": "COMMISSION",
+    "info": "125084591",
+    "symbol": "BNBUSDT",
+    "time": 1778776277000,
+    "tradeId": "125084591",
+    "tranId": 90330125084591
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084592",
+    "symbol": "BNBUSDT",
+    "time": 1778776278000,
+    "tradeId": "125084592",
+    "tranId": 90330125084592
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00136436",
+    "incomeType": "COMMISSION",
+    "info": "125084593",
+    "symbol": "BNBUSDT",
+    "time": 1778776278000,
+    "tradeId": "125084593",
+    "tranId": 90330125084593
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00272872",
+    "incomeType": "COMMISSION",
+    "info": "125084594",
+    "symbol": "BNBUSDT",
+    "time": 1778776278000,
+    "tradeId": "125084594",
+    "tranId": 90330125084594
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01364360",
+    "incomeType": "COMMISSION",
+    "info": "125084595",
+    "symbol": "BNBUSDT",
+    "time": 1778776278000,
+    "tradeId": "125084595",
+    "tranId": 90330125084595
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00545744",
+    "incomeType": "COMMISSION",
+    "info": "125084596",
+    "symbol": "BNBUSDT",
+    "time": 1778776279000,
+    "tradeId": "125084596",
+    "tranId": 90330125084596
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.35336924",
+    "incomeType": "COMMISSION",
+    "info": "125084597",
+    "symbol": "BNBUSDT",
+    "time": 1778776279000,
+    "tradeId": "125084597",
+    "tranId": 90330125084597
+  },
+  {
+    "asset": "USDT",
+    "income": "-31.05760000",
+    "incomeType": "REALIZED_PNL",
+    "info": "489527042",
+    "symbol": "BTCUSDT",
+    "time": 1778777626000,
+    "tradeId": "489527042",
+    "tranId": 90030489527042
+  },
+  {
+    "asset": "USDT",
+    "income": "-3.04987512",
+    "incomeType": "COMMISSION",
+    "info": "489527042",
+    "symbol": "BTCUSDT",
+    "time": 1778777626000,
+    "tradeId": "489527042",
+    "tranId": 90030489527042
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.99500744",
+    "incomeType": "COMMISSION",
+    "info": "489562521",
+    "symbol": "BTCUSDT",
+    "time": 1778782634000,
+    "tradeId": "489562521",
+    "tranId": 90031489562521
+  },
+  {
+    "asset": "USDT",
+    "income": "-40.52840000",
+    "incomeType": "REALIZED_PNL",
+    "info": "489586307",
+    "symbol": "BTCUSDT",
+    "time": 1778786710000,
+    "tradeId": "489586307",
+    "tranId": 90030489586307
+  },
+  {
+    "asset": "USDT",
+    "income": "-3.97380352",
+    "incomeType": "COMMISSION",
+    "info": "489586307",
+    "symbol": "BTCUSDT",
+    "time": 1778786710000,
+    "tradeId": "489586307",
+    "tranId": 90030489586307
+  },
+  {
+    "asset": "USDT",
+    "income": "0.08840000",
+    "incomeType": "REALIZED_PNL",
+    "info": "125174297",
+    "symbol": "BNBUSDT",
+    "time": 1778791505000,
+    "tradeId": "125174297",
+    "tranId": 90331125174297
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01087952",
+    "incomeType": "COMMISSION",
+    "info": "125174297",
+    "symbol": "BNBUSDT",
+    "time": 1778791505000,
+    "tradeId": "125174297",
+    "tranId": 90331125174297
+  },
+  {
+    "asset": "USDT",
+    "income": "29.36610000",
+    "incomeType": "REALIZED_PNL",
+    "info": "125174298",
+    "symbol": "BNBUSDT",
+    "time": 1778791505000,
+    "tradeId": "125174298",
+    "tranId": 90331125174298
+  },
+  {
+    "asset": "USDT",
+    "income": "-3.97491348",
+    "incomeType": "COMMISSION",
+    "info": "125174298",
+    "symbol": "BNBUSDT",
+    "time": 1778791505000,
+    "tradeId": "125174298",
+    "tranId": 90331125174298
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.00039475",
+    "incomeType": "COMMISSION",
+    "info": "275206506",
+    "symbol": "ETHUSDT",
+    "time": 1778821422000,
+    "tradeId": "275206506",
+    "tranId": 90060275206506
+  },
+  {
+    "asset": "USDT",
+    "income": "1.00063938",
+    "incomeType": "FUNDING_FEE",
+    "info": "FUNDING_FEE",
+    "symbol": "ETHUSDT",
+    "time": 1778832001000,
+    "tradeId": "",
+    "tranId": 1075781194573496520
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.05431523",
+    "incomeType": "COMMISSION",
+    "info": "89170108",
+    "symbol": "DOGEUSDT",
+    "time": 1778846702000,
+    "tradeId": "89170108",
+    "tranId": 9065189170108
+  },
+  {
+    "asset": "USDT",
+    "income": "-25.17984000",
+    "incomeType": "REALIZED_PNL",
+    "info": "89186909",
+    "symbol": "DOGEUSDT",
+    "time": 1778850171000,
+    "tradeId": "89186909",
+    "tranId": 9065089186909
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.04424329",
+    "incomeType": "COMMISSION",
+    "info": "89186909",
+    "symbol": "DOGEUSDT",
+    "time": 1778850171000,
+    "tradeId": "89186909",
+    "tranId": 9065089186909
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.05439176",
+    "incomeType": "COMMISSION",
+    "info": "89189136",
+    "symbol": "DOGEUSDT",
+    "time": 1778850601000,
+    "tradeId": "89189136",
+    "tranId": 9065189189136
+  },
+  {
+    "asset": "USDT",
+    "income": "-90.34146000",
+    "incomeType": "REALIZED_PNL",
+    "info": "89199143",
+    "symbol": "DOGEUSDT",
+    "time": 1778852602000,
+    "tradeId": "89199143",
+    "tranId": 9065089199143
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.01825518",
+    "incomeType": "COMMISSION",
+    "info": "89199143",
+    "symbol": "DOGEUSDT",
+    "time": 1778852602000,
+    "tradeId": "89199143",
+    "tranId": 9065089199143
+  },
+  {
+    "asset": "USDT",
+    "income": "10.85470000",
+    "incomeType": "REALIZED_PNL",
+    "info": "275382067",
+    "symbol": "ETHUSDT",
+    "time": 1778852724000,
+    "tradeId": "275382067",
+    "tranId": 90061275382067
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.35228958",
+    "incomeType": "COMMISSION",
+    "info": "275382067",
+    "symbol": "ETHUSDT",
+    "time": 1778852724000,
+    "tradeId": "275382067",
+    "tranId": 90061275382067
+  },
+  {
+    "asset": "USDT",
+    "income": "9.51510000",
+    "incomeType": "REALIZED_PNL",
+    "info": "275382068",
+    "symbol": "ETHUSDT",
+    "time": 1778852724000,
+    "tradeId": "275382068",
+    "tranId": 90061275382068
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.35282542",
+    "incomeType": "COMMISSION",
+    "info": "275382068",
+    "symbol": "ETHUSDT",
+    "time": 1778852724000,
+    "tradeId": "275382068",
+    "tranId": 90061275382068
+  },
+  {
+    "asset": "USDT",
+    "income": "0.29757000",
+    "incomeType": "REALIZED_PNL",
+    "info": "275382069",
+    "symbol": "ETHUSDT",
+    "time": 1778852724000,
+    "tradeId": "275382069",
+    "tranId": 90061275382069
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01164800",
+    "incomeType": "COMMISSION",
+    "info": "275382069",
+    "symbol": "ETHUSDT",
+    "time": 1778852724000,
+    "tradeId": "275382069",
+    "tranId": 90061275382069
+  },
+  {
+    "asset": "USDT",
+    "income": "6.86700000",
+    "incomeType": "REALIZED_PNL",
+    "info": "275382070",
+    "symbol": "ETHUSDT",
+    "time": 1778852724000,
+    "tradeId": "275382070",
+    "tranId": 90061275382070
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.26880000",
+    "incomeType": "COMMISSION",
+    "info": "275382070",
+    "symbol": "ETHUSDT",
+    "time": 1778852724000,
+    "tradeId": "275382070",
+    "tranId": 90061275382070
+  },
+  {
+    "asset": "USDT",
+    "income": "2.34192000",
+    "incomeType": "REALIZED_PNL",
+    "info": "275382071",
+    "symbol": "ETHUSDT",
+    "time": 1778852724000,
+    "tradeId": "275382071",
+    "tranId": 90061275382071
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.10044070",
+    "incomeType": "COMMISSION",
+    "info": "275382071",
+    "symbol": "ETHUSDT",
+    "time": 1778852724000,
+    "tradeId": "275382071",
+    "tranId": 90061275382071
+  },
+  {
+    "asset": "USDT",
+    "income": "63.78723000",
+    "incomeType": "REALIZED_PNL",
+    "info": "275382072",
+    "symbol": "ETHUSDT",
+    "time": 1778852724000,
+    "tradeId": "275382072",
+    "tranId": 90061275382072
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.87732040",
+    "incomeType": "COMMISSION",
+    "info": "275382072",
+    "symbol": "ETHUSDT",
+    "time": 1778852724000,
+    "tradeId": "275382072",
+    "tranId": 90061275382072
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.15839000",
+    "incomeType": "COMMISSION",
+    "info": "489968754",
+    "symbol": "BTCUSDT",
+    "time": 1778853005000,
+    "tradeId": "489968754",
+    "tranId": 90030489968754
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.39914280",
+    "incomeType": "COMMISSION",
+    "info": "489968755",
+    "symbol": "BTCUSDT",
+    "time": 1778853005000,
+    "tradeId": "489968755",
+    "tranId": 90030489968755
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.15839000",
+    "incomeType": "COMMISSION",
+    "info": "489968757",
+    "symbol": "BTCUSDT",
+    "time": 1778853006000,
+    "tradeId": "489968757",
+    "tranId": 90030489968757
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.15839000",
+    "incomeType": "COMMISSION",
+    "info": "489968759",
+    "symbol": "BTCUSDT",
+    "time": 1778853006000,
+    "tradeId": "489968759",
+    "tranId": 90030489968759
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.15839000",
+    "incomeType": "COMMISSION",
+    "info": "489968765",
+    "symbol": "BTCUSDT",
+    "time": 1778853007000,
+    "tradeId": "489968765",
+    "tranId": 90030489968765
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.96301120",
+    "incomeType": "COMMISSION",
+    "info": "489968766",
+    "symbol": "BTCUSDT",
+    "time": 1778853008000,
+    "tradeId": "489968766",
+    "tranId": 90030489968766
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.99995990",
+    "incomeType": "COMMISSION",
+    "info": "275388482",
+    "symbol": "ETHUSDT",
+    "time": 1778853607000,
+    "tradeId": "275388482",
+    "tranId": 90060275388482
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00044265",
+    "incomeType": "COMMISSION",
+    "info": "275388483",
+    "symbol": "ETHUSDT",
+    "time": 1778853607000,
+    "tradeId": "275388483",
+    "tranId": 90060275388483
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00442656",
+    "incomeType": "COMMISSION",
+    "info": "275388485",
+    "symbol": "ETHUSDT",
+    "time": 1778853607000,
+    "tradeId": "275388485",
+    "tranId": 90060275388485
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.99509068",
+    "incomeType": "COMMISSION",
+    "info": "275388490",
+    "symbol": "ETHUSDT",
+    "time": 1778853608000,
+    "tradeId": "275388490",
+    "tranId": 90060275388490
+  },
+  {
+    "asset": "USDT",
+    "income": "0.99692037",
+    "incomeType": "FUNDING_FEE",
+    "info": "FUNDING_FEE",
+    "symbol": "BTCUSDT",
+    "time": 1778860801000,
+    "tradeId": "",
+    "tranId": 1076989148001812750
+  },
+  {
+    "asset": "USDT",
+    "income": "1.00399417",
+    "incomeType": "FUNDING_FEE",
+    "info": "FUNDING_FEE",
+    "symbol": "ETHUSDT",
+    "time": 1778860801000,
+    "tradeId": "",
+    "tranId": 1076989151399199230
+  },
+  {
+    "asset": "USDT",
+    "income": "-36.09882000",
+    "incomeType": "REALIZED_PNL",
+    "info": "275422978",
+    "symbol": "ETHUSDT",
+    "time": 1778862055000,
+    "tradeId": "275422978",
+    "tranId": 90061275422978
+  },
+  {
+    "asset": "USDT",
+    "income": "-4.01427914",
+    "incomeType": "COMMISSION",
+    "info": "275422978",
+    "symbol": "ETHUSDT",
+    "time": 1778862055000,
+    "tradeId": "275422978",
+    "tranId": 90061275422978
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.99964887",
+    "incomeType": "COMMISSION",
+    "info": "275432586",
+    "symbol": "ETHUSDT",
+    "time": 1778863883000,
+    "tradeId": "275432586",
+    "tranId": 90060275432586
+  },
+  {
+    "asset": "USDT",
+    "income": "-32.28120000",
+    "incomeType": "REALIZED_PNL",
+    "info": "490055362",
+    "symbol": "BTCUSDT",
+    "time": 1778868089000,
+    "tradeId": "490055362",
+    "tranId": 90031490055362
+  },
+  {
+    "asset": "USDT",
+    "income": "-4.00434048",
+    "incomeType": "COMMISSION",
+    "info": "490055362",
+    "symbol": "BTCUSDT",
+    "time": 1778868089000,
+    "tradeId": "490055362",
+    "tranId": 90031490055362
+  },
+  {
+    "asset": "USDT",
+    "income": "1.00020226",
+    "incomeType": "FUNDING_FEE",
+    "info": "FUNDING_FEE",
+    "symbol": "ETHUSDT",
+    "time": 1778889601000,
+    "tradeId": "",
+    "tranId": 1078197112083661440
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.99792620",
+    "incomeType": "COMMISSION",
+    "info": "125703211",
+    "symbol": "BNBUSDT",
+    "time": 1778901172000,
+    "tradeId": "125703211",
+    "tranId": 90331125703211
+  },
+  {
+    "asset": "USDT",
+    "income": "-63.94320000",
+    "incomeType": "REALIZED_PNL",
+    "info": "125715697",
+    "symbol": "BNBUSDT",
+    "time": 1778904119000,
+    "tradeId": "125715697",
+    "tranId": 90330125715697
+  },
+  {
+    "asset": "USDT",
+    "income": "-3.97027512",
+    "incomeType": "COMMISSION",
+    "info": "125715697",
+    "symbol": "BNBUSDT",
+    "time": 1778904119000,
+    "tradeId": "125715697",
+    "tranId": 90330125715697
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.97691578",
+    "incomeType": "COMMISSION",
+    "info": "89519645",
+    "symbol": "DOGEUSDT",
+    "time": 1778905502000,
+    "tradeId": "89519645",
+    "tranId": 9065189519645
+  },
+  {
+    "asset": "USDT",
+    "income": "-48.00905000",
+    "incomeType": "REALIZED_PNL",
+    "info": "89523917",
+    "symbol": "DOGEUSDT",
+    "time": 1778906227000,
+    "tradeId": "89523917",
+    "tranId": 9065089523917
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.95771216",
+    "incomeType": "COMMISSION",
+    "info": "89523917",
+    "symbol": "DOGEUSDT",
+    "time": 1778906227000,
+    "tradeId": "89523917",
+    "tranId": 9065089523917
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.95075268",
+    "incomeType": "COMMISSION",
+    "info": "89525452",
+    "symbol": "DOGEUSDT",
+    "time": 1778906403000,
+    "tradeId": "89525452",
+    "tranId": 9065189525452
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00795480",
+    "incomeType": "COMMISSION",
+    "info": "125730851",
+    "symbol": "BNBUSDT",
+    "time": 1778907675000,
+    "tradeId": "125730851",
+    "tranId": 90331125730851
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01060640",
+    "incomeType": "COMMISSION",
+    "info": "125730852",
+    "symbol": "BNBUSDT",
+    "time": 1778907675000,
+    "tradeId": "125730852",
+    "tranId": 90331125730852
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01060640",
+    "incomeType": "COMMISSION",
+    "info": "125730853",
+    "symbol": "BNBUSDT",
+    "time": 1778907675000,
+    "tradeId": "125730853",
+    "tranId": 90331125730853
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00397740",
+    "incomeType": "COMMISSION",
+    "info": "125730854",
+    "symbol": "BNBUSDT",
+    "time": 1778907675000,
+    "tradeId": "125730854",
+    "tranId": 90331125730854
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00265160",
+    "incomeType": "COMMISSION",
+    "info": "125730855",
+    "symbol": "BNBUSDT",
+    "time": 1778907675000,
+    "tradeId": "125730855",
+    "tranId": 90331125730855
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01325800",
+    "incomeType": "COMMISSION",
+    "info": "125730856",
+    "symbol": "BNBUSDT",
+    "time": 1778907676000,
+    "tradeId": "125730856",
+    "tranId": 90331125730856
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01325800",
+    "incomeType": "COMMISSION",
+    "info": "125730857",
+    "symbol": "BNBUSDT",
+    "time": 1778907677000,
+    "tradeId": "125730857",
+    "tranId": 90331125730857
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01325800",
+    "incomeType": "COMMISSION",
+    "info": "125730858",
+    "symbol": "BNBUSDT",
+    "time": 1778907677000,
+    "tradeId": "125730858",
+    "tranId": 90331125730858
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01325800",
+    "incomeType": "COMMISSION",
+    "info": "125730859",
+    "symbol": "BNBUSDT",
+    "time": 1778907677000,
+    "tradeId": "125730859",
+    "tranId": 90331125730859
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00132580",
+    "incomeType": "COMMISSION",
+    "info": "125730862",
+    "symbol": "BNBUSDT",
+    "time": 1778907677000,
+    "tradeId": "125730862",
+    "tranId": 90331125730862
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00132580",
+    "incomeType": "COMMISSION",
+    "info": "125730863",
+    "symbol": "BNBUSDT",
+    "time": 1778907678000,
+    "tradeId": "125730863",
+    "tranId": 90331125730863
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00397740",
+    "incomeType": "COMMISSION",
+    "info": "125730864",
+    "symbol": "BNBUSDT",
+    "time": 1778907679000,
+    "tradeId": "125730864",
+    "tranId": 90331125730864
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00397740",
+    "incomeType": "COMMISSION",
+    "info": "125730865",
+    "symbol": "BNBUSDT",
+    "time": 1778907679000,
+    "tradeId": "125730865",
+    "tranId": 90331125730865
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01325800",
+    "incomeType": "COMMISSION",
+    "info": "125730866",
+    "symbol": "BNBUSDT",
+    "time": 1778907679000,
+    "tradeId": "125730866",
+    "tranId": 90331125730866
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00795480",
+    "incomeType": "COMMISSION",
+    "info": "125730867",
+    "symbol": "BNBUSDT",
+    "time": 1778907680000,
+    "tradeId": "125730867",
+    "tranId": 90331125730867
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00132580",
+    "incomeType": "COMMISSION",
+    "info": "125730868",
+    "symbol": "BNBUSDT",
+    "time": 1778907680000,
+    "tradeId": "125730868",
+    "tranId": 90331125730868
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.82695240",
+    "incomeType": "COMMISSION",
+    "info": "125730869",
+    "symbol": "BNBUSDT",
+    "time": 1778907680000,
+    "tradeId": "125730869",
+    "tranId": 90331125730869
+  },
+  {
+    "asset": "USDT",
+    "income": "9.48150000",
+    "incomeType": "REALIZED_PNL",
+    "info": "125754362",
+    "symbol": "BNBUSDT",
+    "time": 1778912105000,
+    "tradeId": "125754362",
+    "tranId": 90330125754362
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.95271860",
+    "incomeType": "COMMISSION",
+    "info": "125754362",
+    "symbol": "BNBUSDT",
+    "time": 1778912105000,
+    "tradeId": "125754362",
+    "tranId": 90330125754362
+  },
+  {
+    "asset": "USDT",
+    "income": "-22.84048000",
+    "incomeType": "REALIZED_PNL",
+    "info": "89576116",
+    "symbol": "DOGEUSDT",
+    "time": 1778914207000,
+    "tradeId": "89576116",
+    "tranId": 9065089576116
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.94161649",
+    "incomeType": "COMMISSION",
+    "info": "89576116",
+    "symbol": "DOGEUSDT",
+    "time": 1778914207000,
+    "tradeId": "89576116",
+    "tranId": 9065089576116
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.94181235",
+    "incomeType": "COMMISSION",
+    "info": "89582267",
+    "symbol": "DOGEUSDT",
+    "time": 1778915402000,
+    "tradeId": "89582267",
+    "tranId": 9065189582267
+  },
+  {
+    "asset": "USDT",
+    "income": "-17.05200000",
+    "incomeType": "REALIZED_PNL",
+    "info": "125768876",
+    "symbol": "BNBUSDT",
+    "time": 1778915601000,
+    "tradeId": "125768876",
+    "tranId": 90330125768876
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.94210520",
+    "incomeType": "COMMISSION",
+    "info": "125768876",
+    "symbol": "BNBUSDT",
+    "time": 1778915601000,
+    "tradeId": "125768876",
+    "tranId": 90330125768876
+  },
+  {
+    "asset": "USDT",
+    "income": "144.56572000",
+    "incomeType": "REALIZED_PNL",
+    "info": "275686534",
+    "symbol": "ETHUSDT",
+    "time": 1778915731000,
+    "tradeId": "275686534",
+    "tranId": 90061275686534
+  },
+  {
+    "asset": "USDT",
+    "income": "-3.94147145",
+    "incomeType": "COMMISSION",
+    "info": "275686534",
+    "symbol": "ETHUSDT",
+    "time": 1778915731000,
+    "tradeId": "275686534",
+    "tranId": 90061275686534
+  },
+  {
+    "asset": "USDT",
+    "income": "-30.40692000",
+    "incomeType": "REALIZED_PNL",
+    "info": "89585520",
+    "symbol": "DOGEUSDT",
+    "time": 1778915969000,
+    "tradeId": "89585520",
+    "tranId": 9065089585520
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.92964958",
+    "incomeType": "COMMISSION",
+    "info": "89585520",
+    "symbol": "DOGEUSDT",
+    "time": 1778915969000,
+    "tradeId": "89585520",
+    "tranId": 9065089585520
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.96868600",
+    "incomeType": "COMMISSION",
+    "info": "63275324",
+    "symbol": "SOLUSDT",
+    "time": 1778916201000,
+    "tradeId": "63275324",
+    "tranId": 9107063275324
+  },
+  {
+    "asset": "USDT",
+    "income": "0.97471913",
+    "incomeType": "FUNDING_FEE",
+    "info": "FUNDING_FEE",
+    "symbol": "SOLUSDT",
+    "time": 1778918403000,
+    "tradeId": "",
+    "tranId": 1079405145665126410
+  },
+  {
+    "asset": "USDT",
+    "income": "107.35000000",
+    "incomeType": "REALIZED_PNL",
+    "info": "63303493",
+    "symbol": "SOLUSDT",
+    "time": 1778923102000,
+    "tradeId": "63303493",
+    "tranId": 9107163303493
+  },
+  {
+    "asset": "USDT",
+    "income": "-3.89443200",
+    "incomeType": "COMMISSION",
+    "info": "63303493",
+    "symbol": "SOLUSDT",
+    "time": 1778923102000,
+    "tradeId": "63303493",
+    "tranId": 9107163303493
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.01787984",
+    "incomeType": "COMMISSION",
+    "info": "89631374",
+    "symbol": "DOGEUSDT",
+    "time": 1778923204000,
+    "tradeId": "89631374",
+    "tranId": 9065189631374
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00209894",
+    "incomeType": "COMMISSION",
+    "info": "89631375",
+    "symbol": "DOGEUSDT",
+    "time": 1778923204000,
+    "tradeId": "89631375",
+    "tranId": 9065189631375
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00209894",
+    "incomeType": "COMMISSION",
+    "info": "89631376",
+    "symbol": "DOGEUSDT",
+    "time": 1778923204000,
+    "tradeId": "89631376",
+    "tranId": 9065189631376
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.00465628",
+    "incomeType": "COMMISSION",
+    "info": "89631377",
+    "symbol": "DOGEUSDT",
+    "time": 1778923204000,
+    "tradeId": "89631377",
+    "tranId": 9065189631377
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00241192",
+    "incomeType": "COMMISSION",
+    "info": "63311365",
+    "symbol": "SOLUSDT",
+    "time": 1778924764000,
+    "tradeId": "63311365",
+    "tranId": 9107063311365
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00103368",
+    "incomeType": "COMMISSION",
+    "info": "63311366",
+    "symbol": "SOLUSDT",
+    "time": 1778924765000,
+    "tradeId": "63311366",
+    "tranId": 9107063311366
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00137824",
+    "incomeType": "COMMISSION",
+    "info": "63311367",
+    "symbol": "SOLUSDT",
+    "time": 1778924765000,
+    "tradeId": "63311367",
+    "tranId": 9107063311367
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00223964",
+    "incomeType": "COMMISSION",
+    "info": "63311368",
+    "symbol": "SOLUSDT",
+    "time": 1778924766000,
+    "tradeId": "63311368",
+    "tranId": 9107063311368
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00172280",
+    "incomeType": "COMMISSION",
+    "info": "63311369",
+    "symbol": "SOLUSDT",
+    "time": 1778924766000,
+    "tradeId": "63311369",
+    "tranId": 9107063311369
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00137824",
+    "incomeType": "COMMISSION",
+    "info": "63311370",
+    "symbol": "SOLUSDT",
+    "time": 1778924766000,
+    "tradeId": "63311370",
+    "tranId": 9107063311370
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00172280",
+    "incomeType": "COMMISSION",
+    "info": "63311371",
+    "symbol": "SOLUSDT",
+    "time": 1778924766000,
+    "tradeId": "63311371",
+    "tranId": 9107063311371
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00258420",
+    "incomeType": "COMMISSION",
+    "info": "63311372",
+    "symbol": "SOLUSDT",
+    "time": 1778924767000,
+    "tradeId": "63311372",
+    "tranId": 9107063311372
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00223964",
+    "incomeType": "COMMISSION",
+    "info": "63311373",
+    "symbol": "SOLUSDT",
+    "time": 1778924768000,
+    "tradeId": "63311373",
+    "tranId": 9107063311373
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00103368",
+    "incomeType": "COMMISSION",
+    "info": "63311374",
+    "symbol": "SOLUSDT",
+    "time": 1778924768000,
+    "tradeId": "63311374",
+    "tranId": 9107063311374
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00103368",
+    "incomeType": "COMMISSION",
+    "info": "63311375",
+    "symbol": "SOLUSDT",
+    "time": 1778924768000,
+    "tradeId": "63311375",
+    "tranId": 9107063311375
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00155052",
+    "incomeType": "COMMISSION",
+    "info": "63311376",
+    "symbol": "SOLUSDT",
+    "time": 1778924768000,
+    "tradeId": "63311376",
+    "tranId": 9107063311376
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00120596",
+    "incomeType": "COMMISSION",
+    "info": "63311377",
+    "symbol": "SOLUSDT",
+    "time": 1778924768000,
+    "tradeId": "63311377",
+    "tranId": 9107063311377
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00120596",
+    "incomeType": "COMMISSION",
+    "info": "63311378",
+    "symbol": "SOLUSDT",
+    "time": 1778924769000,
+    "tradeId": "63311378",
+    "tranId": 9107063311378
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.05237312",
+    "incomeType": "COMMISSION",
+    "info": "63311379",
+    "symbol": "SOLUSDT",
+    "time": 1778924769000,
+    "tradeId": "63311379",
+    "tranId": 9107063311379
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00120596",
+    "incomeType": "COMMISSION",
+    "info": "63311380",
+    "symbol": "SOLUSDT",
+    "time": 1778924769000,
+    "tradeId": "63311380",
+    "tranId": 9107063311380
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00223964",
+    "incomeType": "COMMISSION",
+    "info": "63311381",
+    "symbol": "SOLUSDT",
+    "time": 1778924770000,
+    "tradeId": "63311381",
+    "tranId": 9107063311381
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00103368",
+    "incomeType": "COMMISSION",
+    "info": "63311382",
+    "symbol": "SOLUSDT",
+    "time": 1778924770000,
+    "tradeId": "63311382",
+    "tranId": 9107063311382
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00103368",
+    "incomeType": "COMMISSION",
+    "info": "63311383",
+    "symbol": "SOLUSDT",
+    "time": 1778924771000,
+    "tradeId": "63311383",
+    "tranId": 9107063311383
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00120596",
+    "incomeType": "COMMISSION",
+    "info": "63311384",
+    "symbol": "SOLUSDT",
+    "time": 1778924771000,
+    "tradeId": "63311384",
+    "tranId": 9107063311384
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00137824",
+    "incomeType": "COMMISSION",
+    "info": "63311385",
+    "symbol": "SOLUSDT",
+    "time": 1778924771000,
+    "tradeId": "63311385",
+    "tranId": 9107063311385
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00155052",
+    "incomeType": "COMMISSION",
+    "info": "63311386",
+    "symbol": "SOLUSDT",
+    "time": 1778924772000,
+    "tradeId": "63311386",
+    "tranId": 9107063311386
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00137824",
+    "incomeType": "COMMISSION",
+    "info": "63311388",
+    "symbol": "SOLUSDT",
+    "time": 1778924773000,
+    "tradeId": "63311388",
+    "tranId": 9107063311388
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00241192",
+    "incomeType": "COMMISSION",
+    "info": "63311389",
+    "symbol": "SOLUSDT",
+    "time": 1778924773000,
+    "tradeId": "63311389",
+    "tranId": 9107063311389
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00172280",
+    "incomeType": "COMMISSION",
+    "info": "63311390",
+    "symbol": "SOLUSDT",
+    "time": 1778924773000,
+    "tradeId": "63311390",
+    "tranId": 9107063311390
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00120596",
+    "incomeType": "COMMISSION",
+    "info": "63311391",
+    "symbol": "SOLUSDT",
+    "time": 1778924774000,
+    "tradeId": "63311391",
+    "tranId": 9107063311391
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00155052",
+    "incomeType": "COMMISSION",
+    "info": "63311392",
+    "symbol": "SOLUSDT",
+    "time": 1778924774000,
+    "tradeId": "63311392",
+    "tranId": 9107063311392
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00172280",
+    "incomeType": "COMMISSION",
+    "info": "63311393",
+    "symbol": "SOLUSDT",
+    "time": 1778924775000,
+    "tradeId": "63311393",
+    "tranId": 9107063311393
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00137824",
+    "incomeType": "COMMISSION",
+    "info": "63311394",
+    "symbol": "SOLUSDT",
+    "time": 1778924775000,
+    "tradeId": "63311394",
+    "tranId": 9107063311394
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00137824",
+    "incomeType": "COMMISSION",
+    "info": "63311395",
+    "symbol": "SOLUSDT",
+    "time": 1778924775000,
+    "tradeId": "63311395",
+    "tranId": 9107063311395
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00103368",
+    "incomeType": "COMMISSION",
+    "info": "63311396",
+    "symbol": "SOLUSDT",
+    "time": 1778924776000,
+    "tradeId": "63311396",
+    "tranId": 9107063311396
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00155052",
+    "incomeType": "COMMISSION",
+    "info": "63311397",
+    "symbol": "SOLUSDT",
+    "time": 1778924776000,
+    "tradeId": "63311397",
+    "tranId": 9107063311397
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00172280",
+    "incomeType": "COMMISSION",
+    "info": "63311398",
+    "symbol": "SOLUSDT",
+    "time": 1778924777000,
+    "tradeId": "63311398",
+    "tranId": 9107063311398
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00103368",
+    "incomeType": "COMMISSION",
+    "info": "63311399",
+    "symbol": "SOLUSDT",
+    "time": 1778924777000,
+    "tradeId": "63311399",
+    "tranId": 9107063311399
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00155052",
+    "incomeType": "COMMISSION",
+    "info": "63311400",
+    "symbol": "SOLUSDT",
+    "time": 1778924777000,
+    "tradeId": "63311400",
+    "tranId": 9107063311400
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00155052",
+    "incomeType": "COMMISSION",
+    "info": "63311401",
+    "symbol": "SOLUSDT",
+    "time": 1778924778000,
+    "tradeId": "63311401",
+    "tranId": 9107063311401
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00120596",
+    "incomeType": "COMMISSION",
+    "info": "63311402",
+    "symbol": "SOLUSDT",
+    "time": 1778924778000,
+    "tradeId": "63311402",
+    "tranId": 9107063311402
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00155052",
+    "incomeType": "COMMISSION",
+    "info": "63311403",
+    "symbol": "SOLUSDT",
+    "time": 1778924779000,
+    "tradeId": "63311403",
+    "tranId": 9107063311403
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00172280",
+    "incomeType": "COMMISSION",
+    "info": "63311404",
+    "symbol": "SOLUSDT",
+    "time": 1778924779000,
+    "tradeId": "63311404",
+    "tranId": 9107063311404
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00103368",
+    "incomeType": "COMMISSION",
+    "info": "63311405",
+    "symbol": "SOLUSDT",
+    "time": 1778924779000,
+    "tradeId": "63311405",
+    "tranId": 9107063311405
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00137824",
+    "incomeType": "COMMISSION",
+    "info": "63311406",
+    "symbol": "SOLUSDT",
+    "time": 1778924780000,
+    "tradeId": "63311406",
+    "tranId": 9107063311406
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00206736",
+    "incomeType": "COMMISSION",
+    "info": "63311407",
+    "symbol": "SOLUSDT",
+    "time": 1778924780000,
+    "tradeId": "63311407",
+    "tranId": 9107063311407
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00137824",
+    "incomeType": "COMMISSION",
+    "info": "63311408",
+    "symbol": "SOLUSDT",
+    "time": 1778924781000,
+    "tradeId": "63311408",
+    "tranId": 9107063311408
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00172280",
+    "incomeType": "COMMISSION",
+    "info": "63311409",
+    "symbol": "SOLUSDT",
+    "time": 1778924781000,
+    "tradeId": "63311409",
+    "tranId": 9107063311409
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00206736",
+    "incomeType": "COMMISSION",
+    "info": "63311410",
+    "symbol": "SOLUSDT",
+    "time": 1778924782000,
+    "tradeId": "63311410",
+    "tranId": 9107063311410
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.87836884",
+    "incomeType": "COMMISSION",
+    "info": "63311411",
+    "symbol": "SOLUSDT",
+    "time": 1778924782000,
+    "tradeId": "63311411",
+    "tranId": 9107063311411
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.00360787",
+    "incomeType": "COMMISSION",
+    "info": "275734446",
+    "symbol": "ETHUSDT",
+    "time": 1778925029000,
+    "tradeId": "275734446",
+    "tranId": 90060275734446
+  },
+  {
+    "asset": "USDT",
+    "income": "0.05740000",
+    "incomeType": "REALIZED_PNL",
+    "info": "63317444",
+    "symbol": "SOLUSDT",
+    "time": 1778926144000,
+    "tradeId": "63317444",
+    "tranId": 9107163317444
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00480088",
+    "incomeType": "COMMISSION",
+    "info": "63317444",
+    "symbol": "SOLUSDT",
+    "time": 1778926144000,
+    "tradeId": "63317444",
+    "tranId": 9107163317444
+  },
+  {
+    "asset": "USDT",
+    "income": "0.03280000",
+    "incomeType": "REALIZED_PNL",
+    "info": "63317445",
+    "symbol": "SOLUSDT",
+    "time": 1778926144000,
+    "tradeId": "63317445",
+    "tranId": 9107163317445
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00274336",
+    "incomeType": "COMMISSION",
+    "info": "63317445",
+    "symbol": "SOLUSDT",
+    "time": 1778926144000,
+    "tradeId": "63317445",
+    "tranId": 9107163317445
+  },
+  {
+    "asset": "USDT",
+    "income": "0.03280000",
+    "incomeType": "REALIZED_PNL",
+    "info": "63317446",
+    "symbol": "SOLUSDT",
+    "time": 1778926144000,
+    "tradeId": "63317446",
+    "tranId": 9107163317446
+  },
+  {
+    "asset": "USDT",
+    "income": "-0.00274336",
+    "incomeType": "COMMISSION",
+    "info": "63317446",
+    "symbol": "SOLUSDT",
+    "time": 1778926144000,
+    "tradeId": "63317446",
+    "tranId": 9107163317446
+  },
+  {
+    "asset": "USDT",
+    "income": "47.43700000",
+    "incomeType": "REALIZED_PNL",
+    "info": "63317447",
+    "symbol": "SOLUSDT",
+    "time": 1778926144000,
+    "tradeId": "63317447",
+    "tranId": 9107163317447
+  },
+  {
+    "asset": "USDT",
+    "income": "-3.96758440",
+    "incomeType": "COMMISSION",
+    "info": "63317447",
+    "symbol": "SOLUSDT",
+    "time": 1778926144000,
+    "tradeId": "63317447",
+    "tranId": 9107163317447
+  },
+  {
+    "asset": "USDT",
+    "income": "-37.49645000",
+    "incomeType": "REALIZED_PNL",
+    "info": "89648547",
+    "symbol": "DOGEUSDT",
+    "time": 1778926160000,
+    "tradeId": "89648547",
+    "tranId": 9065089648547
+  },
+  {
+    "asset": "USDT",
+    "income": "-2.01173543",
+    "incomeType": "COMMISSION",
+    "info": "89648547",
+    "symbol": "DOGEUSDT",
+    "time": 1778926160000,
+    "tradeId": "89648547",
+    "tranId": 9065089648547
+  },
+  {
+    "asset": "USDT",
+    "income": "-26.01825000",
+    "incomeType": "REALIZED_PNL",
+    "info": "275824723",
+    "symbol": "ETHUSDT",
+    "time": 1778942709000,
+    "tradeId": "275824723",
+    "tranId": 90061275824723
+  },
+  {
+    "asset": "USDT",
+    "income": "-4.01762304",
+    "incomeType": "COMMISSION",
+    "info": "275824723",
+    "symbol": "ETHUSDT",
+    "time": 1778942709000,
+    "tradeId": "275824723",
+    "tranId": 90061275824723
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.99916750",
+    "incomeType": "COMMISSION",
+    "info": "126272208",
+    "symbol": "BNBUSDT",
+    "time": 1779024750000,
+    "tradeId": "126272208",
+    "tranId": 90331126272208
+  },
+  {
+    "asset": "USDT",
+    "income": "-40.21270000",
+    "incomeType": "REALIZED_PNL",
+    "info": "126336670",
+    "symbol": "BNBUSDT",
+    "time": 1779039906000,
+    "tradeId": "126336670",
+    "tranId": 90330126336670
+  },
+  {
+    "asset": "USDT",
+    "income": "-3.98224992",
+    "incomeType": "COMMISSION",
+    "info": "126336670",
+    "symbol": "BNBUSDT",
+    "time": 1779039906000,
+    "tradeId": "126336670",
+    "tranId": 90330126336670
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.99003946",
+    "incomeType": "COMMISSION",
+    "info": "109956971",
+    "symbol": "XRPUSDT",
+    "time": 1779057916000,
+    "tradeId": "109956971",
+    "tranId": 90101109956971
+  },
+  {
+    "asset": "USDT",
+    "income": "-66.17976000",
+    "incomeType": "REALIZED_PNL",
+    "info": "109974438",
+    "symbol": "XRPUSDT",
+    "time": 1779061236000,
+    "tradeId": "109974438",
+    "tranId": 90100109974438
+  },
+  {
+    "asset": "USDT",
+    "income": "-3.95360702",
+    "incomeType": "COMMISSION",
+    "info": "109974438",
+    "symbol": "XRPUSDT",
+    "time": 1779061236000,
+    "tradeId": "109974438",
+    "tranId": 90100109974438
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.95848675",
+    "incomeType": "COMMISSION",
+    "info": "109981330",
+    "symbol": "XRPUSDT",
+    "time": 1779062459000,
+    "tradeId": "109981330",
+    "tranId": 90101109981330
+  },
+  {
+    "asset": "USDT",
+    "income": "-1.55641000",
+    "incomeType": "COMMISSION",
+    "info": "491021389",
+    "symbol": "BTCUSDT",
+    "time": 1779067283000,
+    "tradeId": "491021389",
+    "tranId": 90030491021389
+  }
+]

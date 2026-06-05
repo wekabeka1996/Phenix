@@ -336,6 +336,89 @@ def _init_order_index(fsm: FSMCore, config: Any) -> None:
     LOG.info(f" OrderIndex wired into FSMCore (ttl_sec={ttl_sec})")
 
 
+def _resolve_alpha_search_mirror_symbols(alpha_config: Any) -> list[str] | None:
+    """Resolve the optional symbol filter for live alpha_input mirroring."""
+    enabled_symbols: set[str] = set()
+
+    for provider_cfg in getattr(alpha_config, "providers", {}).values():
+        if not getattr(provider_cfg, "enabled", True):
+            continue
+
+        symbols = getattr(provider_cfg, "symbols", None)
+        if symbols is None:
+            return None
+
+        for symbol in symbols:
+            symbol_text = str(symbol).strip().upper()
+            if symbol_text:
+                enabled_symbols.add(symbol_text)
+
+    if not enabled_symbols:
+        return None
+    return sorted(enabled_symbols)
+
+
+def _bootstrap_alpha_search_shadow(
+    *,
+    event_bus: Any,
+    project_root: Path,
+    logger: logging.Logger,
+    load_config_fn=None,
+    plugin_cls=None,
+    mirror_writer_cls=None,
+) -> dict[str, Any]:
+    """Initialize the in-process alpha_search shadow plugin and live mirror."""
+    if load_config_fn is None:
+        from apps.reference.domains.alpha_search.config_models import load_alpha_search_config
+
+        load_config_fn = load_alpha_search_config
+
+    if plugin_cls is None:
+        from apps.reference.domains.alpha_search.backtest_plugin import AlphaSearchBacktestPlugin
+
+        plugin_cls = AlphaSearchBacktestPlugin
+
+    if mirror_writer_cls is None:
+        from apps.reference.domains.alpha_search.runtime.feature_mirror_writer import FeatureMirrorWriter
+
+        mirror_writer_cls = FeatureMirrorWriter
+
+    alpha_config_path = project_root / "config" / "alpha_search.yaml"
+    alpha_config = load_config_fn(str(alpha_config_path))
+    alpha_plugin = plugin_cls(event_bus=event_bus, config=alpha_config)
+
+    mirror_writer = None
+    mirror_symbols = None
+    mirror_output_path = None
+    if getattr(alpha_config, "enabled", False):
+        mirror_symbols = _resolve_alpha_search_mirror_symbols(alpha_config)
+        mirror_output_path = (
+            project_root / "logs" / "alpha_input" / "alpha_input_v1.jsonl"
+        )
+        mirror_writer = mirror_writer_cls(
+            event_bus=event_bus,
+            output_path=mirror_output_path,
+            symbols=mirror_symbols,
+        )
+        logger.info(
+            " AlphaSearch FeatureMirrorWriter registered (output=%s, symbols=%s)",
+            mirror_output_path,
+            mirror_symbols or "ALL",
+        )
+    else:
+        logger.info(
+            " AlphaSearch FeatureMirrorWriter skipped because alpha_search.enabled=false"
+        )
+
+    return {
+        "config": alpha_config,
+        "plugin": alpha_plugin,
+        "mirror_writer": mirror_writer,
+        "mirror_symbols": mirror_symbols,
+        "mirror_output_path": mirror_output_path,
+    }
+
+
 def debug_event_listener(event: Any) -> None:
     """
     Debug listener to see all events flowing through the system.
@@ -923,15 +1006,13 @@ def main() -> None:
     # ALPHA-SEARCH: Shadow Alpha Plugin (always-on, all trading modes)
     # ==========================================
     try:
-        from apps.reference.domains.alpha_search.backtest_plugin import AlphaSearchBacktestPlugin
-        from apps.reference.domains.alpha_search.config_models import load_alpha_search_config
-
-        _as_config_path = project_root / "config" / "alpha_search.yaml"
-        _as_config = load_alpha_search_config(str(_as_config_path))
-        alpha_plugin = AlphaSearchBacktestPlugin(
+        alpha_runtime = _bootstrap_alpha_search_shadow(
             event_bus=fsm,
-            config=_as_config,
+            project_root=project_root,
+            logger=LOG,
         )
+        _as_config = alpha_runtime["config"]
+        alpha_plugin = alpha_runtime["plugin"]
         LOG.info(
             f" AlphaSearch Plugin registered (shadow={_as_config.shadow_mode}, "
             f"providers={list(alpha_plugin.providers.keys())})"

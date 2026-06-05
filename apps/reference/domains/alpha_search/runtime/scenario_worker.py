@@ -56,11 +56,13 @@ class ScenarioWorker:
         log_dir: Path,
         shadow_book: Optional[Any] = None,
     ):
+        self._spec = spec
         self._scenario_id = spec.scenario_id
         self._strategy_type = spec.strategy_type
         self._log_dir = log_dir
         self._strategy_config = strategy_config
         self._aurora_base_threshold: Optional[float] = None
+        self._aurora_default_base_threshold: Optional[float] = None
 
         # --- Isolated event bus (no cross-scenario contamination) ---
         self._bus = LocalBus()
@@ -81,7 +83,8 @@ class ScenarioWorker:
         if self._strategy_type == "aurora" and strategy_config:
             self._inject_aurora_params(strategy_config)
         if self._strategy_type == "aurora":
-            self._aurora_base_threshold = self._capture_aurora_base_threshold()
+            self._aurora_default_base_threshold = self._capture_aurora_base_threshold()
+            self._aurora_base_threshold = self._aurora_default_base_threshold
 
         # --- Stats ---
         self._snapshots_processed = 0
@@ -165,7 +168,11 @@ class ScenarioWorker:
                 )
 
             if self._strategy_type == "aurora":
-                self._apply_regime_adaptive_threshold(snapshot.regime)
+                self._prepare_aurora_symbol_policy(snapshot.symbol)
+                self._apply_regime_adaptive_threshold(
+                    snapshot.regime,
+                    symbol=snapshot.symbol,
+                )
 
             # --- Phase 2: self-trigger scoring ---
             decision_payload = {
@@ -186,9 +193,11 @@ class ScenarioWorker:
             results = []
             for raw_result in self._result_buffer:
                 pld = raw_result.get("pld", raw_result)
-                enriched = {
+                enriched = AlphaShadowResultV1.model_validate({
                     "scenario_id": self._scenario_id,
                     "strategy_type": self._strategy_type,
+                    "version": self._spec.version,
+                    "family": self._spec.family or self._strategy_type,
                     "ts_ms": snapshot.ts_ms,
                     "symbol": pld.get("symbol", snapshot.symbol),
                     "score": pld.get("score", 0.0),
@@ -202,8 +211,11 @@ class ScenarioWorker:
                     "why": pld.get("why", []),
                     "features_used": pld.get("features_used", []),
                     "shadow": True,
+                    "shadow_only": self._spec.shadow_only,
+                    "authority_applied": self._spec.authority_applied,
+                    "no_effect": self._spec.no_effect,
                     "regime": snapshot.regime,
-                }
+                }).model_dump()
                 results.append(enriched)
 
             self._snapshots_processed += 1
@@ -233,6 +245,16 @@ class ScenarioWorker:
         - _base_threshold
         - _direction_strength_cfg
         - _delta_price_cap_pct
+        - _blocked_regimes
+        - _symbol_allowed_regimes
+        - _symbol_signal_weights
+        - _symbol_feature_neutrals
+        - _symbol_regime_thresholds
+        - _symbol_signal_thresholds
+        - _decision_exit_cfg
+        - _symbol_exit_configs
+        - _symbol_trailing_stop_configs
+        - _symbol_take_profit_configs
 
         We override these from the resolved aurora.yaml decision section.
         """
@@ -288,6 +310,82 @@ class ScenarioWorker:
                 f"[{self._scenario_id}] Gates config available: {list(gates.keys())}"
             )
 
+        decision_exit = decision.get("exit") or {}
+        aurora_provider._decision_exit_cfg = (
+            dict(decision_exit) if isinstance(decision_exit, dict) else {}
+        )
+
+        blocked_regimes = decision.get("blocked_regimes") or []
+        aurora_provider._blocked_regimes = {
+            str(regime) for regime in blocked_regimes if str(regime).strip()
+        }
+
+        assets = aurora_root.get("assets", {}) or {}
+        symbol_allowed_regimes: Dict[str, set[str]] = {}
+        symbol_signal_weights: Dict[str, Dict[str, Any]] = {}
+        symbol_feature_neutrals: Dict[str, Dict[str, Any]] = {}
+        symbol_regime_thresholds: Dict[str, Dict[str, Any]] = {}
+        symbol_signal_thresholds: Dict[str, float] = {}
+        symbol_exit_configs: Dict[str, Dict[str, Any]] = {}
+        symbol_trailing_stop_configs: Dict[str, Dict[str, Any]] = {}
+        symbol_take_profit_configs: Dict[str, Dict[str, Any]] = {}
+
+        for symbol, asset_cfg in assets.items():
+            if not isinstance(asset_cfg, dict):
+                continue
+
+            allowed_regimes = asset_cfg.get("allowed_regimes") or []
+            if allowed_regimes:
+                symbol_allowed_regimes[symbol] = {
+                    str(regime) for regime in allowed_regimes if str(regime).strip()
+                }
+
+            if isinstance(asset_cfg.get("weights"), dict) and asset_cfg["weights"]:
+                symbol_signal_weights[symbol] = dict(asset_cfg["weights"])
+
+            if isinstance(asset_cfg.get("feature_neutrals"), dict) and asset_cfg["feature_neutrals"]:
+                symbol_feature_neutrals[symbol] = dict(asset_cfg["feature_neutrals"])
+
+            if isinstance(asset_cfg.get("regime_thresholds"), dict) and asset_cfg["regime_thresholds"]:
+                symbol_regime_thresholds[symbol] = dict(asset_cfg["regime_thresholds"])
+
+            threshold_cfg = asset_cfg.get("signal_threshold")
+            if (
+                isinstance(threshold_cfg, dict)
+                and threshold_cfg.get("enabled")
+                and threshold_cfg.get("value") is not None
+            ):
+                symbol_signal_thresholds[symbol] = float(threshold_cfg["value"])
+
+            exit_cfg = asset_cfg.get("exit")
+            if isinstance(exit_cfg, dict) and exit_cfg:
+                symbol_exit_configs[symbol] = dict(exit_cfg)
+
+            trailing_stop_cfg = asset_cfg.get("trailing_stop")
+            if isinstance(trailing_stop_cfg, dict) and trailing_stop_cfg:
+                symbol_trailing_stop_configs[symbol] = dict(trailing_stop_cfg)
+
+            take_profit_cfg = asset_cfg.get("take_profit")
+            if isinstance(take_profit_cfg, dict) and take_profit_cfg:
+                symbol_take_profit_configs[symbol] = dict(take_profit_cfg)
+
+        aurora_provider._symbol_allowed_regimes = symbol_allowed_regimes
+        aurora_provider._symbol_signal_weights = symbol_signal_weights
+        aurora_provider._symbol_feature_neutrals = symbol_feature_neutrals
+        aurora_provider._symbol_regime_thresholds = symbol_regime_thresholds
+        aurora_provider._symbol_signal_thresholds = symbol_signal_thresholds
+        aurora_provider._symbol_exit_configs = symbol_exit_configs
+        aurora_provider._symbol_trailing_stop_configs = symbol_trailing_stop_configs
+        aurora_provider._symbol_take_profit_configs = symbol_take_profit_configs
+
+        if hasattr(self._plugin, "configure_aurora_virtual_policy"):
+            self._plugin.configure_aurora_virtual_policy(
+                decision_exit=aurora_provider._decision_exit_cfg,
+                symbol_exit_configs=symbol_exit_configs,
+                symbol_trailing_stop_configs=symbol_trailing_stop_configs,
+                symbol_take_profit_configs=symbol_take_profit_configs,
+            )
+
     def _capture_aurora_base_threshold(self) -> Optional[float]:
         """Capture initial aurora threshold once for regime scaling."""
         provider_cfg = self._plugin.provider_configs.get("aurora")
@@ -299,7 +397,64 @@ class ScenarioWorker:
             return None
         return max(0.0, min(1.0, base_thr))
 
-    def _apply_regime_adaptive_threshold(self, regime: str) -> None:
+    def _prepare_aurora_symbol_policy(self, symbol: str) -> None:
+        """Apply per-symbol Aurora threshold state before scoring the snapshot."""
+        provider_cfg = self._plugin.provider_configs.get("aurora")
+        aurora_provider = self._plugin.providers.get("aurora")
+        if provider_cfg is None or aurora_provider is None:
+            return
+
+        base_threshold = self._resolve_aurora_base_threshold(symbol)
+        if base_threshold is None:
+            return
+
+        self._aurora_base_threshold = base_threshold
+        provider_cfg.threshold = base_threshold
+        aurora_provider._base_threshold = decimal.Decimal(str(base_threshold))
+
+    def _resolve_aurora_base_threshold(self, symbol: Optional[str]) -> Optional[float]:
+        """Resolve per-symbol aurora threshold with global fallback."""
+        aurora_provider = self._plugin.providers.get("aurora")
+        if aurora_provider is not None and symbol:
+            symbol_thresholds = getattr(
+                aurora_provider,
+                "_symbol_signal_thresholds",
+                {},
+            ) or {}
+            raw_value = symbol_thresholds.get(symbol)
+            if raw_value is not None:
+                try:
+                    return max(0.0, min(1.0, float(raw_value)))
+                except (TypeError, ValueError):
+                    pass
+
+        if self._aurora_default_base_threshold is not None:
+            return self._aurora_default_base_threshold
+        return self._capture_aurora_base_threshold()
+
+    def _resolve_aurora_regime_thresholds(self, symbol: Optional[str]) -> Dict[str, Any]:
+        """Resolve per-symbol regime threshold map with global fallback."""
+        aurora_provider = self._plugin.providers.get("aurora")
+        if aurora_provider is None:
+            return {}
+
+        if symbol:
+            symbol_thresholds = getattr(
+                aurora_provider,
+                "_symbol_regime_thresholds",
+                {},
+            ) or {}
+            per_symbol = symbol_thresholds.get(symbol)
+            if per_symbol:
+                return per_symbol
+
+        return getattr(aurora_provider, "_regime_thresholds", {}) or {}
+
+    def _apply_regime_adaptive_threshold(
+        self,
+        regime: str,
+        symbol: Optional[str] = None,
+    ) -> None:
         """Apply per-snapshot effective threshold: base * regime_factor."""
         if self._aurora_base_threshold is None:
             return
@@ -309,8 +464,7 @@ class ScenarioWorker:
         if provider_cfg is None or aurora_provider is None:
             return
 
-        regime_thresholds = getattr(
-            aurora_provider, "_regime_thresholds", {}) or {}
+        regime_thresholds = self._resolve_aurora_regime_thresholds(symbol)
         raw_factor = regime_thresholds.get(
             regime, regime_thresholds.get("DEFAULT", 1.0)
         )

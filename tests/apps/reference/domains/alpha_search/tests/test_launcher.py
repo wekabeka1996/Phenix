@@ -59,16 +59,42 @@ def _minimal_matrix_config(**input_overrides):
 class TestLoadMatrixConfig:
     """Tests for load_matrix_config."""
 
-    def test_valid_config(self):
-        """Real scenario_matrix.yaml loads successfully."""
+    def test_valid_registry_config(self):
+        """Real scenario_registry_v2.yaml loads successfully."""
+        project_root = Path(__file__).resolve().parents[4]
+        registry_path = project_root / "config" / "alpha_search" / "scenario_registry_v2.yaml"
+        if not registry_path.exists():
+            pytest.skip("scenario_registry_v2.yaml not found")
+
+        config = load_matrix_config(registry_path)
+        assert config.matrix_id.startswith("registry:")
+        assert len(config.scenarios) >= 25
+        assert config.input.source_mode == "replay"
+
+    def test_registry_config_allows_live_tail_override(self):
+        """Registry loader can be switched to live_tail for parallel shadow runtime."""
+        project_root = Path(__file__).resolve().parents[4]
+        registry_path = project_root / "config" / "alpha_search" / "scenario_registry_v2.yaml"
+        if not registry_path.exists():
+            pytest.skip("scenario_registry_v2.yaml not found")
+
+        config = load_matrix_config(
+            registry_path,
+            registry_source_mode="live_tail",
+        )
+        assert config.matrix_id.startswith("registry:")
+        assert config.input.source_mode == "live_tail"
+
+    def test_valid_legacy_matrix_config(self):
+        """Real legacy scenario_matrix.yaml still loads only when explicitly requested."""
         project_root = Path(__file__).resolve().parents[4]
         matrix_path = project_root / "config" / "alpha_search" / "scenario_matrix.yaml"
         if not matrix_path.exists():
             pytest.skip("scenario_matrix.yaml not found")
 
         config = load_matrix_config(matrix_path)
-        assert config.matrix_id == "alpha_search_shadow_v2"
-        assert len(config.scenarios) == 10
+        assert not config.matrix_id.startswith("registry:")
+        assert len(config.scenarios) == 12
 
     def test_missing_file(self, tmp_path):
         """FileNotFoundError raised."""
@@ -203,12 +229,12 @@ class TestMainReactor:
             main_reactor(config, project_root, session_dir, logger)
         )
 
-    def test_run_default_matrix_path(self):
-        """Default path resolves correctly."""
+    def test_run_default_registry_path(self):
+        """Default path resolves to registry_v2."""
         from apps.reference.domains.alpha_search.runtime.launcher import run
         project_root = Path(__file__).resolve().parents[4]
         default_path = project_root / "config" / \
-            "alpha_search" / "scenario_matrix.yaml"
+            "alpha_search" / "scenario_registry_v2.yaml"
         # Just verify the path resolution logic (don't actually run)
         assert isinstance(default_path, Path)
 
@@ -317,7 +343,10 @@ class TestMainReactor:
 
             assert os.environ["ALPHA_SEARCH_LOG_DIR"] == str(expected_session_dir / "aggregate")
 
-        load_cfg.assert_called_once_with(project_root / "config" / "custom_matrix.yaml")
+        load_cfg.assert_called_once_with(
+            project_root / "config" / "custom_matrix.yaml",
+            registry_source_mode="live_tail",
+        )
         setup_log.assert_called_once_with(expected_session_dir, log_level="DEBUG")
         main_reactor.assert_awaited_once_with(config, project_root, expected_session_dir, logger)
 

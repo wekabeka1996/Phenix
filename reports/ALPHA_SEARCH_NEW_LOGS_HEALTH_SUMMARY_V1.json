@@ -1,0 +1,46 @@
+{
+  "selected_session": "logs/alpha_search_runtime/20260517_171326",
+  "selected_session_start": "2026-05-17 17:13:26.445000",
+  "selected_session_end": "2026-05-18 01:14:04.505000",
+  "previous_session": "logs/alpha_search_runtime/20260516_212203",
+  "matrix_id": "v6b_dedup_noflip_cooldown_20260307",
+  "registered_scenarios": 30,
+  "matrix_scenarios": 12,
+  "loaded_scenarios": 12,
+  "evaluated_scenarios": 12,
+  "input_records_observed": 14071,
+  "ta_event_extractable_records": 0,
+  "ta_event_extractable_pct": 0.0,
+  "scenarios_with_buy_or_sell": [
+    "S03_AURORA_15M_APPROX",
+    "S05_AURORA_MACRO_RESIDUAL",
+    "S06_AURORA_ETH_CALIBRATED",
+    "S20_AURORA_MICROSTRUCTURE_DEPTH"
+  ],
+  "all_zero_signal_scenarios": [
+    "S01_MR_RSI_HEAVY",
+    "S11_MR_BASELINE",
+    "S12_MR_RSI_25_75",
+    "S13_MR_BB_HEAVY",
+    "S15_ENSEMBLE_BALANCED",
+    "S18_ENSEMBLE_MOMENTUM_AGGRESSIVE",
+    "S19_ENSEMBLE_MR_SHORT_BIAS",
+    "S21_ENSEMBLE_REGIME_ADAPTIVE"
+  ],
+  "shadow_authority_boundary": {
+    "real_order_intent_count": 0,
+    "cmd_open_count": 0,
+    "cmd_close_count": 0,
+    "order_placed_count": 0,
+    "exchange_order_count": 0
+  },
+  "verdict_codes": [
+    "NEW_ALPHA_LOGS_HEALTHY",
+    "ONLY_OLD_12_SCENARIOS_ACTIVE",
+    "TA_FEATURE_FEED_STILL_MISSING",
+    "SIGNAL_MATERIALIZATION_PARTIAL",
+    "SCENARIO_DIVERSITY_COLLAPSED",
+    "SHADOW_AUTHORITY_BOUNDARY_PRESERVED",
+    "PARTIAL"
+  ]
+}

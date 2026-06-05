@@ -26,6 +26,9 @@ project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 
+DEFAULT_WS_STREAMS = ["bookTicker", "trade"]
+
+
 class MockQueue:
     """
     Mock queue that mimics multiprocessing.Queue interface.
@@ -78,6 +81,7 @@ class TestWorkerBackpressure:
                 "market_data": {
                     "macro_sync": {"anchors": []},
                     "poll_interval_sec": 1,
+                    "websocket_streams": list(DEFAULT_WS_STREAMS),
                 },
                 "domain_configuration": {
                     "market_data": {"trading_mode": "testnet"}
@@ -116,6 +120,7 @@ class TestWorkerBackpressure:
                 "market_data": {
                     "macro_sync": {"anchors": []},
                     "poll_interval_sec": 1,
+                    "websocket_streams": list(DEFAULT_WS_STREAMS),
                 },
                 "domain_configuration": {
                     "market_data": {"trading_mode": "testnet"}
@@ -171,6 +176,7 @@ class TestWorkerMessageTypes:
                 "market_data": {
                     "macro_sync": {"anchors": []},
                     "poll_interval_sec": 1,
+                    "websocket_streams": list(DEFAULT_WS_STREAMS),
                 },
                 "domain_configuration": {
                     "market_data": {"trading_mode": "testnet"}
@@ -185,19 +191,71 @@ class TestWorkerMessageTypes:
         with patch.object(worker, "on_tick") as on_tick:
             worker._handle_message(
                 {
-                    "stream": "btcusdt@aggTrade",
+                    "stream": "btcusdt@trade",
                     "data": {
-                        "e": "aggTrade",
+                        "e": "trade",
                         "s": "BTCUSDT",
                         "p": "95000.5",
                         "q": "0.1",
                         "m": False,
+                        "t": 77,
                         "T": 1234567890000,
                     },
                 }
             )
 
         on_tick.assert_called_once()
+
+    def test_on_tick_handles_raw_trade_when_configured(self):
+        """Worker must route raw trade events when SSOT config requests them."""
+        q = MockQueue(maxsize=100)
+
+        config = {
+            "instruments": {"BTCUSDT": {}},
+            "system": {
+                "market_data": {
+                    "ws_heartbeat_sec": 20.0,
+                    "ws_receive_timeout_sec": 60.0,
+                }
+            },
+            "trading": {
+                "market_data": {
+                    "macro_sync": {"anchors": []},
+                    "poll_interval_sec": 1,
+                    "websocket_streams": list(DEFAULT_WS_STREAMS),
+                },
+                "domain_configuration": {
+                    "market_data": {"trading_mode": "testnet"}
+                },
+            },
+            "binance_api": {},
+        }
+
+        logger = MagicMock()
+        worker = MarketDataWorker(q, config, logger)
+        worker._aggregator.on_trade = MagicMock()
+
+        worker.on_tick(
+            {
+                "e": "trade",
+                "s": "BTCUSDT",
+                "p": "95000.5",
+                "q": "0.1",
+                "m": False,
+                "t": 123,
+                "T": 1234567890000,
+            }
+        )
+
+        worker._aggregator.on_trade.assert_called_once_with(
+            symbol="BTCUSDT",
+            price="95000.5",
+            quantity="0.1",
+            is_buyer_maker=False,
+            ts=1234567890000,
+            trade_id=123,
+        )
+        assert worker._ticks_received == 1
 
     def test_tick_message_format(self):
         """Test that tick messages have correct format."""
@@ -215,6 +273,7 @@ class TestWorkerMessageTypes:
                 "market_data": {
                     "macro_sync": {"anchors": []},
                     "poll_interval_sec": 1,
+                    "websocket_streams": list(DEFAULT_WS_STREAMS),
                 },
                 "domain_configuration": {
                     "market_data": {"trading_mode": "testnet"}
@@ -265,6 +324,7 @@ class TestWorkerMessageTypes:
                 "market_data": {
                     "macro_sync": {"anchors": ["BTCUSDT"]},
                     "poll_interval_sec": 1,
+                    "websocket_streams": list(DEFAULT_WS_STREAMS),
                 },
                 "domain_configuration": {
                     "market_data": {"trading_mode": "testnet"}
@@ -306,6 +366,7 @@ class TestWorkerMessageTypes:
                 "market_data": {
                     "macro_sync": {"anchors": []},
                     "poll_interval_sec": 1,
+                    "websocket_streams": list(DEFAULT_WS_STREAMS),
                 },
                 "domain_configuration": {
                     "market_data": {"trading_mode": "testnet"}
@@ -359,6 +420,7 @@ class TestWorkerConfig:
                 "market_data": {
                     "macro_sync": {"anchors": ["BTCUSDT"]},
                     "poll_interval_sec": 2,
+                    "websocket_streams": list(DEFAULT_WS_STREAMS),
                 },
                 "domain_configuration": {
                     "market_data": {"trading_mode": "live"}
@@ -391,6 +453,7 @@ class TestWorkerConfig:
                 "market_data": {
                     "macro_sync": {"anchors": []},
                     "poll_interval_sec": 1,
+                    "websocket_streams": list(DEFAULT_WS_STREAMS),
                 },
                 "domain_configuration": {
                     "market_data": {"trading_mode": "testnet"}
@@ -420,6 +483,7 @@ class TestWorkerConfig:
                 "market_data": {
                     "macro_sync": {"anchors": []},
                     "poll_interval_sec": 1,
+                    "websocket_streams": list(DEFAULT_WS_STREAMS),
                 },
                 "domain_configuration": {},  # No market_data config
             },
@@ -452,6 +516,7 @@ class TestWorkerWebSocket:
                 "market_data": {
                     "macro_sync": {"anchors": []},
                     "poll_interval_sec": 1,
+                    "websocket_streams": list(DEFAULT_WS_STREAMS),
                 },
                 "domain_configuration": {
                     "market_data": {"trading_mode": "live"}
@@ -481,6 +546,7 @@ class TestWorkerWebSocket:
                 "market_data": {
                     "macro_sync": {"anchors": ["SOLUSDT"]},  # Extra anchor
                     "poll_interval_sec": 1,
+                    "websocket_streams": list(DEFAULT_WS_STREAMS),
                 },
                 "domain_configuration": {
                     "market_data": {"trading_mode": "testnet"}
@@ -498,12 +564,41 @@ class TestWorkerWebSocket:
         assert payload["id"] == 1
 
         streams = payload["params"]
-        # Should have bookTicker and aggTrade for each symbol + anchor
+        # Should honor the configured websocket streams for each symbol + anchor
         expected_streams = [
-            "btcusdt@bookTicker", "btcusdt@aggTrade",
-            "ethusdt@bookTicker", "ethusdt@aggTrade",
-            "solusdt@bookTicker", "solusdt@aggTrade",  # Anchor
+            "btcusdt@bookTicker", "btcusdt@trade",
+            "ethusdt@bookTicker", "ethusdt@trade",
+            "solusdt@bookTicker", "solusdt@trade",  # Anchor
         ]
 
         for expected in expected_streams:
             assert expected in streams, f"Missing stream: {expected}"
+
+    def test_worker_requires_configured_websocket_streams(self):
+        """Worker must fail closed when websocket_streams are absent."""
+        q = MockQueue(maxsize=100)
+
+        config = {
+            "instruments": {"BTCUSDT": {}},
+            "system": {
+                "market_data": {
+                    "ws_heartbeat_sec": 20.0,
+                    "ws_receive_timeout_sec": 60.0,
+                }
+            },
+            "trading": {
+                "market_data": {
+                    "macro_sync": {"anchors": []},
+                    "poll_interval_sec": 1,
+                },
+                "domain_configuration": {
+                    "market_data": {"trading_mode": "testnet"}
+                },
+            },
+            "binance_api": {},
+        }
+
+        logger = MagicMock()
+
+        with pytest.raises(ValueError, match="trading.market_data.websocket_streams"):
+            MarketDataWorker(q, config, logger)

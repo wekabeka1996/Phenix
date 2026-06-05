@@ -4190,6 +4190,34 @@ class PositionPolicySidecarAllowedActionsConfig(BaseModel):
     exact_targeting: bool = Field(...)
 
 
+class PositionPolicySidecarMicrostructureExitV1Config(BaseModel):
+    """Bounded FE-driven soft-close contract for post-entry microstructure pressure."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(...)
+    authoritative_domain_modes: List[str] = Field(..., min_length=1)
+    require_warmup_full_ready: bool = Field(...)
+    adverse_obi_full_pressure: float = Field(..., gt=0.0, le=1.0)
+    adverse_pm_norm_full_pressure: float = Field(..., gt=0.0)
+    spread_bps_full_pressure: float = Field(..., gt=0.0)
+    liquidity_kappa_floor: float = Field(..., gt=0.0, le=1.0)
+
+    @field_validator("authoritative_domain_modes")
+    @classmethod
+    def _normalize_authoritative_domain_modes(cls, value: List[str]) -> List[str]:
+        normalized: List[str] = []
+        for item in value:
+            mode = str(item).strip().lower()
+            if mode not in {"testnet", "live", "backtest"}:
+                raise ValueError(
+                    f"unsupported position_policy_sidecar.microstructure_exit_v1 authoritative_domain_mode {item!r}"
+                )
+            if mode not in normalized:
+                normalized.append(mode)
+        return normalized
+
+
 class PositionPolicySidecarConfig(BaseModel):
     """Strict configuration contract for the position policy sidecar."""
 
@@ -4204,6 +4232,7 @@ class PositionPolicySidecarConfig(BaseModel):
     thresholds: PositionPolicySidecarThresholdsConfig = Field(...)
     logging: PositionPolicySidecarLoggingConfig = Field(...)
     allowed_actions: PositionPolicySidecarAllowedActionsConfig = Field(...)
+    microstructure_exit_v1: PositionPolicySidecarMicrostructureExitV1Config = Field(...)
 
     @model_validator(mode="after")
     def _validate_phase1_scope(self) -> "PositionPolicySidecarConfig":

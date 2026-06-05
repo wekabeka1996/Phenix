@@ -1,0 +1,77 @@
+{
+  "task": "ALPHA_SEARCH_REGISTRY_V2_AND_TA_PLANE_ACTIVATION_P0",
+  "default_loader_proof": {
+    "default_registry_path": "config/alpha_search/scenario_registry_v2.yaml",
+    "legacy_matrix_path": "config/alpha_search/scenario_matrix.yaml",
+    "matrix_id": "registry:shadow_expansion_v2_20260516:v2",
+    "scenario_count": 30,
+    "enabled_count": 30,
+    "first_scenario": "S01_MR_RSI_HEAVY",
+    "last_scenario": "S30_FILL_PROBABILITY_AWARE_LIMIT_ENTRY"
+  },
+  "focused_validation": {
+    "pytest_targets": [
+      "test_contracts.py",
+      "test_reporting.py",
+      "test_scenario_worker.py",
+      "test_scenario_manager.py",
+      "test_feature_mirror_writer.py",
+      "test_launcher.py",
+      "test_shadow_expansion.py"
+    ],
+    "focused_pass": true,
+    "focused_result": "Focused validation passed for touched slices."
+  },
+  "broader_alpha_search_validation": {
+    "command_scope": "tests/apps/reference/domains/alpha_search/tests",
+    "passed": 306,
+    "failed": 1,
+    "skipped": 18,
+    "residual_failure": "tests/apps/reference/domains/alpha_search/tests/test_regression.py::TestThresholdSync::test_aurora_threshold_scales_with_regime",
+    "residual_failure_summary": "Expected 0.18, obtained 0.0216. Not touched by registry_v2/TA-plane patch set."
+  },
+  "runtime_sessions": {
+    "synthetic_ta_probe": {
+      "session_id": "20260518_115438_registry_v2_ta_probe",
+      "matrix_rows": 30,
+      "ta_missing_rows": 0,
+      "evaluated_rows_total": 120,
+      "buy_total": 17,
+      "sell_total": 16,
+      "neutral_total": 87,
+      "metric_rows": 120,
+      "non_neutral_metric_rows": 33,
+      "shadow_flag_violations": 0,
+      "providers": [
+        "aurora",
+        "ta_ensemble"
+      ]
+    },
+    "default_launcher_partial_replay": {
+      "session_id": "20260518_114623",
+      "matrix_rows": 30,
+      "ta_missing_rows": 30,
+      "evaluated_rows_total": 211230,
+      "buy_total": 0,
+      "sell_total": 12204,
+      "neutral_total": 199026,
+      "metric_rows": 211230,
+      "non_neutral_metric_rows": 12204,
+      "shadow_flag_violations": 0,
+      "providers": [
+        "aurora",
+        "ta_ensemble"
+      ]
+    }
+  },
+  "proven": [
+    "launcher default registry path resolves scenario_registry_v2.yaml",
+    "registry_v2 expands to 30 enabled scenarios",
+    "runtime now emits session-level scenario runtime matrix so no scenario disappears silently",
+    "result rows now carry shadow_only=true authority_applied=false no_effect=true",
+    "synthetic TA-populated replay no longer reports ta_features_missing_for_bar in runtime matrix"
+  ],
+  "unproven": [
+    "A fresh live main.py end-to-end run that regenerates logs/alpha_input/alpha_input_v1.jsonl from the in-process mirror writer was not executed in this task."
+  ]
+}

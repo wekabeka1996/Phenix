@@ -15,6 +15,7 @@ from apps.reference.domains.alpha_search.runtime.reporting import (
     AggregateReporter,
     CSV_COLUMNS,
 )
+from apps.reference.domains.alpha_search.runtime.contracts import ScenarioSpec
 
 
 @pytest.mark.unit
@@ -73,6 +74,52 @@ class TestLogResult:
 
         assert reporter.stats["csv_rows"] == 100
 
+    def test_scenario_runtime_matrix_tracks_registered_and_evaluated_scenarios(self, tmp_path):
+        """Scenario runtime matrix keeps zero-row scenarios visible and updates counts for evaluated ones."""
+        session_dir = tmp_path / "session"
+        reporter = AggregateReporter(session_dir)
+        reporter.register_scenarios([
+            ScenarioSpec(
+                scenario_id="S01",
+                version="2.0.0",
+                family="mean_reversion",
+                provider="ta_ensemble",
+                strategy_type="mean_reversion",
+                config_mode="override",
+                base_refs={"alpha_search": "config/alpha_search.yaml"},
+            ),
+            ScenarioSpec(
+                scenario_id="S02",
+                version="2.0.0",
+                family="microstructure",
+                provider="aurora",
+                strategy_type="aurora",
+                config_mode="override",
+                base_refs={"alpha_search": "config/alpha_search.yaml"},
+            ),
+        ])
+        reporter.log_result({
+            "scenario_id": "S01",
+            "version": "2.0.0",
+            "family": "mean_reversion",
+            "provider_id": "ta_ensemble",
+            "side": "NEUTRAL",
+            "why": ["fail_closed:ta_features_missing_for_bar"],
+            "shadow_only": True,
+            "authority_applied": False,
+            "no_effect": True,
+        })
+
+        path = session_dir / "aggregate" / "scenario_runtime_matrix.csv"
+        assert path.exists()
+        with open(path, "r", encoding="utf-8") as f:
+            rows = {row["scenario_id"]: row for row in csv.DictReader(f)}
+
+        assert rows["S01"]["evaluated_rows"] == "1"
+        assert rows["S01"]["NEUTRAL_count"] == "1"
+        assert "ta_features_missing_for_bar" in rows["S01"]["missing_features"]
+        assert rows["S02"]["evaluated_rows"] == "0"
+
 
 @pytest.mark.unit
 class TestLogHealth:
@@ -125,3 +172,4 @@ class TestReporterLifecycle:
         assert reporter.stats["csv_rows"] == 0
         reporter.log_result({"score": 0.1})
         assert reporter.stats["csv_rows"] == 1
+        assert reporter.stats["scenario_matrix_path"].endswith("scenario_runtime_matrix.csv")

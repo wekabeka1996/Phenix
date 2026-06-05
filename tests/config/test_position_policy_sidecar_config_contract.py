@@ -22,10 +22,12 @@ def test_production_config_exposes_position_policy_sidecar_contract() -> None:
     cfg = ConfigLoader().load_config()
 
     sidecar = cfg.domains.execution_position.position_policy_sidecar
-    assert sidecar.mode.value == "shadow"
+    assert sidecar.mode.value == "enable"
     assert sidecar.thresholds.recommend_soft_close_at == 0.30
     assert sidecar.allowed_actions.soft_close_symbol_current_net_only is True
     assert sidecar.allowed_actions.partial_reduce is False
+    assert sidecar.microstructure_exit_v1.enabled is True
+    assert sidecar.microstructure_exit_v1.authoritative_domain_modes == ["testnet"]
 
 
 def test_invalid_position_policy_sidecar_mode_is_rejected(tmp_path: Path) -> None:

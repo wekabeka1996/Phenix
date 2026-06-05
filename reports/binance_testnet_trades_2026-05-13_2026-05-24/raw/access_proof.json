@@ -1,0 +1,40 @@
+{
+  "base_url": "https://testnet.binancefuture.com",
+  "candidate_symbols": [
+    "1000PEPEUSDT",
+    "BNBUSDT",
+    "BTCUSDT",
+    "DOGEUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "XRPUSDT",
+    "_SYSTEM_"
+  ],
+  "effective_end_utc": "2026-05-24T15:04:07.668000+00:00",
+  "exchange_info_status": 200,
+  "final_symbols": [
+    "1000PEPEUSDT",
+    "BNBUSDT",
+    "BTCUSDT",
+    "DOGEUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "XRPUSDT"
+  ],
+  "invalid_candidate_symbols": [
+    "_SYSTEM_"
+  ],
+  "left_boundary_exchange_truth": "UNKNOWN: /fapi/v1/userTrades max interval is 7 days (-4165)",
+  "public_server_time_ms": 1779635046103,
+  "public_server_time_utc": "2026-05-24T15:04:06.103000+00:00",
+  "public_time_status": 200,
+  "requested_end_local": "2026-05-24T23:59:59.999999+03:00",
+  "requested_end_utc": "2026-05-24T20:59:59.999000+00:00",
+  "requested_start_local": "2026-05-13T00:00:00+03:00",
+  "requested_start_utc": "2026-05-12T21:00:00+00:00",
+  "right_boundary_truncated": true,
+  "signed_server_time_ms": 1779635047668,
+  "signed_server_time_utc": "2026-05-24T15:04:07.668000+00:00",
+  "trading_mode": "testnet",
+  "valid_exchange_symbol_count": 709
+}

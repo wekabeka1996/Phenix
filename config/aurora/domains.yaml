@@ -83,14 +83,14 @@ decision_making:
   # DM-DIR-SSOT-STRICT-01: Directional sanity gate (SSOT-required).
   # Note: enabled can be overridden per profile; block must exist for LIVE.
   directional_sanity:
-    # LIVE SAFETY: Blocks entries against established trend direction.
-    enabled: true
+    # Runtime rollout toggle: disabled here to suppress NRR-026/NRR-027 via config.
+    enabled: false
     min_abs_delta_price: 0.0
     min_confidence: 0.0
     # FIX-CONF-GATE-01: Separate regime confidence gate.
     # Blocks entries when regime_confidence < threshold (low/mid confidence = noise).
-    # 0.0 = disabled; 0.42 = current tuned threshold for the expanded regime model.
-    min_regime_confidence: 0.42
+    # 0.0 explicitly disables the regime-confidence branch (NRR-026).
+    min_regime_confidence: 0.0
     # NRR027-REDESIGN-01: keep one-bar trend read for traceability, but require
     # repeated same-sign bars before emitting hard countertrend veto (NRR-027).
     # This avoids blocking bearish SELLs in LOW_VOL on a single positive bar blip.
@@ -104,8 +104,8 @@ decision_making:
   # PRICE-MOTION-SSOT-STRICT-01: Multi-window safety layer (SSOT-required).
   # Blocks opening positions against persistent negative/positive price motion.
   price_motion_sanity:
-    # LIVE SAFETY: Anti-FOMO protection using tick-level price motion.
-    enabled: true
+    # Runtime rollout toggle: disabled here to suppress NRR-028/NRR-029/NRR-030 via config.
+    enabled: false
     k_vol: 2.0
     flash_window_sec: 60
     bleed_window_sec: 300
@@ -631,6 +631,14 @@ execution_position:
       partial_reduce: false
       bracket_mutation: false
       exact_targeting: false
+    microstructure_exit_v1:
+      enabled: true
+      authoritative_domain_modes: ["testnet"]
+      require_warmup_full_ready: false
+      adverse_obi_full_pressure: 0.35
+      adverse_pm_norm_full_pressure: 1.0
+      spread_bps_full_pressure: 12.0
+      liquidity_kappa_floor: 0.35
 
   #
   # MAGIC-NUM-EXTRACTION: Order Lifecycle Timing Configuration

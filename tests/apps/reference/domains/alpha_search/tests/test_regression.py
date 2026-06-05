@@ -266,8 +266,9 @@ class TestScenarioMatrix:
     """Regression test for full matrix validation."""
 
     def test_scenario_matrix_twelve_scenarios_all_valid(self):
-        """Full matrix parses and all 12 scenarios resolve."""
+        """Full matrix parses and all 12 enabled scenarios resolve end-to-end."""
         from apps.reference.domains.alpha_search.runtime.launcher import load_matrix_config
+        from apps.reference.domains.alpha_search.runtime.config_resolver import resolve_scenario_config
 
         project_root = Path(__file__).resolve().parents[6]
         matrix_path = project_root / "config" / "alpha_search" / "scenario_matrix.yaml"
@@ -278,6 +279,9 @@ class TestScenarioMatrix:
         config = load_matrix_config(matrix_path)
         enabled = [s for s in config.scenarios if s.enabled]
         assert len(enabled) == 12
+
+        for spec in enabled:
+            resolve_scenario_config(spec, project_root)
 
     def test_ensemble_valid_override_paths(self):
         """S16/S17 override paths validate (no extra='forbid' errors)."""

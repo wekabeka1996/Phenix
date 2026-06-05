@@ -1,0 +1,55 @@
+{
+  "task_id": "ALPHA_SEARCH_PROFITABLE_SCENARIO_SIMULATION_SWEEP_V1",
+  "shadow_only": true,
+  "authority_applied": false,
+  "no_effect": true,
+  "runtime_session": "20260517_171326",
+  "alpha_input_path": "logs/alpha_input/alpha_input_v1.jsonl",
+  "regime_confidence_path": "logs/regime_confidence_audit_v1.jsonl",
+  "order_log_path": "logs/order_log_v1.jsonl",
+  "wal_dir": "ops/wal",
+  "selected_candidates": [
+    "S03_AURORA_15M_APPROX",
+    "S05_AURORA_MACRO_RESIDUAL",
+    "S06_AURORA_ETH_CALIBRATED",
+    "S20_AURORA_MICROSTRUCTURE_DEPTH"
+  ],
+  "total_variants_tested": 16300,
+  "positive_variant_count": 925,
+  "best_variant": {
+    "scenario_id": "S05_AURORA_MACRO_RESIDUAL",
+    "threshold": "top_50_pct",
+    "threshold_value": 0.053451,
+    "symbol_filter": "per_symbol_best_threshold",
+    "regime_filter": "MEAN_REVERSION_only",
+    "side_constraint": "no_SELL_in_TREND_UP",
+    "exit_model": "fixed_tp_15_sl_8",
+    "fee_model": "maker_fee_0_02_pct",
+    "slippage_model": "1_bps",
+    "signal_count": 12,
+    "sample_status": "LOW_SAMPLE_WARNING",
+    "win_rate": 0.916667,
+    "avg_net_pnl_bps": 16.779466,
+    "total_net_pnl_bps": 201.353588,
+    "max_dd_bps": 11.096698,
+    "profit_factor": 19.145361,
+    "false_positive_rate": 0.083333,
+    "signal_count_stability": 0.008584,
+    "rank": 1,
+    "avoided_real_sl_count": 1,
+    "caught_real_tp_count": 0,
+    "false_skip_tp_count": 0,
+    "false_enter_loss_count": 0
+  },
+  "verdict_codes": [
+    "NET_PROFITABLE_VARIANT_FOUND",
+    "S05_SAFEST_AFTER_COSTS",
+    "NO_SELL_TREND_UP_CONFIRMED",
+    "EXIT_MODEL_EDGE_FOUND",
+    "PARTIAL",
+    "LOW_SAMPLE_ONLY"
+  ],
+  "best_variant_real_compare": {
+    "AVOIDED_REAL_SL": 1
+  }
+}

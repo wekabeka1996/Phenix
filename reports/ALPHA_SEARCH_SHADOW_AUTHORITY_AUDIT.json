@@ -1,0 +1,101 @@
+{
+  "audit_id": "ALPHA_SEARCH_SHADOW_AUTHORITY_AUDIT_20260516",
+  "audit_date": "2026-05-16",
+  "auditor": "ALPHA_SEARCH_SHADOW_SCENARIO_EXPANSION_V1",
+  "authority_boundary_status": "PRESERVED",
+  "summary": {
+    "total_shadow_modules": 7,
+    "forbidden_verbs": [
+      "ORDER_INTENT", "CMD:OPEN", "CMD:CLOSE", "TRADE_INTENT_PROPOSED",
+      "CMD:SUBMIT_ORDER", "CMD:MODIFY_ORDER", "CMD:CANCEL_ORDER",
+      "RISK_GATE_CHECK", "EXECUTION_POSITION_OPEN"
+    ],
+    "all_modules_shadow_only": true,
+    "no_real_wal_writes": true,
+    "no_real_fsm_calls": true,
+    "no_real_order_submission": true
+  },
+  "module_audit": [
+    {
+      "module": "apps/reference/domains/alpha_search/shadow/scenario_registry.py",
+      "authority_compliant": true,
+      "shadow_only_enforced": true,
+      "pydantic_validated": true,
+      "notes": "Pydantic validators reject shadow_only=False and authority_applied=True at construction time"
+    },
+    {
+      "module": "apps/reference/domains/alpha_search/shadow/signal_materializer.py",
+      "authority_compliant": true,
+      "shadow_only_enforced": true,
+      "pydantic_validated": false,
+      "notes": "ShadowSignalEvent.__post_init__ enforces immutable shadow_only=True via object.__setattr__. No real verbs emitted."
+    },
+    {
+      "module": "apps/reference/domains/alpha_search/shadow/virtual_lifecycle.py",
+      "authority_compliant": true,
+      "shadow_only_enforced": true,
+      "pydantic_validated": false,
+      "notes": "VirtualLifecycle.__post_init__ enforces immutable boundary. No real ORDER_INTENT, CMD:OPEN, CMD:CLOSE emitted."
+    },
+    {
+      "module": "apps/reference/domains/alpha_search/shadow/authority_guard.py",
+      "authority_compliant": true,
+      "shadow_only_enforced": true,
+      "pydantic_validated": false,
+      "notes": "Central guard validates any event dict for forbidden verbs. audit_lifecycle_batch covers batch outputs."
+    },
+    {
+      "module": "apps/reference/domains/alpha_search/shadow/wal_comparator.py",
+      "authority_compliant": true,
+      "shadow_only_enforced": true,
+      "pydantic_validated": false,
+      "notes": "Read-only WAL access. No writes to WAL. ComparisonResult produces only analysis output."
+    },
+    {
+      "module": "apps/reference/domains/alpha_search/shadow/metrics_engine.py",
+      "authority_compliant": true,
+      "shadow_only_enforced": true,
+      "pydantic_validated": false,
+      "notes": "Pure computation module. No I/O. No event emission."
+    },
+    {
+      "module": "config/alpha_search/scenario_registry_v2.yaml",
+      "authority_compliant": true,
+      "shadow_only_enforced": true,
+      "pydantic_validated": true,
+      "notes": "All 30 scenarios have shadow_only: true, authority_applied: false, no_effect: true at YAML level"
+    }
+  ],
+  "current_runtime_scenarios": {
+    "total": 12,
+    "all_shadow_only": true,
+    "signal_generation_status": "ZERO_SIGNALS",
+    "root_causes": [
+      {
+        "cause": "FAIL_CLOSED_ta_features_missing_for_bar",
+        "affected_scenarios": ["S01","S11","S12","S13","S15","S18","S19","S21"],
+        "frequency": "1403/2309 bars per scenario (60.8%)",
+        "description": "TA feature pipeline fails closed when bars are missing features. Score=0, confidence=0."
+      },
+      {
+        "cause": "UNCERTAIN_REGIME_MULTIPLIER_TOO_HIGH",
+        "affected_scenarios": ["S01","S03","S05","S06","S11","S12","S13","S15","S18","S19","S20","S21"],
+        "frequency": "906/2309 bars (39.2%) for MR group; 100% for Aurora group",
+        "description": "regime=UNCERTAIN x multiplier=3.0 (aurora) or 1.15 (ta_ensemble) creates effective threshold 3x nominal. Scores of ~0.000025 never cross 0.28*3.0=0.84."
+      },
+      {
+        "cause": "AURORA_DIR_STR_ZERO",
+        "affected_scenarios": ["S01","S11","S12","S13","S15","S18","S19","S21"],
+        "frequency": "906/2309 bars per scenario",
+        "description": "aurora_dir=0.0000, aurora_str=0.0000 when upstream aurora model produces degenerate output in UNCERTAIN regime."
+      }
+    ]
+  },
+  "new_registry_improvements": {
+    "uncertain_multiplier_range": "1.20-1.80 (vs 3.00 in current runtime)",
+    "entry_threshold_range": "0.06-0.18 (vs 0.28-0.38 in current runtime)",
+    "allowed_regimes": "expanded to include UNCERTAIN and LOW_VOLATILITY for most scenarios",
+    "expected_signal_rate": "pending first run with scenario_registry_v2.yaml"
+  },
+  "boundary_preserved": true
+}

@@ -7,9 +7,11 @@ Verifies that AuroraAlphaAdapter correctly wraps AuroraScoringKernel.
 import pytest
 from decimal import Decimal
 from typing import Dict, Any
+from unittest.mock import patch
 
 from apps.reference.domains.alpha_search.models.aurora_adapter import AuroraAlphaAdapter
 from apps.reference.domains.alpha_search.alpha_model import AlphaScore
+from apps.reference.domains.decision_making.quadratic_scoring_kernel import ScoringResult
 
 
 class TestAuroraAlphaAdapter:
@@ -154,6 +156,70 @@ class TestAuroraAlphaAdapter:
         assert isinstance(result.score, Decimal)
         # Should have computed a result (not fail-closed)
         assert not any("fail_closed" in w for w in result.why)
+
+    def test_blocked_regime_returns_fail_closed(self):
+        """Global blocked_regimes suppress Aurora scoring for the snapshot."""
+        adapter = AuroraAlphaAdapter()
+        adapter._blocked_regimes = {"HIGH_VOLATILITY"}
+
+        result = adapter.calculate_alpha(
+            symbol="BTCUSDT",
+            market_data={"close": 50000.0},
+            features={"obi": 0.3, "delta_price": 100.0, "macro_resid": 0.5},
+            context={"regime": "HIGH_VOLATILITY"},
+        )
+
+        assert result.score == Decimal("0")
+        assert any("blocked_regime" in w for w in result.why)
+
+    def test_symbol_allowed_regimes_returns_fail_closed(self):
+        """Per-symbol allowed_regimes suppress non-listed regimes."""
+        adapter = AuroraAlphaAdapter()
+        adapter._symbol_allowed_regimes = {"BTCUSDT": {"TREND_UP"}}
+
+        result = adapter.calculate_alpha(
+            symbol="BTCUSDT",
+            market_data={"close": 50000.0},
+            features={"obi": 0.3, "delta_price": 100.0, "macro_resid": 0.5},
+            context={"regime": "DEFAULT"},
+        )
+
+        assert result.score == Decimal("0")
+        assert any("regime_not_allowed" in w for w in result.why)
+
+    def test_symbol_specific_weights_forwarded_to_kernel(self):
+        """Per-symbol weights override the global Aurora weights at compute time."""
+        adapter = AuroraAlphaAdapter(
+            signal_weights={"obi": 0.1, "delta_price": 0.2, "macro_resid": 0.7}
+        )
+        adapter._symbol_signal_weights = {
+            "BTCUSDT": {"obi": 0.6, "delta_price": 0.2, "macro_resid": 0.2}
+        }
+        captured: dict[str, Any] = {}
+
+        def _fake_compute(**kwargs):
+            captured["signal_weights"] = kwargs["signal_weights"]
+            return ScoringResult(
+                score=Decimal("0.2"),
+                side="buy",
+                thr_buy=Decimal("0.1"),
+                thr_sell=Decimal("0.1"),
+                psi_vector={"dir_score": 0.2, "strength_score": 0.1},
+                threshold_factor=Decimal("1.0"),
+            )
+
+        with patch(
+            "apps.reference.domains.alpha_search.models.aurora_adapter.QuadraticScoringKernel.compute",
+            side_effect=_fake_compute,
+        ):
+            adapter.calculate_alpha(
+                symbol="BTCUSDT",
+                market_data={"close": 50000.0},
+                features={"obi": 0.3, "delta_price": 100.0, "macro_resid": 0.5},
+                context={"regime": "DEFAULT"},
+            )
+
+        assert captured["signal_weights"]["obi"] == pytest.approx(0.6)
 
 
 class TestAuroraAdapterIntegration:

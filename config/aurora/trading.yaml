@@ -201,8 +201,8 @@ trading:
     mode: hybrid_advisory
     llm_role: advisory
     require_telemetry: true
-    symbols_llm: ["1000PEPEUSDT"]
-    allowlist_symbols: ["1000PEPEUSDT"]
+    symbols_llm: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT", "BNBUSDT", "1000PEPEUSDT"]
+    allowlist_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT", "BNBUSDT", "1000PEPEUSDT"]
     intent_policy:
       max_open_intents: 3
       cooldown_sec: 30

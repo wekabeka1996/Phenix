@@ -194,6 +194,46 @@ def _extract_regime_hint(why_values: Sequence[str]) -> Optional[str]:
     return None
 
 
+def _resolve_local_intent_attribution(
+    *,
+    rid: Any,
+    intent_by_rid: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    rid_text = str(rid or "")
+    if not rid_text:
+        return {
+            "rid": None,
+            "strategy_id": None,
+            "regime_hint": None,
+            "stop_price": None,
+            "target_price": None,
+            "why": [],
+            "status": "UNATTRIBUTED:NO_LOCAL_RID",
+        }
+
+    intent = intent_by_rid.get(rid_text)
+    if not intent:
+        return {
+            "rid": rid_text,
+            "strategy_id": None,
+            "regime_hint": None,
+            "stop_price": None,
+            "target_price": None,
+            "why": [],
+            "status": "UNATTRIBUTED:RID_NOT_IN_LOCAL_SHADOW",
+        }
+
+    return {
+        "rid": rid_text,
+        "strategy_id": intent.get("strategy_id"),
+        "regime_hint": intent.get("regime_hint"),
+        "stop_price": intent.get("stop_price"),
+        "target_price": intent.get("target_price"),
+        "why": list(intent.get("why") or []),
+        "status": "ATTRIBUTED:LOCAL_INTENT",
+    }
+
+
 def _iter_jsonl(path: Path) -> Iterator[Dict[str, Any]]:
     if not path.exists():
         return
@@ -896,13 +936,16 @@ def _build_episodes(
                         lot.get("entry_commission_total")) or 0.0) * (match_qty / lot_original_qty)
                 exit_price = _safe_float(trade.get("price"))
                 rid = lot.get("rid")
-                intent = intent_by_rid.get(str(rid or ""), {})
+                attribution = _resolve_local_intent_attribution(
+                    rid=rid,
+                    intent_by_rid=intent_by_rid,
+                )
                 close_reason_proven = _proven_close_reason(order_row)
                 close_reason_inferred = _infer_close_reason(
                     direction=str(lot.get("direction") or ""),
                     exit_price=exit_price,
-                    stop_price=_safe_float(intent.get("stop_price")),
-                    target_price=_safe_float(intent.get("target_price")),
+                    stop_price=_safe_float(attribution.get("stop_price")),
+                    target_price=_safe_float(attribution.get("target_price")),
                     proven_close_reason=close_reason_proven,
                 )
                 episode_index += 1
@@ -923,12 +966,13 @@ def _build_episodes(
                         "entry_order_time_ms": lot.get("entry_order_time_ms"),
                         "entry_order_time_utc": _utc_iso(_safe_int(lot.get("entry_order_time_ms"))),
                         "entry_price": lot.get("entry_price"),
-                        "entry_rid": rid,
-                        "strategy_id": intent.get("strategy_id"),
-                        "regime_hint": intent.get("regime_hint"),
-                        "entry_stop_price": intent.get("stop_price"),
-                        "entry_target_price": intent.get("target_price"),
-                        "entry_why": " || ".join(intent.get("why") or []),
+                        "entry_rid": attribution.get("rid"),
+                        "strategy_id": attribution.get("strategy_id"),
+                        "regime_hint": attribution.get("regime_hint"),
+                        "entry_stop_price": attribution.get("stop_price"),
+                        "entry_target_price": attribution.get("target_price"),
+                        "entry_why": " || ".join(attribution.get("why") or []),
+                        "local_attribution_status": attribution.get("status"),
                         "exit_time_ms": trade.get("time_ms"),
                         "exit_time_utc": trade.get("time_utc"),
                         "exit_time_local": trade.get("time_local"),
@@ -1014,7 +1058,10 @@ def _build_episodes(
         for lot in open_lots:
             episode_index += 1
             rid = lot.get("rid")
-            intent = intent_by_rid.get(str(rid or ""), {})
+            attribution = _resolve_local_intent_attribution(
+                rid=rid,
+                intent_by_rid=intent_by_rid,
+            )
             episodes.append(
                 {
                     "episode_id": f"EP-{episode_index:05d}",
@@ -1032,12 +1079,13 @@ def _build_episodes(
                     "entry_order_time_ms": lot.get("entry_order_time_ms"),
                     "entry_order_time_utc": _utc_iso(_safe_int(lot.get("entry_order_time_ms"))),
                     "entry_price": lot.get("entry_price"),
-                    "entry_rid": rid,
-                    "strategy_id": intent.get("strategy_id"),
-                    "regime_hint": intent.get("regime_hint"),
-                    "entry_stop_price": intent.get("stop_price"),
-                    "entry_target_price": intent.get("target_price"),
-                    "entry_why": " || ".join(intent.get("why") or []),
+                    "entry_rid": attribution.get("rid"),
+                    "strategy_id": attribution.get("strategy_id"),
+                    "regime_hint": attribution.get("regime_hint"),
+                    "entry_stop_price": attribution.get("stop_price"),
+                    "entry_target_price": attribution.get("target_price"),
+                    "entry_why": " || ".join(attribution.get("why") or []),
+                    "local_attribution_status": attribution.get("status"),
                     "exit_time_ms": effective_end_ms,
                     "exit_time_utc": _utc_iso(effective_end_ms),
                     "exit_time_local": effective_end_local_iso,
@@ -1384,6 +1432,7 @@ def _build_validation_summary(
     income_rows: Sequence[Dict[str, Any]],
     trade_rows: Sequence[Dict[str, Any]],
     order_rows: Sequence[Dict[str, Any]],
+    episodes: Sequence[Dict[str, Any]],
     boundary_events: Sequence[Dict[str, Any]],
     order_lookup: Dict[Tuple[str, str], Dict[str, Any]],
 ) -> Dict[str, Any]:
@@ -1400,6 +1449,13 @@ def _build_validation_summary(
             "order_id"), "trade_id": row.get("trade_id")}
         for row in trade_rows
         if (str(row.get("symbol")), str(row.get("order_id"))) not in order_lookup
+    ]
+    unattributed_episodes = [
+        row for row in episodes
+        if str(row.get("local_attribution_status") or "").startswith("UNATTRIBUTED:")
+    ]
+    unattributed_closed_episodes = [
+        row for row in unattributed_episodes if row.get("status") == "CLOSED"
     ]
     return {
         "base_url": base_url,
@@ -1426,6 +1482,10 @@ def _build_validation_summary(
         "realized_pnl_reconciliation_delta": trade_realized_total - income_realized_total,
         "missing_trade_order_count": len(missing_trade_orders),
         "missing_trade_orders": missing_trade_orders[:25],
+        "unattributed_episode_count": len(unattributed_episodes),
+        "unattributed_closed_episode_count": len(unattributed_closed_episodes),
+        "unattributed_closed_episode_net_pnl": sum((_safe_float(row.get("net_pnl_after_trade_fees")) or 0.0) for row in unattributed_closed_episodes),
+        "unattributed_symbols": sorted({str(row.get("symbol") or "") for row in unattributed_episodes if row.get("symbol")}),
         "boundary_close_only_events": len(boundary_events),
     }
 
@@ -1511,6 +1571,11 @@ def _build_report(
     if effective_end_ms < requested_end_ms:
         lines.append(
             "- The missing right-edge slice remains UNKNOWN until Binance server time passes the requested end boundary and the extraction is rerun.")
+    unattributed_count = _safe_int(validation_summary.get("unattributed_episode_count")) or 0
+    if unattributed_count > 0:
+        unattributed_symbols = validation_summary.get("unattributed_symbols") or []
+        lines.append(
+            f"- {unattributed_count} reconstructed episode(s) lack provable local intent attribution, so strategy-level blame remains incomplete for symbols: {', '.join(str(item) for item in unattributed_symbols) if unattributed_symbols else 'unknown'}.")
     lines.append("")
     lines.append("## Validation")
     lines.append("")
@@ -1529,6 +1594,12 @@ def _build_report(
             validation_summary.get("realized_pnl_reconciliation_delta")), 8)],
         ["missing_trade_order_count", validation_summary.get(
             "missing_trade_order_count")],
+        ["unattributed_episode_count", validation_summary.get(
+            "unattributed_episode_count")],
+        ["unattributed_closed_episode_count", validation_summary.get(
+            "unattributed_closed_episode_count")],
+        ["unattributed_closed_episode_net_pnl", _fmt_num(_safe_float(
+            validation_summary.get("unattributed_closed_episode_net_pnl")), 8)],
         ["boundary_close_only_events", validation_summary.get(
             "boundary_close_only_events")],
     ]
@@ -1867,6 +1938,7 @@ def main() -> int:
         income_rows=income_rows,
         trade_rows=trade_rows,
         order_rows=order_rows,
+        episodes=episodes,
         boundary_events=boundary_events,
         order_lookup=order_lookup,
     )
@@ -1990,6 +2062,7 @@ def main() -> int:
         "entry_rid",
         "strategy_id",
         "regime_hint",
+        "local_attribution_status",
         "entry_stop_price",
         "entry_target_price",
         "entry_why",

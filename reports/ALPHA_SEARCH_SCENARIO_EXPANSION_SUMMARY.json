@@ -1,0 +1,136 @@
+{
+  "expansion_id": "ALPHA_SEARCH_SHADOW_SCENARIO_EXPANSION_V1",
+  "date": "2026-05-16",
+  "status": "PHASE_0_TO_6_COMPLETE_PHASE_7_COMPLETE",
+  "phases": {
+    "PHASE_0_forensic_audit": {
+      "status": "COMPLETE",
+      "findings": {
+        "all_12_scenarios_produce_zero_signals": true,
+        "root_cause_1": "60.8% of bars: fail_closed:ta_features_missing_for_bar",
+        "root_cause_2": "39.2% of bars: UNCERTAIN regime x multiplier=3.0 → effective threshold 0.84 (never crossed)",
+        "root_cause_3": "aurora_dir=0.0000, aurora_str=0.0000 in UNCERTAIN regime",
+        "dominant_regime": "UNCERTAIN (91.55% of all bars)",
+        "confidence_zero_rate": "100% across all scenarios"
+      }
+    },
+    "PHASE_1_signal_materializer": {
+      "status": "COMPLETE",
+      "file": "apps/reference/domains/alpha_search/shadow/signal_materializer.py",
+      "features": [
+        "ShadowReasonCode enum with 9 explicit codes",
+        "ShadowSignalEvent with immutable authority fields",
+        "materialize_shadow_signal() replaces silent NEUTRAL with diagnostics",
+        "derive_shadow_confidence() recovers confidence from score magnitude",
+        "CONFIDENCE_ZERO_BUG detection for aurora_dir=0.0000 pattern"
+      ]
+    },
+    "PHASE_2_scenario_expansion": {
+      "status": "COMPLETE",
+      "files": [
+        "apps/reference/domains/alpha_search/shadow/scenario_registry.py",
+        "config/alpha_search/scenario_registry_v2.yaml"
+      ],
+      "scenarios_created": 30,
+      "families": ["mean_reversion(6)", "trend_continuation(6)", "volatility_breakout(5)", "microstructure(6)", "regime_adaptive(5)", "cost_execution(2)"],
+      "key_changes_vs_current": {
+        "entry_threshold": "0.06-0.18 vs 0.28-0.38 (3-5x lower)",
+        "uncertain_multiplier": "1.20-1.80 vs 3.00 (significantly reduced)",
+        "allowed_regimes": "expanded to include UNCERTAIN and LOW_VOLATILITY"
+      },
+      "matrix_update": "config/alpha_search/scenario_matrix.yaml max_scenarios updated 12→30"
+    },
+    "PHASE_3_virtual_lifecycle": {
+      "status": "COMPLETE",
+      "file": "apps/reference/domains/alpha_search/shadow/virtual_lifecycle.py",
+      "features": [
+        "VirtualLifecycle dataclass with full MFE/MAE/PnL tracking",
+        "VirtualLifecycleEngine.simulate() for single trade",
+        "VirtualLifecycleEngine.simulate_batch() for batch processing",
+        "6 exit models: horizon_1/3/6_bar, fixed_tp_sl, trailing_giveback, microstructure_reversal_exit",
+        "4 fee models, 4 slippage models",
+        "Authority boundary enforced in __post_init__"
+      ]
+    },
+    "PHASE_4_wal_comparator": {
+      "status": "COMPLETE",
+      "file": "apps/reference/domains/alpha_search/shadow/wal_comparator.py",
+      "features": [
+        "6 ComparisonLabel values",
+        "load_real_trades() from OBJECTIVE_REALIZED_V1 WAL events",
+        "compare_scenario_vs_real() per-trade classification",
+        "summarize_comparisons() with avoidance_rate and capture_rate"
+      ],
+      "real_wal_summary": {
+        "wal_files": 5,
+        "total_events": 65811,
+        "OBJECTIVE_REALIZED_V1": 16,
+        "TP_count": 4,
+        "SL_count": 12,
+        "mean_reversion_trades": 11,
+        "md_amr_trades": 5,
+        "SL_rate": 0.75,
+        "real_trading_result": "net_loss (-395.90 USDT) — NOT attributed to alpha_search"
+      }
+    },
+    "PHASE_5_metrics_engine": {
+      "status": "COMPLETE",
+      "file": "apps/reference/domains/alpha_search/shadow/metrics_engine.py",
+      "metrics_per_scenario": 25,
+      "aggregate_metrics": ["best/worst by expectancy", "high_duplicate_scenarios", "low_signal_scenarios", "total_virtual_pnl_bps"],
+      "pairwise_correlations": "Pearson correlation for all scenario pairs with ≥10 overlapping bars"
+    },
+    "PHASE_6_tests": {
+      "status": "COMPLETE",
+      "file": "tests/apps/reference/domains/alpha_search/tests/test_shadow_expansion.py",
+      "test_count": 13,
+      "tests": [
+        "test_registry_has_at_least_25_enabled_scenarios",
+        "test_no_scenario_missing_required_fields",
+        "test_all_scenarios_carry_shadow_authority_fields",
+        "test_shadow_signal_event_authority_fields_immutable",
+        "test_score_above_threshold_emits_buy",
+        "test_score_below_negative_threshold_emits_sell",
+        "test_derived_confidence_nonzero_when_score_valid",
+        "test_derived_confidence_zero_on_fail_closed",
+        "test_below_threshold_emits_neutral_with_reason",
+        "test_duplicate_fingerprint_detection",
+        "test_virtual_lifecycle_has_no_real_trading_verbs",
+        "test_virtual_lifecycle_authority_fields",
+        "test_authority_guard_rejects_forbidden_verb",
+        "test_authority_guard_rejects_shadow_only_false",
+        "test_authority_guard_clean_on_valid_event",
+        "test_alpha_search_scenario_worker_imports",
+        "test_registry_scenario_ids_are_unique",
+        "test_registry_rejects_shadow_only_false"
+      ]
+    },
+    "PHASE_7_reports": {
+      "status": "COMPLETE",
+      "artifacts": [
+        "reports/ALPHA_SEARCH_SHADOW_SCENARIO_EXPANSION_V1.md",
+        "reports/ALPHA_SEARCH_CURRENT_SIGNAL_PATH_AUDIT.csv",
+        "reports/ALPHA_SEARCH_SCENARIO_REGISTRY_V1.csv",
+        "reports/ALPHA_SEARCH_SCENARIO_RESULTS_V1.csv",
+        "reports/ALPHA_SEARCH_SCENARIO_DIVERSITY_MATRIX.csv",
+        "reports/ALPHA_SEARCH_SHADOW_AUTHORITY_AUDIT.json",
+        "reports/ALPHA_SEARCH_SCENARIO_EXPANSION_SUMMARY.json"
+      ]
+    }
+  },
+  "authority_boundary": {
+    "preserved": true,
+    "real_trading_unchanged": true,
+    "no_real_order_intent": true,
+    "no_real_wal_writes": true,
+    "no_real_fsm_changes": true,
+    "shadow_only_enforced_at": ["Pydantic validators", "dataclass __post_init__", "to_dict() hardcoded constants", "authority_guard.py runtime checks"]
+  },
+  "next_steps": [
+    "Run pytest tests/apps/reference/domains/alpha_search/tests/test_shadow_expansion.py to validate all 18 tests pass",
+    "Wire scenario_registry_v2.yaml into ScenarioManager as alternative registry path",
+    "Run one live cycle with new scenarios to measure signal generation rate",
+    "Verify TA feature pipeline fix (fail_closed:ta_features_missing_for_bar root cause) for signal recovery",
+    "Evaluate virtual lifecycle metrics after first run with non-zero signals"
+  ]
+}

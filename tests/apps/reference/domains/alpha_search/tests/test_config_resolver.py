@@ -222,6 +222,76 @@ class TestOverrideMode:
         _, _, strat_cfg = resolve_scenario_config(spec, root)
         assert strat_cfg["decision"]["signal_threshold"] == 0.12
 
+    def test_aurora_decision_exit_subset_validated(self, tmp_path):
+        """Aurora decision.exit survives strict subset validation when fields are canonical."""
+        root = tmp_path / "project"
+        aurora_yaml = _minimal_aurora_yaml()
+        aurora_yaml["aurora"]["decision"]["exit"] = {
+            "time_exit_enabled": True,
+            "max_hold_time_sec": 7200,
+            "signal_exit_enabled": True,
+            "signal_reversal_threshold": -0.2,
+            "danger_zone_action": "TIGHTEN_STOPS",
+            "danger_zone_tighten_factor": 0.5,
+        }
+        _write_yaml(root / "config" / "aurora.yaml", aurora_yaml)
+        _write_yaml(root / "config" / "alpha_search.yaml", _minimal_alpha_search_yaml())
+
+        spec = ScenarioSpec(
+            scenario_id="S_EXIT",
+            strategy_type="aurora",
+            config_mode="override",
+            base_refs={
+                "aurora": "config/aurora.yaml",
+                "alpha_search": "config/alpha_search.yaml",
+            },
+            overrides={},
+        )
+
+        _, _, strat_cfg = resolve_scenario_config(spec, root)
+
+        assert strat_cfg["decision"]["exit"] == {
+            "time_exit_enabled": True,
+            "max_hold_time_sec": 7200,
+            "signal_exit_enabled": True,
+            "signal_reversal_threshold": -0.2,
+            "danger_zone_action": "TIGHTEN_STOPS",
+            "danger_zone_tighten_factor": 0.5,
+        }
+
+    def test_invalid_aurora_asset_weight_key_fails_closed(self, tmp_path):
+        """Invalid per-asset weight key is rejected during aurora subset validation."""
+        root = tmp_path / "project"
+        _write_yaml(root / "config" / "alpha_search.yaml", _minimal_alpha_search_yaml())
+        _write_yaml(
+            root / "config" / "aurora.yaml",
+            {
+                "aurora": {
+                    "decision": {"signal_threshold": 0.155},
+                    "assets": {
+                        "BTCUSDT": {
+                            "enabled": True,
+                            "weights": {"not_a_real_weight": 0.5},
+                        }
+                    },
+                }
+            },
+        )
+
+        spec = ScenarioSpec(
+            scenario_id="S_BAD_ASSET_WEIGHTS",
+            strategy_type="aurora",
+            config_mode="override",
+            base_refs={
+                "aurora": "config/aurora.yaml",
+                "alpha_search": "config/alpha_search.yaml",
+            },
+            overrides={},
+        )
+
+        with pytest.raises(ConfigResolutionError, match="subset validation failed"):
+            resolve_scenario_config(spec, root)
+
     def test_partial_aurora_warns(self, tmp_path, caplog):
         """Threshold without neutrals logs warning."""
         root = tmp_path / "project"
@@ -435,9 +505,9 @@ class TestBuildHelpers:
         """Aurora strategy extracts and deep-copies aurora dict."""
         raw = {"aurora": {"decision": {"threshold": 0.1}}}
         result = _extract_strategy_config(raw, "aurora")
-        assert result["decision"]["threshold"] == 0.1
+        assert result["decision"]["signal_threshold"] == 0.1
         # Verify it's a deep copy
-        result["decision"]["threshold"] = 0.99
+        result["decision"]["signal_threshold"] = 0.99
         assert raw["aurora"]["decision"]["threshold"] == 0.1
 
     def test_extract_strategy_config_mr(self):

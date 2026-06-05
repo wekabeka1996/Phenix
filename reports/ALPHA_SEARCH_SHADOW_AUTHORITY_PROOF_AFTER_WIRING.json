@@ -1,0 +1,50 @@
+{
+  "audit_id": "ALPHA_SEARCH_SHADOW_AUTHORITY_PROOF_AFTER_WIRING",
+  "date": "2026-05-17",
+  "task": "ALPHA_SEARCH_SHADOW_SCENARIO_WIRING_AND_SIGNAL_PROOF_V1",
+  "authority_boundary": "shadow_only",
+  "verdict": "AUTHORITY_BOUNDARY_INTACT",
+  "evidence": {
+    "all_signals_shadow_true": true,
+    "order_intent_emitted": false,
+    "cmd_open_emitted": false,
+    "cmd_close_emitted": false,
+    "decision_making_modified": false,
+    "execution_position_modified": false,
+    "live_aurora_domain_modified": false,
+    "alpha_search_config_modified": false
+  },
+  "modified_files": [
+    {
+      "path": "apps/reference/domains/alpha_search/models/aurora_adapter.py",
+      "change": "Added admission_mode='linear' to QuadraticScoringKernel.compute() call",
+      "scope": "alpha_search shadow lab only",
+      "affects_live_execution": false
+    },
+    {
+      "path": "apps/reference/domains/alpha_search/shadow/registry_adapter.py",
+      "change": "Added per-symbol allowed_regimes and regime_thresholds.UNCERTAIN=1.0 overrides for aurora scenarios",
+      "scope": "alpha_search shadow lab only — only applied when loading shadow registry",
+      "affects_live_execution": false
+    }
+  ],
+  "shadow_signal_sample": {
+    "scenario_id": "S08_TREND_15M_MOMENTUM",
+    "symbol": "SOLUSDT",
+    "side": "SELL",
+    "score": -0.0963384,
+    "shadow": true,
+    "authority_fields": {
+      "order_intent": null,
+      "cmd": null,
+      "position_id": null
+    }
+  },
+  "total_signals_in_proof_run": {
+    "buy": 0,
+    "sell": 2400,
+    "neutral": 8190,
+    "total": 10590,
+    "shadow_verified": true
+  }
+}

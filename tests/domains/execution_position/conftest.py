@@ -33,6 +33,8 @@ class FakeBus:
 def fsm_config():
     """Mock configuration to satisfy FSM requirements"""
     cfg = MagicMock()
+    cfg.trading.mode = "full_testnet"
+    cfg.trading_mode = "full_testnet"
     # Mock defaults for accessors
     cfg.trading.execution.watchdog.ack_ttl_ms = 5000
     cfg.trading.execution.watchdog.fill_ttl_ms = 5000
