@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/decision_making/judge_verdict_blocked_v1.json",
+  "title": "JudgeVerdictBlocked v1",
+  "description": "Bridge blocked/skipped Judge verdict projection. It carries no order, command, or execution authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "bridge_decision_id",
+    "source_verdict_id",
+    "decision_id",
+    "symbol",
+    "runtime_mode",
+    "authority_mode",
+    "bridge_action",
+    "applied",
+    "no_effect",
+    "reason_codes",
+    "hard_gates_passed",
+    "hard_gate_blocking_reasons",
+    "source_refs"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["1.0.0"]
+    },
+    "bridge_decision_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_verdict_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision_id": {
+      "type": ["string", "null"]
+    },
+    "symbol": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runtime_mode": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authority_mode": {
+      "type": "string",
+      "enum": ["shadow", "advisory", "hybrid_gated", "live_gated"]
+    },
+    "bridge_action": {
+      "type": "string",
+      "enum": ["record_only", "skip", "blocked"]
+    },
+    "applied": {
+      "type": "boolean",
+      "const": false
+    },
+    "no_effect": {
+      "type": "boolean",
+      "const": true
+    },
+    "reason_codes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "hard_gates_passed": {
+      "type": "boolean"
+    },
+    "hard_gate_blocking_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "source_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["envelope_id", "rid", "cycle_key"],
+      "properties": {
+        "envelope_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rid": {
+          "type": ["string", "null"]
+        },
+        "cycle_key": {
+          "type": ["string", "null"]
+        }
+      }
+    }
+  }
+}

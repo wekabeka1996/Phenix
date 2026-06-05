@@ -1,0 +1,180 @@
+playbooks:
+  - playbook_id: "scout_before_implementation"
+    title: "Scout Before Implementation"
+    description: "Read-only analysis of the codebase before making any changes. Spawns ScoutAgent, produces EvidencePack."
+    trigger_button: "Scout First"
+    hotkey: ""
+    input_sources: ["session_context", "project_capsule"]
+    scripts: []
+    agents: ["ScoutAgent"]
+    output_schema: "EvidencePack"
+    approval_points: []
+    done_criteria:
+      - "EvidencePack artifact created"
+      - "Files read listed"
+      - "No code changes made"
+    risk_level: "low"
+    enabled: true
+
+  - playbook_id: "build_implementation_plan"
+    title: "Build Implementation Plan"
+    description: "Produce a structured implementation plan from EvidencePack + task context. Requires scout first."
+    trigger_button: "Build Plan"
+    hotkey: ""
+    input_sources: ["evidence_pack", "project_capsule", "session_context"]
+    scripts: []
+    agents: ["ScoutAgent", "CriticAgent"]
+    output_schema: "DocDraft"
+    approval_points:
+      - step: "Plan produced"
+        reason: "User must approve plan before implementation begins"
+        blocking: true
+    done_criteria:
+      - "DocDraft artifact created"
+      - "Plan has phases and acceptance criteria"
+      - "User approved plan"
+    risk_level: "low"
+    enabled: true
+
+  - playbook_id: "guarded_implementation"
+    title: "Guarded Implementation"
+    description: "Implement an approved plan with approval gates at each risky action."
+    trigger_button: "Implement (Guarded)"
+    hotkey: ""
+    input_sources: ["implementation_plan", "evidence_pack", "project_capsule"]
+    scripts: []
+    agents: ["ScoutAgent", "TestScoutAgent"]
+    output_schema: "AGENT_REPORT_V1"
+    approval_points:
+      - step: "Before any file edits"
+        reason: "Confirm scope before writing"
+        blocking: true
+      - step: "After implementation, before final report"
+        reason: "User reviews diff"
+        blocking: false
+    done_criteria:
+      - "All tests pass"
+      - "AGENT_REPORT_V1 created with verdict"
+      - "No unapproved risky actions"
+    risk_level: "medium"
+    enabled: true
+
+  - playbook_id: "independent_audit"
+    title: "Independent Audit"
+    description: "Spawn CriticAgent to independently audit recent changes or a specific module."
+    trigger_button: "Audit"
+    hotkey: ""
+    input_sources: ["session_context", "project_capsule"]
+    scripts: []
+    agents: ["CriticAgent"]
+    output_schema: "AUDIT_REPORT_V1"
+    approval_points: []
+    done_criteria:
+      - "AUDIT_REPORT_V1 created"
+      - "Verdict present"
+    risk_level: "low"
+    enabled: true
+
+  - playbook_id: "runtime_log_analysis"
+    title: "Runtime Log Analysis"
+    description: "Script-first log forensics. Collector script runs, produces EvidenceBundle, LogScoutAgent interprets metadata only."
+    trigger_button: "Analyze Logs"
+    hotkey: ""
+    input_sources: ["log_dir", "project_capsule"]
+    scripts: ["tools/collect_log_metadata.py"]
+    agents: ["LogScoutAgent"]
+    output_schema: "RUNTIME_FORENSIC_REPORT_V1"
+    approval_points:
+      - step: "Before full log content access"
+        reason: "Raw logs must not be dumped directly into model context"
+        blocking: true
+    done_criteria:
+      - "EvidenceBundle created"
+      - "LogScout produced LogScan"
+      - "No full raw log dump in context"
+    risk_level: "medium"
+    enabled: true
+
+  - playbook_id: "low_vol_order_analysis"
+    title: "LOW_VOL / NRR / Order Lifecycle Analysis"
+    description: "Analyze trading system decision logs for LOW_VOL, NRR, or order lifecycle events using script-first approach."
+    trigger_button: "Order Analysis"
+    hotkey: ""
+    input_sources: ["wal_logs", "shadow_journal", "project_capsule"]
+    scripts: ["tools/check_orders.py", "tools/debug_orders.py"]
+    agents: ["LogScoutAgent", "ScoutAgent"]
+    output_schema: "RUNTIME_FORENSIC_REPORT_V1"
+    approval_points: []
+    done_criteria:
+      - "EvidenceBundle created"
+      - "Report generated"
+    risk_level: "medium"
+    enabled: true
+
+  - playbook_id: "generate_next_agent_prompt"
+    title: "Generate Next Agent Prompt"
+    description: "Generate a structured next-turn prompt for the agent based on current session state and project capsule."
+    trigger_button: "Next Prompt"
+    hotkey: ""
+    input_sources: ["session_context", "project_capsule", "decision_ledger"]
+    scripts: []
+    agents: ["ScoutAgent"]
+    output_schema: "DocDraft"
+    approval_points: []
+    done_criteria:
+      - "DocDraft with structured prompt created"
+    risk_level: "low"
+    enabled: true
+
+  - playbook_id: "update_memory_checkpoint"
+    title: "Update Memory Checkpoint"
+    description: "Propose and approve a memory patch to update the project deep checkpoint."
+    trigger_button: "Update Memory"
+    hotkey: ""
+    input_sources: ["accepted_reports", "project_capsule", "decision_ledger"]
+    scripts: []
+    agents: []
+    output_schema: "MEMORY_PATCH_V1"
+    approval_points:
+      - step: "Before applying patch"
+        reason: "Memory updates require explicit user approval"
+        blocking: true
+    done_criteria:
+      - "MemoryPatch created"
+      - "Source reports identified"
+      - "User approved patch"
+      - "Patch applied"
+    risk_level: "high"
+    enabled: true
+
+  - playbook_id: "compare_reports"
+    title: "Compare Reports"
+    description: "Compare two or more reports to identify regressions, contradictions, or progress."
+    trigger_button: "Compare Reports"
+    hotkey: ""
+    input_sources: ["report_center", "session_context"]
+    scripts: []
+    agents: ["CriticAgent"]
+    output_schema: "AUDIT_REPORT_V1"
+    approval_points: []
+    done_criteria:
+      - "Comparison artifact created"
+      - "Differences highlighted"
+    risk_level: "low"
+    enabled: true
+
+  - playbook_id: "regression_risk_scan"
+    title: "Regression Risk Scan"
+    description: "Run targeted tests on changed modules and produce TestReport with regression risk assessment."
+    trigger_button: "Regression Scan"
+    hotkey: ""
+    input_sources: ["session_context", "project_capsule"]
+    scripts: []
+    agents: ["TestScoutAgent"]
+    output_schema: "TEST_REPORT"
+    approval_points: []
+    done_criteria:
+      - "TestReport created"
+      - "No new failures from baseline"
+    risk_level: "low"
+    enabled: true

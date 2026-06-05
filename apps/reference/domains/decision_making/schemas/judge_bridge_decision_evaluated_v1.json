@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Judge Bridge Decision Evaluated V1 Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_name", "payload"],
+  "properties": {
+    "event_name": {
+      "const": "EVT:JUDGE_BRIDGE_DECISION_EVALUATED_V1"
+    },
+    "payload": {
+      "type": "object",
+      "required": ["schema_version", "applied", "no_effect", "bridge_action"],
+      "properties": {
+        "schema_version": {"const": "1.0.0"},
+        "applied": {"const": false},
+        "no_effect": {"const": true},
+        "bridge_action": {
+          "enum": ["record_only", "skip", "blocked"]
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "domain_name": "market_data",
+  "description": "Root upstream domain: ingests raw market data from Binance WebSocket feeds (bookTicker, aggTrade), aggregates into structured ticks, constructs OHLCV bars, and emits deterministic events (EVT:MARKET_TICK_RECEIVED, EVT:BAR_CLOSED, EVT:ANCHOR_UPDATED) for downstream consumption. Two data paths: multi-process (worker+proxy, production) and single-process (connector, legacy).",
+  "version": "1.0.0",
+  "status": "production",
+  "imports": [],
+  "exports": [
+    {"event_name": "EVT:MARKET_TICK_RECEIVED", "target_domains": ["feature_engineering", "bar_aggregator_internal"], "schema": "schemas/market_tick_received_v1.json"},
+    {"event_name": "EVT:BAR_CLOSED", "target_domains": ["feature_engineering", "decision_making", "bootstrap"], "schema": "schemas/bar_closed_v1.json"},
+    {"event_name": "EVT:ANCHOR_UPDATED", "target_domains": ["feature_engineering"], "schema": "schemas/anchor_updated_v1.json"}
+  ],
+  "deprecated_events": [
+    {"event_name": "EVT:MARKET_TICK_FORWARDED", "deprecated_since": "2026-03-14", "reason": "No active emitter; removed from production paths"}
+  ],
+  "components": [
+    "BarAggregator",
+    "MarketDataConnector",
+    "MarketDataProxy",
+    "MarketDataWorker",
+    "WebSocketAggregator"
+  ],
+  "documentation": "README.md",
+  "ssot_notes": {
+    "bar_construction": "BarAggregator is the single SSOT bar constructor. All OHLCV bars are built here from ticks; no other domain constructs bars.",
+    "tick_aggregation": "WebSocketAggregator is the single tick aggregator. Raw WS messages (bookTicker, aggTrade) → structured tick dict.",
+    "data_paths": "Production uses multi-process path (MarketDataWorker → IPC Queue → MarketDataProxy). Legacy single-process path (MarketDataConnector) is config-gated via use_multiprocessing flag.",
+    "freshness": "No TTL enforcement within domain. tick_ttl_ms and bar_ttl_ms are consumed by downstream domains (FE, DM). Market data emits raw data without staleness gating.",
+    "dead_code": "market_ws_client.py deleted in LEGACY-PURGE-WAVE-1 (2026-03-15). set_feature_engineering() no-op removed from connector and proxy.",
+    "registry_verbs": "ANCHOR_UPDATED (active, owner), BAR_CLOSED (active, owner), MARKET_TICK_RECEIVED (active, owner), MARKET_TICK_FORWARDED (deprecated 2026-03-14)"
+  }
+}

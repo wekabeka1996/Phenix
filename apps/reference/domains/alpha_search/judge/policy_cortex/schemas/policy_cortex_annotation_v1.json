@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PolicyCortexAnnotation",
+  "description": "J6-S16 shadow policy cortex annotation. Shadow-only. Never applied to execution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "symbol",
+    "tf_sec",
+    "surface_key",
+    "classifier_output",
+    "reason_codes",
+    "final_shadow_policy",
+    "concentration_flags",
+    "authority_mode",
+    "applied",
+    "advisory",
+    "production_authority",
+    "schema_version"
+  ],
+  "properties": {
+    "cycle_key": { "type": ["string", "null"] },
+    "symbol": { "type": "string", "minLength": 1 },
+    "side": { "type": ["string", "null"] },
+    "regime": { "type": ["string", "null"] },
+    "tf_sec": { "type": "integer", "exclusiveMinimum": 0 },
+    "tier": { "type": ["string", "null"] },
+    "strategy_id": { "type": ["string", "null"] },
+    "surface_key": { "type": "string", "minLength": 1 },
+    "matched_surface_label": {
+      "type": ["string", "null"],
+      "enum": ["REJECTED", "FRAGILE", "PROMISING_BUT_CONCENTRATED", "INSUFFICIENT_SAMPLE", "UNKNOWN", null]
+    },
+    "classifier_output": {
+      "type": "string",
+      "enum": ["ALLOW_SHADOW", "TRACK_ONLY", "REJECT_SURFACE", "SUPPRESS", "UNKNOWN", "NEEDS_MORE_EVIDENCE"]
+    },
+    "reason_codes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "final_shadow_policy": {
+      "type": "string",
+      "enum": ["ALLOW_SHADOW", "TRACK_ONLY", "REJECT_SURFACE", "SUPPRESS", "UNKNOWN", "NEEDS_MORE_EVIDENCE"]
+    },
+    "concentration_flags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "sample_size": { "type": ["integer", "null"], "minimum": 0 },
+    "avg_net_pnl": { "type": ["number", "null"] },
+    "late_avg_net_pnl": { "type": ["number", "null"] },
+    "ci_low": { "type": ["number", "null"] },
+    "ci_high": { "type": ["number", "null"] },
+    "evidence_registry_version": { "type": ["string", "null"] },
+    "source_artifact": { "type": ["string", "null"] },
+    "authority_mode": { "type": "string", "enum": ["shadow"] },
+    "applied": { "type": "boolean", "enum": [false] },
+    "advisory": { "type": "boolean", "enum": [false] },
+    "production_authority": { "type": "boolean", "enum": [false] },
+    "schema_version": { "type": "string", "enum": ["1"] }
+  }
+}

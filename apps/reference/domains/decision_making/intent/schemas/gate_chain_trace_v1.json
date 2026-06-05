@@ -1,0 +1,102 @@
+{
+  "$id": "https://phenix.internal/schemas/gate_chain_trace_v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Gate Chain Trace",
+  "description": "Observability trace for a single StrategyGateway GateChain evaluation run.",
+  "type": "object",
+  "required": [
+    "symbol",
+    "strategy_id",
+    "ts_ms",
+    "gates",
+    "final_outcome",
+    "total_elapsed_ms"
+  ],
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "The symbol being evaluated"
+    },
+    "strategy_id": {
+      "type": "string",
+      "description": "The strategy ID"
+    },
+    "rid": {
+      "type": "string",
+      "description": "The request ID"
+    },
+    "ts_ms": {
+      "type": "integer",
+      "description": "Timestamp of the signal evaluation in milliseconds"
+    },
+    "final_outcome": {
+      "type": "string",
+      "enum": ["PASS", "REJECT", "DEFER", "BLOCK", "ERROR"],
+      "description": "The final aggregate outcome of the gate chain"
+    },
+    "total_elapsed_ms": {
+      "type": "number",
+      "description": "Total time taken by the gate chain in milliseconds"
+    },
+    "anti_peak_observability": {
+      "type": ["object", "null"],
+      "description": "Optional Aurora anti-peak observability block copied from the triggering strategy signal when available.",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {"type": ["boolean", "null"]},
+        "gate_disabled": {"type": ["boolean", "null"]},
+        "motion_classification": {"type": ["string", "null"]},
+        "missing_inputs": {
+          "type": ["object", "null"],
+          "additionalProperties": {"type": ["string", "null"]}
+        },
+        "active_config": {"type": ["object", "null"], "additionalProperties": true},
+        "disabled_config_snapshot": {"type": ["object", "null"], "additionalProperties": true},
+        "anti_fomo_sigma": {"type": ["number", "null"]},
+        "anti_flat_sigma": {"type": ["number", "null"]},
+        "window_sec": {"type": ["integer", "null"]},
+        "anti_fomo_sigma_value_source": {"type": ["string", "null"]},
+        "anti_flat_sigma_value_source": {"type": ["string", "null"]},
+        "window_sec_value_source": {"type": ["string", "null"]},
+        "motion_norm_sigma": {"type": ["number", "null"]},
+        "score_before_shields": {"type": ["number", "null"]},
+        "score_after_shields": {"type": ["number", "null"]},
+        "final_score": {"type": ["number", "null"]},
+        "signal_threshold": {"type": ["number", "null"]},
+        "danger_zone_applied": {"type": ["boolean", "null"]},
+        "context_shield_applied": {"type": ["boolean", "null"]},
+        "attenuated_below_threshold": {"type": ["boolean", "null"]},
+        "consumed_by_gate": {"type": ["boolean", "null"]},
+        "source": {"type": ["string", "null"]},
+        "ready": {"type": ["boolean", "null"]},
+        "reason": {"type": ["string", "null"]}
+      }
+    },
+    "gates": {
+      "type": "array",
+      "description": "Ordered list of gate evaluations",
+      "items": {
+        "type": "object",
+        "required": ["gate_name", "outcome", "elapsed_ms"],
+        "properties": {
+          "gate_name": {
+            "type": "string",
+            "description": "Name of the gate"
+          },
+          "outcome": {
+            "type": "string",
+            "description": "Outcome of this specific gate"
+          },
+          "reason_code": {
+            "type": "string",
+            "description": "Optional reason code if the gate did not pass"
+          },
+          "elapsed_ms": {
+            "type": "number",
+            "description": "Time taken by this gate in milliseconds"
+          }
+        }
+      }
+    }
+  }
+}

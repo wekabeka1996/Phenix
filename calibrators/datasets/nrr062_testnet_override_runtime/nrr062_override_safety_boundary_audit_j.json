@@ -1,0 +1,61 @@
+{
+  "bundle_root": "logs/frozen/nrr062_fresh_capture_20260517_080431",
+  "observation_scope": "retained_order_log_window",
+  "observation_boot_boundary": {
+    "line": 1,
+    "ts_ms": 1778928002063,
+    "ts_utc": "2026-05-16T10:40:02.063000+00:00",
+    "boundary_kind": "retained_order_log_start",
+    "note": "Explicit BOOT boundary was not localized inside the retained J bundle; Package J uses the first retained order_log row as the leakage-audit boundary."
+  },
+  "trade_lifecycle_invalid_json_lines": [
+    {
+      "line": 2134,
+      "head": "wner\": null, \"score_snapshot\": {}}"
+    }
+  ],
+  "nrr062_total_rows": 51,
+  "post_boot_nrr062_surface_rows": 26,
+  "historical_pre_boot_candidate_contract_rows_excluded": 0,
+  "override_applied_rows": 26,
+  "candidate_contract_rows": 26,
+  "candidate_contract_without_override": 0,
+  "boundary_sets": {
+    "buy_or_long_direction_only": {
+      "rows": 0,
+      "override_applied_rows": 0,
+      "verdict": "PASS"
+    },
+    "dual_failure": {
+      "rows": 0,
+      "override_applied_rows": 0,
+      "verdict": "PASS"
+    },
+    "geometry_invalid": {
+      "rows": 0,
+      "override_applied_rows": 0,
+      "verdict": "PASS"
+    },
+    "live_or_production_candidate_like": {
+      "rows": 0,
+      "override_applied_rows": 0,
+      "verdict": "PASS"
+    },
+    "missing_selected_metadata": {
+      "rows": 0,
+      "override_applied_rows": 0,
+      "verdict": "PASS"
+    },
+    "sell_direction_only_noncandidate": {
+      "rows": 0,
+      "override_applied_rows": 0,
+      "verdict": "PASS"
+    }
+  },
+  "test_contracts_to_rerun": [
+    "tests/domains/decision_making/test_low_vol_cost_floor_gate.py",
+    "tests/domains/decision_making/test_low_vol_direction_confidence_contract.py",
+    "tests/config/test_decision_making_contracts.py",
+    "tests/test_calibrators_import_boundary.py"
+  ]
+}

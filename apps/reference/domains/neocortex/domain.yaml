@@ -1,0 +1,303 @@
+# Neocortex Domain Contract
+# vFoundation Domain Definition
+
+domain:
+  name: neocortex
+  type: shadow  # Observer mode - no trading signals (yet)
+  description: |
+    Autonomous learning domain using VAE + PPO for market representation learning.
+    Consumes market features and trade events to build latent embeddings and learn
+    optimal decision patterns. Shadow mode: observes without influencing trading.
+
+  contracts:
+    time:
+      canonical_field: event_ts_ms
+      canonical_type: int
+      canonical_unit: epoch_milliseconds
+      rules:
+        - Causal ordering, stale cleanup, replay identity, and adapter-facing event timing use event_ts_ms only.
+        - Replay wallclock or ingestion wallclock must not be used as causal timestamp.
+        - Feature rows without causal timestamps fail closed unless replay.yaml explicitly enables legacy_non_causal_file_offset.
+        - legacy_non_causal_file_offset compatibility is non-causal and diagnostic-only.
+    episode_lifecycle:
+      primary_identity: lifecycle_id
+      fallback_identity_order:
+        - order_id
+        - client_order_id
+      close_identity: trade_id
+      rules:
+        - symbol is an episode attribute and must not be used as the primary lifecycle key.
+        - ORDER_PLACED stages intent only and must not be treated as executed entry.
+        - ORDER_FILLED is the current neocortex executed-entry anchor until POSITION_OPENED is wired as an authoritative open event.
+        - POSITION_CLOSED must resolve by trade_id; symbol-only close matching is forbidden.
+        - Ambiguous lifecycle mapping fails closed and is counted as unresolved lifecycle drift.
+        - Partial fills must remain explicit via lifecycle_state/fill_count/filled_quantity and must not be collapsed into implicit full entry.
+    reward:
+      contract_name: EpisodeReward
+      authoritative_close_events:
+        - POSITION_CLOSED
+        - TRADE_CLOSED
+      fields:
+        - episode_id
+        - trade_id
+        - symbol
+        - side
+        - entry_ts_ms
+        - close_ts_ms
+        - duration_ms
+        - entry_price
+        - close_price
+        - quantity
+        - realized_pnl
+        - fees
+        - net_pnl
+        - entry_event
+        - close_event
+        - reward_complete
+      rules:
+        - Reward is created only after an authoritative close event resolves to exactly one lifecycle episode.
+        - trade_id is mandatory for close resolution; symbol-only guessing is forbidden.
+        - reward_complete is true only when entry_ts_ms, close_ts_ms, entry_price, close_price, quantity, pnl, fees, and deterministic lifecycle binding are present.
+        - Incomplete rewards are diagnostic-only and must not enter the RL dataset.
+    objectives:
+      representation:
+        contract_name: RepresentationSample
+        route: train_async
+        rules:
+          - Representation samples carry feature/latent semantics only and must not contain action-label supervision.
+      regime_supervision:
+        contract_name: RegimeSupervisionSample
+        route: train_regime_supervision
+        rules:
+          - Regime oracle samples carry predicted_regime/realized_regime classification semantics only.
+          - Regime supervision samples must not enter policy PPO training.
+      execution_quality:
+        contract_name: ExecutionQualitySample
+        route: execution_quality_buffer
+        rules:
+          - Execution quality samples carry lifecycle/reward diagnostics only.
+          - Execution quality samples must not be treated as regime labels or policy actions.
+      policy:
+        contract_name: PolicySample
+        route: train_policy
+        rules:
+          - Policy samples must be explicitly tagged as objective_family=policy.
+          - Mixed-objective batches are rejected fail-closed.
+          - policy_training_mode=disabled forbids policy training until a clean policy producer exists.
+    sequence:
+      active_inference_mode: stateless_per_event
+      active_representation_training_mode: independent_rows
+      state_owner_scope:
+        - symbol
+        - objective_family
+        - lifecycle_id
+      rules:
+        - Global recurrent hidden state reuse across symbols or objective families is forbidden.
+        - The active inference contract is stateless_per_event, so hidden state is zero-initialized before every action request.
+        - Replay start, symbol switch, objective-family switch, and episode/lifecycle termination are reset-worthy boundaries.
+        - Representation training must not treat arbitrary recent rows as one temporal sequence; independent_rows is the only allowed mode until explicit sequence-owner metadata exists.
+        - Sequence-shaped representation batches are rejected fail-closed while active_representation_training_mode=independent_rows.
+    dataset:
+      provenance_contract: DatasetSampleProvenance
+      eligibility_statuses:
+        - trainable
+        - eval_only
+        - diagnostics_only
+        - quarantined
+        - rejected
+      provenance_fields:
+        - dataset_sample_id
+        - objective_family
+        - source_type
+        - source_ref
+        - source_event_type
+        - event_ts_ms
+        - symbol
+        - lifecycle_id
+        - trade_id
+        - ingestion_mode
+        - legacy_causal_mode
+        - sequence_contract_mode
+        - eligibility_status
+        - exclusion_reasons
+        - quarantine_reasons
+      rules:
+        - Trainable admission is explicit; samples without provenance and eligibility status must not enter trainable buffers.
+        - MagicMock contamination, malformed provenance, unknown objective families, and ambiguous lifecycle resolution are fail-closed.
+        - legacy_non_causal_file_offset rows must not enter causal-sensitive trainable families.
+        - Policy family samples are rejected when policy_training_mode=disabled.
+        - Dataset manifests are deterministic, split by canonical event_ts_ms, and must not shuffle rows randomly across train/val/test.
+      manifest_fields:
+        - dataset_id
+        - objective_family
+        - build_time_ms
+        - manifest_version
+        - source_inventory
+        - time_window
+        - sample_counts
+        - exclusion_reason_counts
+        - quarantine_reason_counts
+        - symbols
+        - legacy_non_causal_count
+        - reward_complete_stats
+        - sequence_contract_modes
+        - splits
+    evaluation:
+      evaluator: ShadowOfflineEvaluator
+      reports:
+        - ShadowEvaluationReport
+        - CalibrationReport
+        - DisagreementReport
+        - AdvisoryReadinessPrereqReport
+      rules:
+        - Objective families must be evaluated separately; regime supervision and execution quality metrics must not be mixed.
+        - Calibration reports must return not_available when the required confidence signal is absent or unsupported.
+        - Disagreement reports measure divergence from Aurora decisions only; disagreement must not be treated as alpha without separate evidence.
+        - Advisory readiness reports remain forbidden/not_ready in P9 and must not enable advisory influence.
+      evaluation_fields:
+        - evaluation_id
+        - objective_family
+        - time_window
+        - sample_counts
+        - key_metrics
+        - unresolved_count
+        - diagnostics_only_count
+        - symbols_coverage
+        - regimes_coverage
+      calibration_fields:
+        - confidence_source
+        - status
+        - number_of_bins
+        - counts_per_bin
+        - empirical_outcome_per_bin
+        - reliability_summary
+      disagreement_fields:
+        - total_compared
+        - disagreement_count
+        - disagreement_rate
+        - by_symbol
+        - by_regime
+        - by_confidence_bucket
+        - severity_buckets
+        - unresolved_comparison_count
+      advisory_prereq_fields:
+        - advisory_status
+        - satisfied_prereqs
+        - unsatisfied_prereqs
+        - blocking_reasons
+        - recommended_next_packages
+    performance:
+      operating_modes:
+        - live_shadow
+        - offline_replay
+      side_effect_classes:
+        semantic_critical:
+          - canonical_event_ingestion
+          - lifecycle_assembly
+          - reward_assembly
+          - dataset_admission
+          - objective_family_routing
+        observational_non_critical:
+          - shadow_intent_event_emission
+          - shadow_intent_jsonl_logging
+          - telemetry_csv_rows
+      rules:
+        - live_shadow forbids observational shadow decimation and requires shadow_intent_emit_policy=emit_all.
+        - offline_replay may decimate or buffer observational outputs only; semantic-critical paths must remain lossless.
+        - Buffered observational writes must preserve event ordering.
+        - Non-critical overload must follow explicit overflow policy and increment counters.
+        - Deterministic replay must depend only on canonical event ordering and explicit stride/buffer policy, never on wallclock timing.
+    production_shadow_gates:
+      evaluator: ShadowGateEvaluator
+      report_contract: ShadowReadinessReport
+      enforcement_modes:
+        - strict
+        - report_only
+      gate_families:
+        - semantic_integrity
+        - shadow_safety_posture
+        - admission_provenance
+        - operational_readiness
+        - forbidden_modes
+      report_fields:
+        - gate_set_version
+        - evaluated_at_ms
+        - overall_status
+        - mode
+        - startup_enforcement
+        - gates
+        - blocking_gate_ids
+      gate_fields:
+        - gate_id
+        - severity
+        - status
+        - message
+        - blocking
+        - evidence_anchor
+      rules:
+        - Production shadow readiness must be evaluated centrally before startup enters main_reactor.
+        - strict startup enforcement blocks startup on any blocking gate failure.
+        - policy training re-enable, advisory influence, and live authority are hard-forbidden.
+        - live_shadow requires full shadow emission semantics and forbids observational decimation.
+        - offline_replay may use observational decimation only where the performance contract allows it.
+        - Gate reports must be machine-readable and deterministic for the same config and evaluator timestamp.
+
+  # Event Bus Contract
+  imports:
+    # From feature_engineering domain
+    - event: EVT:FEATURES_CALCULATED
+      description: Market features (RSI, BB, OBI, liquidity, regime, etc.)
+      required: true
+      
+    # From decision_making domain
+    - event: EVT:TRADE_INTENT_PROPOSED
+      description: Trade decisions made by Aurora strategy logic
+      required: true
+      
+    # From execution_position domain
+    - event: EVT:POSITION_CLOSED
+      description: Structured position close event with realized_pnl_net/trade_id/fees
+      required: true
+
+  exports:
+    # Canonical shadow decision event (R2)
+    - event: EVT:NEOCORTEX_SHADOW_INTENT_PROPOSED
+      description: Shadow intent proposal with schema_version/idempotent_key/why[]
+      frequency: triggered
+
+    # Legacy compatibility event (temporary dual-emit)
+    - event: EVT:NEOCORTEX_SHADOW_INTENT
+      description: Deprecated shadow intent event for downstream migration window
+      frequency: triggered
+
+    # Internal state monitoring
+    - event: EVT:NEOCORTEX_STATE_UPDATED
+      description: Latent state updates, model checkpoints, learning progress
+      frequency: periodic  # Every N observations or on significant change
+      
+    # Anomaly detection / insights
+    - event: EVT:NEOCORTEX_ALERT
+      description: Detected anomalies, distribution shifts, learning milestones
+      frequency: triggered  # On detection
+
+  # Process Architecture
+  processes:
+    main:
+      type: asyncio
+      description: Event ingestion, normalization, coordination
+      
+    brain:
+      type: multiprocessing
+      description: VAE encoding, PPO forward passes (CPU/GPU isolated)
+      isolation: true  # Separate process for crash isolation
+      
+  # Dependencies
+  requires:
+    - feature_engineering  # Must start before neocortex
+    - decision_making      # Must start before neocortex
+
+  # Resource Constraints (Example - adjust based on hardware)
+  resources:
+    memory_mb: 2048
+    cpu_cores: 2  # Main + Brain worker
+    gpu: optional  # Can use CPU-only mode

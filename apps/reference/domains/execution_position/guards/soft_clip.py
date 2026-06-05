@@ -1,0 +1,255 @@
+"""
+PHASE 2: Soft-limit clipping logic for risk gates.
+Instead of rejecting orders, reduce their size to fit within limits.
+EP-01: Strict Pydantic configs with extra='forbid' for fail-fast validation.
+"""
+
+from decimal import Decimal
+from typing import Any, Dict, List, Optional
+from dataclasses import dataclass, field
+import logging
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def _decimal_2dp(value: Decimal) -> str:
+    """Format Decimal values for clip reasons without float conversion."""
+    return format(value.quantize(Decimal("0.01")), "f")
+
+
+class RegimeAdaptationConfig(BaseModel):
+    """
+    EP-01: Regime adaptation configuration for directional ratio.
+
+    Strict config: unknown keys cause ValidationError (fail-fast).
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    trend_up_delta: Optional[Decimal] = Field(default=Decimal("0.30"))
+    trend_down_delta: Optional[Decimal] = Field(default=Decimal("0.30"))
+    flat_delta: Optional[Decimal] = Field(default=Decimal("-0.30"))
+    bounds: Optional[List[float]] = Field(
+        default=None)  # [min_ratio, max_ratio]
+
+    @field_validator('bounds', mode='before')
+    @classmethod
+    def set_default_bounds(cls, v):
+        if v is None:
+            return [2.0, 4.0]
+        return v
+
+
+class SoftLimitConfigModel(BaseModel):
+    """
+    EP-01: Pydantic version of SoftLimitConfig with strict validation.
+
+    Used when loading from typed config. Legacy dataclass retained for compatibility.
+    """
+    model_config = ConfigDict(extra='forbid')
+
+    mode: str = Field(default="clip")
+    clip_min_notional_usdt: float = Field(default=10.0)
+    directional_ratio_max: float = Field(default=3.0)
+    side_exposure_usdt: float = Field(default=600.0)
+    margin_exposure_usdt: float = Field(default=1100.0)
+
+
+@dataclass
+class SoftLimitConfig:
+    """Soft-limit clipping configuration (dataclass for runtime)."""
+    mode: str = "clip"  # "clip" or "reject"
+    clip_min_notional_usdt: Decimal = Decimal("10")
+    directional_ratio_max: Decimal = Decimal("3.0")
+    side_exposure_usdt: Decimal = Decimal("600")
+    margin_exposure_usdt: Decimal = Decimal("1100")
+    regime_adaptation: Optional[RegimeAdaptationConfig] = None
+
+
+def load_soft_limit_config(trading_risk: Any) -> SoftLimitConfig:
+    """Build SoftLimitConfig from `trading.risk` config dict (fail-fast on missing keys)."""
+    if not isinstance(trading_risk, dict):
+        raise ValueError(
+            f"Expected dict at trading.risk, got {type(trading_risk).__name__}")
+
+    soft_limits = trading_risk.get("soft_limits")
+    if not isinstance(soft_limits, dict):
+        raise ValueError("Missing/invalid trading.risk.soft_limits block")
+
+    required_keys = (
+        "mode",
+        "clip_min_notional_usdt",
+        "directional_ratio_max",
+        "side_exposure_usdt",
+        "margin_exposure_usdt",
+    )
+    for key in required_keys:
+        if key not in soft_limits:
+            raise ValueError(
+                f"Missing required trading.risk.soft_limits.{key}")
+
+    cfg = SoftLimitConfig(
+        mode=str(soft_limits["mode"]),
+        clip_min_notional_usdt=Decimal(
+            str(soft_limits["clip_min_notional_usdt"])),
+        directional_ratio_max=Decimal(
+            str(soft_limits["directional_ratio_max"])),
+        side_exposure_usdt=Decimal(str(soft_limits["side_exposure_usdt"])),
+        margin_exposure_usdt=Decimal(str(soft_limits["margin_exposure_usdt"])),
+    )
+
+    # Optional regime adaptation (configured at trading.risk.regime_adaptation in trading.yaml)
+    regime = trading_risk.get("regime_adaptation")
+    if isinstance(regime, dict):
+        bounds = regime.get("bounds")
+        cfg.regime_adaptation = RegimeAdaptationConfig(
+            trend_up_delta=Decimal(str(regime.get("trend_up_delta"))) if regime.get(
+                "trend_up_delta") is not None else None,
+            trend_down_delta=Decimal(str(regime.get("trend_down_delta"))) if regime.get(
+                "trend_down_delta") is not None else None,
+            flat_delta=Decimal(str(regime.get("flat_delta"))) if regime.get(
+                "flat_delta") is not None else None,
+            bounds=list(bounds) if isinstance(bounds, list) else None,
+        )
+
+    return cfg
+
+
+@dataclass
+class ClipResult:
+    """Result of soft-limit clipping logic."""
+    allowed: bool
+    reason: str
+    clipped_notional: Optional[Decimal] = None
+    original_notional: Optional[Decimal] = None
+    clip_reasons: List[str] = field(default_factory=list)
+
+
+class SoftClipEngine:
+    """
+    Directional margin clamp engine.
+
+    DEF-E20: Despite the name "SoftClip", this engine implements a hard-zero
+    directional clamp, NOT a proportional solver. When the requested notional
+    exceeds a soft limit, the engine returns ``allowed=False`` (hard reject) with
+    no proportional fallback. The "clip" in the name is misleading — this is
+    a hard gate that blocks the order entirely.
+
+    If true proportional clipping is required (reduce qty to the maximum allowed
+    rather than hard-reject), this class must be extended with a solver that
+    computes: max_allowed_qty = (limit - current_exposure) * leverage.
+
+    Until then, treat every result where ``allowed=False`` as a hard block, not
+    a soft scale-down. Do NOT use clip_reasons as evidence of partial fills.
+    """
+
+    def __init__(self, config: SoftLimitConfig, logger: Optional[logging.Logger] = None):
+        self.config = config
+        self.logger = logger or logging.getLogger(
+            "apps.reference.domains.execution_position.soft_clip"
+        )
+
+    def calculate_clipped_size(
+        self,
+        notional_usd: Decimal,
+        symbol: str,
+        order_side: str,
+        long_margin: Decimal,
+        short_margin: Decimal,
+        total_margin_exposure: Decimal,
+        symbol_leverage: Decimal,
+        margin_limit: Optional[Decimal] = None,
+        side_limit: Optional[Decimal] = None,
+        directional_ratio_max: Optional[Decimal] = None,
+    ) -> ClipResult:
+        """
+        Calculate clipped order size.
+        V_new = min(V_req, ΔV_margin, ΔV_side, ΔV_directional).
+
+        Args:
+            notional_usd: Requested notional
+            symbol: Trading symbol
+            order_side: BUY or SELL
+            long_margin: Current long margin
+            short_margin: Current short margin
+            total_margin_exposure: Current total margin
+            symbol_leverage: Symbol leverage
+            margin_limit: Margin limit (max exposure) - defaults to config
+            side_limit: Per-side limit - defaults to config
+            directional_ratio_max: Max directional ratio - defaults to config
+
+        Returns:
+            ClipResult with allowed=True/False, clipped_notional, clip_reasons
+        """
+        # PHASE 3: Use passed params or fall back to config (for regime adaptation)
+        margin_limit = margin_limit or self.config.margin_exposure_usdt
+        side_limit = side_limit or self.config.side_exposure_usdt
+        directional_ratio_max = directional_ratio_max or self.config.directional_ratio_max
+
+        clip_reasons: List[str] = []
+        deltas: List[Decimal] = [notional_usd]
+
+        # ΔV_margin: how much notional can be added within margin limit?
+        allowed_extra_margin = margin_limit - total_margin_exposure
+        if allowed_extra_margin > Decimal("0"):
+            delta_margin_notional = allowed_extra_margin * symbol_leverage
+            deltas.append(delta_margin_notional)
+            clip_reasons.append(
+                f"MARGIN_AVAILABLE:{_decimal_2dp(delta_margin_notional)}")
+        else:
+            deltas.append(Decimal("0"))
+            clip_reasons.append("MARGIN_LIMIT_REACHED")
+
+        # ΔV_side: per-side exposure limit
+        current_side_margin = long_margin if order_side == "BUY" else short_margin
+        if current_side_margin < side_limit:
+            allowed_extra_side = side_limit - current_side_margin
+            delta_side_notional = allowed_extra_side * symbol_leverage
+            deltas.append(delta_side_notional)
+            clip_reasons.append(
+                f"SIDE_AVAILABLE:{_decimal_2dp(delta_side_notional)}")
+        else:
+            deltas.append(Decimal("0"))
+            clip_reasons.append("SIDE_LIMIT_REACHED")
+
+        # ΔV_directional: directional ratio constraint
+        # For now, simplified: if adding this order breaks ratio, reduce to 0
+        # (Full impl: solve for max notional that keeps ratio <= max)
+        new_long_margin = long_margin + \
+            (notional_usd / symbol_leverage) if order_side == "BUY" else long_margin
+        new_short_margin = short_margin + \
+            (notional_usd / symbol_leverage) if order_side == "SELL" else short_margin
+
+        min_margin = min(new_long_margin, new_short_margin)
+        if min_margin > Decimal("0"):
+            ratio = max(new_long_margin, new_short_margin) / min_margin
+            if ratio <= directional_ratio_max:
+                delta_dir_notional = notional_usd
+                clip_reasons.append("DIRECTIONAL_OK")
+            else:
+                # Ratio violated: calculate max allowed
+                delta_dir_notional = Decimal("0")
+                clip_reasons.append("DIRECTIONAL_RATIO_EXCEEDED")
+        else:
+            delta_dir_notional = notional_usd
+            clip_reasons.append("DIRECTIONAL_OK")
+        deltas.append(delta_dir_notional)
+
+        # Final clipped notional = min of all constraints
+        clipped_notional = min(deltas)
+
+        # Check minimum threshold
+        if clipped_notional < self.config.clip_min_notional_usdt:
+            return ClipResult(
+                allowed=False,
+                reason="BELOW_CLIP_MIN",
+                clip_reasons=clip_reasons,
+                original_notional=notional_usd,
+            )
+
+        return ClipResult(
+            allowed=True,
+            reason="CLIPPED" if clipped_notional < notional_usd else "OK",
+            clipped_notional=clipped_notional,
+            original_notional=notional_usd,
+            clip_reasons=clip_reasons,
+        )

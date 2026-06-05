@@ -1,0 +1,28 @@
+{
+  "package_f_candidate_metrics": {
+    "candidate_rows": 79,
+    "tp": 25,
+    "sl": 2,
+    "timeout": 52,
+    "estimated_net_pnl_quote": 825.2672997047,
+    "profit_factor": 4.92434390438585,
+    "timeout_share": 0.6582278481012658,
+    "excluded_buy_net": -452.7182366138,
+    "excluded_dual_failure_net": -194.77884318850002
+  },
+  "runtime_observed_metrics": {
+    "override_rids": 1,
+    "realized_rows": 1,
+    "wins": 1,
+    "losses": 0,
+    "unresolved": 0,
+    "net_pnl_quote": 22.6742616,
+    "exact_roundtrip_rows": 1
+  },
+  "comparison": {
+    "runtime_sample_fraction_of_package_f_candidate": 0.012658227848101266,
+    "boundary_alignment": "SELL_DIRECTION_ONLY_RAW_SIGNAL",
+    "economic_alignment": "POSITIVE_RUNTIME_OBSERVATION_MATCHES_POSITIVE_REPLAY_DIRECTION",
+    "calibration_readiness": "INSUFFICIENT_RUNTIME_SAMPLE"
+  }
+}

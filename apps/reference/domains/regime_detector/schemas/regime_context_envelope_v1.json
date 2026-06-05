@@ -1,0 +1,187 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora-core.io/schemas/regime_context_envelope_v1.json",
+  "title": "RegimeContextEnvelope_v1",
+  "description": "Context-only regime envelope for future Judge evidence consumption. Not authority-bearing.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "symbol",
+    "ts_ms",
+    "authority_status",
+    "regime",
+    "timing",
+    "transition",
+    "intensity",
+    "diagnostics",
+    "missingness",
+    "source_refs"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["1.0.0"]
+    },
+    "context_id": {
+      "type": ["string", "null"]
+    },
+    "symbol": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ts_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source_event": {
+      "type": ["string", "null"]
+    },
+    "authority_status": {
+      "type": "string",
+      "enum": ["context_only"]
+    },
+    "regime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "confidence", "basis_tf_sec", "source"],
+      "properties": {
+        "label": {
+          "type": ["string", "null"]
+        },
+        "confidence": {
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "basis_tf_sec": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "source": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["regime_ts_ms", "decision_ts_ms", "age_ms", "freshness_state"],
+      "properties": {
+        "regime_ts_ms": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "decision_ts_ms": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "age_ms": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "freshness_state": {
+          "type": "string",
+          "enum": ["FRESH", "STALE", "MISSING", "UNKNOWN"]
+        }
+      }
+    },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "hysteresis_bars",
+        "bars_in_regime",
+        "switch_count_window"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["STABLE", "PENDING", "TRANSITIONING", "UNKNOWN"]
+        },
+        "hysteresis_bars": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "bars_in_regime": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "switch_count_window": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        }
+      }
+    },
+    "intensity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "value", "method", "authority_note"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "value": {
+          "type": ["number", "null"]
+        },
+        "method": {
+          "type": ["string", "null"]
+        },
+        "authority_note": {
+          "type": "string",
+          "enum": ["context_intensity_not_entry_authority"]
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["liveness_state", "stress_state", "reason_codes"],
+      "properties": {
+        "liveness_state": {
+          "type": ["string", "null"]
+        },
+        "stress_state": {
+          "type": ["string", "null"]
+        },
+        "reason_codes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "missingness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["per_field"],
+      "properties": {
+        "per_field": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "source_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rid", "trace_id", "bar_close_ts_ms"],
+      "properties": {
+        "rid": {
+          "type": ["string", "null"]
+        },
+        "trace_id": {
+          "type": ["string", "null"]
+        },
+        "bar_close_ts_ms": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

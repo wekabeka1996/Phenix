@@ -1,0 +1,47 @@
+{
+  "package": "03T_RUNTIME_POSITION_CLOSED_EMISSION_REPAIR",
+  "questions": {
+    "what_closes_the_position": "The position is closed by execution-side fills and/or guardian close reconciliation. The portfolio update path is observational detection, not the closer itself.",
+    "what_writes_trade_lifecycle_terminal_close": [
+      "EPEventHandlers.on_portfolio_state_updated -> trade_lifecycle.on_close",
+      "ExecPosFSM._on_execution_close_reconciled -> EPEventHandlers.emit_position_closed_observability -> trade_lifecycle.on_close (03T)",
+      "terminal_order_contracts.sync_trade_lifecycle_terminal_order_event -> trade_lifecycle.on_cancel/on_reject for terminal non-fill paths"
+    ],
+    "what_writes_order_log_position_closed": [
+      "EPEventHandlers.on_portfolio_state_updated historically",
+      "ExecPosFSM._on_execution_close_reconciled via the shared helper when close truth is cached (03T)"
+    ],
+    "same_or_separate_path": "Historically separate. Portfolio edge detection wrote canonical close parity, while EXECUTION_CLOSE_RECONCILED performed authoritative local reset only. 03T reuses the same helper on reconcile to close that parity gap.",
+    "what_suppresses_order_log_emission": [
+      "No non-zero to zero portfolio edge observed, so the historical producer never ran.",
+      "Before 03T, EXECUTION_CLOSE_RECONCILED reset state without emitting canonical close truth.",
+      "order_logger write exceptions are best-effort logged and swallowed.",
+      "trade_lifecycle.on_close exceptions are swallowed, which can hide lifecycle close failures."
+    ],
+    "what_emits_ORDER_CANCELLED_or_ORDER_TIMEOUT_instead": [
+      "close_executor teardown and reconcile cancel helpers emit ORDER_CANCELLED / ORDER_CANCELLATION_FAILED",
+      "terminal_order_contracts emits lifecycle terminal non-fill states for ORDER_STATE_CHANGED / ORDER_REJECTED",
+      "these are not canonical POSITION_CLOSED producers"
+    ],
+    "are_economics_rid_lifecycle_id_available": {
+      "portfolio_edge_path": "Yes, when _close_accounting_truth_by_symbol and lifecycle caches were populated by close fill handling.",
+      "execution_close_reconciled_payload": "No. The event schema carries only symbol, rid, source, ts_ms, business_close_reconciled, and why.",
+      "03t_reconcile_parity_path": "Yes, but only indirectly by reusing cached close_accounting truth and lifecycle caches already stored on the FSM."
+    },
+    "can_schema_validation_block_the_write": "Not in the shared event_handlers emission path. There is no explicit schema validation before order_logger.write; the path is best-effort and exception swallowing is the main suppression mode."
+  },
+  "defect_classification": {
+    "primary": "RECONCILIATION_PATH_LACKS_POSITION_CLOSED_PARITY",
+    "confidence": "HIGH",
+    "evidence": [
+      "03R dominant rows were runtime-oriented, not builder-oriented",
+      "The historical canonical producer required a portfolio non-zero to zero edge",
+      "The authoritative reconcile path reset local state without canonical close emission",
+      "03R dominant rows counted ORPHANED_TTL as terminal trade_lifecycle evidence, which is consistent with missed canonical close emission rather than successful on_close execution"
+    ]
+  },
+  "residual_mixed_causes": [
+    "Alternative terminal non-fill rows with ORDER_TIMEOUT / ORDER_CANCELLED remain outside the 03T patch scope.",
+    "Decision-ledger-only and inconclusive rows remain unproven from runtime evidence alone."
+  ]
+}

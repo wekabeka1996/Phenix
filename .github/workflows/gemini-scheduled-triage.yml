@@ -1,4 +1,4 @@
-name: '📋 Gemini Scheduled Issue Triage'
+name: '     Gemini Scheduled Issue Triage'
 
 on:
   schedule:
@@ -66,7 +66,7 @@ jobs:
           GITHUB_REPOSITORY: '${{ github.repository }}'
           GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN || github.token }}'
         run: |-
-          echo '🔍 Finding unlabeled issues and issues marked for triage...'
+          echo '     Finding unlabeled issues and issues marked for triage...'
           ISSUES="$(gh issue list \
             --state 'open' \
             --search 'no:label label:"status/needs-triage"' \
@@ -75,11 +75,11 @@ jobs:
             --repo "${GITHUB_REPOSITORY}"
           )"
 
-          echo '📝 Setting output for GitHub Actions...'
+          echo '     Setting output for GitHub Actions...'
           echo "issues_to_triage=${ISSUES}" >> "${GITHUB_OUTPUT}"
 
           ISSUE_COUNT="$(echo "${ISSUES}" | jq 'length')"
-          echo "✅ Found ${ISSUE_COUNT} issue(s) to triage! 🎯"
+          echo "    Found ${ISSUE_COUNT} issue(s) to triage!     "
 
       - name: 'Run Gemini Issue Analysis'
         id: 'gemini_issue_analysis'

@@ -1,0 +1,95 @@
+{
+  "package_i_runtime": {
+    "override_count": 5,
+    "resolved_closes": 4,
+    "wins": 4,
+    "losses": 0,
+    "net_pnl_quote": 70.33973751
+  },
+  "package_j_freeze_runtime": {
+    "override_count": 26,
+    "resolved_closes": 1,
+    "wins": 0,
+    "losses": 1,
+    "net_pnl_quote": -13.08771079
+  },
+  "package_j_latest_known": {
+    "resolved_closes": 2,
+    "wins": 0,
+    "losses": 2,
+    "net_pnl_quote": -41.672209859999995
+  },
+  "shadow_boundary": {
+    "package_h": {
+      "leakage_detected": false,
+      "override_count": 1,
+      "sidecar_observed_rids": 1
+    },
+    "package_i": {
+      "leakage_detected": false,
+      "override_count": 5,
+      "submitted_count": 5,
+      "filled_count": 4,
+      "closed_count": 4
+    },
+    "package_j": {
+      "leakage_detected": false,
+      "override_count": 26,
+      "decision_ledger_status_counts": {
+        "REJECTED_UPSTREAM": 24,
+        "INVALID_FOR_DATASET": 2
+      },
+      "freeze_boundary_contrast_sets_zero": true
+    },
+    "package_l": {
+      "bundle_root": "logs/frozen/nrr062_fresh_capture_20260517_210245",
+      "override_count": 7,
+      "decision_ledger_status_counts": {
+        "REJECTED_UPSTREAM": 7
+      },
+      "downstream_no_effect_confirmed": 7,
+      "submit_fill_close_detected": false,
+      "active_symbols": [
+        "BTCUSDT"
+      ],
+      "signature_counts": {
+        "ORDER_INTENT + REJECTED + ORPHANED_TTL + REJECTED_UPSTREAM|EXCHANGE_REJECTED + NON_CAUSAL_TIME": 7
+      },
+      "leakage_detected": false
+    },
+    "package_l_bundle_validation": {
+      "manifest_files_checked": 48,
+      "manifest_hash_matches": 42,
+      "manifest_hash_mismatch_count": 0,
+      "manifest_missing_file_count": 6,
+      "config_snapshot_files_checked": 11,
+      "config_snapshot_hash_matches": 11,
+      "config_snapshot_hash_mismatch_count": 0,
+      "config_snapshot_missing_file_count": 0,
+      "decision_ledger_frozen": true
+    },
+    "config_hash_compare": {
+      "config/aurora/domains.yaml": {
+        "package_j_sha256": "e33e95a9a44f7606169ad78ac6bf0bc68be4a1d47df0d61940ce05f117fd0477",
+        "package_l_sha256": "3ece313409a6f0db2fd0ee5ce44a9ee0ff5e94a6fad98c1a878e8c6f3a5394d5",
+        "same": false
+      },
+      "config/aurora/strategies/aurora.yaml": {
+        "package_j_sha256": "e0c451d6cc21c577a8d2d868b378f3d7589ec6ad2d3015d8fb2b0a84a2df3b85",
+        "package_l_sha256": "e0c451d6cc21c577a8d2d868b378f3d7589ec6ad2d3015d8fb2b0a84a2df3b85",
+        "same": true
+      }
+    },
+    "sidecar_mode_drift": {
+      "detected": true,
+      "config_path": "execution_position.position_policy_sidecar.mode",
+      "package_j_value": "shadow",
+      "package_l_value": "enable",
+      "affects_override_owner": false,
+      "affects_sidecar_authority_surface": true,
+      "interpretation": "The Package L environment is not sidecar-authority-equivalent to the Package J snapshot. The diagnostics-only no-effect classification remains valid because neither the 24 J rows nor the 7 new L rows reached submit/fill/close evidence, but downstream authority-sensitive comparability is contaminated for promotion-grade interpretation."
+    },
+    "verdict": "BOUNDARY_STABLE_NO_OVERRIDE_LEAKAGE_WITH_SIDECAR_CONFIG_DRIFT_CAVEAT"
+  },
+  "verdict": "SHADOW_APPENDIX_ONLY_DO_NOT_BLEND_INTO_ENABLE_COHORT_CONCLUSIONS"
+}

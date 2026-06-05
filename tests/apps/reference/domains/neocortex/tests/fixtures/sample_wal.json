@@ -1,0 +1,120 @@
+{
+    "verb": "FEATURES_CALCULATED",
+    "timestamp": 1736380000.0,
+    "payload": {
+        "timestamp": 1736380000.0,
+        "symbol": "BTCUSDT",
+        "features": {
+            "rsi": "45.5",
+            "obi": "0.12",
+            "vol": "0.03"
+        }
+    }
+}
+{
+    "verb": "FEATURES_CALCULATED",
+    "timestamp": 1736380001.0,
+    "payload": {
+        "timestamp": 1736380001.0,
+        "symbol": "BTCUSDT",
+        "features": {
+            "rsi": "46.2",
+            "obi": "0.15",
+            "vol": "0.04"
+        }
+    }
+}
+{
+    "verb": "FEATURES_CALCULATED",
+    "timestamp": 1736380002.0,
+    "payload": {
+        "timestamp": 1736380002.0,
+        "symbol": "ETHUSDT",
+        "features": {
+            "rsi": "52.1",
+            "obi": "-0.08",
+            "vol": "0.02"
+        }
+    }
+}
+{
+    "verb": "TRADE_INTENT_PROPOSED",
+    "timestamp": 1736380003.0,
+    "payload": {
+        "symbol": "BTCUSDT",
+        "action": "LONG"
+    }
+}
+{
+    "verb": "FEATURES_CALCULATED",
+    "timestamp": 1736380004.0,
+    "payload": {
+        "timestamp": 1736380004.0,
+        "symbol": "BTCUSDT",
+        "features": {
+            "rsi": "47.8",
+            "obi": "0.20",
+            "vol": "0.05"
+        }
+    }
+}
+{
+    "verb": "FEATURES_CALCULATED",
+    "timestamp": 1736380005.0,
+    "payload": {
+        "timestamp": 1736380005.0,
+        "symbol": "SOLUSDT",
+        "features": {
+            "rsi": "38.9",
+            "obi": "-0.25",
+            "vol": "0.08"
+        }
+    }
+}
+{
+    "verb": "POSITION_CLOSED",
+    "timestamp": 1736380006.0,
+    "payload": {
+        "symbol": "BTCUSDT",
+        "pnl": 0.05
+    }
+}
+{
+    "verb": "FEATURES_CALCULATED",
+    "timestamp": 1736380007.0,
+    "payload": {
+        "timestamp": 1736380007.0,
+        "symbol": "BTCUSDT",
+        "features": {
+            "rsi": "50.0",
+            "obi": "0.00",
+            "vol": "0.03"
+        }
+    }
+}
+{
+    "verb": "FEATURES_CALCULATED",
+    "timestamp": 1736380008.0,
+    "payload": {
+        "timestamp": 1736380008.0,
+        "symbol": "ETHUSDT",
+        "features": {
+            "rsi": "55.3",
+            "obi": "0.10",
+            "vol": "0.02"
+        }
+    }
+}
+{
+    "verb": "FEATURES_CALCULATED",
+    "timestamp": 1736380009.0,
+    "payload": {
+        "timestamp": 1736380009.0,
+        "symbol": "BTCUSDT",
+        "features": {
+            "rsi": "48.7",
+            "obi": "0.05",
+            "vol": "0.04"
+        }
+    }
+}

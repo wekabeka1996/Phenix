@@ -1,0 +1,1452 @@
+{
+  "AnchorShockVetoConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "anchor_symbol": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "threshold": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "ArmingConfig": {
+    "extra": "forbid",
+    "fields": {
+      "require_regime_warmup": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "retry_backoff_ms": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "max_attempts": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "ContextShieldConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "regime_multipliers": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "default_multiplier": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "no_regime_multiplier": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "ttl_ms": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "stale_mult_normal": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "stale_mult_danger": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "danger_regimes": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "DangerZoneShieldConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "vol_threshold": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "spread_threshold": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "motion_threshold": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "DashboardConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "sharpe_window_days": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "metrics": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "DecisionConfig": {
+    "extra": "forbid",
+    "fields": {
+      "testnet": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "production": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "signal_threshold": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "cooldown_sec": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "side_bias_min_score": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "side_bias_penalty_factor": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "side_bias_target_ratio": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "side_bias_window_sec": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "side_bias_min_intents": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "retry_ttl_ms": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "retry_max_count": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "retry_backoff_factor": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "signal_weights": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "signals": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "direction_strength_scoring": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "kelly": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "qos": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "bar_gating": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "behavior_fsm": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "roi_exit": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "mean_reversion": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "regime_thresholds": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "regime_threshold_multipliers": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "regime_smoothing": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "blocked_regimes": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "symbols_to_track": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "neutral_threshold": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "scoring_version": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "feature_neutrals": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "essential_features": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "liquidity_gate": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "anchor_shock_veto": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "score_multiplier": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "decision_geometry": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "scoring_engine": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "quadratic_rollout": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "holding_period": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "reentry_cooldown_sec": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "gates": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "entry_plan": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "money_management": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "execution": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "exit": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "operational_mode": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "dashboard": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "pyramiding_policy": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      }
+    }
+  },
+  "DecisionGeometryConfig": {
+    "extra": "forbid",
+    "fields": {
+      "admission_mode": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "admission_power": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "sizing_mode": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "sizing_power": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "admission_shield_floor": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "DecisionMakingDomainConfig": {
+    "extra": "forbid",
+    "fields": {
+      "position_sizing": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "entry_plan": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "qos": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "features": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "bar_gating": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "behavior_fsm": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "risk_skew": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "risk_gate": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "arming": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "directional_sanity": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "low_vol_cost_floor_gate": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "price_motion_sanity": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "flip": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "regime_loss_embargo": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "neocortex_enforcement_mode": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "fail_closed_on_degraded_context": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "degraded_context_critical_keys": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "degraded_context_critical_keys_by_strategy": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "degraded_context_contracts_by_strategy": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "portfolio_warmup_timeout_sec": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "DecisionModeOverrideConfig": {
+    "extra": "forbid",
+    "fields": {
+      "signal_threshold": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "DegradedContextStrategyContractConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "critical_keys": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "DirectionalSanityConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "min_abs_delta_price": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "min_confidence": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "min_regime_confidence": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "min_regime_confidence_by_regime": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "max_regime_confidence_by_regime": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "hard_veto_consecutive_bars": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "hard_veto_consecutive_bars_by_regime": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "consecutive_bars": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "nrr026_enabled": {
+        "default": "True",
+        "default_factory": null,
+        "required": false
+      },
+      "nrr027_enabled": {
+        "default": "True",
+        "default_factory": null,
+        "required": false
+      }
+    }
+  },
+  "EntryPlanConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "atr_period": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "entry_k_atr": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "sl_k_atr": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "tp_k_atr": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "obi_weight": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "obi_mod_clamp_min": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "obi_mod_clamp_max": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "require_atr": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "obi_missing_policy": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "structural_stop_enabled": {
+        "default": "False",
+        "default_factory": null,
+        "required": false
+      },
+      "base_atr_mult": {
+        "default": "1.5",
+        "default_factory": null,
+        "required": false
+      },
+      "confidence_scale": {
+        "default": "0.5",
+        "default_factory": null,
+        "required": false
+      },
+      "min_stop_bps": {
+        "default": "15",
+        "default_factory": null,
+        "required": false
+      }
+    }
+  },
+  "ExecutionGateConfig": {
+    "extra": "forbid",
+    "fields": {
+      "gates_enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "structural_gate": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "ExitManagerConfig": {
+    "extra": "forbid",
+    "fields": {
+      "time_exit_enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "max_hold_time_sec": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "signal_exit_enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "signal_reversal_threshold": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "danger_zone_action": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "danger_zone_tighten_factor": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "FeaturesTtlConfig": {
+    "extra": "forbid",
+    "fields": {
+      "ttl_sec": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "FlipOrchestrationConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "hysteresis_mult": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "GlobalFlipKillswitchConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "HoldingPeriodConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "min_duration_sec": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "emergency_exit_threshold": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "apply_to_flips": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "LowVolCostFloorFeeConfig": {
+    "extra": "forbid",
+    "fields": {
+      "open_fee_bps": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "close_fee_bps": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "fee_source": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "LowVolCostFloorGateConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "enforce_in_modes": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "observe_only_in_modes": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "regimes": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "fee": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "slippage": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "thresholds": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "direction_confidence": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "geometry": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "LowVolCostFloorSlippageConfig": {
+    "extra": "forbid",
+    "fields": {
+      "buffer_bps": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "source": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "LowVolCostFloorThresholdsConfig": {
+    "extra": "forbid",
+    "fields": {
+      "target_net_fee_multiple": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "min_tp_fee_coverage": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "min_rr": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "min_regime_confidence_by_regime": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "min_direction_confidence_by_regime": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "min_regime_confidence_overrides_by_strategy_symbol": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "min_direction_confidence_overrides_by_strategy_symbol": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "min_raw_score_by_regime": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "min_normalized_confidence_by_regime": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "min_raw_score_overrides_by_strategy_symbol": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "min_normalized_confidence_overrides_by_strategy_symbol": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      }
+    }
+  },
+  "LowVolDirectionConfidenceConfig": {
+    "extra": "forbid",
+    "fields": {
+      "required": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "missing_policy": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "raw_signed_score_sources": {
+        "default": "PydanticUndefined",
+        "default_factory": "list",
+        "required": false
+      },
+      "normalized_confidence_sources": {
+        "default": "PydanticUndefined",
+        "default_factory": "list",
+        "required": false
+      },
+      "judge_confidence_live_producer_required": {
+        "default": "False",
+        "default_factory": null,
+        "required": false
+      }
+    }
+  },
+  "LowVolGeometryConfig": {
+    "extra": "forbid",
+    "fields": {
+      "require_tpsl": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "missing_policy": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "MemoryShieldConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "decay_rate": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "max_states": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "unknown_threshold": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "exploring_threshold": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "unknown_multiplier": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "exploring_multiplier": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "known_multiplier": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "storage_path": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "flush_interval_sec": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "MoneyManagementConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "risk_per_trade_pct": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "stop_distance_pct": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "max_notional_cap": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "PriceMotionSanityConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "k_vol": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "flash_window_sec": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "bleed_window_sec": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "flash_threshold_norm": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "bleed_threshold_norm": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "require_bleed_ready": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "pm_norm_clip_abs": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "QuadraticRolloutConfig": {
+    "extra": "forbid",
+    "fields": {
+      "shadow_enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "rollback_armed": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "rollback_reason_chain": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "ReadinessRegistryConfig": {
+    "extra": "forbid",
+    "fields": {
+      "declared_keys": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "RegimeConfidenceGateConfig": {
+    "extra": "forbid",
+    "fields": {
+      "min_by_regime": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "min_by_symbol": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "max_by_regime": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "max_by_symbol": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "min_by_regime_side": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "min_by_symbol_regime_side": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "max_by_regime_side": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "max_by_symbol_regime_side": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      }
+    }
+  },
+  "RegimeLossEmbargoConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "min_loss_threshold_net": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "fee_only_close_policy": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "RegimeShiftInceptionConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "action": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "micro_size_fraction": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "RegimeSmoothingConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "method": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "ema_alpha": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "ramp_bars": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "RiskGateConfig": {
+    "extra": "forbid",
+    "fields": {
+      "threshold_pct_testnet": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "threshold_pct_production": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "min_intents_for_check": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "RiskSkewConfig": {
+    "extra": "forbid",
+    "fields": {
+      "max_skew_sec": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "max_defer_count": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "defer_cooldown_sec": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "defer_window_sec": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "until_refresh_retry_sec": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "until_refresh_max_hold_sec": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "SafetyGatesConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "system_stress_policy": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "stress_attenuation_factor": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "regime_confidence": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      }
+    }
+  },
+  "ScoringEngineConfig": {
+    "extra": "forbid",
+    "fields": {
+      "exposure_cap": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "min_pillar_confidence": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "shield_enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "context_shield": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "memory_shield": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "danger_zone_shield": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "StructuralGateConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "min_risk_reward": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "max_risk_reward": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "VolAdjGatesConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "anti_flat_sigma": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "anti_fomo_sigma": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "motion_window_sec": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "WarmupEnforcementConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enforcement_mode": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "check_full_ready_invariant": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "degraded_allowed_strategies": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      }
+    }
+  },
+  "RegimeConfidenceSideMinThresholdConfig": {
+    "extra": "forbid",
+    "fields": {
+      "BUY": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "SELL": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      }
+    }
+  },
+  "RegimeConfidenceMaxSideOverrideConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "threshold": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      }
+    }
+  },
+  "RegimeConfidenceSideMaxOverrideMapConfig": {
+    "extra": "forbid",
+    "fields": {
+      "BUY": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "SELL": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      }
+    }
+  }
+}

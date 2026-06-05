@@ -1,0 +1,287 @@
+{
+  "generated_at_utc": "2026-05-13T23:48:56.913031+00:00",
+  "authority_caveat": "CURRENT_WORKSPACE_REFERENCE_ONLY_NOT_RUNTIME_AUTHORITY",
+  "snapshot_mode": "CURRENT_WORKSPACE_REFERENCE_SNAPSHOT",
+  "future_bundle_target_root": "logs/frozen/<bundle>/config_snapshot/",
+  "git": {
+    "branch": "main",
+    "commit_sha": "e837f16ff8b6c2fd3fd41a3812c78237cc3a1427",
+    "status_short": [
+      "M apps/reference/api/main.py",
+      " M apps/reference/dictionaries/verb_registry_v1.yaml",
+      " M apps/reference/domains/decision_making/gateway/strategy_gateway.py",
+      " M apps/reference/domains/execution_position/state/restore_artifact.py",
+      " M apps/reference/domains/execution_position/state/startup_reconstruction.py",
+      " M apps/reference/domains/execution_position/state/startup_truth_orchestrator.py",
+      " M apps/reference/domains/neocortex/transport/authority_bridge.py",
+      " M apps/reference/domains/shadow_telemetry/main.py",
+      " M apps/reference/domains/shadow_telemetry/main_bridge.py",
+      " M apps/reference/domains/shadow_telemetry/trading_read_models.py",
+      " M apps/reference/telemetry/shadow_journal.py",
+      " M config/aurora/domains.yaml",
+      " M config/aurora/observability.yaml",
+      " M config/aurora/strategies.yaml",
+      " M config/aurora/trading.yaml",
+      " M schemas/decision_trace_emitted_v1.json",
+      " M tests/api/test_trading_routes_registration.py",
+      " M tests/bootstrap/test_schema_registry_activation.py",
+      " M tests/config/test_observability_contracts.py",
+      " M tests/config/test_watchdog_ssot_split_brain_governance.py",
+      " M tests/contracts/test_aurora_tpsl_owner_ctx_schema_additive.py",
+      " M tests/domains/decision_making/test_intent_builder_payload_contract.py",
+      " M tests/domains/execution_position/test_restart_runtime_truth_reconstruction.py",
+      " M tests/domains/execution_position/test_startup_reconstruction.py",
+      " M tests/domains/execution_position/test_watchdog_ttl_governance.py",
+      " M tests/domains/neocortex/integration/test_authority_journals.py",
+      " M tests/domains/neocortex/test_protocol_schema_alignment.py",
+      " M tests/domains/shadow_telemetry/test_main_bridge.py",
+      " M tests/domains/shadow_telemetry/test_shadow_api_auth_and_truth.py",
+      " M tests/domains/shadow_telemetry/test_trading_read_models.py",
+      " M tests/tools/test_calibrate_nrr062_historical.py",
+      "?? AURORA_TIMER_GOVERNANCE_T5D_FILL_TTL_CALIBRATION_REPORT.md",
+      "?? AURORA_TIMER_GOVERNANCE_T5D_GATE_RERUN_REPORT.md",
+      "?? CALIBRATORS_FOUNDATION_PACKAGE_03U_MULTI_DAY_POST_03T_RUNTIME_CAPTURE_VALIDATION_REPORT.md",
+      "?? CALIBRATORS_FOUNDATION_PACKAGE_03V_ACCEPTED_CLOSED_TRADE_ECONOMICS_AND_SIDECAR_READONLY_CALIBRATION_REPORT.md",
+      "?? CALIBRATORS_NRR_PACKAGE_A_NRR062_READONLY_REJECT_ECONOMICS_REPORT.md",
+      "?? CALIBRATORS_NRR_PACKAGE_B_NRR062_COUNTERFACTUAL_REPLAY_DATASET_REPORT.md",
+      "?? POSITION_POLICY_SIDECAR_LOGIC_CHAIN_DEEP_RESEARCH_REPORT_2026-05-11.md",
+      "?? REGIME_LOGIC_DEEP_RESEARCH_REPORT_2026-05-12.md",
+      "?? apps/reference/domains/neocortex/schemas/neocortex_authority_seam_decision_v1.json",
+      "?? calibrators/datasets/close_surface_reconciliation_post_03t_multiday/",
+      "?? calibrators/datasets/config_snapshot_contract/",
+      "?? calibrators/datasets/config_snapshot_reference_post_03u/",
+      "?? calibrators/datasets/economics_post_03t_multiday/",
+      "?? calibrators/datasets/nrr062_accepted_low_vol_comparison/",
+      "?? calibrators/datasets/nrr062_counterfactual_replay_dataset/",
+      "?? calibrators/datasets/nrr062_readonly_reject_economics/",
+      "?? calibrators/datasets/nrr_inventory_post_03t_multiday/",
+      "?? calibrators/datasets/runtime_close_coverage_post_03t_multiday/",
+      "?? calibrators/datasets/runtime_inventory_03u/",
+      "?? frozen/r7s_b_extended_fee_aware_observation_20260513T233631Z/",
+      "?? frozen/sidecar_feature_freshness_capture_20260513T190837Z/",
+      "?? frozen/sidecar_feature_freshness_capture_20260513T191500Z/",
+      "?? tests/config/test_watchdog_fill_ttl_calibration_t5d.py",
+      "?? tests/tools/test_nrr062_counterfactual_replay_dataset.py",
+      "?? tests/tools/test_nrr062_package_c_config_snapshot_and_low_vol_audit.py",
+      "?? tools/analysis/build_order_reconstruction_tp_sl_package.py",
+      "?? tools/analysis/def005_orderindex_restart_bracket_forensics.py",
+      "?? tools/analysis/order_log_forensic_timestamp_sync.py",
+      "?? tools/analysis/order_reconstruction_tp_sl_common.py",
+      "?? tools/analysis/reconstruct_regimes_for_order_replay.py",
+      "?? tools/analysis/replay_tp_sl_roi_scenarios_from_reconstructed_orders.py",
+      "?? tools/analysis/tp_sl_roi_replay_from_synced_order_log.py",
+      "?? tools/audits/",
+      "?? tools/runtime_forensics_tmp/t6b_post_t5b_trace_retention_audit.py"
+    ],
+    "dirty_worktree": true,
+    "dirty_config_paths": [
+      "M config/aurora/domains.yaml",
+      "M config/aurora/observability.yaml",
+      "M config/aurora/strategies.yaml",
+      "M config/aurora/trading.yaml",
+      "M tests/config/test_observability_contracts.py",
+      "M tests/config/test_watchdog_ssot_split_brain_governance.py",
+      "?? tests/config/test_watchdog_fill_ttl_calibration_t5d.py"
+    ]
+  },
+  "files": [
+    {
+      "config": "config/aurora/domains.yaml",
+      "required": true,
+      "exists": true,
+      "size_bytes": 18314,
+      "sha256": "cf3a9dbea58b573be8cfb30993e0ab9daf6cb05ebf12610fe8aa7aceebf5b962",
+      "copied_to": "calibrators/datasets/config_snapshot_reference_post_03u/config_snapshot/config/aurora/domains.yaml",
+      "modified_time_utc": "2026-05-13T18:52:50.249332+00:00",
+      "parse_status": "PARSED_MAPPING",
+      "top_level_keys": [
+        "debug",
+        "decision_making",
+        "execution_position",
+        "feature_engineering",
+        "objective_engine",
+        "position_tracking",
+        "risk_management",
+        "shadow_telemetry",
+        "ta_features"
+      ],
+      "notes": "Decision-making domain config including LOW_VOL gate thresholds.",
+      "parse_error": null
+    },
+    {
+      "config": "config/aurora/trading.yaml",
+      "required": true,
+      "exists": true,
+      "size_bytes": 5244,
+      "sha256": "82831ed38641795e082f5145262b1ae55a5075e50bcd6ba57fe7d14fe753fbbc",
+      "copied_to": "calibrators/datasets/config_snapshot_reference_post_03u/config_snapshot/config/aurora/trading.yaml",
+      "modified_time_utc": "2026-05-13T20:18:55.924833+00:00",
+      "parse_status": "PARSED_MAPPING",
+      "top_level_keys": [
+        "binance_api",
+        "trading"
+      ],
+      "notes": "Trading mode and execution envelope config.",
+      "parse_error": null
+    },
+    {
+      "config": "config/aurora/strategies.yaml",
+      "required": true,
+      "exists": true,
+      "size_bytes": 2970,
+      "sha256": "23984d9512aa93a218abfa91c3c85046f7513afccf2eab51bfd2b271122a21be",
+      "copied_to": "calibrators/datasets/config_snapshot_reference_post_03u/config_snapshot/config/aurora/strategies.yaml",
+      "modified_time_utc": "2026-05-13T18:53:00.133260+00:00",
+      "parse_status": "PARSED_MAPPING",
+      "top_level_keys": [
+        "arbitration",
+        "assignments",
+        "version"
+      ],
+      "notes": "Strategy routing and enablement config.",
+      "parse_error": null
+    },
+    {
+      "config": "config/aurora/strategies/aurora.yaml",
+      "required": true,
+      "exists": true,
+      "size_bytes": 28334,
+      "sha256": "9e3e7f44a68c899471693ce6e928f7df4eecc21a23441bdd6762f8975e9615be",
+      "copied_to": "calibrators/datasets/config_snapshot_reference_post_03u/config_snapshot/config/aurora/strategies/aurora.yaml",
+      "modified_time_utc": "2026-05-11T14:43:32.075119+00:00",
+      "parse_status": "PARSED_MAPPING",
+      "top_level_keys": [
+        "aurora"
+      ],
+      "notes": "Aurora strategy config surface.",
+      "parse_error": null
+    },
+    {
+      "config": "config/aurora/strategies/md_amr.yaml",
+      "required": true,
+      "exists": true,
+      "size_bytes": 12188,
+      "sha256": "390979c1d75881c98080de96f2eeccec92af295505b7cc2bc3d67c44ce1d06d7",
+      "copied_to": "calibrators/datasets/config_snapshot_reference_post_03u/config_snapshot/config/aurora/strategies/md_amr.yaml",
+      "modified_time_utc": "2026-05-04T05:44:26.822084+00:00",
+      "parse_status": "PARSED_MAPPING",
+      "top_level_keys": [
+        "md_amr"
+      ],
+      "notes": "MD AMR strategy config surface.",
+      "parse_error": null
+    },
+    {
+      "config": "config/aurora/strategies/mean_reversion.yaml",
+      "required": true,
+      "exists": true,
+      "size_bytes": 7802,
+      "sha256": "d2393c2fe243ee73c6d93266a7a1ffdd141dc5b2fc246f5804b3afb3ccc7acbb",
+      "copied_to": "calibrators/datasets/config_snapshot_reference_post_03u/config_snapshot/config/aurora/strategies/mean_reversion.yaml",
+      "modified_time_utc": "2026-05-04T05:47:06.549172+00:00",
+      "parse_status": "PARSED_MAPPING",
+      "top_level_keys": [
+        "mean_reversion"
+      ],
+      "notes": "Mean reversion strategy config surface.",
+      "parse_error": null
+    },
+    {
+      "config": "config/aurora/regime.yaml",
+      "required": true,
+      "exists": true,
+      "size_bytes": 1561,
+      "sha256": "e2d9cb49d02f74cbe1122c0157aee9e6493ad8e2b392e311646f3ef04ecf2396",
+      "copied_to": "calibrators/datasets/config_snapshot_reference_post_03u/config_snapshot/config/aurora/regime.yaml",
+      "modified_time_utc": "2026-05-04T05:47:06.547499+00:00",
+      "parse_status": "PARSED_MAPPING",
+      "top_level_keys": [
+        "basis_import_buffer",
+        "basis_tf_sec",
+        "hysteresis_bars",
+        "liveness_factor",
+        "models",
+        "regime_shift_inception",
+        "system_stress",
+        "uncertain_cutoff",
+        "vol_slope_gate_confirm_bars",
+        "vol_slope_gate_enabled",
+        "vol_slope_gate_eps"
+      ],
+      "notes": "Regime detector config.",
+      "parse_error": null
+    },
+    {
+      "config": "config/aurora/observability.yaml",
+      "required": true,
+      "exists": true,
+      "size_bytes": 3157,
+      "sha256": "5479754806940ed74f7262ac6d8a5d21c7b8511084617fa2011437bbb9cc1f6c",
+      "copied_to": "calibrators/datasets/config_snapshot_reference_post_03u/config_snapshot/config/aurora/observability.yaml",
+      "modified_time_utc": "2026-05-13T22:32:00.410617+00:00",
+      "parse_status": "PARSED_MAPPING",
+      "top_level_keys": [
+        "alerts",
+        "config_version",
+        "logging",
+        "shadow_journal"
+      ],
+      "notes": "Observability config relevant for future frozen bundles.",
+      "parse_error": null
+    },
+    {
+      "config": "config/alpha_search.yaml",
+      "required": false,
+      "exists": true,
+      "size_bytes": 11969,
+      "sha256": "24d41e098dda6c613f2e6faf2dcb4409b62ab7fea78952e92b83d1c191a34494",
+      "copied_to": "calibrators/datasets/config_snapshot_reference_post_03u/config_snapshot/config/alpha_search.yaml",
+      "modified_time_utc": "2026-05-04T05:47:06.544759+00:00",
+      "parse_status": "PARSED_MAPPING",
+      "top_level_keys": [
+        "alpha_search"
+      ],
+      "notes": "Optional alpha search runtime config.",
+      "parse_error": null
+    },
+    {
+      "config": "config/judge_review.yaml",
+      "required": false,
+      "exists": true,
+      "size_bytes": 308,
+      "sha256": "a82a911f28b32bc033e29be99ad4ba128511ded8f8a2ede298d423df7857f233",
+      "copied_to": "calibrators/datasets/config_snapshot_reference_post_03u/config_snapshot/config/judge_review.yaml",
+      "modified_time_utc": "2026-05-04T05:44:26.961542+00:00",
+      "parse_status": "PARSED_MAPPING",
+      "top_level_keys": [
+        "judge_review"
+      ],
+      "notes": "Optional judge review config.",
+      "parse_error": null
+    },
+    {
+      "config": "config/judge_simulator.yaml",
+      "required": false,
+      "exists": true,
+      "size_bytes": 313,
+      "sha256": "e6bade3522d247f1f7b3f65bf89e029e0cb51d4da46cd9e74972d3910bdf8d68",
+      "copied_to": "calibrators/datasets/config_snapshot_reference_post_03u/config_snapshot/config/judge_simulator.yaml",
+      "modified_time_utc": "2026-05-04T05:44:26.962132+00:00",
+      "parse_status": "PARSED_MAPPING",
+      "top_level_keys": [
+        "judge_simulator"
+      ],
+      "notes": "Optional judge simulator config.",
+      "parse_error": null
+    }
+  ],
+  "summary": {
+    "required_files": 8,
+    "required_present": 8,
+    "optional_present": 3,
+    "missing_configs": [],
+    "parse_status_counts": {
+      "PARSED_MAPPING": 11
+    }
+  }
+}

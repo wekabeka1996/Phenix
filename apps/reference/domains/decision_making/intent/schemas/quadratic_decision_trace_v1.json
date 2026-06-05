@@ -1,0 +1,457 @@
+{
+  "$id": "https://phenix.local/schemas/quadratic_decision_trace_v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Quadratic Decision Trace Event",
+  "description": "Schema for EVT:QUADRATIC_DECISION_TRACE emitted by the Aurora quadratic decision path after the quadratic scorer has been reached.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "rid": {
+      "type": "string"
+    },
+    "strategy_id": {
+      "type": "string"
+    },
+    "symbol": {
+      "type": "string"
+    },
+    "tf_sec": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "score": {
+      "type": "number"
+    },
+    "raw_score": {
+      "type": "number"
+    },
+    "decision_score": {
+      "type": "number"
+    },
+    "sizing_score": {
+      "type": "number"
+    },
+    "side": {
+      "type": "string"
+    },
+    "deferred": {
+      "type": "boolean"
+    },
+    "defer_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "regime": {
+      "type": "string"
+    },
+    "regime_confidence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "shield_multiplier": {
+      "type": "number"
+    },
+    "admission_shield_multiplier": {
+      "type": "number"
+    },
+    "thr_buy": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "thr_sell": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "admission_mode": {
+      "type": "string"
+    },
+    "sizing_mode": {
+      "type": "string"
+    },
+    "quadratic_path_reached": {
+      "type": "boolean",
+      "const": true
+    },
+    "price_motion_source": {
+      "type": "string",
+      "enum": [
+        "cmd_typed",
+        "cmd_raw_fallback",
+        "features",
+        "cache",
+        "missing"
+      ]
+    },
+    "price_motion_age_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "price_motion_ready": {
+      "type": "boolean"
+    },
+    "compact_trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "regime": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "raw_sum": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "raw_score": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "admission_mode": {
+          "type": "string"
+        },
+        "sizing_mode": {
+          "type": "string"
+        },
+        "raw_exposure": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "shield_multiplier": {
+          "type": "number"
+        },
+        "admission_shield_multiplier": {
+          "type": "number"
+        },
+        "decision_score": {
+          "type": "number"
+        },
+        "sizing_score": {
+          "type": "number"
+        },
+        "final_score": {
+          "type": "number"
+        },
+        "thr_buy": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "thr_sell": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "threshold_factor": {
+          "type": "number"
+        },
+        "admission_result": {
+          "type": "string"
+        },
+        "side": {
+          "type": "string"
+        },
+        "deferred": {
+          "type": "boolean"
+        },
+        "defer_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "side_why": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "regime",
+        "raw_sum",
+        "raw_score",
+        "admission_mode",
+        "sizing_mode",
+        "raw_exposure",
+        "shield_multiplier",
+        "admission_shield_multiplier",
+        "decision_score",
+        "sizing_score",
+        "final_score",
+        "thr_buy",
+        "thr_sell",
+        "threshold_factor",
+        "admission_result",
+        "side",
+        "deferred",
+        "defer_reason",
+        "side_why"
+      ]
+    },
+    "score_lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "value": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "scale": {
+                "type": "string"
+              },
+              "producer": {
+                "type": "string"
+              },
+              "consumer_stage": {
+                "type": "string"
+              },
+              "threshold_family": {
+                "type": "string"
+              },
+              "live_authority_status": {
+                "type": "string"
+              },
+              "compatibility_alias_for": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "post_objective_override": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "field",
+              "value",
+              "scale",
+              "producer",
+              "consumer_stage",
+              "threshold_family",
+              "live_authority_status",
+              "compatibility_alias_for",
+              "post_objective_override"
+            ]
+          }
+        }
+      },
+      "required": [
+        "path",
+        "records"
+      ]
+    },
+    "ts_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "anti_peak_observability": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "properties": {
+        "schema_version": {"type": "string"},
+        "strategy_id": {"type": ["string", "null"]},
+        "symbol": {"type": ["string", "null"]},
+        "side": {"type": ["string", "null"]},
+        "tf_sec": {"type": ["integer", "null"]},
+        "enabled": {"type": ["boolean", "null"]},
+        "gate_disabled": {"type": ["boolean", "null"]},
+        "motion_classification": {"type": ["string", "null"]},
+        "missing_inputs": {
+          "type": ["object", "null"],
+          "additionalProperties": {"type": ["string", "null"]}
+        },
+        "active_config": {"type": ["object", "null"], "additionalProperties": true},
+        "disabled_config_snapshot": {"type": ["object", "null"], "additionalProperties": true},
+        "anti_fomo_sigma": {"type": ["number", "null"]},
+        "anti_flat_sigma": {"type": ["number", "null"]},
+        "window_sec": {"type": ["integer", "null"]},
+        "anti_fomo_sigma_value_source": {"type": ["string", "null"]},
+        "anti_flat_sigma_value_source": {"type": ["string", "null"]},
+        "window_sec_value_source": {"type": ["string", "null"]},
+        "motion_norm_sigma": {"type": ["number", "null"]},
+        "score_before_shields": {"type": ["number", "null"]},
+        "score_after_shields": {"type": ["number", "null"]},
+        "final_score": {"type": ["number", "null"]},
+        "signal_threshold": {"type": ["number", "null"]},
+        "danger_zone_applied": {"type": ["boolean", "null"]},
+        "context_shield_applied": {"type": ["boolean", "null"]},
+        "attenuated_below_threshold": {"type": ["boolean", "null"]},
+        "consumed_by_gate": {"type": ["boolean", "null"]},
+        "source": {"type": ["string", "null"]},
+        "ready": {"type": ["boolean", "null"]},
+        "reason": {"type": ["string", "null"]},
+        "motion": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {"type": ["boolean", "null"]},
+            "window_sec": {"type": ["integer", "null"]},
+            "window_sec_value_source": {"type": ["string", "null"]},
+            "motion_norm_sigma": {"type": ["number", "null"]},
+            "motion_norm_sigma_value_source": {"type": ["string", "null"]},
+            "anti_fomo_sigma": {"type": ["number", "null"]},
+            "anti_flat_sigma": {"type": ["number", "null"]},
+            "anti_fomo_sigma_value_source": {"type": ["string", "null"]},
+            "anti_flat_sigma_value_source": {"type": ["string", "null"]},
+            "anti_fomo_triggered": {"type": ["boolean", "null"]},
+            "anti_flat_triggered": {"type": ["boolean", "null"]},
+            "motion_available": {"type": ["boolean", "null"]},
+            "missing_reason": {"type": ["string", "null"]}
+          }
+        },
+        "score_path": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "properties": {
+            "score_before_shields": {"type": ["number", "null"]},
+            "score_after_danger_zone": {"type": ["number", "null"]},
+            "score_after_context_shield": {"type": ["number", "null"]},
+            "score_after_memory_shield": {"type": ["number", "null"]},
+            "score_after_system_stress": {"type": ["number", "null"]},
+            "score_after_shields": {"type": ["number", "null"]},
+            "final_score": {"type": ["number", "null"]},
+            "signal_threshold": {"type": ["number", "null"]},
+            "would_emit_signal_before_shields": {"type": ["boolean", "null"]},
+            "would_emit_signal_after_shields": {"type": ["boolean", "null"]}
+          }
+        },
+        "danger_zone_shield": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {"type": ["boolean", "null"]},
+            "evaluated": {"type": ["boolean", "null"]},
+            "applied": {"type": ["boolean", "null"]},
+            "multiplier": {"type": ["number", "null"]},
+            "inputs": {
+              "type": ["object", "null"],
+              "additionalProperties": false,
+              "properties": {
+                "volatility_state": {"type": ["number", "null"]},
+                "spread_bps": {"type": ["number", "null"]},
+                "motion": {"type": ["number", "null"]}
+              }
+            },
+            "thresholds": {
+              "type": ["object", "null"],
+              "additionalProperties": false,
+              "properties": {
+                "vol_threshold": {"type": ["number", "null"]},
+                "spread_threshold": {"type": ["number", "null"]},
+                "motion_threshold": {"type": ["number", "null"]}
+              }
+            },
+            "missing_reason": {"type": ["string", "null"]}
+          }
+        },
+        "context_shield": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {"type": ["boolean", "null"]},
+            "evaluated": {"type": ["boolean", "null"]},
+            "applied": {"type": ["boolean", "null"]},
+            "multiplier": {"type": ["number", "null"]},
+            "regime": {"type": ["string", "null"]},
+            "regime_confidence": {"type": ["number", "null"]},
+            "regime_multiplier": {"type": ["number", "null"]},
+            "stale_multiplier_applied": {"type": ["boolean", "null"]},
+            "missing_reason": {"type": ["string", "null"]}
+          }
+        },
+        "system_stress": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {"type": ["boolean", "null"]},
+            "state": {"type": ["string", "null"]},
+            "policy": {"type": ["string", "null"]},
+            "evaluated": {"type": ["boolean", "null"]},
+            "applied": {"type": ["boolean", "null"]},
+            "multiplier": {"type": ["number", "null"]},
+            "blocked": {"type": ["boolean", "null"]},
+            "missing_reason": {"type": ["string", "null"]}
+          }
+        },
+        "classification": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "properties": {
+            "hard_blocked": {"type": ["boolean", "null"]},
+            "attenuated_below_threshold": {"type": ["boolean", "null"]},
+            "passed_after_attenuation": {"type": ["boolean", "null"]},
+            "masked_by_prior_gate": {"type": ["boolean", "null"]},
+            "block_reason": {"type": ["string", "null"]}
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "strategy_id",
+    "symbol",
+    "tf_sec",
+    "score",
+    "raw_score",
+    "decision_score",
+    "sizing_score",
+    "side",
+    "deferred",
+    "defer_reason",
+    "regime",
+    "shield_multiplier",
+    "admission_shield_multiplier",
+    "thr_buy",
+    "thr_sell",
+    "admission_mode",
+    "sizing_mode",
+    "quadratic_path_reached",
+    "price_motion_source",
+    "price_motion_age_ms",
+    "price_motion_ready",
+    "compact_trace",
+    "score_lineage",
+    "ts_ms"
+  ]
+}

@@ -1,0 +1,215 @@
+{
+  "generated_at_utc": "2026-05-13T21:18:32.557278+00:00",
+  "freeze_bundle": "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z",
+  "config_provenance": {
+    "source_path": "config\\aurora\\domains.yaml",
+    "source_kind": "live_workspace_yaml",
+    "frozen_config_snapshot_present": false,
+    "interpretation_caveat": "configured_enabled reflects the workspace domains.yaml at artifact build time because the 03U freeze bundle does not retain a config snapshot"
+  },
+  "gates": {
+    "NRR-027": {
+      "label": "DIRECTIONAL_SANITY_BLOCKED",
+      "config": {
+        "config_key": "nrr027_enabled",
+        "configured_enabled": false,
+        "notes": [
+          "explicit per-gate YAML key present"
+        ],
+        "hard_veto_consecutive_bars_by_regime": {}
+      },
+      "observed_reject_count": 0,
+      "observed_reject_count_by_source": {
+        "order_log": 0,
+        "decision_ledger": 0
+      },
+      "accepted_count_traceable": null,
+      "why_chain_mentions": 0,
+      "structured_fields_present": {
+        "selected_source": false,
+        "selected_scale": false,
+        "threshold_family": false
+      },
+      "structured_fields_present_counts": {
+        "selected_source": 0,
+        "selected_scale": 0,
+        "threshold_family": 0
+      },
+      "symbol_distribution": {},
+      "side_distribution": {},
+      "regime_distribution": {},
+      "source_modes": {},
+      "downstream_counterfactual_outcome": "not traceable from current runtime surfaces",
+      "source_field_mode": "absent",
+      "evidence_quality": "no_runtime_rows",
+      "patch_ready": false
+    },
+    "NRR-028": {
+      "label": "PRICE_MOTION_INSUFFICIENT",
+      "config": {
+        "config_key": "price_motion_sanity.enabled",
+        "configured_enabled": false,
+        "notes": [
+          "shared price_motion_sanity gate controls NRR-028/029/030; no per-NRR YAML toggle found"
+        ]
+      },
+      "observed_reject_count": 0,
+      "observed_reject_count_by_source": {
+        "order_log": 0,
+        "decision_ledger": 0
+      },
+      "accepted_count_traceable": null,
+      "why_chain_mentions": 0,
+      "structured_fields_present": {
+        "selected_source": false,
+        "selected_scale": false,
+        "threshold_family": false
+      },
+      "structured_fields_present_counts": {
+        "selected_source": 0,
+        "selected_scale": 0,
+        "threshold_family": 0
+      },
+      "symbol_distribution": {},
+      "side_distribution": {},
+      "regime_distribution": {},
+      "source_modes": {},
+      "downstream_counterfactual_outcome": "not traceable from current runtime surfaces",
+      "source_field_mode": "absent",
+      "evidence_quality": "no_runtime_rows",
+      "patch_ready": false
+    },
+    "NRR-029": {
+      "label": "PRICE_MOTION_FLASH_BLOCKED",
+      "config": {
+        "config_key": "price_motion_sanity.enabled",
+        "configured_enabled": false,
+        "notes": [
+          "shared price_motion_sanity gate controls NRR-028/029/030; no per-NRR YAML toggle found"
+        ]
+      },
+      "observed_reject_count": 0,
+      "observed_reject_count_by_source": {
+        "order_log": 0,
+        "decision_ledger": 0
+      },
+      "accepted_count_traceable": null,
+      "why_chain_mentions": 0,
+      "structured_fields_present": {
+        "selected_source": false,
+        "selected_scale": false,
+        "threshold_family": false
+      },
+      "structured_fields_present_counts": {
+        "selected_source": 0,
+        "selected_scale": 0,
+        "threshold_family": 0
+      },
+      "symbol_distribution": {},
+      "side_distribution": {},
+      "regime_distribution": {},
+      "source_modes": {},
+      "downstream_counterfactual_outcome": "not traceable from current runtime surfaces",
+      "source_field_mode": "absent",
+      "evidence_quality": "no_runtime_rows",
+      "patch_ready": false
+    },
+    "NRR-030": {
+      "label": "PRICE_MOTION_BLEED_BLOCKED",
+      "config": {
+        "config_key": "price_motion_sanity.enabled",
+        "configured_enabled": false,
+        "notes": [
+          "shared price_motion_sanity gate controls NRR-028/029/030; no per-NRR YAML toggle found"
+        ]
+      },
+      "observed_reject_count": 0,
+      "observed_reject_count_by_source": {
+        "order_log": 0,
+        "decision_ledger": 0
+      },
+      "accepted_count_traceable": null,
+      "why_chain_mentions": 0,
+      "structured_fields_present": {
+        "selected_source": false,
+        "selected_scale": false,
+        "threshold_family": false
+      },
+      "structured_fields_present_counts": {
+        "selected_source": 0,
+        "selected_scale": 0,
+        "threshold_family": 0
+      },
+      "symbol_distribution": {},
+      "side_distribution": {},
+      "regime_distribution": {},
+      "source_modes": {},
+      "downstream_counterfactual_outcome": "not traceable from current runtime surfaces",
+      "source_field_mode": "absent",
+      "evidence_quality": "no_runtime_rows",
+      "patch_ready": false
+    },
+    "NRR-062": {
+      "label": "LOW_VOL_COST_FLOOR_BLOCKED",
+      "config": {
+        "config_key": "low_vol_cost_floor_gate.enabled",
+        "configured_enabled": true,
+        "enforce_in_modes": [
+          "testnet",
+          "hybrid_live_data_testnet_exec"
+        ],
+        "observe_only_in_modes": [
+          "live",
+          "production"
+        ],
+        "effective_in_observed_runtime": true,
+        "active_runtime_modes": [
+          "hybrid_live_data_testnet_exec"
+        ],
+        "notes": [
+          "current runtime trading_mode intersected with enforce_in_modes"
+        ]
+      },
+      "observed_reject_count": 153,
+      "observed_reject_count_by_source": {
+        "order_log": 153,
+        "decision_ledger": 0
+      },
+      "accepted_count_traceable": null,
+      "why_chain_mentions": 234,
+      "structured_fields_present": {
+        "selected_source": true,
+        "selected_scale": true,
+        "threshold_family": true
+      },
+      "structured_fields_present_counts": {
+        "selected_source": 153,
+        "selected_scale": 153,
+        "threshold_family": 153
+      },
+      "symbol_distribution": {
+        "BNBUSDT": 12,
+        "BTCUSDT": 58,
+        "ETHUSDT": 113,
+        "XRPUSDT": 51
+      },
+      "side_distribution": {
+        "BUY": 67,
+        "SELL": 167
+      },
+      "regime_distribution": {
+        "LOW_VOLATILITY": 153,
+        "TREND_DOWN": 59,
+        "TREND_UP": 22
+      },
+      "source_modes": {
+        "free_text_only": 81,
+        "structured": 153
+      },
+      "downstream_counterfactual_outcome": "not traceable from current runtime surfaces",
+      "source_field_mode": "structured",
+      "evidence_quality": "structured_runtime_rejects_present",
+      "patch_ready": false
+    }
+  }
+}

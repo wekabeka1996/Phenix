@@ -1,0 +1,53 @@
+# Neocortex System Configuration
+
+# Paths (absolute or relative to domain root)
+data_dir: "./data"
+checkpoint_dir: "./data/checkpoints"
+
+# Reproducibility
+rng_seed: 42
+
+# Multiprocessing
+brain_workers: 1
+queue_maxsize: 1000
+
+# Logging
+log_level: "INFO"
+log_to_file: true
+run_mode: "backtest"
+
+# ============================================================================
+# Authority seam config (§6.2 mandatory keys) — runtime_behavior
+# Consumer: Phase 5 NeocortexAuthorityBridge (declared_not_consumed_yet)
+# ============================================================================
+
+# Global Neocortex kill-switch (neocortex.trust_enabled per §6.2)
+trust_enabled: false
+
+evidence_capture:
+  # disabled preserves current behavior; journal_only captures diagnostics-only evidence;
+  # shadow_counterfactual captures evaluated no-effect shadow evidence.
+  mode: journal_only
+  # Explicit capture toggles for Phase 8A journal-only runtime capture
+  collect_observation: true
+  collect_authority_request: true
+  collect_authority_response: true
+  emit_shadow_decision_logged: true
+
+authority:
+  # Operating mode: shadow | advisory | gated
+  mode: shadow
+  # Max milliseconds before fallback to baseline_yaml (I6)
+  deadline_ms: 10
+  # Fallback policy when deadline is missed
+  fallback_policy: baseline_yaml
+  # Max concurrent authority requests per symbol
+  max_inflight_per_symbol: 1
+  # Canonical overlay knobs allowed for modulation
+  modulation_allowlist:
+    - decision_making.signal_threshold_bias
+    - decision_making.cooldown_mult
+  # Inclusive bounds [min, max] for signal_threshold_bias overlay
+  signal_threshold_bias_bounds: [-0.10, 0.10]
+  # Inclusive bounds [min, max] for cooldown_mult overlay (min > 0)
+  cooldown_mult_bounds: [1.0, 3.0]

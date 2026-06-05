@@ -1,0 +1,45 @@
+{
+  "generated_at": "2026-05-16T10:20:09.421001+00:00",
+  "builder": "realized_outcome_builder",
+  "repo_root": "C:/Users/user/Music/Phenix",
+  "sources": [
+    {
+      "role": "decision_ledger",
+      "source_path": "C:/Users/user/Music/Phenix/logs/frozen/nrr062_fresh_capture_20260516_101448/logs/shadow_telemetry/decision_ledger_v1.jsonl",
+      "source_kind": "supplemental_frozen",
+      "exists": true,
+      "size_bytes": 2629678,
+      "sha256": "adb34f9966936ed66b4e87cc7675c5a78a624fa3840092665a51173429688f71",
+      "mtime_utc": "2026-05-16T09:10:00.819495+00:00",
+      "copied_to": "source_snapshot/decision_ledger_v1.jsonl",
+      "required": true,
+      "notes": "selected_by_cli_override"
+    },
+    {
+      "role": "order_log",
+      "source_path": "C:/Users/user/Music/Phenix/logs/frozen/nrr062_fresh_capture_20260516_101448/logs/order_log_v1.jsonl",
+      "source_kind": "supplemental_frozen",
+      "exists": true,
+      "size_bytes": 4846480,
+      "sha256": "56ebcbb12666d25a55cdde2c9b526bcf5ba5a19c1a21adbb6b8683ab338ca7f1",
+      "mtime_utc": "2026-05-16T10:10:03.370199+00:00",
+      "copied_to": "source_snapshot/order_log_v1.jsonl",
+      "required": true,
+      "notes": "selected_by_cli_override"
+    },
+    {
+      "role": "trade_lifecycle",
+      "source_path": "C:/Users/user/Music/Phenix/logs/frozen/nrr062_fresh_capture_20260516_101448/logs/trade_lifecycle.jsonl",
+      "source_kind": "supplemental_frozen",
+      "exists": true,
+      "size_bytes": 5098584421,
+      "sha256": "1ee0110475b78d79925a8f0179f4529581c521dcf4bca65468f2f87fbad697f6",
+      "mtime_utc": "2026-05-16T10:14:47.232633+00:00",
+      "copied_to": "source_snapshot/trade_lifecycle.jsonl",
+      "required": false,
+      "notes": "selected_by_cli_override"
+    }
+  ],
+  "missing_required_sources": [],
+  "warnings": []
+}

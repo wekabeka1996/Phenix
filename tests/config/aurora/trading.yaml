@@ -1,0 +1,21 @@
+trading:
+  mode: "testnet"
+  decision:
+    signal_threshold: 0.1
+    position_sizing:
+      min_position_size_usd: 10
+    signal_weights:
+      obi: 0.15
+      tfi: 0.15
+      delta_price: 0.10
+      ema_bias: 0.15
+      volume_spike: 0.10
+      volatility_state: 0.10
+      depth_imbalance: -0.15
+      macro_sync: 0.10
+  execution:
+    manage: {}
+  instruments:
+    ETHUSDT:
+      symbol: "ETHUSDT"
+      step_size: "0.001"

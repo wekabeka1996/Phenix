@@ -1,0 +1,81 @@
+{
+  "package_f_replay": {
+    "candidate_rows": 79,
+    "tp": 25,
+    "sl": 2,
+    "timeout": 52,
+    "estimated_net_pnl_quote": 825.2672997047,
+    "profit_factor": 4.92434390438585
+  },
+  "package_h_runtime": {
+    "override_count": 1,
+    "resolved_closes": 1,
+    "wins": 1,
+    "losses": 0,
+    "net_pnl_quote": 22.6742616
+  },
+  "package_i_runtime": {
+    "override_count": 5,
+    "resolved_closes": 4,
+    "wins": 4,
+    "losses": 0,
+    "net_pnl_quote": 70.33973751
+  },
+  "package_j_freeze_runtime": {
+    "override_count": 26,
+    "resolved_closes": 1,
+    "wins": 0,
+    "losses": 1,
+    "net_pnl_quote": -13.08771079
+  },
+  "package_j_latest_known": {
+    "resolved_closes": 2,
+    "wins": 0,
+    "losses": 2,
+    "net_pnl_quote": -41.672209859999995
+  },
+  "package_j_diagnostics_only_split": {
+    "target_rows": 24,
+    "downstream_no_effect_confirmed": 24,
+    "other_buckets": {}
+  },
+  "package_l_runtime": {
+    "override_count": 7,
+    "resolved_closes": 0,
+    "wins": 0,
+    "losses": 0,
+    "net_pnl_quote": 0.0,
+    "downstream_no_effect_confirmed": 7,
+    "submitted_count": 0,
+    "filled_count": 0,
+    "closed_count": 0
+  },
+  "combined_h_i_j_l_latest_known_occurrence": {
+    "override_count": 39,
+    "resolved_closes": 7,
+    "wins": 5,
+    "losses": 2,
+    "submitted_not_filled": 1,
+    "downstream_no_effect_confirmed": 31,
+    "net_pnl_quote": 51.34178925
+  },
+  "combined_h_i_j_l_latest_known_unique": {
+    "override_count": 38,
+    "resolved_closes": 6,
+    "wins": 4,
+    "losses": 2,
+    "submitted_not_filled": 1,
+    "downstream_no_effect_confirmed": 31,
+    "net_pnl_quote": 28.667527650000004
+  },
+  "sidecar_mode_drift": {
+    "detected": true,
+    "config_path": "execution_position.position_policy_sidecar.mode",
+    "package_j_value": "shadow",
+    "package_l_value": "enable",
+    "affects_override_owner": false,
+    "affects_sidecar_authority_surface": true,
+    "interpretation": "The Package L environment is not sidecar-authority-equivalent to the Package J snapshot. The diagnostics-only no-effect classification remains valid because neither the 24 J rows nor the 7 new L rows reached submit/fill/close evidence, but downstream authority-sensitive comparability is contaminated for promotion-grade interpretation."
+  },
+  "verdict": "NO_NEW_ECONOMIC_SIGNAL_DIAGNOSTICS_ONLY_ROWS_EXTEND_SAMPLE"
+}

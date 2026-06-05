@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "cmd_external_open_request_v1.json",
+  "title": "CMD:EXTERNAL_OPEN_REQUEST_V1 payload schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["symbol", "side", "qty", "source", "order_type", "tif", "intent_id", "price"],
+  "properties": {
+    "rid":            { "type": "string" },
+    "intent_id":      { "type": "string", "minLength": 1, "description": "External intent identity; distinct from rid (runtime correlation)" },
+    "symbol":         { "type": "string", "minLength": 1 },
+    "side":           { "type": "string", "enum": ["BUY", "SELL"] },
+    "qty":            { "type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$" },
+    "order_type":     { "type": "string", "enum": ["LIMIT"] },
+    "price":          { "type": "string" },
+    "tif":            { "type": "string", "enum": ["GTC", "GTX", "IOC", "FOK"] },
+    "valid_for_ms":   { "anyOf": [{"type": "integer", "minimum": 1000}, {"type": "null"}] },
+    "stop_price":     { "anyOf": [{"type": "string"}, {"type": "null"}] },
+    "target_price":   { "anyOf": [{"type": "string"}, {"type": "null"}] },
+    "idempotent_key": { "anyOf": [{"type": "string"}, {"type": "null"}] },
+    "source":         { "type": "string", "const": "external_llm" },
+    "snapshot_ref": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["snapshot_id", "inputs_digest"],
+          "properties": {
+            "snapshot_id":    { "type": "string", "minLength": 1 },
+            "inputs_digest":  { "type": "string", "minLength": 8, "maxLength": 128 }
+          }
+        },
+        { "type": "null" }
+      ]
+    },
+    "why_short":      { "anyOf": [{"type": "string", "maxLength": 80}, {"type": "null"}] }
+  }
+}

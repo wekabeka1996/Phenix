@@ -1,0 +1,382 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "strategy_signal_produced_v1.json",
+  "title": "EVT:STRATEGY_SIGNAL_PRODUCED",
+  "description": "Additive schema for strategy signal payloads. Keeps migration compatibility across Aurora, Mean Reversion, and lightweight test injections.",
+  "type": "object",
+  "required": [
+    "symbol"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "strategy_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "symbol": {
+      "type": "string",
+      "minLength": 1
+    },
+    "side": {
+      "type": "string",
+      "enum": [
+        "BUY",
+        "SELL",
+        "buy",
+        "sell"
+      ]
+    },
+    "signal_type": {
+      "type": "string"
+    },
+    "bar_close_ts": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "close_boundary_ts_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tf_sec": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "source_mode": {
+      "type": "string",
+      "enum": [
+        "live",
+        "replay",
+        "warmup_import",
+        "synthetic_repair"
+      ]
+    },
+    "replay_generation": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "bar_identity": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "replay_identity": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "gap_state": {
+      "type": "string",
+      "enum": [
+        "CLEAR",
+        "GAP_DETECTED",
+        "REPAIRED",
+        "INVALIDATED"
+      ]
+    },
+    "gap_policy_action": {
+      "type": "string",
+      "enum": [
+        "NONE",
+        "REPAIR",
+        "INVALIDATE",
+        "DEGRADE_TO_NON_TRADING"
+      ]
+    },
+    "gap_bars_skipped": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "is_gap_bar": {
+      "type": "boolean"
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "ts_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "rid": {
+      "type": "string",
+      "minLength": 1
+    },
+    "why": {
+      "type": "string"
+    },
+    "why_chain": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "score": {
+      "type": "number"
+    },
+    "scoring": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "anti_peak_observability": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {"type": ["boolean", "null"]},
+            "gate_disabled": {"type": ["boolean", "null"]},
+            "motion_classification": {"type": ["string", "null"]},
+            "missing_inputs": {
+              "type": ["object", "null"],
+              "additionalProperties": {"type": ["string", "null"]}
+            },
+            "active_config": {"type": ["object", "null"], "additionalProperties": true},
+            "disabled_config_snapshot": {"type": ["object", "null"], "additionalProperties": true},
+            "anti_fomo_sigma": {"type": ["number", "null"]},
+            "anti_flat_sigma": {"type": ["number", "null"]},
+            "window_sec": {"type": ["integer", "null"]},
+            "anti_fomo_sigma_value_source": {"type": ["string", "null"]},
+            "anti_flat_sigma_value_source": {"type": ["string", "null"]},
+            "window_sec_value_source": {"type": ["string", "null"]},
+            "motion_norm_sigma": {"type": ["number", "null"]},
+            "score_before_shields": {"type": ["number", "null"]},
+            "score_after_shields": {"type": ["number", "null"]},
+            "final_score": {"type": ["number", "null"]},
+            "signal_threshold": {"type": ["number", "null"]},
+            "danger_zone_applied": {"type": ["boolean", "null"]},
+            "context_shield_applied": {"type": ["boolean", "null"]},
+            "attenuated_below_threshold": {"type": ["boolean", "null"]},
+            "consumed_by_gate": {"type": ["boolean", "null"]},
+            "source": {"type": ["string", "null"]},
+            "ready": {"type": ["boolean", "null"]},
+            "reason": {"type": ["string", "null"]}
+          }
+        }
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "runtime_permissions": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "runtime_readiness": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "rollout_mode": {
+      "type": "string"
+    },
+    "rollback_armed_status": {
+      "type": "string",
+      "enum": [
+        "ARMED",
+        "DISARMED"
+      ]
+    },
+    "quadratic_rollout": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "analytics_restore": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "price_ctx": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": true
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "entry_price": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        }
+      ]
+    },
+    "stop_price": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "target_price": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "volatility": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": true
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "liquidity": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": true
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "regime": {
+      "type": "string"
+    },
+    "regime_ctx": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "quantization": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "tpsl_ctx": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "tpsl_owner_ctx": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "intended_owner": {
+              "type": "string",
+              "enum": [
+                "regime_tpsl",
+                "entry_plan"
+              ]
+            },
+            "final_owner": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "regime_tpsl",
+                    "entry_plan"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "owner_loss_reason": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "REGIME_TPSL_DISABLED_OR_MISSING",
+                    "REGIME_TPSL_CONFIG_ERROR",
+                    "REGIME_TPSL_ATR_UNAVAILABLE",
+                    "REGIME_TPSL_INVALID_INPUT",
+                    "REGIME_TPSL_UNSUPPORTED_MODE",
+                    "TPSL_GUARDRAIL_SL_WRONG_SIDE",
+                    "TPSL_GUARDRAIL_TP_WRONG_SIDE",
+                    "TPSL_GUARDRAIL_SL_MIN_DIST_BPS",
+                    "TPSL_GUARDRAIL_TP_MIN_DIST_BPS"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "intended_owner",
+            "final_owner",
+            "owner_loss_reason"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "mr_params": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "examples": [
+    {
+      "symbol": "BTCUSDT",
+      "strategy_id": "mean_reversion",
+      "signal_type": "LONG_ENTRY"
+    },
+    {
+      "strategy_id": "aurora",
+      "symbol": "BTCUSDT",
+      "side": "BUY",
+      "ts_ms": 1702500000000,
+      "rid": "aurora_BTCUSDT_1702500000000",
+      "why_chain": [
+        "enter:buy:score=0.0069>=thr_buy=0.0021"
+      ],
+      "readiness": {
+        "warmup_ok": true
+      },
+      "runtime_permissions": {
+        "can_manage_existing_risk": true,
+        "can_open_new_risk": true,
+        "mode": "OPEN_AND_MANAGE"
+      },
+      "runtime_readiness": {
+        "strategy_id": "aurora",
+        "symbol": "BTCUSDT",
+        "updated_at": 1702500000000
+      },
+      "price_ctx": {
+        "entry_price": "25668.84",
+        "stop_price": "25540.50",
+        "target_price": "25925.53"
+      },
+      "scoring": {
+        "score": 0.0069,
+        "thr_buy": 0.0021,
+        "thr_sell": 0.0017
+      }
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://aurora.internal/schemas/process_strategy_blocked_v1.json",
+    "title": "EVT:PROCESS_STRATEGY_BLOCKED payload schema",
+    "description": "Emitted by FeatureEngineering when CMD:PROCESS_STRATEGY cannot be emitted (warmup fail, missing bar fields, etc.)",
+    "type": "object",
+    "required": [
+        "symbol",
+        "reason_code"
+    ],
+    "additionalProperties": true,
+    "properties": {
+        "symbol": {
+            "type": "string",
+            "description": "Trading symbol (e.g., BTCUSDT)"
+        },
+        "tf_sec": {
+            "type": [
+                "integer",
+                "null"
+            ],
+            "description": "Timeframe in seconds"
+        },
+        "reason_code": {
+            "type": "string",
+            "description": "Machine-readable block reason code",
+            "examples": [
+                "WARMUP_NOT_FULL_READY",
+                "BAR_CLOSE_TS_MISSING",
+                "BAR_FIELDS_MISSING",
+                "TF_SEC_LT_60",
+                "WARMUP_MISSING"
+            ]
+        },
+        "reason": {
+            "type": "string",
+            "description": "Human-readable description of the block reason"
+        },
+        "ts": {
+            "type": [
+                "integer",
+                "null"
+            ],
+            "description": "Tick timestamp in milliseconds"
+        }
+    }
+}

@@ -1,18 +1,26 @@
 {
-  "domain": "regime_detector",
-  "description": "Analyzes market features to detect the current trading regime (e.g., TREND, MEAN_REVERSION, VOLATILITY). Based on logic from legacy aurora/regime/detectors.py.",
+  "domain_name": "regime_detector",
+  "description": "Market regime classifier. Consumes FEATURES_CALCULATED, runs priority cascade (Volatility > MeanReversion > SMATrend), applies hysteresis and slope gate, emits EVT:REGIME_DETECTED with stable per-symbol structural regime and confidence on every basis bar close.",
+  "version": "1.0.0",
+  "status": "production",
   "imports": [
-    {
-      "event": "EVT:FEATURES_CALCULATED",
-      "description": "Receives calculated indicators to analyze market state."
-    }
+    {"event_name": "EVT:FEATURES_CALCULATED", "source_domain": "feature_engineering"}
   ],
   "exports": [
-    {
-      "event": "EVT:REGIME_DETECTED",
-      "schema": "regime_detected_v1.json",
-      "description": "Emitted when a new market regime is identified or confirmed."
-    }
+    {"event_name": "EVT:REGIME_DETECTED", "target_domains": ["decision_making"], "schema": "schemas/regime_detected_v1.json"}
   ],
-  "config_schema": "config_v1.json"
+  "components": [
+    "RegimeDetector"
+  ],
+  "documentation": "README.md",
+  "ssot_notes": {
+    "regime_labels": "TREND_UP, TREND_DOWN, MEAN_REVERSION, HIGH_VOLATILITY, LOW_VOLATILITY, UNCERTAIN — raw strings (no shared Enum class)",
+    "detection_cascade": "Priority: Volatility (ATR) > MeanReversion (SMA spread) > SMATrend (SMA crossover) > UNCERTAIN",
+    "hysteresis": "Raw regime stabilised through hysteresis_bars consecutive confirmations before transitioning stable regime",
+    "slope_gate": "HIGH_VOLATILITY suppressed when vol_ratio slope decreasing (dying storm pattern)",
+    "regime_layer": "Always STRUCTURAL, PER_SYMBOL, BAR-clocked. Uses RuntimeRegimeLayer from contracts",
+    "heartbeat": "EVT:REGIME_DETECTED emitted on every basis bar close with 'changed' flag for DM liveness check",
+    "config": "AuroraConfig from regime.yaml. models.sma_trend, models.volatility, models.mean_reversion config blocks",
+    "contracts": "registered in verb_registry_v1.yaml (REGIME_DETECTED, owner: regime_detector)"
+  }
 }

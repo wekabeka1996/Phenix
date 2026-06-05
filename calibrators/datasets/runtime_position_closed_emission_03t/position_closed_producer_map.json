@@ -1,0 +1,109 @@
+{
+  "package": "03T_RUNTIME_POSITION_CLOSED_EMISSION_REPAIR",
+  "scope": "execution_position runtime observability parity",
+  "roadmap_ssot": {
+    "path": "Copilot_Master_Roadmap.md",
+    "explicit_03t_entry_found": false,
+    "note": "No explicit 03T package entry was found in the roadmap; scope stayed anchored to runtime execution_position evidence."
+  },
+  "producers": [
+    {
+      "path": "apps/reference/domains/execution_position/orchestration/event_handlers.py",
+      "symbol": "EPEventHandlers.on_portfolio_state_updated",
+      "classification": "canonical_POSITION_CLOSED_producer",
+      "surface": [
+        "trade_lifecycle.on_close",
+        "order_log POSITION_CLOSED",
+        "EVT:POSITION_CLOSED"
+      ],
+      "control_condition": "abs(prev_amt) >= epsilon and abs(now_amt) < epsilon",
+      "status_before_03t": "sole canonical producer",
+      "status_after_03t": "still canonical producer; implementation shared via emit_position_closed_observability()"
+    },
+    {
+      "path": "apps/reference/domains/execution_position/fsm.py",
+      "symbol": "ExecPosFSM._on_execution_close_reconciled",
+      "classification": "canonical_POSITION_CLOSED_producer",
+      "surface": [
+        "trade_lifecycle.on_close",
+        "order_log POSITION_CLOSED",
+        "EVT:POSITION_CLOSED"
+      ],
+      "control_condition": "EVT:EXECUTION_CLOSE_RECONCILED plus cached close_accounting truth present",
+      "status_before_03t": "authoritative reset only; no canonical close parity",
+      "status_after_03t": "reuses event handler emission helper for missed portfolio-edge closes"
+    },
+    {
+      "path": "apps/reference/domains/execution_position/guardian/order_guardian.py",
+      "symbol": "_emit_close_reconciled_event",
+      "classification": "authoritative_close_reconcile_trigger",
+      "surface": [
+        "EVT:EXECUTION_CLOSE_RECONCILED"
+      ],
+      "notes": "Trigger only. Does not write order_log POSITION_CLOSED by itself."
+    },
+    {
+      "path": "apps/reference/domains/execution_position/contract_layer/terminal_order_contracts.py",
+      "symbol": "sync_trade_lifecycle_terminal_order_event",
+      "classification": "trade_lifecycle_producer_only",
+      "surface": [
+        "trade_lifecycle.on_cancel",
+        "trade_lifecycle.on_reject"
+      ],
+      "notes": "Terminal non-fill sync for ORDER_STATE_CHANGED / ORDER_REJECTED. No canonical POSITION_CLOSED emission."
+    },
+    {
+      "path": "apps/reference/domains/execution_position/flows/close/close_executor.py",
+      "symbol": "_tracked_teardown_log_success, _reconcile_cancel_log_success",
+      "classification": "alternative_terminal_event_producer",
+      "surface": [
+        "ORDER_CANCELLED",
+        "ORDER_CANCELLATION_FAILED"
+      ],
+      "notes": "Close-related teardown observability. Not a realized POSITION_CLOSED producer."
+    },
+    {
+      "path": "apps/reference/domains/execution_position/sidecar/position_policy_mediator.py",
+      "symbol": "_emit_position_policy_close_request_state",
+      "classification": "trade_lifecycle_producer_only",
+      "surface": [
+        "append_trade_lifecycle_record(POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE)"
+      ],
+      "notes": "Sidecar request-state observability only. No canonical close parity."
+    },
+    {
+      "path": "apps/reference/domains/execution_position/sidecar/position_policy_sidecar.py",
+      "symbol": "on_execution_close_reconciled",
+      "classification": "trade_lifecycle_adjacent_non_producer",
+      "surface": [
+        "sidecar internal state evaluation"
+      ],
+      "notes": "Consumes close reconciliation but does not emit canonical POSITION_CLOSED."
+    },
+    {
+      "path": "apps/reference/domains/execution_position/state/startup_truth_orchestrator.py",
+      "symbol": "_append_restart_truth_record",
+      "classification": "trade_lifecycle_producer_only",
+      "surface": [
+        "append_trade_lifecycle_record(execution_restart_truth)"
+      ],
+      "notes": "Restart truth observability only. Not a live close producer."
+    },
+    {
+      "path": "apps/reference/domains/execution_position/fsm_manage.py",
+      "symbol": "module shim",
+      "classification": "compatibility_shim_non_producer",
+      "surface": [],
+      "notes": "Re-export shim only. No runtime close emission logic."
+    },
+    {
+      "path": "apps/reference/domains/execution_position/schemas/position_closed_v1.json",
+      "symbol": "schema",
+      "classification": "schema_only",
+      "surface": [],
+      "notes": "Defines payload contract; does not emit runtime events."
+    }
+  ],
+  "primary_local_hypothesis": "Missed canonical close parity was caused by relying on the portfolio non-zero to zero edge as the only producer, while authoritative close reconciliation could reset local state without emitting POSITION_CLOSED.",
+  "cheap_discriminating_check": "If close-surface unmatched rows are dominated by trade_lifecycle ORPHANED_TTL and the reconcile path performs reset without canonical emission, the defect is reconcile parity rather than builder drift."
+}

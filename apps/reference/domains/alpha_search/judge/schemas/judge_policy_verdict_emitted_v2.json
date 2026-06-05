@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Judge Policy Verdict Emitted V2 Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_name", "payload"],
+  "properties": {
+    "event_name": {
+      "const": "EVT:JUDGE_POLICY_VERDICT_EMITTED_V2"
+    },
+    "payload": {
+      "type": "object",
+      "required": ["schema_version", "authority_status", "applied", "verdict_id"],
+      "properties": {
+        "schema_version": {"const": "2.0.0"},
+        "authority_status": {"const": "shadow_only"},
+        "applied": {"const": false},
+        "verdict_id": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    }
+  }
+}

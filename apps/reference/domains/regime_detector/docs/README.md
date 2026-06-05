@@ -1,0 +1,22 @@
+# Домен Regime Detector
+
+## 1. Опис
+Цей домен забезпечує систему розумінням ринкового контексту. Він класифікує фази ринку на основі волатильності та тренду, дозволяючи стратегіям адаптувати свою поведінку.
+
+## 2. Навігація по документації
+- [**ATLAS.md**](./ATLAS.md) — Карта домену: моделі, залежності та вхідні дані. **Головна точка входу.**
+- [**ARCHITECTURE.md**](./ARCHITECTURE.md) — Внутрішня будова: пріоритети моделей, гістерезис та гейти якості.
+- [**EVENT_CONTRACTS.md**](./EVENT_CONTRACTS.md) — Специфікація події `EVT:REGIME_DETECTED`.
+- [**ALGORITHMS_AND_MATH.md**](./ALGORITHMS_AND_MATH.md) — Формули впевненості тренду, волатильності та Slope Gate.
+- [**QUALITY_AND_DEBT.md**](./QUALITY_AND_DEBT.md) — Аналіз технічного боргу та планів (HMM).
+- [**TESTING.md**](./TESTING.md) — Сценарії тестування переходів режимів.
+
+## 3. Використання
+Домен ініціалізується в оркестраторі та автоматично слухає `EVT:FEATURES_CALCULATED`.
+Налаштування порогів та моделей здійснюється в `regime.yaml`.
+
+---
+> **Staleness note (2026-03-14, RD-DOMAIN-AUDIT):** This auto-generated documentation may be stale.
+> The authoritative domain reference is `../README.md` in the domain root.
+
+*Документація згенерована автоматично (Domain Cartographer v1.0)*

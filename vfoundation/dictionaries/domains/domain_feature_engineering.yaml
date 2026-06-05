@@ -1,0 +1,30 @@
+domain: feature_engineering
+version: "1.0"
+description: "Calculate trading features from market data (RSI, EMA, volatility, etc.)"
+
+modules:
+  - feature_engineering.py
+
+imports:
+  - op: EVT
+    verb: MARKET_TICK_RECEIVED
+    from: market_data
+    description: "Real-time market tick for feature calculation"
+
+exports:
+  - op: EVT
+    verb: FEATURES_CALCULATED
+    to: [risk_management, decision_making]
+    description: "Computed features for symbol (RSI, EMA, volatility, etc.)"
+
+critical_paths:
+  - "market_data -> feature_engineering (EVT:MARKET_TICK_RECEIVED)"
+  - "feature_engineering -> risk_management (EVT:FEATURES_CALCULATED)"
+  - "feature_engineering -> decision_making (EVT:FEATURES_CALCULATED)"
+
+features:
+  - rsi_14
+  - ema_9, ema_21
+  - volatility_stddev
+  - volume_profile
+  - price_momentum

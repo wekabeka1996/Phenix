@@ -1,0 +1,134 @@
+{
+  "bundle_root": "logs/frozen/package_o_smoke/nrr062_fresh_capture_20260605_133915",
+  "packages": [
+    {
+      "active_symbols": [
+        "BTCUSDT"
+      ],
+      "bucket_counts": {
+        "CLOSED_CANONICAL_PROFIT": 1
+      },
+      "bundle_root": "logs/frozen/nrr062_fresh_capture_20260515_180927",
+      "distinct_rid_count": 1,
+      "downstream_no_effect_confirmed": 0,
+      "fees_quote": 1.9257384,
+      "filled_position_still_open": 0,
+      "flats": 0,
+      "gross_pnl_quote": 24.6,
+      "losses": 0,
+      "net_pnl_quote": 22.6742616,
+      "package": "H",
+      "profit_factor": null,
+      "resolved_closes": 1,
+      "row_count": 1,
+      "submitted_not_filled": 0,
+      "terminal_status_counts": {
+        "INVALID_FOR_DATASET": 1
+      },
+      "win_rate_percent": 100.0,
+      "wins": 1
+    },
+    {
+      "active_symbols": [
+        "BTCUSDT"
+      ],
+      "bucket_counts": {
+        "DOWNSTREAM_NO_EFFECT_CONFIRMED": 7
+      },
+      "bundle_root": "logs/frozen/nrr062_fresh_capture_20260517_210245",
+      "distinct_rid_count": 7,
+      "downstream_no_effect_confirmed": 7,
+      "fees_quote": 0.0,
+      "filled_position_still_open": 0,
+      "flats": 0,
+      "gross_pnl_quote": 0.0,
+      "losses": 0,
+      "net_pnl_quote": 0.0,
+      "package": "L",
+      "profit_factor": null,
+      "resolved_closes": 0,
+      "row_count": 7,
+      "submitted_not_filled": 0,
+      "terminal_status_counts": {
+        "REJECTED_UPSTREAM": 7
+      },
+      "win_rate_percent": null,
+      "wins": 0
+    },
+    {
+      "active_symbols": [
+        "1000PEPEUSDT",
+        "BTCUSDT",
+        "ETHUSDT",
+        "XRPUSDT"
+      ],
+      "bucket_counts": {
+        "CLOSED_CANONICAL_LOSS": 5,
+        "CLOSED_CANONICAL_PROFIT": 3,
+        "CLOSED_NON_CANONICAL_EVIDENCE": 2,
+        "DOWNSTREAM_NO_EFFECT_CONFIRMED": 9,
+        "FILLED_POSITION_STILL_OPEN": 1,
+        "SUBMITTED_NOT_FILLED": 2
+      },
+      "bundle_root": "logs/frozen/nrr062_fresh_capture_20260529_065313",
+      "distinct_rid_count": 22,
+      "downstream_no_effect_confirmed": 9,
+      "fees_quote": 17.23021793,
+      "filled_position_still_open": 1,
+      "flats": 0,
+      "gross_pnl_quote": 22.178938540000004,
+      "losses": 5,
+      "net_pnl_quote": 4.948720610000013,
+      "package": "N",
+      "profit_factor": 1.0819827427133113,
+      "resolved_closes": 10,
+      "row_count": 22,
+      "submitted_not_filled": 2,
+      "terminal_status_counts": {
+        "INVALID_FOR_DATASET": 10,
+        "REJECTED_UPSTREAM": 11
+      },
+      "win_rate_percent": 30.0,
+      "wins": 3
+    },
+    {
+      "active_symbols": [
+        "1000PEPEUSDT",
+        "BTCUSDT",
+        "ETHUSDT",
+        "SOLUSDT",
+        "XRPUSDT"
+      ],
+      "bucket_counts": {
+        "CLOSED_CANONICAL_LOSS": 16,
+        "CLOSED_CANONICAL_PROFIT": 8,
+        "CLOSED_NON_CANONICAL_EVIDENCE": 3,
+        "DOWNSTREAM_NO_EFFECT_CONFIRMED": 20,
+        "FILLED_POSITION_STILL_OPEN": 2,
+        "SUBMITTED_NOT_FILLED": 30
+      },
+      "bundle_root": "logs/frozen/package_o_smoke/nrr062_fresh_capture_20260605_133915",
+      "distinct_rid_count": 79,
+      "downstream_no_effect_confirmed": 20,
+      "fees_quote": 37.17135905999999,
+      "filled_position_still_open": 2,
+      "flats": 0,
+      "gross_pnl_quote": -94.73414646,
+      "losses": 16,
+      "net_pnl_quote": -131.90550552,
+      "package": "P",
+      "profit_factor": 0.6275905480548548,
+      "resolved_closes": 27,
+      "row_count": 79,
+      "submitted_not_filled": 30,
+      "terminal_status_counts": {
+        "EXECUTED_AND_CLOSED": 11,
+        "INVALID_FOR_DATASET": 45,
+        "REJECTED_UPSTREAM": 22
+      },
+      "win_rate_percent": 29.629629629629626,
+      "wins": 8
+    }
+  ],
+  "verdict": "P_REMAINS_ENABLE_COHORT_ALIGNED_WITH_H_L_N_HISTORY"
+}

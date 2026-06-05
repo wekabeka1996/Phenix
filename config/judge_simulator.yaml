@@ -1,0 +1,49 @@
+# PKG-2 SSOT (2026-05-21):
+# This file is the AUTHORITATIVE source for fee/slippage parameters used by
+# the official offline Judge analysis pipeline (PKG-1 → PKG-4):
+#   - apps/reference/domains/alpha_search/judge/simulator/cli.py
+#   - apps/reference/domains/alpha_search/judge/simulator/simulator_engine.py
+#   - apps/reference/domains/alpha_search/judge/simulator/fee_slippage_calculator.py
+#   - apps/reference/domains/alpha_search/judge/review/engine.py
+#   - tools/judge/build_outcomes_from_candles.py (PKG-1, when implemented)
+#
+# Units:
+#   fee_per_cycle_bps : basis points per round-trip cycle (divided by 10_000)
+#   slippage_pct      : percentage points per cycle (divided by 100)
+#                       0.1 pct == 10 bps == 0.001 decimal return cost
+#
+# DO NOT duplicate these numbers elsewhere. The forensic shadow simulator
+# (apps/reference/domains/alpha_search/judge/shadow_simulator.py) has its
+# own fees/slippage block under config/alpha_search.yaml judge.simulator
+# and is NOT part of the official pipeline; see PKG_2 report.
+judge_simulator:
+  enabled: false
+  judge_logs_path: "./logs/judge_experts"
+  outcome_data_path: "./data/simulator/outcomes.json"
+  calibration_dataset_path: "./artifacts/phase5_calibration.jsonl"
+  summary_report_path: "./artifacts/phase5_summary_report.json"
+  fee_per_cycle_bps: 25
+  slippage_pct: 0.1
+
+  # PKG-3 economics / notional contract (OPTIONAL).
+  #
+  # PRESENCE SEMANTICS:
+  #   * OMITTED (current state)   → USD ROI metrics are DISABLED.
+  #                                 Phase 5/6 report percent-return only.
+  #                                 PKG-1 manifest records notional_mode="pct_only".
+  #                                 No hidden default notional. No fabricated USD numbers.
+  #   * PRESENT                    → USD ROI metrics are enabled.
+  #                                 PKG-1 manifest records the full pointer block,
+  #                                 derives qty per outcome via tools/judge/notional.py,
+  #                                 and reuses the production qty_normalizer for
+  #                                 step_size / min_qty / min_notional fail-closed checks.
+  #
+  # To enable USD ROI, uncomment and tune:
+  #
+  # economics:
+  #   notional_usd_per_trade: 5000.0
+  #   leverage_source: "none"               # or "instruments_yaml" for margin ROI
+  #   qty_normalization: "instrument_step_size"  # or "raw" for diagnostics only
+  #   min_notional_policy: "fail_closed"    # or "skip" (alias for fail_closed)
+  #   roi_usd_targets: [5.0, 8.0]           # absolute USD profit thresholds to track
+  #   instruments_config_path: "config/aurora/instruments.yaml"

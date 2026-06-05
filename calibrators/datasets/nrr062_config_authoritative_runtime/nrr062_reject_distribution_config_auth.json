@@ -1,0 +1,199 @@
+{
+  "generated_at_utc": "2026-05-14T05:16:11.068160+00:00",
+  "summary": {
+    "reject_rows": 227,
+    "structured_rows": 227,
+    "parse_quality_counts": {
+      "STRUCTURED_METADATA_COMPLETE": 227
+    }
+  },
+  "distributions": {
+    "symbol": [
+      {
+        "segment": "symbol:ETHUSDT",
+        "value": "ETHUSDT",
+        "rejects": 108,
+        "share_pct": 47.577093,
+        "notes": ""
+      },
+      {
+        "segment": "symbol:BTCUSDT",
+        "value": "BTCUSDT",
+        "rejects": 76,
+        "share_pct": 33.480176,
+        "notes": ""
+      },
+      {
+        "segment": "symbol:XRPUSDT",
+        "value": "XRPUSDT",
+        "rejects": 43,
+        "share_pct": 18.942731,
+        "notes": ""
+      }
+    ],
+    "side": [
+      {
+        "segment": "side:SELL",
+        "value": "SELL",
+        "rejects": 161,
+        "share_pct": 70.92511,
+        "notes": ""
+      },
+      {
+        "segment": "side:BUY",
+        "value": "BUY",
+        "rejects": 66,
+        "share_pct": 29.07489,
+        "notes": ""
+      }
+    ],
+    "position_side": [
+      {
+        "segment": "position_side:SHORT",
+        "value": "SHORT",
+        "rejects": 161,
+        "share_pct": 70.92511,
+        "notes": ""
+      },
+      {
+        "segment": "position_side:LONG",
+        "value": "LONG",
+        "rejects": 66,
+        "share_pct": 29.07489,
+        "notes": ""
+      }
+    ],
+    "strategy_id": [
+      {
+        "segment": "strategy_id:aurora",
+        "value": "aurora",
+        "rejects": 227,
+        "share_pct": 100.0,
+        "notes": ""
+      }
+    ],
+    "regime": [
+      {
+        "segment": "regime:LOW_VOLATILITY",
+        "value": "LOW_VOLATILITY",
+        "rejects": 227,
+        "share_pct": 100.0,
+        "notes": ""
+      }
+    ],
+    "selected_source": [
+      {
+        "segment": "selected_source:signal_score",
+        "value": "signal_score",
+        "rejects": 227,
+        "share_pct": 100.0,
+        "notes": ""
+      }
+    ],
+    "selected_scale": [
+      {
+        "segment": "selected_scale:raw_signed_score",
+        "value": "raw_signed_score",
+        "rejects": 227,
+        "share_pct": 100.0,
+        "notes": ""
+      }
+    ],
+    "threshold_family": [
+      {
+        "segment": "threshold_family:raw_signed_score",
+        "value": "raw_signed_score",
+        "rejects": 227,
+        "share_pct": 100.0,
+        "notes": ""
+      }
+    ],
+    "session": [
+      {
+        "segment": "session:AMER_UTC_16_23",
+        "value": "AMER_UTC_16_23",
+        "rejects": 114,
+        "share_pct": 50.220264,
+        "notes": ""
+      },
+      {
+        "segment": "session:ASIA_UTC_00_07",
+        "value": "ASIA_UTC_00_07",
+        "rejects": 82,
+        "share_pct": 36.123348,
+        "notes": ""
+      },
+      {
+        "segment": "session:EMEA_UTC_08_15",
+        "value": "EMEA_UTC_08_15",
+        "rejects": 31,
+        "share_pct": 13.656388,
+        "notes": ""
+      }
+    ],
+    "required_gross_tp_bps_floor_bucket": [
+      {
+        "segment": "required_gross_tp_bps_floor_bucket:20-30bps",
+        "value": "20-30bps",
+        "rejects": 227,
+        "share_pct": 100.0,
+        "notes": ""
+      }
+    ],
+    "gross_tp_bps_bucket": [
+      {
+        "segment": "gross_tp_bps_bucket:75-100bps",
+        "value": "75-100bps",
+        "rejects": 227,
+        "share_pct": 100.0,
+        "notes": ""
+      }
+    ],
+    "direction_confidence_bucket": [
+      {
+        "segment": "direction_confidence_bucket:<0.01",
+        "value": "<0.01",
+        "rejects": 196,
+        "share_pct": 86.343612,
+        "notes": ""
+      },
+      {
+        "segment": "direction_confidence_bucket:0.01-0.05",
+        "value": "0.01-0.05",
+        "rejects": 31,
+        "share_pct": 13.656388,
+        "notes": ""
+      }
+    ],
+    "regime_confidence_bucket": [
+      {
+        "segment": "regime_confidence_bucket:>=0.39",
+        "value": ">=0.39",
+        "rejects": 146,
+        "share_pct": 64.317181,
+        "notes": ""
+      },
+      {
+        "segment": "regime_confidence_bucket:0.25-0.35",
+        "value": "0.25-0.35",
+        "rejects": 50,
+        "share_pct": 22.026432,
+        "notes": ""
+      },
+      {
+        "segment": "regime_confidence_bucket:0.15-0.25",
+        "value": "0.15-0.25",
+        "rejects": 18,
+        "share_pct": 7.929515,
+        "notes": ""
+      },
+      {
+        "segment": "regime_confidence_bucket:0.35-0.39",
+        "value": "0.35-0.39",
+        "rejects": 13,
+        "share_pct": 5.726872,
+        "notes": ""
+      }
+    ]
+  }
+}

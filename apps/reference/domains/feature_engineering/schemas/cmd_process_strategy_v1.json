@@ -1,0 +1,384 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cmd_process_strategy_v1.json",
+  "title": "Process Strategy Command",
+  "description": "Schema for CMD:PROCESS_STRATEGY (unified bar-driven trigger emitted by FeatureEngineering after bar features are computed).",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Trading instrument symbol (e.g., 'BTCUSDT')"
+    },
+    "tf_sec": {
+      "type": "integer",
+      "minimum": 60,
+      "maximum": 3600,
+      "description": "Timeframe in seconds (bar aggregation interval)"
+    },
+    "bar_close_ts": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Legacy compatibility alias for bar_identity.bar_end_ts_ms"
+    },
+    "close_boundary_ts_ms": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Canonical close boundary timestamp in milliseconds epoch"
+    },
+    "source_mode": {
+      "type": "string",
+      "enum": [
+        "live",
+        "replay",
+        "warmup_import",
+        "synthetic_repair"
+      ]
+    },
+    "replay_generation": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "bar_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "timeframe_sec",
+        "bar_start_ts_ms",
+        "bar_end_ts_ms",
+        "close_boundary_ts_ms",
+        "source_mode"
+      ],
+      "properties": {
+        "symbol": {"type": "string"},
+        "timeframe_sec": {"type": "integer", "minimum": 1},
+        "bar_start_ts_ms": {"type": "integer"},
+        "bar_end_ts_ms": {"type": "integer"},
+        "close_boundary_ts_ms": {"type": "integer"},
+        "source_mode": {
+          "type": "string",
+          "enum": [
+            "live",
+            "replay",
+            "warmup_import",
+            "synthetic_repair"
+          ]
+        }
+      }
+    },
+    "replay_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "timeframe_sec",
+        "close_boundary_ts_ms",
+        "source_mode",
+        "replay_generation"
+      ],
+      "properties": {
+        "symbol": {"type": "string"},
+        "timeframe_sec": {"type": "integer", "minimum": 1},
+        "close_boundary_ts_ms": {"type": "integer"},
+        "source_mode": {
+          "type": "string",
+          "enum": [
+            "live",
+            "replay",
+            "warmup_import",
+            "synthetic_repair"
+          ]
+        },
+        "replay_generation": {"type": "integer", "minimum": 0}
+      }
+    },
+    "gap_state": {
+      "type": "string",
+      "enum": [
+        "CLEAR",
+        "GAP_DETECTED",
+        "REPAIRED",
+        "INVALIDATED"
+      ]
+    },
+    "gap_policy_action": {
+      "type": "string",
+      "enum": [
+        "NONE",
+        "REPAIR",
+        "INVALIDATE",
+        "DEGRADE_TO_NON_TRADING"
+      ]
+    },
+    "gap_bars_skipped": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "is_gap_bar": {
+      "type": "boolean"
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "bar": {
+      "description": "Full OHLCV bar (SSOT) if available; may be null when upstream bar cache is missing.",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "symbol": {
+              "type": "string"
+            },
+            "timeframe_sec": {
+              "type": "integer"
+            },
+            "open": {
+              "type": "string"
+            },
+            "high": {
+              "type": "string"
+            },
+            "low": {
+              "type": "string"
+            },
+            "close": {
+              "type": "string"
+            },
+            "volume": {
+              "type": "string"
+            },
+            "trade_count": {
+              "type": "integer"
+            },
+            "start_ts_ms": {
+              "type": "integer"
+            },
+            "end_ts_ms": {
+              "type": "integer"
+            },
+            "close_boundary_ts_ms": {
+              "type": "integer"
+            },
+            "source_mode": {
+              "type": "string",
+              "enum": [
+                "live",
+                "replay",
+                "warmup_import",
+                "synthetic_repair"
+              ]
+            },
+            "bar_identity": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "replay_identity": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "replay_generation": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "gap_state": {
+              "type": "string",
+              "enum": [
+                "CLEAR",
+                "GAP_DETECTED",
+                "REPAIRED",
+                "INVALIDATED"
+              ]
+            },
+            "gap_policy_action": {
+              "type": "string",
+              "enum": [
+                "NONE",
+                "REPAIR",
+                "INVALIDATE",
+                "DEGRADE_TO_NON_TRADING"
+              ]
+            },
+            "gap": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "symbol",
+            "timeframe_sec",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "features": {
+      "type": "object",
+      "description": "Feature set computed for the bar-close trigger. Includes base features + EP-01.1 volatility/liquidity.",
+      "properties": {
+        "volatility": {
+          "type": "object",
+          "description": "EP-01.1: Bar-based volatility features for SL/TP sizing.",
+          "properties": {
+            "bar_range": {
+              "type": "string",
+              "description": "high - low (Decimal as string)"
+            },
+            "bar_body": {
+              "type": "string",
+              "description": "|close - open| (Decimal as string)"
+            },
+            "true_range": {
+              "type": "string",
+              "description": "TR = max(H-L, |H-prev_close|, |L-prev_close|)"
+            },
+            "atr_14": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ATR_14 (rolling mean of last 14 TR values); null if warmup incomplete"
+            },
+            "range_pct": {
+              "type": "number",
+              "description": "bar_range / close (normalized)"
+            },
+            "atr_pct": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "atr_14 / close (normalized); null if warmup incomplete"
+            },
+            "atr_ready": {
+              "type": "boolean",
+              "description": "True if ATR has sufficient history (>= 14 bars)"
+            }
+          },
+          "required": [
+            "bar_range",
+            "bar_body",
+            "true_range",
+            "atr_ready"
+          ],
+          "additionalProperties": false
+        },
+        "liquidity": {
+          "type": "object",
+          "description": "EP-01.1: Liquidity snapshot at bar close.",
+          "properties": {
+            "obi_close": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "OBI snapshot at bar close (Decimal as string); null if no tick data yet"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "warmup": {
+      "type": "object",
+      "description": "FeatureEngineering warmup/readiness snapshot at emit time.",
+      "properties": {
+        "full_ready": {
+          "type": "boolean"
+        },
+        "ticks_seen": {
+          "type": "integer"
+        },
+        "ready": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "full_ready",
+        "ticks_seen"
+      ],
+      "additionalProperties": true
+    },
+    "regime": {
+      "description": "Regime snapshot injected by FeatureEngineering (from EVT:REGIME_DETECTED cache); may be null before first regime emission.",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": true
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "diagnostics": {
+      "type": "object",
+      "description": "FE emission diagnostics snapshot: counters, warmup state, anchor intake.",
+      "additionalProperties": true
+    },
+    "price_motion": {
+      "description": "MR-V1-WIRING: Multi-window returns/volatility proxy for microstructure veto price-reaction logic.",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "ret_10s": { "type": ["number", "null"] },
+            "ret_60s": { "type": ["number", "null"] },
+            "ret_300s": { "type": ["number", "null"] },
+            "vol_pct_10s": { "type": ["number", "null"], "minimum": 0 },
+            "vol_pct_60s": { "type": ["number", "null"], "minimum": 0 },
+            "vol_pct_300s": { "type": ["number", "null"], "minimum": 0 },
+            "pm_norm_10s": { "type": ["number", "null"] },
+            "pm_norm_60s": { "type": ["number", "null"] },
+            "pm_norm_300s": { "type": ["number", "null"] }
+          },
+          "required": ["ret_10s", "ret_60s", "ret_300s"],
+          "additionalProperties": true
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "symbol",
+    "tf_sec",
+    "bar_close_ts",
+    "bar",
+    "features",
+    "warmup",
+    "regime"
+  ],
+  "additionalProperties": false
+}

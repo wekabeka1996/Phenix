@@ -1,0 +1,744 @@
+"""
+Binance WebSocket Client.
+
+Extracted from the legacy BinanceExecutionAdapter.
+Handles WebSocket connection to Binance Futures User Data Stream.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import threading
+import time
+from typing import Dict, Optional, Any
+from apps.reference.domains.execution_position.contract_layer.terminal_order_contracts import (
+    normalize_order_rejected_payload,
+    normalize_order_state_changed_payload,
+    sync_trade_lifecycle_terminal_order_event,
+)
+from apps.reference.telemetry.trade_lifecycle_logger import (
+    EXECUTION_WS_TERMINAL_RECORD_KIND,
+    append_trade_lifecycle_record,
+)
+
+# Try to import metrics and audit logger, provide mocks if missing
+try:
+    from apps.reference.telemetry.metrics import (
+        inc_order_state,
+        observe_order_lifecycle,
+    )
+except ImportError:
+    def inc_order_state(status: str):
+        pass
+
+    def observe_order_lifecycle(duration_sec: float):
+        pass
+
+try:
+    from apps.reference.telemetry.audit_logger import audit_logger
+except ImportError:
+    class MockAuditLogger:
+        def log_order_state_changed(self, **kwargs):
+            pass
+    audit_logger = MockAuditLogger()
+
+logger = logging.getLogger(__name__)
+
+
+class BinanceWebSocketClient:
+    """
+    Standalone WebSocket client for Binance Futures User Data Stream.
+    """
+
+    def __init__(self, api_key: str, base_url: str, use_testnet: bool, fsm_core: Any,
+                 main_loop: Optional[asyncio.AbstractEventLoop] = None):
+        """
+        Initialize Binance WebSocket Client.
+
+        Args:
+            api_key: Binance API Key.
+            base_url: Base URL for REST API (to get listen key).
+            use_testnet: Whether to use testnet URLs.
+            fsm_core: FSM instance for event emission and order correlation.
+            main_loop: Main asyncio event loop for thread-safe event delivery.
+        """
+        self.api_key = api_key
+        self.base_url = base_url
+        self.use_testnet = use_testnet
+        self.fsm_core = fsm_core
+
+        self.ws_listen_key: Optional[str] = None
+        self.ws_thread: Optional[threading.Thread] = None
+        self.ws_running = False
+        self.ws_reconnect_delay = 1.0
+        self.ws_max_reconnect_delay = 60.0
+        self.listen_key_last_refresh = 0.0
+
+        # FILL-PIPELINE-FIX: Accept main loop explicitly instead of guessing
+        if main_loop is not None:
+            self._loop = main_loop
+        else:
+            try:
+                self._loop = asyncio.get_running_loop()
+            except RuntimeError:
+                logger.warning(
+                    "[BinanceWS] No running event loop captured in __init__. Safe emit may fail if used.")
+                self._loop = None
+        self._account_update_contract_warning_logged = False
+
+    def _safe_emit(
+        self,
+        event_name: str,
+        payload: Dict[str, Any],
+        why: str,
+        *,
+        write_wal: bool = False,
+        src: str = "binance_ws_client",
+        dst: str = "execution_position",
+    ) -> None:
+        """
+        Thread-safe wrapper for fsm_core.emit.
+        Marshals the call to the main event loop.
+        """
+        def _emit_on_main_loop() -> None:
+            if write_wal:
+                try:
+                    from vfoundation.core.protocol import Message
+                    from vfoundation.dr import wal
+
+                    op, verb = event_name.split(":", 1)
+                    wal.append(
+                        Message(
+                            op=op,
+                            verb=verb,
+                            src=src,
+                            dst=dst,
+                            rid=payload.get("rid"),
+                            pld=payload,
+                            why=why,
+                        ).model_dump()
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "[BinanceWS] Failed to write %s to WAL before emit: %s",
+                        event_name,
+                        exc,
+                    )
+            self.fsm_core.emit(event_name, payload, why)
+            sync_trade_lifecycle_terminal_order_event(
+                event_name,
+                payload,
+                logger=logger,
+            )
+
+        if self._loop and self.fsm_core:
+            self._loop.call_soon_threadsafe(_emit_on_main_loop)
+        else:
+            # Fallback (dangerous, but better than silent drop if loop missing)
+            logger.warning(
+                f"[BinanceWS] _safe_emit called without loop layer! Thread safety compromised for {event_name}")
+            if self.fsm_core:
+                _emit_on_main_loop()
+
+    def _append_terminal_ws_record(
+        self,
+        *,
+        event_type: str,
+        symbol: str,
+        client_order_id: str,
+        exchange_order_id: str,
+        order_status: str,
+        order_type: str,
+        event_ts_ms: int,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        record = {
+            "record_kind": EXECUTION_WS_TERMINAL_RECORD_KIND,
+            "event_type": event_type,
+            "ts_ms": int(time.time() * 1000),
+            "event_ts_ms": event_ts_ms,
+            "symbol": symbol,
+            "client_order_id": client_order_id or None,
+            "exchange_order_id": exchange_order_id or None,
+            "status": order_status,
+            "order_type": order_type,
+        }
+        if context:
+            record.update(
+                {
+                    "rid": context.get("rid"),
+                    "corr_id": context.get("corr_id"),
+                    "bracket_role": context.get("bracket_role"),
+                    "tracked_bracket_order_id": context.get("tracked_bracket_order_id"),
+                    "parent_entry_order_id": context.get("parent_entry_order_id"),
+                    "terminal_correlation_source": context.get("correlation_source"),
+                }
+            )
+        append_trade_lifecycle_record(
+            {key: value for key, value in record.items() if value is not None}
+        )
+
+    def _recent_exact_terminal_fill_seen(
+        self,
+        *,
+        symbol: str,
+        client_order_id: str,
+        exchange_order_id: str,
+        trade_id: str,
+    ) -> Optional[tuple[str, str]]:
+        if self.fsm_core is None:
+            return None
+        try:
+            from apps.reference.domains.execution_position.state.truth_hardening import get_execution_truth_hardening
+
+            hardening = get_execution_truth_hardening(self.fsm_core)
+            if hardening is None:
+                return None
+            decision = hardening.peek_trade_executed(
+                {
+                    "symbol": symbol,
+                    "orderId": exchange_order_id,
+                    "exchangeOrderId": exchange_order_id,
+                    "clientOrderId": client_order_id,
+                    "client_order_id": client_order_id,
+                    "tradeId": trade_id,
+                    "trade_id": trade_id,
+                },
+                order_index=getattr(self.fsm_core, "order_index", None),
+            )
+        except Exception:
+            return None
+
+        if decision.suppress and decision.exact_identity:
+            return str(decision.key or ""), str(decision.identity_quality or "")
+        return None
+
+    @staticmethod
+    def _is_close_bearing_terminal_update(
+        *,
+        order_status: str,
+        order_type: str,
+        order_data: Dict[str, Any],
+    ) -> bool:
+        status_upper = str(order_status or "").upper()
+        order_type_upper = str(order_type or "").upper()
+        reduce_only = str(order_data.get("R", "")).lower() == "true"
+        close_position = str(order_data.get("cp", "")).lower() == "true"
+        return (
+            status_upper in {"FILLED", "PARTIALLY_FILLED",
+                             "CANCELED", "EXPIRED", "REJECTED"}
+            and (
+                order_type_upper in {"STOP_MARKET", "TAKE_PROFIT_MARKET"}
+                or reduce_only
+                or close_position
+            )
+        )
+
+    def start(self) -> None:
+        """
+        Start WebSocket connection in a background thread.
+        """
+        if self.ws_thread is not None and self.ws_thread.is_alive():
+            logger.warning("[BinanceWS] WebSocket already running")
+            return
+
+        logger.info(
+            "[BinanceWS] Starting WebSocket connection to USER_DATA_STREAM")
+        self.ws_running = True
+        self.ws_thread = threading.Thread(
+            target=self._websocket_loop, daemon=True)
+        self.ws_thread.start()
+        logger.info("[BinanceWS] WebSocket thread started")
+
+    def stop(self) -> None:
+        """
+        Stop WebSocket connection.
+        """
+        logger.info("[BinanceWS] Stopping WebSocket...")
+        self.ws_running = False
+
+        if self.ws_thread and self.ws_thread.is_alive():
+            self.ws_thread.join(timeout=5.0)
+            if self.ws_thread.is_alive():
+                logger.warning(
+                    "[BinanceWS] WebSocket thread did not stop gracefully")
+
+        logger.info("[BinanceWS] WebSocket stopped")
+
+    def _websocket_loop(self) -> None:
+        """
+        Main WebSocket connection loop with reconnection logic.
+        """
+        while self.ws_running:
+            try:
+                self._establish_websocket_connection()
+                # Reset reconnect delay on successful connection
+                self.ws_reconnect_delay = 1.0
+            except Exception as e:
+                logger.error(f"[BinanceWS] WebSocket connection failed: {e}")
+                if self.ws_running:
+                    logger.info(
+                        f"[BinanceWS] Retrying WebSocket connection in {self.ws_reconnect_delay}s")
+                    time.sleep(self.ws_reconnect_delay)
+                    # Exponential backoff
+                    self.ws_reconnect_delay = min(
+                        self.ws_reconnect_delay * 2, self.ws_max_reconnect_delay
+                    )
+
+    def _establish_websocket_connection(self) -> None:
+        """
+        Establish WebSocket connection to USER_DATA_STREAM.
+        """
+        try:
+            # Get listen key
+            self._get_listen_key()
+
+            import websockets
+            import json
+
+            ws_url = (
+                f"wss://fstream.binance.com/ws/{self.ws_listen_key}"
+                if not self.use_testnet
+                else f"wss://stream.binancefuture.com/ws/{self.ws_listen_key}"
+            )
+
+            logger.info(f"[BinanceWS] Connecting to WebSocket: {ws_url}")
+
+            # FILL-PIPELINE-FIX: Use a dedicated loop for the WS thread,
+            # but deliver events to self._loop (main thread) via _safe_emit
+            ws_loop = asyncio.new_event_loop()
+
+            async def ws_handler():
+                try:
+                    async with websockets.connect(ws_url) as websocket:
+                        logger.info(
+                            "[BinanceWS] WebSocket connected successfully")
+
+                        while self.ws_running:
+                            try:
+                                # Receive message with timeout
+                                message = await asyncio.wait_for(websocket.recv(), timeout=30.0)
+                                msg_data = json.loads(message)
+                                self._handle_ws_message(msg_data)
+
+                            except asyncio.TimeoutError:
+                                # Send ping to keep connection alive
+                                await websocket.ping()
+                                # Also refresh listen key periodically (every 30 mins approx)
+                                if time.time() - self.listen_key_last_refresh > 1800:
+                                    self._refresh_listen_key()
+
+                            except websockets.exceptions.ConnectionClosed:
+                                logger.warning(
+                                    "[BinanceWS] WebSocket connection closed")
+                                break
+
+                except Exception as e:
+                    logger.error(f"[BinanceWS] WebSocket handler error: {e}")
+                    raise
+
+            # Run WebSocket handler
+            # FILL-PIPELINE-FIX-AUDIT: close event loop on reconnect to prevent leak (F-5)
+            try:
+                ws_loop.run_until_complete(ws_handler())
+            finally:
+                ws_loop.close()
+
+        except Exception as e:
+            logger.error(
+                f"[BinanceWS] Failed to establish WebSocket connection: {e}")
+            raise
+
+    def _get_listen_key(self) -> None:
+        """
+        Get listen key for USER_DATA_STREAM.
+        """
+        url = f"{self.base_url}/fapi/v1/listenKey"
+        headers = {"X-MBX-APIKEY": self.api_key}
+
+        import requests
+        resp = requests.post(url, headers=headers, timeout=10)
+        if resp.ok:
+            data = resp.json()
+            self.ws_listen_key = data.get("listenKey")
+            self.listen_key_last_refresh = time.time()
+            logger.info(
+                f"[BinanceWS] Obtained listen key: {self.ws_listen_key[:10]}...")
+        else:
+            raise RuntimeError(
+                f"Failed to get listen key: HTTP {resp.status_code} {resp.text}")
+
+    def _refresh_listen_key(self) -> None:
+        """
+        Refresh listen key to keep USER_DATA_STREAM alive.
+        """
+        if not self.ws_listen_key:
+            return
+
+        url = f"{self.base_url}/fapi/v1/listenKey"
+        headers = {"X-MBX-APIKEY": self.api_key}
+        params = {"listenKey": self.ws_listen_key}
+
+        import requests
+        try:
+            resp = requests.put(url, headers=headers,
+                                params=params, timeout=10)
+            if resp.ok:
+                self.listen_key_last_refresh = time.time()
+                logger.debug("[BinanceWS] Listen key refreshed")
+            else:
+                logger.warning(
+                    f"[BinanceWS] Failed to refresh listen key: HTTP {resp.status_code}")
+        except Exception as e:
+            logger.warning(f"[BinanceWS] Failed to refresh listen key: {e}")
+
+    def _handle_ws_message(self, msg: Dict[str, Any]) -> None:
+        """
+        Handle incoming WebSocket messages.
+        """
+        try:
+            logger.debug(f"[BinanceWS] WS message received: {msg}")
+
+            event_type = msg.get("e")
+            if event_type == "ORDER_TRADE_UPDATE":
+                self._handle_order_trade_update(msg)
+            elif event_type == "ACCOUNT_UPDATE":
+                self._handle_account_update(msg)
+            else:
+                logger.debug(
+                    f"[BinanceWS] Ignoring unknown event type: {event_type}")
+
+        except Exception as e:
+            logger.error(
+                f"[BinanceWS] Error handling WS message: {e}", exc_info=True)
+
+    def _handle_order_trade_update(self, msg: Dict[str, Any]) -> None:
+        """
+        Handle ORDER_TRADE_UPDATE event.
+        """
+        try:
+            order_data = msg.get("o", {})
+            client_order_id = order_data.get("c", "")
+            exchange_order_id = str(order_data.get("i", ""))
+            order_status = order_data.get("X", "")
+            symbol = order_data.get("s", "")
+            filled_qty = str(order_data.get("z", "0"))
+            side = order_data.get("S", "").lower()
+            order_type = order_data.get("o", "").lower()
+            # EP-01.5: Extract timeInForce for GTX detection
+            time_in_force = order_data.get("f", "GTC")
+
+            logger.info(
+                f"[BinanceWS] ORDER_TRADE_UPDATE: {symbol} {client_order_id}/{exchange_order_id} status={order_status} tif={time_in_force}"
+            )
+
+            # Correlate order using OrderIndex
+            order_ref = None
+            if hasattr(self.fsm_core, "order_index") and self.fsm_core.order_index:
+                order_ref = self.fsm_core.order_index.get(
+                    clientOrderId=client_order_id)
+                if not order_ref and exchange_order_id:
+                    order_ref = self.fsm_core.order_index.get(
+                        exchangeOrderId=exchange_order_id)
+
+            recovered_context = None
+            if not order_ref:
+                # CANONICAL: OrderIndex is the sole truth for bracket child
+                # correlation. Guardian fallback is NOT used.
+                # If the order is close-bearing (SL/TP/reduceOnly/closePosition)
+                # and not in OrderIndex, this is a contract breach — fail closed.
+                if self._is_close_bearing_terminal_update(
+                    order_status=order_status,
+                    order_type=order_type,
+                    order_data=order_data,
+                ):
+                    duplicate_identity = self._recent_exact_terminal_fill_seen(
+                        symbol=symbol,
+                        client_order_id=client_order_id,
+                        exchange_order_id=exchange_order_id,
+                        trade_id=str(order_data.get("t", "")),
+                    )
+                    if duplicate_identity is not None:
+                        fill_key, identity_quality = duplicate_identity
+                        self._append_terminal_ws_record(
+                            event_type="EXECUTION_WS_TERMINAL_DUPLICATE_IDENTITY_CACHE_HIT",
+                            symbol=symbol,
+                            client_order_id=client_order_id,
+                            exchange_order_id=exchange_order_id,
+                            order_status=order_status,
+                            order_type=order_type,
+                            event_ts_ms=msg.get("T", int(time.time() * 1000)),
+                            context={
+                                "correlation_source": "execution_truth_hardening_exact_identity",
+                            },
+                        )
+                        logger.warning(
+                            "[BinanceWS] Late duplicate close-bearing terminal update %s/%s for %s "
+                            "matched exact prior fill identity %s (%s); dropping without OrderIndex breach.",
+                            client_order_id,
+                            exchange_order_id,
+                            symbol,
+                            fill_key,
+                            identity_quality,
+                        )
+                        return
+                    self._append_terminal_ws_record(
+                        event_type="EXECUTION_WS_BRACKET_CHILD_ORDERINDEX_MISS",
+                        symbol=symbol,
+                        client_order_id=client_order_id,
+                        exchange_order_id=exchange_order_id,
+                        order_status=order_status,
+                        order_type=order_type,
+                        event_ts_ms=msg.get("T", int(time.time() * 1000)),
+                    )
+                    logger.error(
+                        "[BinanceWS] CONTRACT BREACH: close-bearing terminal update %s/%s for %s "
+                        "has no canonical OrderIndex record; fail-closed drop. "
+                        "Bracket child orders MUST be registered in OrderIndex at placement time.",
+                        client_order_id,
+                        exchange_order_id,
+                        symbol,
+                    )
+                    return
+                else:
+                    logger.warning(
+                        f"[BinanceWS] No correlation found for order {client_order_id}/{exchange_order_id}, skipping"
+                    )
+                    return
+
+            # Map Binance status to standardized status
+            status_mapping = {
+                "NEW": "NEW",
+                "PARTIALLY_FILLED": "PARTIALLY_FILLED",
+                "FILLED": "FILLED",
+                "CANCELED": "CANCELED",
+                "REJECTED": "REJECTED",
+                "EXPIRED": "EXPIRED",
+            }
+            standardized_status = status_mapping.get(
+                order_status, order_status)
+
+            # EP-01.5 + EP-01.6: Detect MAKER_ONLY_REJECT (GTX order EXPIRED with 0 fill)
+            # EP-01.6: Use OrderIndex._is_entry_ref() instead of string-hack
+            is_maker_only_reject = False
+            is_entry_order = False
+            try:
+                from apps.reference.domains.execution_position.state.order_index import OrderIndex
+                is_entry_order = bool(
+                    order_ref) and OrderIndex._is_entry_ref(order_ref)
+            except Exception:
+                # Fallback: check clientOrderId for "ENTRY" (legacy, EP-01.5)
+                is_entry_order = "ENTRY" in client_order_id.upper() if client_order_id else False
+
+            # EP-01.6: Decimal-safe parser for filled_qty (no float() cast)
+            filled_qty_is_zero = False
+            try:
+                from decimal import Decimal, InvalidOperation
+                if filled_qty is None or filled_qty == "":
+                    # Fail-closed: if we can't determine filled_qty, don't classify as maker-only reject
+                    logger.debug(
+                        f"[BinanceWS] filled_qty is empty/None, skipping maker-only check")
+                    filled_qty_is_zero = False
+                else:
+                    qty_dec = Decimal(str(filled_qty))
+                    filled_qty_is_zero = qty_dec == 0
+            except (InvalidOperation, ValueError) as e:
+                logger.warning(
+                    f"[BinanceWS] Failed to parse filled_qty={filled_qty!r}: {e}, fail-closed")
+                filled_qty_is_zero = False
+
+            if (standardized_status == "EXPIRED"
+                and time_in_force == "GTX"
+                and is_entry_order
+                    and filled_qty_is_zero):
+                # This is a post-only GTX order that couldn't become maker
+                is_maker_only_reject = True
+                logger.warning(
+                    f"[BinanceWS] 🚫 MAKER_ONLY_REJECT detected: GTX order EXPIRED with 0 fill, "
+                    f"symbol={symbol}, order_id={exchange_order_id}, NO FALLBACK"
+                )
+
+            resolved_rid = getattr(order_ref, "rid", None)
+            resolved_idempotent_key = getattr(
+                order_ref, "idempotent_key", None)
+            resolved_side = getattr(order_ref, "side", None) or side
+            resolved_order_type = getattr(
+                order_ref, "order_type", None) or order_type
+
+            # Create payload
+            payload = {
+                "symbol": symbol,
+                "status": standardized_status,
+                "rid": resolved_rid,
+                "idempotent_key": resolved_idempotent_key,
+                "clientOrderId": client_order_id,
+                "client_order_id": client_order_id,
+                "exchangeOrderId": exchange_order_id,
+                "orderId": exchange_order_id,
+                "tradeId": str(order_data.get("t", "")),
+                "trade_id": str(order_data.get("t", "")),
+                "side": str(resolved_side or side).lower(),
+                "order_type": str(resolved_order_type or order_type).lower(),
+                "qty": filled_qty,
+                "quantity": filled_qty,
+                "price": str(order_data.get("ap", order_data.get("p", "0"))),
+                "time_in_force": time_in_force,  # EP-01.5: Include tif
+                "ts": msg.get("T", int(time.time() * 1000)),
+                "ts_ms": msg.get("T", int(time.time() * 1000)),
+                "venue": "binance",
+                "commission": str(order_data.get("n", "0")),
+                "commissionAsset": order_data.get("N", ""),
+                "realizedPnl": str(order_data.get("rp", "0")),
+            }
+
+            # Enrich bracket child metadata from OrderIndex order_kind
+            order_kind = getattr(order_ref, "order_kind", None)
+            if order_kind in ("SL", "TP"):
+                payload["close_reason"] = order_kind
+                payload["bracket_role"] = order_kind
+                payload["terminal_correlation_source"] = "order_index_canonical"
+                _bracket_exchange_id = getattr(
+                    order_ref, "exchangeOrderId", None)
+                if _bracket_exchange_id:
+                    payload["tracked_bracket_order_id"] = str(
+                        _bracket_exchange_id)
+                # Write hit-path audit record for every terminal bracket fill
+                if standardized_status == "FILLED":
+                    self._append_terminal_ws_record(
+                        event_type="EXECUTION_WS_TERMINAL_CORRELATED",
+                        symbol=symbol,
+                        client_order_id=client_order_id or "",
+                        exchange_order_id=exchange_order_id or "",
+                        order_status=standardized_status,
+                        order_type=str(order_data.get("o", "")),
+                        event_ts_ms=msg.get("T", int(time.time() * 1000)),
+                        context={
+                            "rid": getattr(order_ref, "rid", None),
+                            "correlation_source": "order_index_canonical",
+                            "bracket_role": order_kind,
+                            "tracked_bracket_order_id": str(_bracket_exchange_id) if _bracket_exchange_id else None,
+                        },
+                    )
+
+            # EP-01.5: Add MAKER_ONLY_REJECT reason if detected
+            if is_maker_only_reject:
+                try:
+                    from apps.reference.domains.execution_position.reasons import MAKER_ONLY_REJECT
+                    payload["reason"] = MAKER_ONLY_REJECT
+                    payload["fallback"] = "NONE"
+                except ImportError:
+                    payload["reason"] = "MAKER_ONLY_REJECT"
+                    payload["fallback"] = "NONE"
+
+            # Log to audit
+            audit_logger.log_order_state_changed(
+                rid=resolved_rid,
+                idempotent_key=resolved_idempotent_key,
+                clientOrderId=client_order_id,
+                exchangeOrderId=exchange_order_id,
+                symbol=symbol,
+                status=standardized_status,
+                qty=order_data.get("q"),
+                filled_qty=filled_qty,
+                avg_fill_price=str(order_data.get("p", "0")),
+                why="websocket_update" if not is_maker_only_reject else "MAKER_ONLY_REJECT",
+                ts_ms=msg.get("T", int(time.time() * 1000)),
+            )
+
+            # Increment metrics
+            inc_order_state(standardized_status)
+
+            # For terminal states, mark as terminal and observe lifecycle
+            # FILL-PIPELINE-FIX: PARTIALLY_FILLED is NOT terminal (more fills expected)
+            if standardized_status in ["FILLED", "CANCELED", "REJECTED", "EXPIRED"] and order_ref is not None:
+                self.fsm_core.order_index.mark_terminal(order_ref)
+                duration_sec = time.time() - order_ref.created_ts
+                observe_order_lifecycle(duration_sec)
+
+            # Emit appropriate event based on status
+            if self.fsm_core:
+                # FILL-PIPELINE-FIX: Treat PARTIALLY_FILLED the same as FILLED
+                # Binance sends PARTIALLY_FILLED for each incremental fill; only the
+                # final chunk is FILLED.  Both must route to EVT:TRADE_EXECUTED.
+                if standardized_status in ("FILLED", "PARTIALLY_FILLED"):
+                    # Use last filled qty ("l") for incremental amount, "z" is cumulative
+                    last_fill_qty = str(order_data.get(
+                        "l", order_data.get("z", "0")))
+                    payload["qty"] = last_fill_qty
+                    payload["quantity"] = last_fill_qty
+                    payload["last_fill_qty"] = last_fill_qty
+                    payload["cumulative_qty"] = str(order_data.get("z", "0"))
+                    event_name = "EVT:TRADE_EXECUTED"
+                    logger.info(
+                        f"[BinanceWS] ✅ ORDER {'FILLED' if standardized_status == 'FILLED' else 'PARTIAL_FILL'} "
+                        f"- Emitting EVT:TRADE_EXECUTED for {symbol} (last_qty={last_fill_qty})")
+                elif is_maker_only_reject:
+                    # EP-01.5: Emit special rejection event for MAKER_ONLY_REJECT
+                    event_name = "EVT:ORDER_REJECTED"
+                    logger.info(
+                        f"[BinanceWS] 🚫 MAKER_ONLY_REJECT - Emitting EVT:ORDER_REJECTED for {symbol}")
+                else:
+                    event_name = "EVT:ORDER_STATE_CHANGED"
+                    logger.info(
+                        f"[BinanceWS] Order status change - Emitting EVT:ORDER_STATE_CHANGED {standardized_status}")
+
+                if event_name == "EVT:ORDER_REJECTED":
+                    payload["origin_class"] = "exchange_websocket"
+                    payload = normalize_order_rejected_payload(
+                        payload,
+                        fallback_rid=order_ref.rid,
+                        fallback_ts_ms=payload.get("ts_ms"),
+                    )
+                elif event_name == "EVT:ORDER_STATE_CHANGED":
+                    payload = normalize_order_state_changed_payload(
+                        payload,
+                        fallback_rid=order_ref.rid,
+                        fallback_ts_ms=payload.get("ts_ms"),
+                    )
+
+                write_wal = event_name == "EVT:ORDER_REJECTED" or (
+                    event_name == "EVT:ORDER_STATE_CHANGED"
+                    and payload.get("terminal_non_fill") is True
+                )
+                self._safe_emit(
+                    event_name,
+                    payload,
+                    f"WS_ORDER_UPDATE_{standardized_status}",
+                    write_wal=write_wal,
+                )
+
+        except Exception as e:
+            logger.error(
+                f"[BinanceWS] Error processing ORDER_TRADE_UPDATE: {e}", exc_info=True)
+
+    def _handle_account_update(self, msg: Dict[str, Any]) -> None:
+        """
+        Handle ACCOUNT_UPDATE event.
+        """
+        try:
+            account_data = msg.get("a", {})
+            balances = account_data.get("B", [])
+            positions = account_data.get("P", [])
+            update_reason = account_data.get("m", "")
+
+            logger.info(
+                "[BinanceWS] ACCOUNT_UPDATE delta: %d balances, %d positions, reason=%s",
+                len(balances),
+                len(positions),
+                update_reason or "unknown",
+            )
+
+            # Binance ACCOUNT_UPDATE is a partial delta and does not satisfy the
+            # canonical EVT:ACCOUNT_UPDATE_RECEIVED schema owned by account_balance.
+            # Fail closed instead of emitting a contract-breaking payload.
+            if self.fsm_core and not self._account_update_contract_warning_logged:
+                logger.warning(
+                    "[BinanceWS] Skipping raw ACCOUNT_UPDATE delta: "
+                    "EVT:ACCOUNT_UPDATE_RECEIVED is reserved for canonical account_balance snapshots"
+                )
+                self._account_update_contract_warning_logged = True
+
+        except Exception as e:
+            logger.error(
+                f"[BinanceWS] Error processing ACCOUNT_UPDATE: {e}", exc_info=True)

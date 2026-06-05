@@ -1,0 +1,232 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/alpha_search/judge/judge_policy_verdict_v2.json",
+  "title": "JudgePolicyVerdict V2",
+  "description": "Shadow-only Judge meta-scoring verdict. It carries no bridge, order, command, or runtime authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "verdict_id",
+    "envelope_id",
+    "created_ts_ms",
+    "symbol",
+    "question_type",
+    "authority_status",
+    "applied",
+    "verdict",
+    "confidence",
+    "confidence_source",
+    "confidence_band",
+    "rationale",
+    "score_components",
+    "policy_context",
+    "source_refs"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["2.0.0"]
+    },
+    "verdict_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "envelope_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_ts_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "symbol": {
+      "type": "string",
+      "minLength": 1
+    },
+    "question_type": {
+      "type": "string",
+      "enum": ["entry", "lifecycle"]
+    },
+    "authority_status": {
+      "type": "string",
+      "enum": ["shadow_only"]
+    },
+    "applied": {
+      "type": "boolean",
+      "const": false
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["OPEN_LONG", "OPEN_SHORT", "NO_ENTRY", "SUPPRESS", "UNKNOWN"]
+    },
+    "confidence": {
+      "type": ["number", "null"],
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "confidence_source": {
+      "type": "string",
+      "enum": ["judge_meta_scorer_v1"]
+    },
+    "confidence_band": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min", "max", "label"],
+      "properties": {
+        "min": {
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "max": {
+          "type": ["number", "null"],
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "label": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "rationale": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "supporting_experts",
+        "dissenting_experts",
+        "blocking_reasons",
+        "missing_evidence",
+        "freshness_warnings",
+        "disagreement_state"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "supporting_experts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dissenting_experts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "blocking_reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "missing_evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "freshness_warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "disagreement_state": {
+          "type": "string"
+        }
+      }
+    },
+    "score_components": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agreement_component",
+        "expert_confidence_component",
+        "regime_component",
+        "historical_surface_component",
+        "missingness_penalty",
+        "freshness_penalty",
+        "disagreement_penalty",
+        "final_score_before_clamp",
+        "final_confidence"
+      ],
+      "properties": {
+        "agreement_component": {
+          "type": "number"
+        },
+        "expert_confidence_component": {
+          "type": "number"
+        },
+        "regime_component": {
+          "type": "number"
+        },
+        "historical_surface_component": {
+          "type": "number"
+        },
+        "missingness_penalty": {
+          "type": "number",
+          "minimum": 0.0
+        },
+        "freshness_penalty": {
+          "type": "number",
+          "minimum": 0.0
+        },
+        "disagreement_penalty": {
+          "type": "number",
+          "minimum": 0.0
+        },
+        "final_score_before_clamp": {
+          "type": "number"
+        },
+        "final_confidence": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        }
+      }
+    },
+    "policy_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtime_mode", "bridge_mode", "source_envelope_version"],
+      "properties": {
+        "runtime_mode": {
+          "type": ["string", "null"]
+        },
+        "bridge_mode": {
+          "type": "string",
+          "enum": ["none"]
+        },
+        "source_envelope_version": {
+          "type": "string",
+          "enum": ["2.0.0"]
+        }
+      }
+    },
+    "source_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["envelope_id", "decision_id", "rid", "cycle_key"],
+      "properties": {
+        "envelope_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decision_id": {
+          "type": ["string", "null"]
+        },
+        "rid": {
+          "type": ["string", "null"]
+        },
+        "cycle_key": {
+          "type": ["string", "null"]
+        }
+      }
+    }
+  }
+}

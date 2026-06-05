@@ -1,0 +1,39 @@
+{
+  "generated_at_utc": "2026-05-14T08:19:50.738898+00:00",
+  "candidate_name": "NRR062_LOW_VOL_SHORT_DIRECTION_ONLY_RAW_SIGNAL_CANDIDATE",
+  "classification": "FUTURE_TESTNET_IMPLEMENTATION_CANDIDATE",
+  "gates": {
+    "candidate_rows_gte_20": {
+      "passed": true,
+      "evidence": "candidate_rows=79"
+    },
+    "candidate_estimated_net_positive": {
+      "passed": true,
+      "evidence": "candidate_estimated_net_pnl_quote=825.2672997047"
+    },
+    "candidate_profit_factor_gt_1_2": {
+      "passed": true,
+      "evidence": "candidate_profit_factor=4.92434390438585"
+    },
+    "candidate_timeout_share_lte_broad": {
+      "passed": true,
+      "evidence": "candidate_timeout_share=0.6582278481012658; broad_timeout_share=0.6993464052287581"
+    },
+    "buy_excluded_net_negative": {
+      "passed": true,
+      "evidence": "buy_excluded_net=-452.7182366138"
+    },
+    "dual_failure_excluded_net_negative": {
+      "passed": true,
+      "evidence": "dual_failure_excluded_net=-194.77884318850002"
+    },
+    "required_structured_fields_complete": {
+      "passed": true,
+      "evidence": "excluded_missing_required_fields=0"
+    },
+    "no_yaml_or_runtime_mutation_needed": {
+      "passed": true,
+      "evidence": "offline calibrator only; no config/runtime mutation paths in this package"
+    }
+  }
+}

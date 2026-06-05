@@ -1,0 +1,271 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "intent_deferred_v1.json",
+    "title": "EVT:INTENT_DEFERRED",
+    "description": "Intent deferral event. During migration, this schema is additive: it accepts both legacy payloads (v0) and v1 payloads. Reliable retry/idempotency is guaranteed only for v1 payloads that include retry_key + original_event. On the Aurora quadratic path this event is currently reserved for anomaly/fail-closed defer outcomes after the kernel is reached; ordinary live no-trade states are expected to use STRATEGY_DECISION_BLOCKED instead.",
+    "oneOf": [
+        { "$ref": "#/$defs/legacy_v0" },
+        { "$ref": "#/$defs/v1" }
+    ],
+    "$defs": {
+        "legacy_v0": {
+            "type": "object",
+            "required": ["symbol", "reason"],
+            "properties": {
+                "symbol": {
+                    "type": "string",
+                    "pattern": "^[A-Z0-9]{2,20}USDT$",
+                    "description": "Trading pair symbol (e.g., BTCUSDT, ETHUSDT)"
+                },
+                "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Deferral reason code (legacy emitters may use non-enum values during migration)"
+                },
+                "rid": { "type": "string" },
+                "missing": { "type": "string" },
+                "why_chain": { "type": "array", "items": { "type": "string" } },
+                "next_allowed_ts": { "type": "integer", "minimum": 0 }
+            },
+            "additionalProperties": true,
+            "not": { "required": ["retry_key"] }
+        },
+        "v1": {
+            "type": "object",
+            "required": [
+                "retry_key",
+                "symbol",
+                "reason",
+                "reason_code",
+                "next_allowed_ts",
+                "attempt",
+                "max_attempts",
+                "original_event"
+            ],
+            "properties": {
+                "retry_key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Stable unique identifier for this retry transaction. Used for idempotency (e.g., 'flip:BTCUSDT:1702500000000')"
+                },
+                "symbol": {
+                    "type": "string",
+                    "pattern": "^[A-Z0-9]{2,20}USDT$",
+                    "description": "Trading pair symbol (e.g., BTCUSDT, ETHUSDT)"
+                },
+                "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Canonical deferred reason label for operators and logs."
+                },
+                "reason_code": {
+                    "type": "string",
+                    "enum": [
+                        "NRR-DATA-NOT-READY",
+                        "NRR-PORTFOLIO-UNKNOWN",
+                        "NRR-PORTFOLIO-STALE",
+                        "NRR-RISK-STALE",
+                        "NRR-RISK-SKEW-UNTIL-REFRESH",
+                        "FLIP_CLOSE_PENDING",
+                        "NRR-FLIP-CLOSE-QTY-INVALID",
+                        "NRR-ORDER-IN-FLIGHT",
+                        "NRR-ORDER-INDEX-FAIL",
+                        "QOS_BLOCKED",
+                        "COOLDOWN",
+                        "REGIME_BLOCKED"
+                    ],
+                    "description": "Machine-stable canonical reason code for deferred truth."
+                },
+                "retry_policy": {
+                    "type": "object",
+                    "required": ["attempt", "max_attempts", "backoff_ms", "ttl_ms"],
+                    "properties": {
+                        "attempt": { "type": "integer", "minimum": 1 },
+                        "max_attempts": { "type": "integer", "minimum": 1 },
+                        "backoff_ms": { "type": "integer", "minimum": 0 },
+                        "ttl_ms": { "type": "integer", "minimum": 0 }
+                    },
+                    "additionalProperties": false,
+                    "description": "Retry policy snapshot (informational; scheduler may use top-level attempt/max_attempts)"
+                },
+                "next_allowed_ts": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Earliest timestamp (ms) when retry is allowed"
+                },
+                "attempt": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 1,
+                    "description": "Current retry attempt number (1-based)"
+                },
+                "max_attempts": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 5,
+                    "description": "Maximum retry attempts before dropping"
+                },
+                "original_event": {
+                    "type": "object",
+                    "required": [
+                        "event_name",
+                        "payload_min"
+                    ],
+                    "properties": {
+                        "event_name": {
+                            "type": "string",
+                            "description": "Original event name (e.g., EVT:MR_SIGNAL_PRODUCED, EVT:TRADE_INTENT_PROPOSED)"
+                        },
+                        "payload_min": {
+                            "type": "object",
+                            "required": [
+                                "symbol"
+                            ],
+                            "properties": {
+                                "symbol": {
+                                    "type": "string",
+                                    "pattern": "^[A-Z0-9]{2,20}USDT$"
+                                },
+                                "side": {
+                                    "type": "string",
+                                    "enum": ["BUY", "SELL"]
+                                },
+                                "qty_hint": {
+                                    "oneOf": [
+                                        {"type": "string"},
+                                        {"type": "number"}
+                                    ],
+                                    "description": "Suggested quantity (optional)"
+                                },
+                                "price_ctx": {
+                                    "oneOf": [
+                                        {"type": "string"},
+                                        {"type": "number"},
+                                        {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    ],
+                                    "description": "Price context at signal time (optional)"
+                                },
+                                "strategy_id": {
+                                    "type": "string",
+                                    "description": "Strategy identifier (e.g., 'MR', 'AURORA')"
+                                },
+                                "cooldown_class": {
+                                    "type": "string",
+                                    "enum": ["flip", "signal", "error", "default"],
+                                    "description": "Cooldown class for QoS"
+                                },
+                                "rid": {
+                                    "type": "string",
+                                    "description": "Original request ID for tracing"
+                                }
+                            },
+                            "additionalProperties": true,
+                            "description": "Minimal stable payload from original event"
+                        }
+                    },
+                    "additionalProperties": false,
+                    "description": "Original event to re-emit on retry"
+                },
+                "why_chain": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "Debug chain of reasons leading to deferral"
+                },
+                "created_ts": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Timestamp (ms) when deferral was created"
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Additional context string for debugging (optional)"
+                },
+                "rid": {
+                    "type": "string",
+                    "description": "Correlation id when available."
+                },
+                "span_id": {
+                    "type": "string",
+                    "description": "Tracing span id when available."
+                },
+                "raw_reason": {
+                    "type": "string",
+                    "description": "Original pre-normalization defer reason when canonicalized."
+                },
+                "details": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "description": "Optional forensic details for deferred truth."
+                }
+            },
+            "additionalProperties": false
+        }
+    },
+    "examples": [
+        {
+            "retry_key": "flip:BTCUSDT:1702500000000",
+            "symbol": "BTCUSDT",
+            "reason": "FLIP_CLOSE_PENDING",
+            "next_allowed_ts": 1702500005000,
+            "attempt": 1,
+            "max_attempts": 5,
+            "original_event": {
+                "event_name": "EVT:MR_SIGNAL_PRODUCED",
+                "payload_min": {
+                    "symbol": "BTCUSDT",
+                    "side": "BUY",
+                    "qty_hint": 0.01,
+                    "price_ctx": 50000.0,
+                    "strategy_id": "MR",
+                    "cooldown_class": "flip",
+                    "rid": "uuid-1234"
+                }
+            },
+            "why_chain": ["position_exists", "opposite_side", "close_emitted"],
+            "created_ts": 1702500000000
+        },
+        {
+            "retry_key": "mr:DOGEUSDT:1702500100000",
+            "symbol": "DOGEUSDT",
+            "reason": "NRR-PORTFOLIO-UNKNOWN",
+            "next_allowed_ts": 1702500105000,
+            "attempt": 2,
+            "max_attempts": 5,
+            "original_event": {
+                "event_name": "EVT:MR_SIGNAL_PRODUCED",
+                "payload_min": {
+                    "symbol": "DOGEUSDT",
+                    "side": "SELL",
+                    "strategy_id": "MR"
+                }
+            },
+            "why_chain": ["portfolio_unknown", "fail_closed"],
+            "created_ts": 1702500100000,
+            "context": "mr_gateway_flat_check"
+        },
+        {
+            "retry_key": "llm:1000PEPEUSDT:1702500200000",
+            "symbol": "1000PEPEUSDT",
+            "reason": "NRR-RISK-STALE",
+            "next_allowed_ts": 1702500205000,
+            "attempt": 1,
+            "max_attempts": 3,
+            "original_event": {
+                "event_name": "EVT:STRATEGY_SIGNAL_PRODUCED",
+                "payload_min": {
+                    "symbol": "1000PEPEUSDT",
+                    "side": "SELL",
+                    "strategy_id": "llm_microstructure"
+                }
+            },
+            "why_chain": ["risk_skew", "defer_count:1"],
+            "created_ts": 1702500200000,
+            "context": "strategy_signal_gateway:risk_skew"
+        }
+    ]
+}

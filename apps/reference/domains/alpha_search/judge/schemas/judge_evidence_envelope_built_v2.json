@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Judge Evidence Envelope Built V2 Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_name", "payload"],
+  "properties": {
+    "event_name": {
+      "const": "EVT:JUDGE_EVIDENCE_ENVELOPE_BUILT_V2"
+    },
+    "payload": {
+      "type": "object",
+      "required": ["schema_version", "authority_status", "envelope_id"],
+      "properties": {
+        "schema_version": {"const": "2.0.0"},
+        "authority_status": {"const": "evidence_only"},
+        "envelope_id": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    }
+  }
+}

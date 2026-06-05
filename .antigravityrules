@@ -1,0 +1,25 @@
+ENV: Windows.
+
+1. Always use 'cmd /c' for all shell executions.
+This ensures that the process guarantees a completion signal (EOF) so the agent doesn't hang indefinitely.
+
+Example transformations:
+- `pip list` -> `cmd /c pip list`
+- `npm ci` -> `cmd /c npm ci`
+- `pytest -q` -> `cmd /c pytest -q`
+
+2. Avoid interactive modes.
+The agent is "blind" to interactive prompts (like Y/N, passwords, or selections) in PTY. 
+Always use auto-confirm flags when appropriate, such as `-y`, `--yes`, `--no-input`, `--quiet`.
+
+3. Missing newline/execution hangs.
+If a command gets sent but not executed (e.g. missing `\n` or `\r\n`), using `cmd /c ...` often bypasses the issue by forcing a different execution path.
+
+4. Agent or Terminal breakdown.
+If the agent is broken, stuck in an infinite loop, or terminal integration fails:
+- Restart Agent.
+- Check logs (View -> Output -> Antigravity).
+- Fully restart Antigravity if necessary.
+
+5. Project Navigation.
+Use `verb_registry_v1.yaml` for navigation and understanding the project's structure/verbs.

@@ -1,0 +1,148 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Judge Simulator Calibration Dataset Record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "strategy_id",
+    "symbol",
+    "tf_sec",
+    "bar_close_ts",
+    "verdict_id",
+    "entry_verdict",
+    "confidence",
+    "dissent_noted",
+    "matched_trade",
+    "raw_return",
+    "fee_cost",
+    "slippage_cost",
+    "net_return",
+    "optimal_action",
+    "has_disagreement",
+    "cohort",
+    "schema_version"
+  ],
+  "properties": {
+    "strategy_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "symbol": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tf_sec": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "bar_close_ts": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "verdict_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "entry_verdict": {
+      "type": "string",
+      "enum": [
+        "OPEN_LONG",
+        "OPEN_SHORT",
+        "NO_ENTRY",
+        "UNKNOWN",
+        "SUPPRESS"
+      ]
+    },
+    "confidence": {
+      "type": "number"
+    },
+    "dissent_noted": {
+      "type": "boolean"
+    },
+    "matched_trade": {
+      "type": "boolean"
+    },
+    "raw_return": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "fee_cost": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "slippage_cost": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "net_return": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "optimal_action": {
+      "type": "string",
+      "enum": [
+        "OPEN_LONG",
+        "OPEN_SHORT",
+        "NO_ENTRY"
+      ]
+    },
+    "has_disagreement": {
+      "type": "boolean"
+    },
+    "cohort": {
+      "type": "string",
+      "enum": [
+        "CORRECT_ENTRY",
+        "INCORRECT_ENTRY",
+        "CORRECT_ABSTAIN",
+        "MISSED_OPPORTUNITY",
+        "INCONCLUSIVE"
+      ]
+    },
+    "schema_version": {
+      "const": "1"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "entry_verdict": {
+            "enum": [
+              "NO_ENTRY",
+              "UNKNOWN",
+              "SUPPRESS"
+            ]
+          }
+        },
+        "required": [
+          "entry_verdict"
+        ]
+      },
+      "then": {
+        "properties": {
+          "raw_return": {
+            "type": "null"
+          },
+          "fee_cost": {
+            "type": "null"
+          },
+          "slippage_cost": {
+            "type": "null"
+          },
+          "net_return": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ]
+}

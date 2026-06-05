@@ -1,0 +1,488 @@
+{
+  "generated_at": "2026-05-07T10:40:59.9867185Z",
+  "repo_commit": "46eda09769a5744a993f5d8b37bcc6429af66d70",
+  "items": [
+    {
+      "status": "moved_with_wrapper",
+      "old_path": "tools/calibration/calibrate_aurora_thresholds.py",
+      "new_path": "calibrators/strategies/calibrate_aurora_thresholds.py",
+      "category": "definite_calibrator",
+      "scope": "strategies",
+      "cli_entrypoint": true,
+      "writes_config": false,
+      "inputs": ["config/aurora/strategies/aurora.yaml", "data/recorder", "logs/aurora core log files"],
+      "outputs": ["candidate_aurora_threshold_overlay.yaml", "run_manifest.json", "baseline_metrics.json", "candidate_metrics.json", "validation_metrics.json", "forward_metrics.json", "report.md"],
+      "tests": ["tests/tools/test_aurora_threshold_calibrator.py"],
+      "project_imports": ["apps.reference runtime helpers (lazy/internal)", "tools wrappers only"],
+      "move_risk": "LOW",
+      "notes": "Production Aurora threshold surface; wrapper preserved for old import and CLI path."
+    },
+    {
+      "status": "moved_with_wrapper",
+      "old_path": "tools/calibration/calibrate_aurora_regime_params.py",
+      "new_path": "calibrators/regimes/calibrate_aurora_regime_params.py",
+      "category": "definite_calibrator",
+      "scope": "regimes",
+      "cli_entrypoint": true,
+      "writes_config": false,
+      "inputs": ["data/recorder", "symbols", "date window", "tf_sec"],
+      "outputs": ["candidate_regime_overlay.yaml", "best_trial.json", "report.md"],
+      "tests": [],
+      "project_imports": ["tools.regime_calibration.io", "tools.regime_calibration.metrics", "tools.regime_calibration.oracle", "tools.regime_calibration.search"],
+      "move_risk": "MEDIUM",
+      "notes": "Research regime overlay search; support helpers remain in tools/regime_calibration."
+    },
+    {
+      "status": "moved_with_wrapper",
+      "old_path": "tools/calibration/calibrate_aurora_signal_weights.py",
+      "new_path": "calibrators/strategies/calibrate_aurora_signal_weights.py",
+      "category": "definite_calibrator",
+      "scope": "strategies",
+      "cli_entrypoint": true,
+      "writes_config": false,
+      "inputs": ["config/aurora/strategies/aurora.yaml", "data/recorder CSV", "optional sklearn/scipy dependencies"],
+      "outputs": ["legacy Aurora overlay artifacts", "report artifacts"],
+      "tests": [],
+      "project_imports": [],
+      "move_risk": "MEDIUM",
+      "notes": "Legacy Aurora weight-surface calibrator; not the active production calibration path."
+    },
+    {
+      "status": "moved_with_wrapper",
+      "old_path": "tools/calibration/calibrate_md_amr_weights.py",
+      "new_path": "calibrators/strategies/calibrate_md_amr_weights.py",
+      "category": "definite_calibrator",
+      "scope": "strategies",
+      "cli_entrypoint": true,
+      "writes_config": false,
+      "inputs": ["config/aurora/strategies/md_amr.yaml", "config/aurora/strategies.yaml", "data/recorder", "optional Binance hydration"],
+      "outputs": ["candidate overlay YAML", "candidate_bundle.json", "best_trial.json", "run_manifest.json", "baseline/candidate/validation/forward metrics", "report.md"],
+      "tests": ["tests/tools/test_md_amr_weight_calibrator.py"],
+      "project_imports": ["apps.reference.config.strategies.md_amr", "tools.simulation.md_amr_data_adapter (lazy)", "apps.reference runtime bridge (lazy)"],
+      "move_risk": "LOW",
+      "notes": "Production-aligned md_amr calibrator with wrapper compatibility preserved."
+    },
+    {
+      "status": "moved_with_wrapper",
+      "old_path": "tools/calibration/calibrate_mean_reversion_params.py",
+      "new_path": "calibrators/strategies/calibrate_mean_reversion_params.py",
+      "category": "definite_calibrator",
+      "scope": "strategies",
+      "cli_entrypoint": true,
+      "writes_config": false,
+      "inputs": ["config/aurora/strategies/mean_reversion.yaml", "strategies registry YAML", "data/recorder bars"],
+      "outputs": ["candidate_mean_reversion_overlay.yaml", "candidate_bundle.json", "best_trial.json", "metrics JSON", "report.md"],
+      "tests": ["tests/tools/test_mean_reversion_param_calibrator.py"],
+      "project_imports": ["tools.objective_calibration.extract_recorder (lazy)", "apps.reference feature_engineering mean_reversion runtime (lazy)"],
+      "move_risk": "LOW",
+      "notes": "Production-aligned Mean Reversion calibrator with explicit overlay-only output."
+    },
+    {
+      "status": "moved_with_wrapper",
+      "old_path": "tools/calibration/calibrate_nrr062_historical.py",
+      "new_path": "calibrators/policy_gates/calibrate_nrr062_historical.py",
+      "category": "definite_calibrator",
+      "scope": "policy_gates",
+      "cli_entrypoint": true,
+      "writes_config": false,
+      "inputs": ["config/aurora", "data/raw/binance_um_klines", "Binance Futures klines", "runtime decision primitives"],
+      "outputs": ["data/processed/nrr062_historical_calibration", "artifacts/nrr062_historical_calibration/results.json", "reports/NRR062_HISTORICAL_CALIBRATION_REPORT.md", "reports/NRR062_CONFIG_PATCH_CANDIDATE.yaml"],
+      "tests": ["tests/tools/test_calibrate_nrr062_historical.py"],
+      "project_imports": ["apps.reference decision_making gate modules", "apps.reference feature_engineering", "apps.reference shared decision_primitives", "vfoundation.core.protocol"],
+      "move_risk": "MEDIUM",
+      "notes": "Cross-domain policy-gate calibrator; wrapper preserved and import bootstrap corrected."
+    },
+    {
+      "status": "moved_with_wrapper",
+      "old_path": "tools/calibration/calibrate_objective_stack.py",
+      "new_path": "calibrators/strategies/calibrate_objective_stack.py",
+      "category": "definite_calibrator",
+      "scope": "strategies",
+      "cli_entrypoint": true,
+      "writes_config": false,
+      "inputs": ["config root", "stage-1 candidate overlays", "recorder data", "WAL", "ledger"],
+      "outputs": ["dataset bundle", "candidate_bundle.json", "best_trial.json", "overlay bundle", "report.md"],
+      "tests": ["tests/tools/test_objective_calibration.py"],
+      "project_imports": ["apps.reference.config_loader", "tools.objective_calibration.dataset", "tools.objective_calibration.overlay", "tools.objective_calibration.report", "tools.objective_calibration.search"],
+      "move_risk": "MEDIUM",
+      "notes": "Meta/stage-2 calibrator orchestrating objective search over stage-1 outputs."
+    },
+    {
+      "status": "moved_with_wrapper",
+      "old_path": "tools/calibration/calibrate_system_stress_weights.py",
+      "new_path": "calibrators/policy_gates/calibrate_system_stress_weights.py",
+      "category": "definite_calibrator",
+      "scope": "policy_gates",
+      "cli_entrypoint": true,
+      "writes_config": false,
+      "inputs": ["data/recorder", "dataset manifest", "oracle settings", "walk-forward settings", "config_loader"],
+      "outputs": ["candidate_summary.json", "candidate_metrics.json", "walkforward_metrics.csv", "yaml_patch_snippet.yaml", "report.md"],
+      "tests": ["tests/test_system_stress_calibration.py"],
+      "project_imports": ["apps.reference.config_loader", "tools.system_stress_calibration.core"],
+      "move_risk": "MEDIUM",
+      "notes": "Policy-gate calibrator backed by support core in tools/system_stress_calibration."
+    },
+    {
+      "status": "moved_with_wrapper",
+      "old_path": "tools/calibration/run_md_amr_phase2b_aggression_grid.py",
+      "new_path": "calibrators/strategies/run_md_amr_phase2b_aggression_grid.py",
+      "category": "definite_calibrator",
+      "scope": "strategies",
+      "cli_entrypoint": true,
+      "writes_config": false,
+      "inputs": ["data/recorder", "config/aurora/strategies/md_amr.yaml", "config/aurora/strategies.yaml", "md_amr calibrator APIs"],
+      "outputs": ["artifacts/strategy_calibration/phase2b", "reports"],
+      "tests": ["tests/tools/test_md_amr_phase2b_aggression_grid.py"],
+      "project_imports": ["calibrators.strategies.calibrate_md_amr_weights", "tools.simulation.md_amr_data_adapter"],
+      "move_risk": "MEDIUM",
+      "notes": "Analysis-only orchestration layer over md_amr calibration."
+    },
+    {
+      "status": "moved_with_wrapper",
+      "old_path": "scripts/calibration/calibrate_low_vol_cost_floor.py",
+      "new_path": "calibrators/policy_gates/calibrate_low_vol_cost_floor.py",
+      "category": "definite_calibrator",
+      "scope": "policy_gates",
+      "cli_entrypoint": true,
+      "writes_config": false,
+      "inputs": ["reports/*.csv", "logs/*.jsonl", "data/recorder", "fee/slippage CLI parameters"],
+      "outputs": ["low_vol_trade_dataset.csv", "low_vol_threshold_candidates.json", "low_vol_candidate_yaml_patch.yaml", "LOW_VOL markdown reports"],
+      "tests": ["tests/test_calibrate_low_vol_cost_floor.py"],
+      "project_imports": [],
+      "move_risk": "MEDIUM",
+      "notes": "Residual definite calibrator from Package 01; moved into canonical layer with old scripts/calibration path preserved as a thin wrapper."
+    },
+    {
+      "status": "not_moved_support_library",
+      "old_path": "tools/objective_calibration/dataset.py",
+      "new_path": null,
+      "category": "calibration_support",
+      "scope": "shared",
+      "cli_entrypoint": false,
+      "writes_config": false,
+      "inputs": ["recorder", "WAL", "ledger"],
+      "outputs": ["dataset objects", "written dataset bundles"],
+      "tests": ["tests/tools/test_objective_calibration.py"],
+      "project_imports": [],
+      "move_risk": "HIGH",
+      "notes": "Support library for objective stack; not moved to keep this package bounded to entrypoint relocation."
+    },
+    {
+      "status": "not_moved_support_library",
+      "old_path": "tools/objective_calibration/overlay.py",
+      "new_path": null,
+      "category": "calibration_support",
+      "scope": "shared",
+      "cli_entrypoint": false,
+      "writes_config": false,
+      "inputs": ["candidate structures"],
+      "outputs": ["overlay bundle files"],
+      "tests": ["tests/tools/test_objective_calibration.py"],
+      "project_imports": [],
+      "move_risk": "HIGH",
+      "notes": "Support library for objective overlay bundle emission."
+    },
+    {
+      "status": "not_moved_support_library",
+      "old_path": "tools/objective_calibration/report.py",
+      "new_path": null,
+      "category": "calibration_support",
+      "scope": "shared",
+      "cli_entrypoint": false,
+      "writes_config": false,
+      "inputs": ["best candidate", "dataset manifest", "overlay paths"],
+      "outputs": ["objective calibration report text"],
+      "tests": ["tests/tools/test_objective_calibration.py"],
+      "project_imports": [],
+      "move_risk": "HIGH",
+      "notes": "Support report renderer for objective calibration."
+    },
+    {
+      "status": "not_moved_support_library",
+      "old_path": "tools/objective_calibration/search.py",
+      "new_path": null,
+      "category": "calibration_support",
+      "scope": "shared",
+      "cli_entrypoint": false,
+      "writes_config": false,
+      "inputs": ["realized/attempted datasets", "config root", "strategy bundle"],
+      "outputs": ["candidate rankings and metrics"],
+      "tests": ["tests/tools/test_objective_calibration.py"],
+      "project_imports": [],
+      "move_risk": "HIGH",
+      "notes": "Support search engine for objective meta-calibration."
+    },
+    {
+      "status": "not_moved_support_library",
+      "old_path": "tools/regime_calibration/io.py",
+      "new_path": null,
+      "category": "calibration_support",
+      "scope": "shared",
+      "cli_entrypoint": false,
+      "writes_config": false,
+      "inputs": ["recorder files"],
+      "outputs": ["loaded regime calibration dataset"],
+      "tests": [],
+      "project_imports": [],
+      "move_risk": "HIGH",
+      "notes": "Support IO helper for regime calibration."
+    },
+    {
+      "status": "not_moved_support_library",
+      "old_path": "tools/regime_calibration/metrics.py",
+      "new_path": null,
+      "category": "calibration_support",
+      "scope": "shared",
+      "cli_entrypoint": false,
+      "writes_config": false,
+      "inputs": ["labels and predictions"],
+      "outputs": ["regime metrics and confusion summaries"],
+      "tests": [],
+      "project_imports": [],
+      "move_risk": "HIGH",
+      "notes": "Support metrics helper for regime calibration."
+    },
+    {
+      "status": "not_moved_support_library",
+      "old_path": "tools/regime_calibration/oracle.py",
+      "new_path": null,
+      "category": "calibration_support",
+      "scope": "shared",
+      "cli_entrypoint": false,
+      "writes_config": false,
+      "inputs": ["forward bars and evaluation horizon"],
+      "outputs": ["oracle labels"],
+      "tests": [],
+      "project_imports": [],
+      "move_risk": "HIGH",
+      "notes": "Support oracle-label generator for regime calibration."
+    },
+    {
+      "status": "not_moved_support_library",
+      "old_path": "tools/regime_calibration/search.py",
+      "new_path": null,
+      "category": "calibration_support",
+      "scope": "shared",
+      "cli_entrypoint": false,
+      "writes_config": false,
+      "inputs": ["regime overlays and datasets"],
+      "outputs": ["candidate evaluation results"],
+      "tests": [],
+      "project_imports": [],
+      "move_risk": "HIGH",
+      "notes": "Support search helper for regime calibration."
+    },
+    {
+      "status": "not_moved_support_library",
+      "old_path": "tools/system_stress_calibration/core.py",
+      "new_path": null,
+      "category": "calibration_support",
+      "scope": "shared",
+      "cli_entrypoint": false,
+      "writes_config": false,
+      "inputs": ["recorder data", "oracle config", "walk-forward config"],
+      "outputs": ["candidate specs", "walk-forward metrics", "ranking tuples"],
+      "tests": ["tests/test_system_stress_calibration.py"],
+      "project_imports": ["apps.reference config models through callers"],
+      "move_risk": "HIGH",
+      "notes": "Support core for system stress calibration; left in tools to avoid broad package/library relocation."
+    },
+    {
+      "status": "not_moved_audit_only",
+      "old_path": "tools/forensics/confidence_calibration.py",
+      "new_path": null,
+      "category": "audit_only",
+      "scope": "unknown",
+      "cli_entrypoint": true,
+      "writes_config": false,
+      "inputs": ["runtime logs and confidence traces"],
+      "outputs": ["forensic confidence diagnostics"],
+      "tests": [],
+      "project_imports": [],
+      "move_risk": "HIGH",
+      "notes": "Post-hoc forensic analysis, not a canonical calibrator entrypoint."
+    },
+    {
+      "status": "not_moved_audit_only",
+      "old_path": "tools/forensics/full_surface_calibration.py",
+      "new_path": null,
+      "category": "audit_only",
+      "scope": "unknown",
+      "cli_entrypoint": true,
+      "writes_config": false,
+      "inputs": ["recorder/backtest study inputs"],
+      "outputs": ["analysis reports"],
+      "tests": [],
+      "project_imports": [],
+      "move_risk": "HIGH",
+      "notes": "Forensics study surface, not part of the primary calibrator layer."
+    },
+    {
+      "status": "not_moved_audit_only",
+      "old_path": "tools/forensics/mr_calibration_from_logs.py",
+      "new_path": null,
+      "category": "audit_only",
+      "scope": "unknown",
+      "cli_entrypoint": true,
+      "writes_config": false,
+      "inputs": ["bars_300s.jsonl and log-derived signals"],
+      "outputs": ["MR replay and audit outputs"],
+      "tests": [],
+      "project_imports": [],
+      "move_risk": "HIGH",
+      "notes": "Log-driven forensic analysis, not canonical calibration entrypoint."
+    },
+    {
+      "status": "not_moved_audit_only",
+      "old_path": "tools/forensics/shadow_regime_aurora_calibration.py",
+      "new_path": null,
+      "category": "audit_only",
+      "scope": "unknown",
+      "cli_entrypoint": true,
+      "writes_config": false,
+      "inputs": ["shadow telemetry and regime labels"],
+      "outputs": ["shadow calibration/audit outputs"],
+      "tests": [],
+      "project_imports": [],
+      "move_risk": "HIGH",
+      "notes": "Shadow-telemetry forensic script; not moved into primary calibrators layer."
+    },
+    {
+      "status": "not_moved_audit_only",
+      "old_path": "scripts/forensics/nrr027_per_regime_calibrator.py",
+      "new_path": null,
+      "category": "audit_only",
+      "scope": "unknown",
+      "cli_entrypoint": true,
+      "writes_config": false,
+      "inputs": ["NRR-027 replay and gate-analysis inputs"],
+      "outputs": ["regime-stratified audit outputs"],
+      "tests": [],
+      "project_imports": [],
+      "move_risk": "HIGH",
+      "notes": "Forensics script under scripts/; outside this package's tools/ relocation scope."
+    },
+    {
+      "status": "not_moved_uncertain",
+      "old_path": "tools/parquet_pipeline/tune_presets.py",
+      "new_path": null,
+      "category": "candidate_uncertain",
+      "scope": "unknown",
+      "cli_entrypoint": true,
+      "writes_config": false,
+      "inputs": ["parquet stress inputs", "preset grids"],
+      "outputs": ["report.md and analysis outputs"],
+      "tests": [],
+      "project_imports": [],
+      "move_risk": "HIGH",
+      "notes": "Tuning-oriented analysis utility; not proven as canonical calibrator."
+    },
+    {
+      "status": "not_moved_uncertain",
+      "old_path": "tools/parquet_pipeline/regime_grid.py",
+      "new_path": null,
+      "category": "candidate_uncertain",
+      "scope": "unknown",
+      "cli_entrypoint": false,
+      "writes_config": false,
+      "inputs": ["parquet/polars regime grid inputs"],
+      "outputs": ["grid-search helper outputs"],
+      "tests": [],
+      "project_imports": [],
+      "move_risk": "HIGH",
+      "notes": "Grid-search logic exists, but package role is still uncertain and was not moved automatically."
+    }
+  ],
+  "uncertain_candidates": [
+    {
+      "path": "tools/parquet_pipeline/tune_presets.py",
+      "reason": "Tuning-oriented analysis utility; not proven as a canonical calibrator entrypoint."
+    },
+    {
+      "path": "tools/parquet_pipeline/regime_grid.py",
+      "reason": "Grid-search helper exists, but package role remains uncertain and no safe entrypoint relocation was proven in this package."
+    }
+  ],
+  "not_moved": [
+    {
+      "path": "tools/objective_calibration/dataset.py",
+      "category": "calibration_support",
+      "reason": "Shared library for objective calibration; not relocated in this bounded entrypoint-only package."
+    },
+    {
+      "path": "tools/objective_calibration/overlay.py",
+      "category": "calibration_support",
+      "reason": "Shared library for objective overlay emission; not relocated in this bounded entrypoint-only package."
+    },
+    {
+      "path": "tools/objective_calibration/report.py",
+      "category": "calibration_support",
+      "reason": "Shared library for objective report rendering; not relocated in this bounded entrypoint-only package."
+    },
+    {
+      "path": "tools/objective_calibration/search.py",
+      "category": "calibration_support",
+      "reason": "Shared library for objective candidate search; not relocated in this bounded entrypoint-only package."
+    },
+    {
+      "path": "tools/regime_calibration/io.py",
+      "category": "calibration_support",
+      "reason": "Shared library used by the moved regime calibrator; left in place to avoid wider helper migration."
+    },
+    {
+      "path": "tools/regime_calibration/metrics.py",
+      "category": "calibration_support",
+      "reason": "Shared library used by the moved regime calibrator; left in place to avoid wider helper migration."
+    },
+    {
+      "path": "tools/regime_calibration/oracle.py",
+      "category": "calibration_support",
+      "reason": "Shared library used by the moved regime calibrator; left in place to avoid wider helper migration."
+    },
+    {
+      "path": "tools/regime_calibration/search.py",
+      "category": "calibration_support",
+      "reason": "Shared library used by the moved regime calibrator; left in place to avoid wider helper migration."
+    },
+    {
+      "path": "tools/system_stress_calibration/core.py",
+      "category": "calibration_support",
+      "reason": "Shared core used by the moved system stress calibrator; not relocated in this package."
+    },
+    {
+      "path": "tools/forensics/confidence_calibration.py",
+      "category": "audit_only",
+      "reason": "Forensics/audit utility, not canonical calibrator relocation target."
+    },
+    {
+      "path": "tools/forensics/full_surface_calibration.py",
+      "category": "audit_only",
+      "reason": "Forensics study utility, not canonical calibrator relocation target."
+    },
+    {
+      "path": "tools/forensics/mr_calibration_from_logs.py",
+      "category": "audit_only",
+      "reason": "Forensics log-replay utility, not canonical calibrator relocation target."
+    },
+    {
+      "path": "tools/forensics/shadow_regime_aurora_calibration.py",
+      "category": "audit_only",
+      "reason": "Forensics shadow-telemetry utility, not canonical calibrator relocation target."
+    },
+    {
+      "path": "scripts/forensics/nrr027_per_regime_calibrator.py",
+      "category": "audit_only",
+      "reason": "Forensics script outside tools/ and outside this relocation scope."
+    },
+    {
+      "path": "tools/parquet_pipeline/tune_presets.py",
+      "category": "candidate_uncertain",
+      "reason": "Uncertain package role; not moved automatically."
+    },
+    {
+      "path": "tools/parquet_pipeline/regime_grid.py",
+      "category": "candidate_uncertain",
+      "reason": "Uncertain package role; not moved automatically."
+    }
+  ]
+}

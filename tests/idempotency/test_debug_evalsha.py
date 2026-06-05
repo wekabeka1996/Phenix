@@ -14,7 +14,7 @@ def test_debug_evalsha_simple(
         ttl_ms=60_000,
         timeout_ms=100,
     )
-    
+
     # Try simple reserve
     try:
         result = store.reserve(
@@ -27,5 +27,6 @@ def test_debug_evalsha_simple(
     except Exception as e:
         print(f"ERROR: {type(e).__name__}: {e}")
         import traceback
+
         traceback.print_exc()
         raise

@@ -1,0 +1,36 @@
+{
+  "generated_at_utc": "2026-05-13T23:33:50.148058+00:00",
+  "canonical_sources": {
+    "package_a_reject_ledger": "calibrators/datasets/nrr062_readonly_reject_economics/nrr062_reject_ledger.json",
+    "package_a_availability_audit": "calibrators/datasets/nrr062_readonly_reject_economics/nrr062_counterfactual_availability_audit.json",
+    "freeze_root": "C:/Users/user/Music/Phenix/logs/frozen/calibrators_03u_multiday_post_03t_20260513T190409Z",
+    "recorder_root": "C:/Users/user/Music/Phenix/data/recorder"
+  },
+  "replay_contract": {
+    "entry_price_source": "reject_row_low_vol_cost_floor.entry_price",
+    "entry_timestamp_alignment": "replay begins at the first full recorder bar whose inferred open_time_ms is strictly greater than reject_ts_ms; mixed bars containing pre-reject time are excluded",
+    "tp_level_source": "reject_row target_price when present, else derived from entry_price and gross_tp_bps",
+    "sl_level_source": "reject_row stop_price when present, else derived from entry_price and actual_sl_bps or gross_tp_bps/min_rr",
+    "max_horizon_minutes": 120,
+    "recorder_timeframe_preference_sec": [
+      180,
+      300,
+      900
+    ],
+    "fee_model": "use structured round_trip_fee_bps from low_vol metadata",
+    "slippage_model": "use structured slippage_buffer_bps from low_vol metadata",
+    "timeout_behavior": "if neither TP nor SL hits before horizon end, close at the first recorder bar close with close_time_ms >= horizon_end_ts_ms",
+    "same_bar_tp_sl_policy": "mark COUNTERFACTUAL_AMBIGUOUS_TP_SL and do not assign gross/net outcome",
+    "missing_data_policy": "fail_closed on missing timestamp, missing geometry, or missing recorder bars",
+    "no_silent_defaults": true,
+    "replay_is_not_live_execution_proof": true
+  },
+  "coverage_summary": {
+    "reject_rows": 153,
+    "replay_ready_rows": 153,
+    "rows_with_market_path": 153,
+    "recorder_timeframe_sec_distribution": {
+      "180": 153
+    }
+  }
+}

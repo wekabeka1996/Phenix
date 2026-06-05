@@ -1,0 +1,105 @@
+{
+  "generated_from": {
+    "domains_yaml": "config/aurora/domains.yaml",
+    "decision_making_model": "apps/reference/config/domains/decision_making.py",
+    "low_vol_gate_runtime": "apps/reference/domains/decision_making/gates/low_vol_cost_floor.py",
+    "reject_ledger": "calibrators/datasets/nrr062_readonly_reject_economics/nrr062_reject_ledger.json",
+    "replay_results": "calibrators/datasets/nrr062_counterfactual_replay_dataset/nrr062_counterfactual_replay_results.json"
+  },
+  "observed_runtime_surface": {
+    "ledger_rows": 153,
+    "selected_scale_counts": {
+      "raw_signed_score": 153
+    },
+    "threshold_family_counts": {
+      "raw_signed_score": 153
+    },
+    "strategy_id_counts": {
+      "aurora": 153
+    },
+    "symbol_counts": {
+      "ETHUSDT": 76,
+      "XRPUSDT": 30,
+      "BTCUSDT": 47
+    }
+  },
+  "fields": [
+    {
+      "field": "target_net_fee_multiple",
+      "current_value": 2.0,
+      "config_path": "config/aurora/domains.yaml::decision_making.low_vol_cost_floor_gate.thresholds.target_net_fee_multiple",
+      "pydantic_model_field": "LowVolCostFloorThresholdsConfig.target_net_fee_multiple",
+      "runtime_used_for_observed_selected_scale": true,
+      "runtime_usage_notes": "Directly contributes to required_gross_tp_bps = round_trip_fee_bps * (1 + target_net_fee_multiple) + slippage_buffer_bps.",
+      "affects_raw_signed_score_rejects": "conditional_only_if_geometry_binding",
+      "affects_buy_and_sell_together": true,
+      "broad_risk": "HIGH"
+    },
+    {
+      "field": "min_tp_fee_coverage",
+      "current_value": 3.0,
+      "config_path": "config/aurora/domains.yaml::decision_making.low_vol_cost_floor_gate.thresholds.min_tp_fee_coverage",
+      "pydantic_model_field": "LowVolCostFloorThresholdsConfig.min_tp_fee_coverage",
+      "runtime_used_for_observed_selected_scale": true,
+      "runtime_usage_notes": "Directly checked against tp_fee_coverage_ratio after geometry calculation.",
+      "affects_raw_signed_score_rejects": "conditional_only_if_geometry_binding",
+      "affects_buy_and_sell_together": true,
+      "broad_risk": "HIGH"
+    },
+    {
+      "field": "min_rr",
+      "current_value": 1.2,
+      "config_path": "config/aurora/domains.yaml::decision_making.low_vol_cost_floor_gate.thresholds.min_rr",
+      "pydantic_model_field": "LowVolCostFloorThresholdsConfig.min_rr",
+      "runtime_used_for_observed_selected_scale": true,
+      "runtime_usage_notes": "Directly checked against rr_ratio after geometry calculation.",
+      "affects_raw_signed_score_rejects": "conditional_only_if_geometry_binding",
+      "affects_buy_and_sell_together": true,
+      "broad_risk": "HIGH"
+    },
+    {
+      "field": "min_regime_confidence_by_regime.LOW_VOLATILITY",
+      "current_value": 0.39,
+      "config_path": "config/aurora/domains.yaml::decision_making.low_vol_cost_floor_gate.thresholds.min_regime_confidence_by_regime.LOW_VOLATILITY",
+      "pydantic_model_field": "LowVolCostFloorThresholdsConfig.min_regime_confidence_by_regime",
+      "runtime_used_for_observed_selected_scale": true,
+      "runtime_usage_notes": "Always resolved before direction threshold; XRPUSDT aurora rows remain shadowed by strategy+symbol override LOW_VOLATILITY=0.45.",
+      "affects_raw_signed_score_rejects": "yes_but_not_xrp_override_rows",
+      "affects_buy_and_sell_together": true,
+      "broad_risk": "HIGH"
+    },
+    {
+      "field": "min_direction_confidence_by_regime.LOW_VOLATILITY",
+      "current_value": 0.25,
+      "config_path": "config/aurora/domains.yaml::decision_making.low_vol_cost_floor_gate.thresholds.min_direction_confidence_by_regime.LOW_VOLATILITY",
+      "pydantic_model_field": "LowVolCostFloorThresholdsConfig.min_direction_confidence_by_regime",
+      "runtime_used_for_observed_selected_scale": false,
+      "runtime_usage_notes": "Observed cohort resolves threshold_family=raw_signed_score and uses explicit min_raw_score_by_regime instead of this migration alias.",
+      "affects_raw_signed_score_rejects": "no_for_current_cohort",
+      "affects_buy_and_sell_together": true,
+      "broad_risk": "LOW_FOR_CURRENT_COHORT_NOOP"
+    },
+    {
+      "field": "min_raw_score_by_regime.LOW_VOLATILITY",
+      "current_value": 0.25,
+      "config_path": "config/aurora/domains.yaml::decision_making.low_vol_cost_floor_gate.thresholds.min_raw_score_by_regime.LOW_VOLATILITY",
+      "pydantic_model_field": "LowVolCostFloorThresholdsConfig.min_raw_score_by_regime",
+      "runtime_used_for_observed_selected_scale": true,
+      "runtime_usage_notes": "Direct threshold family for all 153 observed rejects because selected_scale=raw_signed_score; XRPUSDT aurora rows remain pinned by raw-score override LOW_VOLATILITY=0.25.",
+      "affects_raw_signed_score_rejects": "yes_but_not_xrp_override_rows",
+      "affects_buy_and_sell_together": true,
+      "broad_risk": "HIGH"
+    },
+    {
+      "field": "min_normalized_confidence_by_regime.LOW_VOLATILITY",
+      "current_value": 0.25,
+      "config_path": "config/aurora/domains.yaml::decision_making.low_vol_cost_floor_gate.thresholds.min_normalized_confidence_by_regime.LOW_VOLATILITY",
+      "pydantic_model_field": "LowVolCostFloorThresholdsConfig.min_normalized_confidence_by_regime",
+      "runtime_used_for_observed_selected_scale": false,
+      "runtime_usage_notes": "Observed cohort never resolves selected_scale=normalized_confidence, so this field is inactive for the 153-row replay surface.",
+      "affects_raw_signed_score_rejects": "no_for_current_cohort",
+      "affects_buy_and_sell_together": true,
+      "broad_risk": "LOW_FOR_CURRENT_COHORT_NOOP"
+    }
+  ]
+}

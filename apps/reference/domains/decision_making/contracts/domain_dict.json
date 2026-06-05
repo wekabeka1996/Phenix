@@ -1,0 +1,56 @@
+{
+  "domain_name": "decision_making",
+  "description": "Central decision engine: receives upstream data (features, risk, regime, portfolio, exposure), dispatches to strategy handlers, and produces trade intents (proposed/rejected/deferred). Owns strategy dispatch, intent construction, safety gating, sizing, flip orchestration, QoS rate control, and reject normalization (NRR).",
+  "version": "2.0.0",
+  "status": "production",
+  "imports": [
+    {"event_name": "CMD:PROCESS_STRATEGY", "source_domain": "feature_engineering"},
+    {"event_name": "EVT:BAR_CLOSED", "source_domain": "market_data"},
+    {"event_name": "EVT:EXPOSURE_SUMMARY_UPDATED", "source_domain": "execution_position"},
+    {"event_name": "EVT:FEATURES_CALCULATED", "source_domain": "feature_engineering"},
+    {"event_name": "EVT:ORDER_REJECTED", "source_domain": "execution_position"},
+    {"event_name": "EVT:ORDER_STATE_CHANGED", "source_domain": "execution_position"},
+    {"event_name": "EVT:POSITION_CLOSED", "source_domain": "execution_position"},
+    {"event_name": "EVT:PORTFOLIO_STATE_UPDATED", "source_domain": "position_tracking"},
+    {"event_name": "EVT:REGIME_DETECTED", "source_domain": "regime_detector"},
+    {"event_name": "EVT:RISK_ASSESSMENT_COMPLETED", "source_domain": "risk_management"},
+    {"event_name": "EVT:STRATEGY_SIGNAL_PRODUCED", "source_domain": "self"},
+    {"event_name": "EVT:SYSTEM_STRESS_STATE_UPDATED", "source_domain": "system_stress"},
+    {"event_name": "EVT:TRADE_EXECUTED", "source_domain": "position_tracking"},
+    {"event_name": "EVT:TRADE_INTENT_REJECTED", "source_domain": "self"},
+    {"event_name": "EVT:STARTUP_SEED_STATUS", "source_domain": "bootstrap"}
+  ],
+  "exports": [
+    {"event_name": "CMD:CLOSE", "target_domains": ["execution_position"]},
+    {"event_name": "EVT:ALPHA_SCORES_AGGREGATED", "target_domains": ["monitoring"]},
+    {"event_name": "EVT:DECISION_BLOCKED", "target_domains": ["monitoring"]},
+    {"event_name": "EVT:DECISION_TRACE_EMITTED", "target_domains": ["monitoring"]},
+    {"event_name": "EVT:FEATURE_DEFER_EXPIRED", "target_domains": ["monitoring"]},
+    {"event_name": "EVT:GATE_CHAIN_TRACE", "target_domains": ["monitoring"]},
+    {"event_name": "EVT:INTENT_DEFERRED", "target_domains": ["monitoring"]},
+    {"event_name": "EVT:QUADRATIC_DECISION_TRACE", "target_domains": ["monitoring"]},
+    {"event_name": "EVT:QUADRATIC_KERNEL_CRASH", "target_domains": ["monitoring"]},
+    {"event_name": "EVT:REGIME_SHIFT_SUSPECTED", "target_domains": ["monitoring"]},
+    {"event_name": "EVT:TRADE_INTENT_PROPOSED", "target_domains": ["execution_position"]},
+    {"event_name": "EVT:TRADE_INTENT_REJECTED", "target_domains": ["monitoring"]}
+  ],
+  "components": [
+    "DecisionMaking",
+    "AuroraHandler",
+    "MdAmrHandler",
+    "MeanReversionHandler",
+    "NormalizedRejectReasons",
+    "QuadraticScoringKernel",
+    "StrategyGateway",
+    "RegimeLossEmbargo",
+    "IntentBuilder",
+    "IntentEmitter"
+  ],
+  "documentation": "README.md",
+  "ssot_notes": {
+    "why_codes": "re-export from vfoundation/core/why_codes.py",
+    "nrr": "normalized_reject_reasons.py is canonical SSOT",
+    "contracts": "registered in verb_registry_v1.yaml",
+    "strategy_bridge": "strategy_bridge.py is the sanctioned DM-facing facade for strategy classes hosted in feature_engineering (MR, MD-AMR, regime_mapping). DM production code MUST import via this bridge, NOT directly from FE submodules (FE-DM-BOUNDARY-STABILIZATION 2026-03-15)."
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "generated_at_utc": "2026-05-13T21:18:32.557272+00:00",
+  "sidecar_trace_rows": 231305,
+  "recommendation_rows": 15,
+  "close_request_rids": 15,
+  "reconciled_close_runtime_ids": 15,
+  "canonical_realized_sidecar_closes": 0,
+  "sidecar_close_pnl_net": 0,
+  "sidecar_close_fees": 0,
+  "sidecar_close_profitable": 0,
+  "sidecar_close_losing": 0,
+  "observed_position_closed_rows": 15,
+  "observed_position_closed_net_pnl": -92.86671668,
+  "observed_position_closed_fees": 39.27871668,
+  "peak_giveback_field_rows": 231271,
+  "peak_giveback_non_null_rows": 231271,
+  "fee_aware_rows": 231153,
+  "fee_aware_non_null_rows": 101464,
+  "observational_assessment": {
+    "counterfactual_available": false,
+    "avoided_further_loss": "not provable from current read-only runtime window",
+    "cut_winners": "not provable from current read-only runtime window",
+    "closed_too_early": "not provable from current read-only runtime window"
+  }
+}

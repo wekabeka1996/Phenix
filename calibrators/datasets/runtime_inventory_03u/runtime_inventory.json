@@ -1,0 +1,145 @@
+{
+  "generated_at_utc": "2026-05-13T21:18:32.557092+00:00",
+  "freeze_bundle": "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z",
+  "runtime_window": {
+    "first_timestamp_utc": "2026-05-09T22:15:03.634000+00:00",
+    "last_timestamp_utc": "2026-05-13T19:04:06.723000+00:00",
+    "duration": "3d 20h 49m 3s",
+    "boot_rows_order_log": 3,
+    "restart_count_proxy": 3,
+    "symbols_observed": [
+      "1000PEPEUSDT",
+      "BNBUSDT",
+      "BTCUSDT",
+      "DOGEUSDT",
+      "ETHUSDT",
+      "SOLUSDT",
+      "XRPUSDT"
+    ],
+    "trading_modes_observed": [
+      "hybrid_live_data_testnet_exec"
+    ],
+    "process_session_segments_inferable": 3
+  },
+  "sources": {
+    "order_log": {
+      "path": "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\order_log_v1.jsonl",
+      "rows": 761,
+      "parse_errors": 0,
+      "first_timestamp_utc": "2026-05-11T15:10:03.413000+00:00",
+      "last_timestamp_utc": "2026-05-13T17:55:01.595000+00:00",
+      "symbols": [
+        "BNBUSDT",
+        "BTCUSDT",
+        "ETHUSDT",
+        "XRPUSDT"
+      ]
+    },
+    "decision_ledger": {
+      "path": "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\shadow_telemetry\\decision_ledger_v1.jsonl",
+      "rows": 334,
+      "parse_errors": 0,
+      "first_timestamp_utc": "2026-05-09T22:15:03.634000+00:00",
+      "last_timestamp_utc": "2026-05-13T14:20:01.047000+00:00",
+      "symbols": [
+        "BNBUSDT",
+        "BTCUSDT",
+        "ETHUSDT",
+        "XRPUSDT"
+      ]
+    },
+    "trade_lifecycle": {
+      "path": "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\trade_lifecycle.jsonl",
+      "rows": 232021,
+      "parse_errors": 1,
+      "first_timestamp_utc": "2026-05-11T14:54:11.586000+00:00",
+      "last_timestamp_utc": "2026-05-13T19:04:06.723000+00:00",
+      "symbols": [
+        "1000PEPEUSDT",
+        "BNBUSDT",
+        "BTCUSDT",
+        "DOGEUSDT",
+        "ETHUSDT",
+        "SOLUSDT",
+        "XRPUSDT"
+      ]
+    }
+  },
+  "order_log_inventory": {
+    "total_rows": 761,
+    "boot_rows": 3,
+    "order_placed_rows": 55,
+    "order_filled_rows": 249,
+    "fill_like_rows": 249,
+    "position_closed_rows": 27,
+    "order_cancelled_rows": 41,
+    "order_timeout_rows": 7,
+    "order_rejected_rows": 0,
+    "decision_intent_rejected_rows": 234,
+    "rows_with_rid": 761,
+    "rows_with_lifecycle_id": 313,
+    "rows_with_realized_pnl_net": 27,
+    "rows_with_fees_or_commission": 276,
+    "event_counts": {
+      "BOOT": 3,
+      "DECISION_INTENT_REJECTED": 234,
+      "LIMIT_PRICE_ADJUSTED": 14,
+      "ORDER_CANCELLED": 41,
+      "ORDER_FILLED": 249,
+      "ORDER_INTENT": 131,
+      "ORDER_PLACED": 55,
+      "ORDER_TIMEOUT": 7,
+      "POSITION_CLOSED": 27
+    }
+  },
+  "decision_ledger_inventory": {
+    "total_rows": 334,
+    "accepted_rows": 0,
+    "rejected_rows": 0,
+    "null_accepted_or_rejected_rows": 334,
+    "rows_with_rid": 334,
+    "rows_with_realized_fields": 334,
+    "rows_by_strategy": {},
+    "rows_by_symbol": {
+      "BNBUSDT": 18,
+      "BTCUSDT": 74,
+      "ETHUSDT": 169,
+      "XRPUSDT": 73
+    },
+    "rows_by_side": {},
+    "rows_by_regime": {}
+  },
+  "trade_lifecycle_inventory": {
+    "total_rows": 232021,
+    "terminal_close_like_rows": 61,
+    "sidecar_rows": 231305,
+    "sidecar_recommendation_rows": 15,
+    "sidecar_request_rows": 55,
+    "sidecar_reconciled_rows": 0,
+    "rows_with_mfe_or_mae_fields": 0,
+    "rows_with_peak_giveback_fields": 231271,
+    "rows_with_realized_pnl_or_fees": 0,
+    "sample_event_counts": {
+      "CANCELLED": 7,
+      "CLOSED": 27,
+      "EXECUTION_BRACKET_DEFERRED_PLACED": 30,
+      "EXECUTION_BRACKET_DEFERRED_STORED": 38,
+      "EXECUTION_BRACKET_RECOVERY_SKIPPED": 5,
+      "EXECUTION_FILL_INGRESS": 249,
+      "EXECUTION_WS_BRACKET_CHILD_ORDERINDEX_MISS": 29,
+      "EXECUTION_WS_TERMINAL_CORRELATED": 10,
+      "ORPHANED_TTL": 27,
+      "POSITION_DISAPPEARANCE_ATTRIBUTED": 27,
+      "POSITION_POLICY_SIDECAR_CLOSE_REQUESTED": 15,
+      "POSITION_POLICY_SIDECAR_CLOSE_REQUEST_STATE": 40,
+      "POSITION_POLICY_SIDECAR_EVALUATED": 660,
+      "POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE": 108,
+      "POSITION_POLICY_SIDECAR_MODE_ACTIVE": 4,
+      "POSITION_POLICY_SIDECAR_RECOMMENDED": 15,
+      "POSITION_POLICY_SIDECAR_SCORES": 660,
+      "POSITION_POLICY_SIDECAR_SUPPRESSED": 229803,
+      "TRADE_LIFECYCLE_FILLED": 229,
+      "TRADE_LIFECYCLE_ORDERED": 38
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "$id": "https://phenix.local/schemas/alpha_scores_aggregated_v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DecisionMaking Aggregate Alpha Scores Event",
+  "description": "Schema for EVT:ALPHA_SCORES_AGGREGATED, a decision_making monitoring side-channel that exports aggregate alpha_registry scores for one feature snapshot.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "symbol": {
+      "type": "string"
+    },
+    "scores": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "timestamp": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "symbol",
+    "scores",
+    "timestamp"
+  ]
+}

@@ -1,0 +1,92 @@
+# ==============================================================================
+# STRATEGIES REGISTRY SSOT
+# ==============================================================================
+# Phase 0: Strategy assignments + arbitration (CFG-STRATEGIES-SSOT-01-REGISTRY-ARBITRATION)
+#
+# CANONICAL SOURCE OF TRUTH  :
+# 1.
+# 2.
+#
+# ConfigLoader    AuroraConfig.strategies_registry
+# Strict mode: missing file  ValueError
+# ==============================================================================
+
+version: "1.0.0"
+
+# ==============================================================================
+# STRATEGY ASSIGNMENTS (per-symbol)
+# ==============================================================================
+#       (strategy_id)
+# Valid strategy_id values:
+# - "aurora": Bar-driven multi-signal strategy (5m basis)
+# - "mean_reversion": Bar-based Bollinger Bands strategy (1m bars)
+# ==============================================================================
+assignments:
+  # 2026-04-23: ETHUSDT restored for aurora with TREND_UP-only runtime allowlist.
+  ETHUSDT:
+    - aurora
+    - llm_microstructure
+
+  SOLUSDT:
+    - aurora
+    - llm_microstructure
+
+  # Calibrated 2026-04-14: XRPUSDT added to aurora (priority 1) + md_amr (priority 3)
+  # Aurora gets arbitration priority; md_amr runs as fallback within window_ms.
+  XRPUSDT:
+    - aurora
+    - md_amr
+    - llm_microstructure
+
+  BTCUSDT:
+    - aurora
+    - llm_microstructure
+
+  # Calibrated 2026-04-14: BNBUSDT added to aurora
+  # md_amr removed 2026-04-15: loss-making in ALL regimes (PF 0.65-0.68)
+  BNBUSDT:
+    - aurora
+    - llm_microstructure
+
+  # 2026-05-13: llm_microstructure enabled for DOGE alongside existing strategies.
+  DOGEUSDT:
+    - aurora
+    - mean_reversion
+    - llm_microstructure
+
+
+# ==============================================================================
+# ARBITRATION (conflict resolution)
+# ==============================================================================
+#  symbol  >1      intent
+# "decision window",     .
+#
+# Modes:
+# - "priority":    (strategy_id  rank)
+# - "regime":      (NOT IMPLEMENTED yet)
+# - "round_robin":  (NOT IMPLEMENTED yet)
+# ==============================================================================
+arbitration:
+  mode: priority
+
+  # Decision window (ms): priority arbitration applies only within the same window.
+  # This prevents permanent suppression of the lower-priority strategy on hybrid symbols (e.g. BTC).
+  window_ms: 1000
+
+  # Priority ranks (lower = higher priority)
+  #  Aurora  MR    BTC:
+  # - Aurora   1 ()
+  # - MR   2 ()
+  # : Aurora intent , MR intent
+  priority:
+    aurora: 1
+    mean_reversion: 2
+    md_amr: 3
+    llm_microstructure: 4
+
+  # Logging policy:  ,  intent
+  # - rejected_strategy: ID ,
+  # - reason:  why- (80 )
+  logging:
+    rejected_why_prefix: "ARBITRATION_REJECT"  # Prefix  why-
+    log_level: "INFO"  #   (INFO/WARNING)

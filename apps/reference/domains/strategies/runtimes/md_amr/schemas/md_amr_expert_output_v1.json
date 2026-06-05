@@ -1,0 +1,123 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora-core.io/schemas/md_amr_expert_output_v1.json",
+  "title": "MDAMRExpertOutput_v1",
+  "description": "Opinion-only MD-AMR native expert evidence output for future Judge evidence consumption.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "expert_id",
+    "strategy_id",
+    "question_type",
+    "symbol",
+    "ts_ms",
+    "side_opinion",
+    "lifecycle_opinion",
+    "confidence",
+    "confidence_source",
+    "authority_status",
+    "md_amr_evidence",
+    "regime_context_ref",
+    "evidence_freshness",
+    "missingness",
+    "source_refs"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "enum": ["1.0.0"]},
+    "expert_id": {"type": "string", "minLength": 1},
+    "strategy_id": {"type": "string", "enum": ["md_amr"]},
+    "question_type": {"type": "string", "enum": ["entry", "lifecycle"]},
+    "symbol": {"type": "string", "minLength": 1},
+    "ts_ms": {"type": "integer", "minimum": 0},
+    "side_opinion": {"type": "string", "enum": ["BUY", "SELL", "NONE", "UNKNOWN"]},
+    "lifecycle_opinion": {
+      "type": ["string", "null"],
+      "enum": ["HOLD", "PROTECT", "EXIT", "SUPPRESS", "UNKNOWN", null]
+    },
+    "confidence": {"type": ["number", "null"], "minimum": 0.0, "maximum": 1.0},
+    "confidence_source": {"type": "string", "minLength": 1},
+    "horizon": {"type": ["string", "null"]},
+    "authority_status": {"type": "string", "enum": ["opinion_only"]},
+    "md_amr_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sentiment_state",
+        "entry_anchor",
+        "progress_state",
+        "setup_quality",
+        "hold_quality",
+        "context_validity",
+        "obi_close",
+        "target_approach_pct",
+        "channel_position",
+        "channel_width_pct",
+        "volatility_z",
+        "atr",
+        "invalidation"
+      ],
+      "properties": {
+        "sentiment_state": {"type": ["string", "null"]},
+        "entry_anchor": {"type": ["object", "null"], "additionalProperties": true},
+        "progress_state": {"type": ["string", "null"]},
+        "setup_quality": {"type": ["number", "null"], "minimum": 0.0, "maximum": 1.0},
+        "hold_quality": {"type": ["number", "null"], "minimum": 0.0, "maximum": 1.0},
+        "context_validity": {"type": ["number", "null"], "minimum": 0.0, "maximum": 1.0},
+        "obi_close": {"type": ["number", "null"]},
+        "target_approach_pct": {"type": ["number", "null"]},
+        "channel_position": {"type": ["number", "null"]},
+        "channel_width_pct": {"type": ["number", "null"]},
+        "volatility_z": {"type": ["number", "null"]},
+        "atr": {"type": ["number", "null"]},
+        "invalidation": {"type": ["object", "null"], "additionalProperties": true}
+      }
+    },
+    "regime_context_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["regime_label", "regime_confidence", "basis_tf_sec", "regime_age_ms"],
+      "properties": {
+        "regime_label": {"type": ["string", "null"]},
+        "regime_confidence": {"type": ["number", "null"], "minimum": 0.0, "maximum": 1.0},
+        "basis_tf_sec": {"type": ["integer", "null"], "minimum": 0},
+        "regime_age_ms": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "evidence_freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["feature_ts_ms", "decision_ts_ms", "age_ms", "freshness_state"],
+      "properties": {
+        "feature_ts_ms": {"type": ["integer", "null"], "minimum": 0},
+        "decision_ts_ms": {"type": ["integer", "null"], "minimum": 0},
+        "age_ms": {"type": ["integer", "null"], "minimum": 0},
+        "freshness_state": {"type": "string", "enum": ["FRESH", "STALE", "MISSING", "UNKNOWN"]}
+      }
+    },
+    "missingness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["per_field"],
+      "properties": {
+        "per_field": {
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        }
+      }
+    },
+    "invalidates_if": {"type": "array", "items": {"type": "string"}},
+    "reason_codes": {"type": "array", "items": {"type": "string"}},
+    "source_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision_id", "rid", "trace_id", "source_event"],
+      "properties": {
+        "decision_id": {"type": ["string", "null"]},
+        "rid": {"type": ["string", "null"]},
+        "trace_id": {"type": ["string", "null"]},
+        "source_event": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

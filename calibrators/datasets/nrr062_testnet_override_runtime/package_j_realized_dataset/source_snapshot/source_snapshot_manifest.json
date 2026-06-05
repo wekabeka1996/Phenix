@@ -1,0 +1,45 @@
+{
+  "generated_at": "2026-05-17T08:07:14.617961+00:00",
+  "builder": "realized_outcome_builder",
+  "repo_root": "C:/Users/user/Music/Phenix/logs/frozen/nrr062_fresh_capture_20260517_080431",
+  "sources": [
+    {
+      "role": "decision_ledger",
+      "source_path": "C:/Users/user/Music/Phenix/logs/frozen/nrr062_fresh_capture_20260517_080431/logs/shadow_telemetry/decision_ledger_v1.jsonl",
+      "source_kind": "current_workspace_authority",
+      "exists": true,
+      "size_bytes": 2906277,
+      "sha256": "df23df26f6a046213269aec56439c5b3ffb05cbf7ac46e450e15a361c660c18c",
+      "mtime_utc": "2026-05-17T07:40:20.333216+00:00",
+      "copied_to": "source_snapshot/decision_ledger_v1.jsonl",
+      "required": true,
+      "notes": "selected_by_cli_override"
+    },
+    {
+      "role": "order_log",
+      "source_path": "C:/Users/user/Music/Phenix/logs/frozen/nrr062_fresh_capture_20260517_080431/logs/order_log_v1.jsonl",
+      "source_kind": "current_workspace_authority",
+      "exists": true,
+      "size_bytes": 960258,
+      "sha256": "63987cef96afeb3ce08534771c11cf00d481e57021252032628779e3ca74891f",
+      "mtime_utc": "2026-05-17T07:47:17.034869+00:00",
+      "copied_to": "source_snapshot/order_log_v1.jsonl",
+      "required": true,
+      "notes": "selected_by_cli_override"
+    },
+    {
+      "role": "trade_lifecycle",
+      "source_path": "C:/Users/user/Music/Phenix/logs/frozen/nrr062_fresh_capture_20260517_080431/logs/trade_lifecycle.jsonl",
+      "source_kind": "current_workspace_authority",
+      "exists": true,
+      "size_bytes": 1044259015,
+      "sha256": "594132a604c9b8c84818ea34982c817fd8eb3e0fd633b49f54f74d0d24478dc5",
+      "mtime_utc": "2026-05-17T08:04:30.736183+00:00",
+      "copied_to": "source_snapshot/trade_lifecycle.jsonl",
+      "required": false,
+      "notes": "selected_by_cli_override"
+    }
+  ],
+  "missing_required_sources": [],
+  "warnings": []
+}

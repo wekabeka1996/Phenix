@@ -1,0 +1,51 @@
+{
+  "package_h": {
+    "leakage_detected": false,
+    "override_count": 1,
+    "sidecar_observed_rids": 1
+  },
+  "package_i": {
+    "leakage_detected": false,
+    "override_count": 5,
+    "submitted_count": 5,
+    "filled_count": 4,
+    "closed_count": 4
+  },
+  "package_j": {
+    "leakage_detected": false,
+    "override_count": 26,
+    "decision_ledger_status_counts": {
+      "REJECTED_UPSTREAM": 24,
+      "INVALID_FOR_DATASET": 2
+    },
+    "freeze_boundary_contrast_sets_zero": true
+  },
+  "package_k_baseline": {
+    "branch": "main",
+    "commit_sha": "34a3b0cce8db834a6550e8087478cf6327d2df9d",
+    "runtime_running": true,
+    "runtime_process_count": 2,
+    "order_log_window": {
+      "path": "logs/order_log_v1.jsonl",
+      "rows": 542,
+      "malformed_rows": 0,
+      "min_ts_utc": "2026-05-16T10:40:02.063000+00:00",
+      "max_ts_utc": "2026-05-17T18:32:21.295000+00:00"
+    },
+    "decision_ledger_window": {
+      "path": "logs/shadow_telemetry/decision_ledger_v1.jsonl",
+      "rows": 606,
+      "malformed_rows": 0,
+      "min_ts_utc": "2026-05-09T22:15:03.634000+00:00",
+      "max_ts_utc": "2026-05-17T18:30:01.586000+00:00"
+    },
+    "trade_lifecycle_window": {
+      "path": "logs/trade_lifecycle.jsonl",
+      "rows": 169141,
+      "malformed_rows": 1,
+      "min_ts_utc": "2026-05-16T10:29:20.477000+00:00",
+      "max_ts_utc": "2026-05-17T20:57:10.860000+00:00"
+    }
+  },
+  "verdict": "BOUNDARY_STABLE_NO_OVERRIDE_LEAKAGE_KEEP_TESTNET_ONLY"
+}

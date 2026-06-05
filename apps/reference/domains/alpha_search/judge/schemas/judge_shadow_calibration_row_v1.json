@@ -1,0 +1,128 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Judge Shadow Calibration Row V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "row_id",
+    "source_kind",
+    "created_ts_ms",
+    "decision_ts_ms",
+    "symbol",
+    "side",
+    "regime_label",
+    "regime_confidence",
+    "envelope",
+    "verdict",
+    "bridge",
+    "outcome",
+    "source_refs",
+    "diagnostics"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "row_id": { "type": "string", "minLength": 1 },
+    "source_kind": { "type": "string", "enum": ["runtime_shadow", "replay", "simulator", "testnet"] },
+    "created_ts_ms": { "type": "integer", "minimum": 0 },
+    "decision_ts_ms": { "type": "integer", "minimum": 0 },
+    "symbol": { "type": "string", "minLength": 1 },
+    "side": { "type": "string", "enum": ["BUY", "SELL", "NONE", "UNKNOWN"] },
+    "regime_label": { "type": ["string", "null"] },
+    "regime_confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["envelope_id", "present", "missing_reason"],
+      "properties": {
+        "envelope_id": { "type": ["string", "null"] },
+        "present": { "type": "boolean" },
+        "missing_reason": { "type": ["string", "null"] }
+      }
+    },
+    "verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict_id", "verdict", "confidence", "authority_status", "applied"],
+      "properties": {
+        "verdict_id": { "type": ["string", "null"] },
+        "verdict": {
+          "type": ["string", "null"],
+          "enum": ["OPEN_LONG", "OPEN_SHORT", "NO_ENTRY", "SUPPRESS", "UNKNOWN", null]
+        },
+        "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "authority_status": { "type": ["string", "null"], "enum": ["shadow_only", null] },
+        "applied": { "type": ["boolean", "null"], "enum": [false, null] }
+      }
+    },
+    "bridge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bridge_decision_id", "authority_mode", "bridge_action", "applied", "no_effect"],
+      "properties": {
+        "bridge_decision_id": { "type": ["string", "null"] },
+        "authority_mode": {
+          "type": ["string", "null"],
+          "enum": ["shadow", "advisory", "hybrid_gated", "live_gated", null]
+        },
+        "bridge_action": {
+          "type": ["string", "null"],
+          "enum": ["record_only", "allow", "suppress", "skip", "blocked", null]
+        },
+        "applied": { "type": ["boolean", "null"], "enum": [false, null] },
+        "no_effect": { "type": ["boolean", "null"], "enum": [true, null] }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome_status",
+        "outcome_ts_ms",
+        "horizon_sec",
+        "gross_pnl_usd",
+        "net_pnl_usd",
+        "fees_usd",
+        "slippage_usd",
+        "max_favorable_usd",
+        "max_adverse_usd",
+        "terminal_status"
+      ],
+      "properties": {
+        "outcome_status": { "type": "string", "enum": ["RESOLVED", "UNRESOLVED", "MISSING", "NOT_APPLICABLE"] },
+        "outcome_ts_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "horizon_sec": { "type": ["integer", "null"], "minimum": 1 },
+        "gross_pnl_usd": { "type": ["number", "null"] },
+        "net_pnl_usd": { "type": ["number", "null"] },
+        "fees_usd": { "type": ["number", "null"] },
+        "slippage_usd": { "type": ["number", "null"] },
+        "max_favorable_usd": { "type": ["number", "null"] },
+        "max_adverse_usd": { "type": ["number", "null"] },
+        "terminal_status": { "type": ["string", "null"] }
+      }
+    },
+    "source_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision_id", "rid", "lifecycle_id", "order_id", "trace_id", "input_paths"],
+      "properties": {
+        "decision_id": { "type": ["string", "null"] },
+        "rid": { "type": ["string", "null"] },
+        "lifecycle_id": { "type": ["string", "null"] },
+        "order_id": { "type": ["string", "null"] },
+        "trace_id": { "type": ["string", "null"] },
+        "input_paths": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["missing_fields", "join_quality", "reason_codes"],
+      "properties": {
+        "missing_fields": { "type": "array", "items": { "type": "string" } },
+        "join_quality": { "type": "string", "enum": ["EXACT", "RID_EXACT", "FUZZY", "UNJOINED", "SYNTHETIC"] },
+        "reason_codes": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

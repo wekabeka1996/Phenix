@@ -1,0 +1,90 @@
+{
+  "generated_at_utc": "2026-05-10T19:33:43.251528+00:00",
+  "audit_source_kind": "artifact_authority_snapshot",
+  "source_snapshot_manifest_path": "artifacts/calibration_datasets/_post_03k_realized_outcome_03q/source_snapshot/source_snapshot_manifest.json",
+  "total_close_expected_unmatched_rows": 13,
+  "bucket_counts": {
+    "ORDER_LOG_MISSING_POSITION_CLOSED_BUT_TRADE_LIFECYCLE_CLOSED": 8,
+    "ORDER_LOG_HAS_ALTERNATIVE_TERMINAL_EVENT": 2,
+    "LIFECYCLE_ID_BRIDGE_AVAILABLE": 0,
+    "TRADE_ID_BRIDGE_AVAILABLE": 0,
+    "DECISION_LEDGER_REALIZED_ONLY": 1,
+    "BUILDER_CANONICALIZATION_GAP": 0,
+    "RUNTIME_LOGGING_GAP": 0,
+    "INCONCLUSIVE": 2
+  },
+  "matrix_rows": [
+    {
+      "bucket": "ORDER_LOG_MISSING_POSITION_CLOSED_BUT_TRADE_LIFECYCLE_CLOSED",
+      "count": 8,
+      "pct_of_close_expected_unmatched": 61.5385,
+      "example_rids": [
+        "aurora_BTCUSDT_1778364903981",
+        "aurora_BNBUSDT_1778377202278",
+        "aurora_BNBUSDT_1778379004957"
+      ]
+    },
+    {
+      "bucket": "ORDER_LOG_HAS_ALTERNATIVE_TERMINAL_EVENT",
+      "count": 2,
+      "pct_of_close_expected_unmatched": 15.3846,
+      "example_rids": [
+        "aurora_BNBUSDT_1778378405537",
+        "aurora_XRPUSDT_1778402706854"
+      ]
+    },
+    {
+      "bucket": "LIFECYCLE_ID_BRIDGE_AVAILABLE",
+      "count": 0,
+      "pct_of_close_expected_unmatched": 0.0,
+      "example_rids": []
+    },
+    {
+      "bucket": "TRADE_ID_BRIDGE_AVAILABLE",
+      "count": 0,
+      "pct_of_close_expected_unmatched": 0.0,
+      "example_rids": []
+    },
+    {
+      "bucket": "DECISION_LEDGER_REALIZED_ONLY",
+      "count": 1,
+      "pct_of_close_expected_unmatched": 7.6923,
+      "example_rids": [
+        "aurora_BTCUSDT_1778429706498"
+      ]
+    },
+    {
+      "bucket": "BUILDER_CANONICALIZATION_GAP",
+      "count": 0,
+      "pct_of_close_expected_unmatched": 0.0,
+      "example_rids": []
+    },
+    {
+      "bucket": "RUNTIME_LOGGING_GAP",
+      "count": 0,
+      "pct_of_close_expected_unmatched": 0.0,
+      "example_rids": []
+    },
+    {
+      "bucket": "INCONCLUSIVE",
+      "count": 2,
+      "pct_of_close_expected_unmatched": 15.3846,
+      "example_rids": [
+        "aurora_ETHUSDT_1778428202947",
+        "aurora_XRPUSDT_1778430903673"
+      ]
+    }
+  ],
+  "dominant_axes": {
+    "runtime_surface_rows": 10,
+    "builder_surface_rows": 0,
+    "decision_ledger_surface_rows": 1,
+    "inconclusive_rows": 2
+  },
+  "recommended_next_package": "03T_RUNTIME_POSITION_CLOSED_EMISSION_REPAIR",
+  "recommendation_basis": [
+    "runtime-oriented buckets account for 10 / 13 close-expected unmatched rows",
+    "8 rows already prove closure in trade_lifecycle while canonical POSITION_CLOSED is absent",
+    "2 rows emit alternative terminal order events instead of canonical close emission"
+  ]
+}

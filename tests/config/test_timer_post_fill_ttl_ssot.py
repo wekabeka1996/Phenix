@@ -1,0 +1,174 @@
+"""T3B Timer Governance: post_fill_ttl_sec SSOT enforcement.
+
+Canonical source: domains.execution_position.exposure_guard.post_fill_ttl_sec
+Noncanonical duplicates (pre-T3B): system.yaml execution.exposure,
+                                    trading.yaml trading.execution.exposure
+
+Field-name drift:
+  Canonical field name:    post_fill_ttl_sec    (ExposureGuardConfig, domains.yaml)
+  Noncanonical field name: post_fill_hold_ttl_sec (ExposureConfig, system/trading.yaml)
+
+These tests enforce:
+1. The canonical value exists in domains.yaml with the correct value (5).
+2. The noncanonical duplicates (post_fill_hold_ttl_sec) are absent from system.yaml
+   and trading.yaml.  (This test MUST FAIL before cleanup and PASS after.)
+3. ExposureGuard reads post_fill_ttl_sec from ExposureGuardConfig (domains.yaml path),
+   not from ExposureConfig (trading/system YAML path).
+4. ExposureConfig.post_fill_hold_ttl_sec is no longer a required field, so the YAML
+   keys can be safely omitted.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+import yaml
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DOMAINS_YAML = REPO_ROOT / "config" / "aurora" / "domains.yaml"
+SYSTEM_YAML = REPO_ROOT / "config" / "aurora" / "system.yaml"
+TRADING_YAML = REPO_ROOT / "config" / "aurora" / "trading.yaml"
+
+CANONICAL_VALUE = 5
+
+
+def test_canonical_post_fill_ttl_exists():
+    """Canonical post_fill_ttl_sec must exist in domains.yaml at the correct path.
+
+    SSOT: domains.execution_position.exposure_guard.post_fill_ttl_sec == 5
+    """
+    raw = yaml.safe_load(DOMAINS_YAML.read_text(encoding="utf-8"))
+
+    # domains.yaml may have a top-level 'domains:' wrapper or not
+    cfg = raw.get("domains", raw)
+
+    value = (
+        (cfg.get("execution_position") or {})
+        .get("exposure_guard", {})
+        .get("post_fill_ttl_sec")
+    )
+
+    assert value is not None, (
+        "domains.yaml is missing execution_position.exposure_guard.post_fill_ttl_sec. "
+        "This is the canonical SSOT path for post_fill_ttl_sec — do not remove it."
+    )
+    assert value == CANONICAL_VALUE, (
+        f"domains.execution_position.exposure_guard.post_fill_ttl_sec = {value!r}, "
+        f"expected {CANONICAL_VALUE!r}. "
+        "Do not change the canonical value without updating this test."
+    )
+
+
+def test_noncanonical_yaml_paths_absent():
+    """post_fill_hold_ttl_sec MUST NOT appear in system.yaml or trading.yaml.
+
+    This test FAILS before the T3B cleanup (duplicates still present) and
+    PASSES after (duplicates removed).
+
+    Canonical source: domains.execution_position.exposure_guard.post_fill_ttl_sec
+    Noncanonical paths removed by T3B:
+      - system.yaml  execution.exposure.post_fill_hold_ttl_sec
+      - trading.yaml trading.execution.exposure.post_fill_hold_ttl_sec
+
+    Note: There is a field-name drift between canonical (post_fill_ttl_sec) and
+    noncanonical (post_fill_hold_ttl_sec).  Both refer to the same semantic value.
+    ExposureGuard reads only from the canonical path.
+    """
+    system_cfg = yaml.safe_load(SYSTEM_YAML.read_text(encoding="utf-8"))
+    trading_cfg = yaml.safe_load(TRADING_YAML.read_text(encoding="utf-8"))
+
+    violations: list[str] = []
+
+    # system.yaml: execution.exposure.post_fill_hold_ttl_sec
+    system_exposure = (system_cfg.get("execution") or {}).get("exposure") or {}
+    if "post_fill_hold_ttl_sec" in system_exposure:
+        violations.append(
+            f"system.yaml: execution.exposure.post_fill_hold_ttl_sec = "
+            f"{system_exposure['post_fill_hold_ttl_sec']!r}  [NONCANONICAL DUPLICATE]"
+        )
+
+    # trading.yaml: trading.execution.exposure.post_fill_hold_ttl_sec
+    trading_exposure = (
+        (trading_cfg.get("trading") or {}).get("execution") or {}
+    ).get("exposure") or {}
+    if "post_fill_hold_ttl_sec" in trading_exposure:
+        violations.append(
+            f"trading.yaml: trading.execution.exposure.post_fill_hold_ttl_sec = "
+            f"{trading_exposure['post_fill_hold_ttl_sec']!r}  [NONCANONICAL DUPLICATE]"
+        )
+
+    assert not violations, (
+        "Noncanonical post_fill_hold_ttl_sec copies found. "
+        "SSOT is domains.execution_position.exposure_guard.post_fill_ttl_sec. "
+        "Remove these duplicates:\n"
+        + "\n".join(f"  - {v}" for v in violations)
+    )
+
+
+def test_exposure_guard_consumes_canonical_post_fill_value():
+    """ExposureGuard reads post_fill_ttl_sec from ExposureGuardConfig (domains.yaml).
+
+    The wiring must go through DomainConfigResolver.get_exposure_guard() which
+    returns ExposureGuardConfig loaded from domains.execution_position.exposure_guard.
+    ExposureGuard must NOT read post_fill_hold_ttl_sec from ExposureConfig (legacy path).
+
+    ExposureGuard stores the value as self.post_fill_hold_ttl_sec but reads it from
+    eg_config.post_fill_ttl_sec (canonical ExposureGuardConfig field).
+    """
+    import inspect
+
+    from apps.reference.domains.execution_position.guards.exposure_guard import (
+        ExposureGuard,
+    )
+
+    src = inspect.getsource(ExposureGuard.__init__)
+
+    # Canonical assignment must appear: self.post_fill_hold_ttl_sec = eg_config.post_fill_ttl_sec
+    assert "eg_config.post_fill_ttl_sec" in src, (
+        "ExposureGuard.__init__ does not assign post_fill_ttl_sec from eg_config. "
+        "Expected: self.post_fill_hold_ttl_sec = eg_config.post_fill_ttl_sec "
+        "where eg_config = resolver.get_exposure_guard() (ExposureGuardConfig)."
+    )
+
+    # resolver.get_exposure_guard() must precede the assignment
+    eg_config_pos = src.find("eg_config = resolver.get_exposure_guard()")
+    post_fill_pos = src.find("eg_config.post_fill_ttl_sec")
+    assert 0 <= eg_config_pos < post_fill_pos, (
+        "resolver.get_exposure_guard() must be called before eg_config.post_fill_ttl_sec "
+        "is accessed in ExposureGuard.__init__."
+    )
+
+    # Must NOT read from the legacy execution_cfg.exposure path for post_fill_hold_ttl_sec
+    assert "execution_cfg.exposure.post_fill_hold_ttl_sec" not in src, (
+        "ExposureGuard.__init__ reads post_fill_hold_ttl_sec from execution_cfg.exposure "
+        "(legacy noncanonical path). This must not happen."
+    )
+
+
+def test_noncanonical_post_fill_hold_field_not_required():
+    """ExposureConfig.post_fill_hold_ttl_sec must not be a required field.
+
+    If ExposureConfig.post_fill_hold_ttl_sec is Required (Field(...)), it forces
+    system.yaml and trading.yaml to provide the noncanonical duplicate.
+    After T3B, it must be Optional (default=None) or fully removed.
+
+    If the field has been fully removed from ExposureConfig, this test skips
+    with a note that the cleanup is complete.
+    """
+    from apps.reference.config_models import ExposureConfig
+
+    field_info = ExposureConfig.model_fields.get("post_fill_hold_ttl_sec")
+
+    if field_info is None:
+        pytest.skip(
+            "ExposureConfig.post_fill_hold_ttl_sec has been fully removed from the model. "
+            "T3B SSOT enforcement is complete."
+        )
+        return
+
+    is_required = field_info.is_required()
+    assert not is_required, (
+        "ExposureConfig.post_fill_hold_ttl_sec is still Required (Field(...)). "
+        "This forces system.yaml / trading.yaml to provide the noncanonical duplicate. "
+        "Fix: change to Optional[int] = Field(default=None) in config_models.py ExposureConfig."
+    )

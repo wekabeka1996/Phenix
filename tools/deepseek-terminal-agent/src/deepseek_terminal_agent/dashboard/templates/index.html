@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DeepSeek Terminal Agent Dashboard</title>
+  <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+  <header>
+    <h1>DeepSeek Terminal Agent Dashboard</h1>
+    <div class="status-bar">
+      <span class="badge {% if api_key_present %}badge-ok{% else %}badge-error{% endif %}">
+        API Key: {% if api_key_present %}✓ Present{% else %}✗ Missing{% endif %}
+      </span>
+      <span class="badge badge-info">Model: {{ model }}</span>
+      <span class="badge badge-info">Workspace: {{ workspace }}</span>
+      <span class="badge {% if reasoning_enabled %}badge-ok{% else %}badge-warn{% endif %}">
+        Reasoning: {% if reasoning_enabled %}on{% else %}off{% endif %}
+      </span>
+    </div>
+  </header>
+
+  <main>
+    <section class="card prompt-card">
+      <div class="section-head">
+        <h2>Run Agent</h2>
+        <p class="section-note">Background jobs with live status, activity feed and output.</p>
+      </div>
+
+      <form id="run-form">
+        <textarea
+          id="prompt"
+          rows="5"
+          placeholder="Enter your prompt here..."
+          maxlength="{{ bootstrap.maxPromptChars }}"
+        ></textarea>
+
+        <div class="quick-buttons">
+          <button type="button" class="btn-quick" onclick="setPrompt('привіт')">привіт</button>
+          <button type="button" class="btn-quick" onclick="setPrompt('Run pwd and list the top-level files.')">pwd + ls</button>
+          <button type="button" class="btn-quick" onclick="setPrompt('Run pytest -q and report the results')">pytest -q</button>
+          <button type="button" class="btn-quick" onclick="setPrompt('Analyze this repository structure read-only: run ls, git log --oneline -10, and summarize what you find. Do not modify any files.')">Analyze repo</button>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn-primary" id="run-btn">Run</button>
+          <button type="button" class="btn-secondary hidden" id="cancel-btn">Cancel</button>
+          <button type="button" class="btn-ghost" id="refresh-btn">Refresh</button>
+          <span class="char-count" id="char-count">0 / {{ bootstrap.maxPromptChars }}</span>
+        </div>
+
+        <div class="form-actions form-actions-secondary">
+          <label class="toggle">
+            <input type="checkbox" id="autoscroll-toggle" checked>
+            <span>Auto-scroll output</span>
+          </label>
+          <button type="button" class="btn-ghost" id="copy-output-btn">Copy output</button>
+        </div>
+
+        <p class="warning-text hidden" id="connection-warning"></p>
+      </form>
+    </section>
+
+    <section class="card status-card">
+      <div class="section-head">
+        <h2>Live Status</h2>
+        <span class="badge badge-muted" id="status-badge">idle</span>
+      </div>
+
+      <div class="status-grid">
+        <div>
+          <span class="status-label">Current phase</span>
+          <span class="status-value mono" id="status-phase">idle</span>
+        </div>
+        <div>
+          <span class="status-label">Elapsed</span>
+          <span class="status-value mono" id="status-duration">0 ms</span>
+        </div>
+        <div>
+          <span class="status-label">Run ID</span>
+          <span class="status-value mono" id="status-run-id">-</span>
+        </div>
+        <div>
+          <span class="status-label">Exit code</span>
+          <span class="status-value mono" id="status-exit-code">-</span>
+        </div>
+      </div>
+
+      <div class="status-block">
+        <span class="status-label">Latest event</span>
+        <p class="status-latest" id="status-latest-event">No active run.</p>
+      </div>
+
+      <div class="status-block">
+        <span class="status-label">Run logs path</span>
+        <p class="run-dir mono" id="status-run-dir">Not available</p>
+      </div>
+    </section>
+
+    <section class="card activity-card">
+      <div class="section-head">
+        <h2>Activity Feed</h2>
+        <span class="badge badge-muted" id="activity-count">0 events</span>
+      </div>
+      <ul class="activity-feed" id="activity-feed">
+        <li class="activity-empty">No events yet.</li>
+      </ul>
+    </section>
+
+    <section class="card output-card">
+      <div class="section-head output-head">
+        <h2>Output</h2>
+        <div class="output-tabs" role="tablist" aria-label="Output tabs">
+          <button type="button" class="tab-button is-active" data-output-tab="combined">Combined</button>
+          <button type="button" class="tab-button" data-output-tab="stdout">Stdout</button>
+          <button type="button" class="tab-button" data-output-tab="stderr">Stderr</button>
+        </div>
+      </div>
+      <p class="warning-text hidden" id="output-warning">Output was truncated to keep the dashboard responsive.</p>
+      <pre class="output" id="output-view">No output yet.</pre>
+    </section>
+
+    <section class="card recent-card">
+      <div class="section-head">
+        <h2>Recent Runs</h2>
+        <p class="section-note">Open a previous run to inspect its final status and saved output.</p>
+      </div>
+      <table class="runs-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Prompt</th>
+            <th>Status</th>
+            <th>Duration</th>
+            <th>Run ID</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="recent-runs-body"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      DeepSeek Terminal Agent Dashboard — localhost only —
+      <a href="/health">/health</a> ·
+      <a href="/config-status">/config-status</a> ·
+      <a href="/runs">/runs</a> ·
+      <a href="/chat">/chat</a>
+    </p>
+  </footer>
+
+  <script id="dashboard-bootstrap" type="application/json">{{ bootstrap | tojson }}</script>
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>

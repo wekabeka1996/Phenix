@@ -1,4 +1,4 @@
-name: '▶️ Gemini Invoke'
+name: '       Gemini Invoke'
 
 on:
   workflow_call:
@@ -182,7 +182,7 @@ jobs:
                 - **Plan Template:**
 
                   ```markdown
-                  ## 🤖 AI Assistant: Plan of Action
+                  ##      AI Assistant: Plan of Action
 
                   I have analyzed the request and propose the following plan. **This plan will not be executed until it is approved by a maintainer.**
 
@@ -224,7 +224,7 @@ jobs:
                 - **Report Template:**
 
                   ```markdown
-                  ## ✅ Task Complete
+                  ##     Task Complete
 
                   I have successfully executed the approved plan.
 

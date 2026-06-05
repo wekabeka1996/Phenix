@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantumtraderx.com/schemas/events/order_rejected_v1.json",
+  "title": "Order Rejected Event",
+  "description": "Event emitted when an order is rejected due to exposure limits or other risk constraints",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Trading symbol/pair (e.g., 'BTCUSDT')"
+    },
+    "side": {
+      "type": "string",
+      "enum": ["BUY", "SELL"],
+      "description": "Order side"
+    },
+    "quantity": {
+      "type": "number",
+      "description": "Order quantity"
+    },
+    "nrr_code": {
+      "type": "string",
+      "enum": ["NRR-011", "NRR-012", "NRR-013"],
+      "description": "NRR rejection code indicating the specific limit exceeded"
+    },
+    "reason": {
+      "type": "string",
+      "description": "Human-readable reason for rejection"
+    },
+    "current_exposure": {
+      "type": "number",
+      "description": "Current portfolio exposure (for NRR-011)"
+    },
+    "max_exposure": {
+      "type": "number",
+      "description": "Maximum allowed exposure (for NRR-011)"
+    },
+    "current_side_exposure": {
+      "type": "number",
+      "description": "Current side exposure (for NRR-012)"
+    },
+    "max_side_exposure": {
+      "type": "number",
+      "description": "Maximum allowed side exposure (for NRR-012)"
+    },
+    "current_ratio": {
+      "type": "number",
+      "description": "Current directional ratio (for NRR-013)"
+    },
+    "max_ratio": {
+      "type": "number",
+      "description": "Maximum allowed directional ratio (for NRR-013)"
+    }
+  },
+  "required": ["symbol", "side", "quantity", "nrr_code", "reason"],
+  "additionalProperties": false
+}

@@ -1,0 +1,141 @@
+{
+  "package": "03T_RUNTIME_POSITION_CLOSED_EMISSION_REPAIR",
+  "source_03r_ledger": "calibrators/datasets/close_surface_reconciliation_post_03r/CLOSE_EXPECTED_UNMATCHED_LEDGER.json",
+  "primary_defect_classification": {
+    "name": "RECONCILIATION_PATH_LACKS_POSITION_CLOSED_PARITY",
+    "confidence": "HIGH",
+    "applies_to_rows": 8
+  },
+  "rows": [
+    {
+      "rid": "aurora_BTCUSDT_1778364903981",
+      "bucket": "ORDER_LOG_MISSING_POSITION_CLOSED_BUT_TRADE_LIFECYCLE_CLOSED",
+      "trade_id": "487208053",
+      "lifecycle_id": "cc7a9e64-0f4b-47fc-a9b7-6c46b11eb047",
+      "order_pattern": ["LIMIT_PRICE_ADJUSTED", "ORDER_INTENT", "ORDER_PLACED"],
+      "trade_pattern": ["EXECUTION_FILL_INGRESS", "TRADE_LIFECYCLE_FILLED", "ORPHANED_TTL"],
+      "suspected_runtime_path": "missed_portfolio_edge_then_ttl_flush",
+      "03t_repair_target": true
+    },
+    {
+      "rid": "aurora_BNBUSDT_1778377202278",
+      "bucket": "ORDER_LOG_MISSING_POSITION_CLOSED_BUT_TRADE_LIFECYCLE_CLOSED",
+      "trade_id": "122904650",
+      "lifecycle_id": "50426b05-31f7-4e27-94a1-79a691866844",
+      "order_pattern": ["ORDER_INTENT", "ORDER_PLACED"],
+      "trade_pattern": ["EXECUTION_FILL_INGRESS", "TRADE_LIFECYCLE_FILLED", "ORPHANED_TTL"],
+      "suspected_runtime_path": "missed_portfolio_edge_then_ttl_flush",
+      "03t_repair_target": true
+    },
+    {
+      "rid": "aurora_BNBUSDT_1778378405537",
+      "bucket": "ORDER_LOG_HAS_ALTERNATIVE_TERMINAL_EVENT",
+      "trade_id": null,
+      "lifecycle_id": "9ab4948c-7038-4b20-bd36-6812722439dd",
+      "order_pattern": ["ORDER_INTENT", "ORDER_PLACED", "ORDER_TIMEOUT", "ORDER_CANCELLED"],
+      "trade_pattern": ["TRADE_LIFECYCLE_ORDERED", "CANCELLED"],
+      "suspected_runtime_path": "terminal_non_fill_or_cancelled_close_attempt",
+      "03t_repair_target": false
+    },
+    {
+      "rid": "aurora_BNBUSDT_1778379004957",
+      "bucket": "ORDER_LOG_MISSING_POSITION_CLOSED_BUT_TRADE_LIFECYCLE_CLOSED",
+      "trade_id": "122916851",
+      "lifecycle_id": "30000f91-7dd6-4fd3-8b02-7ffe963fa482",
+      "order_pattern": ["LIMIT_PRICE_ADJUSTED", "ORDER_INTENT", "ORDER_PLACED"],
+      "trade_pattern": ["EXECUTION_FILL_INGRESS", "TRADE_LIFECYCLE_FILLED", "ORPHANED_TTL"],
+      "suspected_runtime_path": "missed_portfolio_edge_then_ttl_flush",
+      "03t_repair_target": true
+    },
+    {
+      "rid": "aurora_XRPUSDT_1778382005365",
+      "bucket": "ORDER_LOG_MISSING_POSITION_CLOSED_BUT_TRADE_LIFECYCLE_CLOSED",
+      "trade_id": "105872760",
+      "lifecycle_id": "9715e198-273e-4cf8-9c3a-d00e62b12f18",
+      "order_pattern": ["ORDER_INTENT", "ORDER_PLACED"],
+      "trade_pattern": ["EXECUTION_FILL_INGRESS", "TRADE_LIFECYCLE_FILLED", "ORPHANED_TTL"],
+      "suspected_runtime_path": "missed_portfolio_edge_then_ttl_flush",
+      "03t_repair_target": true
+    },
+    {
+      "rid": "aurora_XRPUSDT_1778402706854",
+      "bucket": "ORDER_LOG_HAS_ALTERNATIVE_TERMINAL_EVENT",
+      "trade_id": null,
+      "lifecycle_id": "cce9f6dd-868d-4d66-ba9c-a87e77c7e2b5",
+      "order_pattern": ["ORDER_INTENT", "ORDER_PLACED", "ORDER_TIMEOUT", "ORDER_CANCELLED"],
+      "trade_pattern": ["TRADE_LIFECYCLE_ORDERED", "CANCELLED"],
+      "suspected_runtime_path": "terminal_non_fill_or_cancelled_close_attempt",
+      "03t_repair_target": false
+    },
+    {
+      "rid": "aurora_BNBUSDT_1778405705080",
+      "bucket": "ORDER_LOG_MISSING_POSITION_CLOSED_BUT_TRADE_LIFECYCLE_CLOSED",
+      "trade_id": "123051496",
+      "lifecycle_id": "54bb8735-4cf6-4cea-ad57-fd2fac8355cf",
+      "order_pattern": ["ORDER_INTENT", "ORDER_PLACED"],
+      "trade_pattern": ["EXECUTION_FILL_INGRESS", "TRADE_LIFECYCLE_FILLED", "ORPHANED_TTL"],
+      "suspected_runtime_path": "missed_portfolio_edge_then_ttl_flush",
+      "03t_repair_target": true
+    },
+    {
+      "rid": "aurora_XRPUSDT_1778414705236",
+      "bucket": "ORDER_LOG_MISSING_POSITION_CLOSED_BUT_TRADE_LIFECYCLE_CLOSED",
+      "trade_id": "106044229",
+      "lifecycle_id": "0cabb364-21d9-4636-af8e-24b5a097ca3a",
+      "order_pattern": ["ORDER_INTENT", "ORDER_PLACED"],
+      "trade_pattern": ["EXECUTION_FILL_INGRESS", "TRADE_LIFECYCLE_FILLED", "ORPHANED_TTL"],
+      "suspected_runtime_path": "missed_portfolio_edge_then_ttl_flush",
+      "03t_repair_target": true
+    },
+    {
+      "rid": "aurora_BNBUSDT_1778416502994",
+      "bucket": "ORDER_LOG_MISSING_POSITION_CLOSED_BUT_TRADE_LIFECYCLE_CLOSED",
+      "trade_id": "123109515",
+      "lifecycle_id": "cbedba7e-e330-4ba0-8f41-45348732b4f0",
+      "order_pattern": ["ORDER_INTENT", "ORDER_PLACED"],
+      "trade_pattern": ["EXECUTION_FILL_INGRESS", "TRADE_LIFECYCLE_FILLED", "ORPHANED_TTL"],
+      "suspected_runtime_path": "missed_portfolio_edge_then_ttl_flush",
+      "03t_repair_target": true
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778424602438",
+      "bucket": "ORDER_LOG_MISSING_POSITION_CLOSED_BUT_TRADE_LIFECYCLE_CLOSED",
+      "trade_id": "487524408",
+      "lifecycle_id": "5254c232-01b3-456e-a0e8-f0bc019ec742",
+      "order_pattern": ["ORDER_INTENT", "ORDER_PLACED"],
+      "trade_pattern": ["EXECUTION_FILL_INGRESS", "TRADE_LIFECYCLE_FILLED", "ORPHANED_TTL"],
+      "suspected_runtime_path": "missed_portfolio_edge_then_ttl_flush",
+      "03t_repair_target": true
+    },
+    {
+      "rid": "aurora_ETHUSDT_1778428202947",
+      "bucket": "INCONCLUSIVE",
+      "trade_id": "272682471",
+      "lifecycle_id": "26762b1a-412b-4383-a705-5594d6373f0a",
+      "order_pattern": ["ORDER_INTENT", "ORDER_PLACED"],
+      "trade_pattern": ["EXECUTION_FILL_INGRESS", "TRADE_LIFECYCLE_FILLED"],
+      "suspected_runtime_path": "unproven",
+      "03t_repair_target": false
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778429706498",
+      "bucket": "DECISION_LEDGER_REALIZED_ONLY",
+      "trade_id": "487556008",
+      "lifecycle_id": "290bc497-5450-40d4-a11e-76393ab1f2d7",
+      "order_pattern": ["ORDER_INTENT", "ORDER_PLACED"],
+      "trade_pattern": ["EXECUTION_FILL_INGRESS", "TRADE_LIFECYCLE_FILLED"],
+      "suspected_runtime_path": "decision_ledger_only_realized_authority",
+      "03t_repair_target": false
+    },
+    {
+      "rid": "aurora_XRPUSDT_1778430903673",
+      "bucket": "INCONCLUSIVE",
+      "trade_id": "106145975",
+      "lifecycle_id": "07b24468-7c4d-4180-9638-bd8d940fad56",
+      "order_pattern": ["ORDER_INTENT", "ORDER_PLACED"],
+      "trade_pattern": ["EXECUTION_FILL_INGRESS", "TRADE_LIFECYCLE_FILLED"],
+      "suspected_runtime_path": "unproven",
+      "03t_repair_target": false
+    }
+  ]
+}

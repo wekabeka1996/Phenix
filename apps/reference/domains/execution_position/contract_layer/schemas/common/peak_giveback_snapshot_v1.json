@@ -1,0 +1,420 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/common/peak_giveback_snapshot_v1.json",
+  "title": "Execution Position peak giveback snapshot",
+  "description": "Additive Phase 8A shared schema skeleton for Position Policy Sidecar peak giveback snapshots.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "policy_enabled",
+    "mark_price",
+    "entry_price",
+    "position_qty",
+    "side",
+    "unrealized_pnl_usdt",
+    "unrealized_pnl_pct",
+    "peak_edge_usd",
+    "current_edge_usd",
+    "giveback_pct",
+    "is_armed",
+    "arm_threshold_usd",
+    "giveback_trigger_pct",
+    "threshold_crossed",
+    "peak_giveback_state",
+    "peak_giveback_shadow_arms",
+    "reason_codes",
+    "null_reasons"
+  ],
+  "properties": {
+    "policy_enabled": {
+      "type": "boolean"
+    },
+    "mark_price": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "entry_price": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "position_qty": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "side": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "unrealized_pnl_usdt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "unrealized_pnl_pct": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "peak_edge_usd": {
+      "type": "number"
+    },
+    "current_edge_usd": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "giveback_pct": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "is_armed": {
+      "type": "boolean"
+    },
+    "arm_threshold_usd": {
+      "type": "number"
+    },
+    "giveback_trigger_pct": {
+      "type": "number"
+    },
+    "threshold_crossed": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "peak_giveback_state": {
+      "type": "string",
+      "minLength": 1
+    },
+    "peak_giveback_shadow_arms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "percent_notional",
+        "fee_aware"
+      ],
+      "properties": {
+        "percent_notional": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "candidate_unit",
+            "giveback_trigger_pct",
+            "candidates"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "candidate_unit": {
+              "type": "string",
+              "const": "percent"
+            },
+            "giveback_trigger_pct": {
+              "type": "number"
+            },
+            "null_reason": {
+              "type": "string"
+            },
+            "candidates": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "candidate_pct",
+                  "arm_threshold_usd",
+                  "is_armed",
+                  "first_arm_ts_ms",
+                  "peak_edge_usd",
+                  "giveback_pct",
+                  "threshold_met_under_current_giveback_trigger_pct",
+                  "would_trigger",
+                  "state",
+                  "null_reasons"
+                ],
+                "properties": {
+                  "candidate_pct": {
+                    "type": "number"
+                  },
+                  "arm_threshold_usd": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "is_armed": {
+                    "type": "boolean"
+                  },
+                  "first_arm_ts_ms": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0
+                  },
+                  "peak_edge_usd": {
+                    "type": "number"
+                  },
+                  "giveback_pct": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "threshold_met_under_current_giveback_trigger_pct": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "would_trigger": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "state": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "null_reasons": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "fee_aware": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "fee_source_priority",
+            "candidate_fee_multiples",
+            "giveback_trigger_pct",
+            "optional_pct_notional_floor",
+            "candidates"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "fee_source_priority": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "realized_lifecycle_fee",
+                  "order_log_fee",
+                  "configured_fee_model"
+                ]
+              }
+            },
+            "candidate_fee_multiples": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            },
+            "giveback_trigger_pct": {
+              "type": "number"
+            },
+            "optional_pct_notional_floor": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "enabled",
+                "candidate_unit",
+                "candidate_pcts"
+              ],
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "candidate_unit": {
+                  "type": "string",
+                  "const": "percent"
+                },
+                "candidate_pcts": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                }
+              }
+            },
+            "null_reason": {
+              "type": "string"
+            },
+            "candidates": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "fee_multiple",
+                  "estimated_fee_usd",
+                  "fee_source",
+                  "fee_source_confidence",
+                  "optional_pct_floor",
+                  "required_edge_usd",
+                  "current_edge_usd",
+                  "is_armed",
+                  "first_arm_ts_ms",
+                  "peak_edge_usd",
+                  "giveback_pct",
+                  "would_trigger_under_current_giveback_trigger_pct",
+                  "would_trigger",
+                  "state",
+                  "null_reasons"
+                ],
+                "properties": {
+                  "fee_multiple": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "estimated_fee_usd": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "fee_source": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "realized_lifecycle_fee",
+                      "order_log_fee",
+                      "configured_fee_model",
+                      null
+                    ]
+                  },
+                  "fee_source_confidence": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "optional_pct_floor": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "additionalProperties": false,
+                    "required": [
+                      "candidate_pct",
+                      "required_edge_usd"
+                    ],
+                    "properties": {
+                      "candidate_pct": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "required_edge_usd": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    }
+                  },
+                  "required_edge_usd": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "current_edge_usd": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "is_armed": {
+                    "type": "boolean"
+                  },
+                  "first_arm_ts_ms": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0
+                  },
+                  "peak_edge_usd": {
+                    "type": "number"
+                  },
+                  "giveback_pct": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "would_trigger_under_current_giveback_trigger_pct": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "would_trigger": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "state": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "null_reasons": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "reason_codes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "null_reasons": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  }
+}

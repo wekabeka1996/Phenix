@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "position_closed_v1.json",
+  "title": "EVT:POSITION_CLOSED payload schema",
+  "description": "Strict general-purpose execution_position close-truth event.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "symbol",
+    "close_reason",
+    "close_ts_ms",
+    "realized_pnl_net",
+    "fees",
+    "entry_regime_epoch_ref",
+    "trade_id",
+    "pnl_status"
+  ],
+  "properties": {
+    "event_type": {
+      "type": ["string", "null"]
+    },
+    "symbol": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trade_id": {
+      "type": ["string", "null"]
+    },
+    "close_reason": {
+      "type": "string"
+    },
+    "close_ts_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "realized_pnl_net": {
+      "type": ["number", "null"]
+    },
+    "fees": {
+      "type": ["number", "null"]
+    },
+    "entry_regime_epoch_ref": {
+      "type": ["string", "null"]
+    },
+    "side": {
+      "type": ["string", "null"]
+    },
+    "lifecycle_id": {
+      "type": ["string", "null"]
+    },
+    "realized_pnl": {
+      "type": ["number", "null"]
+    },
+    "close_price": {
+      "type": ["number", "null"]
+    },
+    "pnl_status": {
+      "type": "string",
+      "enum": ["resolved", "unresolved"]
+    },
+    "pnl_source": {
+      "type": ["string", "null"]
+    },
+    "economic_close_detected": {
+      "type": ["boolean", "null"]
+    },
+    "economic_close_kind": {
+      "type": ["string", "null"]
+    },
+    "accounting_unresolved_reason": {
+      "type": ["string", "null"]
+    }
+  }
+}

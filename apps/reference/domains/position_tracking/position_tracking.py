@@ -3,22 +3,103 @@ PositionTracking domain component.
 
 Tracks positions, calculates P&L, and emits EVT:PORTFOLIO_STATE_UPDATED events.
 """
+
 import decimal
 import hashlib
 import json
 import logging
 import time
+from collections.abc import Mapping
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, Iterable, TYPE_CHECKING
 
 from vfoundation.core.protocol import Message
 from vfoundation.dr import wal  # WAL module for disaster recovery
+from apps.reference.config_loader import AuroraConfig
+from apps.reference.config_contract import ConfigContractError
+from apps.reference.domain_config import DomainConfigResolver
+from apps.reference.core.time import get_clock
+from apps.reference.telemetry.shadow_journal import (
+    attach_shadow_journal,
+    get_shadow_journal,
+    snapshot_position_tracking_state,
+)
+from apps.reference.telemetry.trade_lifecycle_logger import (
+    POSITION_DISAPPEARANCE_RECORD_KIND,
+    append_trade_lifecycle_record,
+)
+from apps.reference.domains.execution_position.state.truth_hardening import (
+    attach_execution_truth_hardening,
+)
+
+# Import AlertManager for manual intervention alerts
+try:
+    from apps.reference.telemetry.alerts import AlertManager
+    ALERT_MANAGER_AVAILABLE = True
+except ImportError:
+    ALERT_MANAGER_AVAILABLE = False
+    AlertManager = None  # type: ignore
 
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
 
 
 logger = logging.getLogger(__name__)
+
+
+def _d(value: Any, default: decimal.Decimal = decimal.Decimal("0")) -> decimal.Decimal:
+    """
+    Safe Decimal parsing function.
+
+    Converts value to Decimal safely, returning default on failure.
+    """
+    try:
+        if isinstance(value, decimal.Decimal):
+            return value
+        return decimal.Decimal(str(value))
+    except (ValueError, TypeError, decimal.InvalidOperation):
+        return default
+
+
+def _ds(value: decimal.Decimal) -> str:
+    """Serialize Decimal to fixed-point string safe for JSON schema validation.
+
+    Python Decimal can produce scientific notation (e.g. '0E-8', '1E+2')
+    which fails schema regex '^-?[0-9]+(\\.[0-9]+)?$'. This always
+    produces fixed-point notation via format(d, 'f') then strips
+    trailing zeros for cleanliness while keeping at least one decimal.
+    """
+    # format(Decimal, 'f') always gives fixed-point: '0.00000000' not '0E-8'
+    fixed = format(value, 'f')
+    # Strip trailing zeros but keep at least 'X.Y' form for schema compliance
+    if '.' in fixed:
+        fixed = fixed.rstrip('0').rstrip('.')
+    return fixed
+
+
+def _first_present_value(payload: Dict[str, Any], aliases: Iterable[str]) -> Any:
+    for alias in aliases:
+        if alias in payload and payload.get(alias) not in (None, "", "None"):
+            return payload.get(alias)
+    return None
+
+
+def _optional_decimal(value: Any) -> Optional[decimal.Decimal]:
+    if value in (None, "", "None"):
+        return None
+    try:
+        if isinstance(value, decimal.Decimal):
+            return value
+        return decimal.Decimal(str(value))
+    except (ValueError, TypeError, decimal.InvalidOperation):
+        return None
+
+
+def _optional_positive_decimal(value: Any) -> Optional[decimal.Decimal]:
+    decimal_value = _optional_decimal(value)
+    if decimal_value is None or decimal_value <= decimal.Decimal("0"):
+        return None
+    return decimal_value
 
 
 class PositionTracking:
@@ -28,30 +109,207 @@ class PositionTracking:
     Subscribes to EVT:TRADE_EXECUTED and emits EVT:PORTFOLIO_STATE_UPDATED.
     """
 
-    # Підтримувані активи для включення в equity розрахунок
-    SUPPORTED_EQUITY_ASSETS = {
-        'USDT', 'BUSD', 'BTC', 'ETH', 'BNB', 'ADA', 'SOL', 'DOT', 'LINK', 'UNI'
-    }
-
-    def __init__(self, fsm: "FSMCore", config: dict[str, Any]) -> None:
+    def __init__(self, fsm: "FSMCore", config: AuroraConfig) -> None:
         self.fsm = fsm
+        if isinstance(config, dict):
+            raise TypeError("PositionTracking requires AuroraConfig, got dict")
         self.config = config
-        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self._shadow_journal = attach_shadow_journal(self.fsm, self.config)
+        self._execution_truth_hardening = attach_execution_truth_hardening(
+            self.fsm,
+            self.config,
+        )
+        self.logger = logging.getLogger(
+            f"{__name__}.{self.__class__.__name__}")
         # Subscribe to events
         self.fsm.listen("EVT:TRADE_EXECUTED", self.on_trade_executed)
         self.fsm.listen("EVT:ACCOUNT_UPDATE_RECEIVED", self.on_account_update)
         self.fsm.listen("EVT:BALANCE_UPDATE_RECEIVED", self.on_balance_update)
 
+        # P1: Optional subscription to EVT:MARKET_TICK_RECEIVED for real-time mark prices
+        domain_cfg = DomainConfigResolver(self.config).get_position_tracking()
+        self._market_tick_subscription_enabled = bool(
+            domain_cfg.enable_market_tick_subscription)
+        if self._market_tick_subscription_enabled:
+            self.fsm.listen("EVT:MARKET_TICK_RECEIVED", self.on_market_tick)
+            self.logger.info(
+                "Market tick subscription enabled for real-time unrealized PnL")
+
+        # Initialize AlertManager for manual intervention alerts
+        self.alert_manager: Optional[AlertManager] = None
+        if ALERT_MANAGER_AVAILABLE:
+            try:
+                self.alert_manager = AlertManager(
+                    config=config, logger=self.logger)
+                self.logger.info(
+                    "AlertManager initialized in PositionTracking")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize AlertManager: {e}")
+
         # State tracking
-        self._positions: Dict[str, Dict[str, Any]] = {}  # symbol -> position data
-        self._realized_pnl: decimal.Decimal = decimal.Decimal('0')
-        self._total_commissions: decimal.Decimal = decimal.Decimal('0.0')  # NEW: Track total commissions
-        self._equity: decimal.Decimal = decimal.Decimal('0')  # Will be loaded from account
-        self._initial_balance: Optional[decimal.Decimal] = None  # Initial wallet balance (AURORA_STATE_SYNC_V1)
+        # symbol -> position data
+        self._positions: Dict[str, Dict[str, Any]] = {}
+        self._realized_pnl: decimal.Decimal = decimal.Decimal("0")
+        self._equity: decimal.Decimal = decimal.Decimal(
+            "0"
+        )  # Will be loaded from account
+        self._initial_balance: Optional[decimal.Decimal] = (
+            None  # Initial wallet balance (AURORA_STATE_SYNC_V1)
+        )
+
+        # Market prices cache for unrealized PnL calculation
+        # symbol -> {"mark_price": Decimal, "ts_ms": int}
+        self._mark_prices: Dict[str, Dict[str, Any]] = {}
+        self._mark_price_stale_ms: int = 5000  # 5 seconds staleness threshold
+
+        # DEBOUNCE: throttle PORTFOLIO_STATE_UPDATED to max 1 per second from
+        # balance/account update handlers. Prevents entropy spike detection from
+        # triggering circuit breaker when Binance sends N assets in rapid succession.
+        self._last_portfolio_emit_time: float = 0.0
+        self._portfolio_emit_debounce_sec: float = 1.0
+
+        # Manual intervention metrics
+        self.manual_intervention_detected_total = 0
+
+        # Load precision parameters from canonical domains config
+        precision = domain_cfg.precision
+        self.quantity_min_threshold = decimal.Decimal(
+            str(precision.quantity_min_threshold))
+        self.flat_position_threshold = decimal.Decimal(
+            str(precision.flat_position_threshold))
+        self.decimal_places = int(precision.decimal_places)
+
+    def _get_execution_position_domain(self) -> Optional[Any]:
+        try:
+            domains = getattr(self.fsm, "domains", None)
+            if isinstance(domains, dict):
+                domain = domains.get("execution_position")
+                if domain is not None:
+                    return domain
+        except Exception:
+            pass
+        return getattr(self.fsm, "execution_position", None)
+
+    def _get_recent_execution_close_proof(self, symbol: str) -> Optional[Dict[str, Any]]:
+        exec_pos = self._get_execution_position_domain()
+        if exec_pos is None or not hasattr(exec_pos, "get_recent_terminal_close_proof"):
+            return None
+        try:
+            proof = exec_pos.get_recent_terminal_close_proof(symbol)
+        except Exception:
+            return None
+        if not isinstance(proof, Mapping):
+            return None
+        return dict(proof) if proof else None
+
+    def _append_disappearance_record(
+        self,
+        *,
+        symbol: str,
+        attribution: str,
+        position_details: Dict[str, Any],
+        proof: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        record = {
+            "record_kind": POSITION_DISAPPEARANCE_RECORD_KIND,
+            "event_type": "POSITION_DISAPPEARANCE_ATTRIBUTED",
+            "ts_ms": get_clock().now_ms(),
+            "symbol": symbol,
+            "attribution": attribution,
+            "position_details": position_details or {},
+        }
+        if proof:
+            record.update(
+                {
+                    "rid": proof.get("rid"),
+                    "close_reason": proof.get("close_reason"),
+                    "proof_source": proof.get("source"),
+                    "terminal_correlation_source": proof.get(
+                        "terminal_correlation_source"
+                    ),
+                    "tracked_bracket_order_id": proof.get(
+                        "tracked_bracket_order_id"
+                    ),
+                    "parent_entry_order_id": proof.get(
+                        "parent_entry_order_id"
+                    ),
+                    "proof_ts_ms": proof.get("ts_ms"),
+                }
+            )
+        append_trade_lifecycle_record(record)
+
+    def on_market_tick(self, event: Message) -> None:
+        """
+        Handle incoming market tick event to update mark price cache.
+
+        P1: Updates cached mark prices for unrealized PnL calculation.
+
+        Args:
+            event: FSM event with market tick payload
+        """
+        try:
+            payload = event.pld
+            symbol = payload.get("symbol")
+
+            # Use mid price as mark price approximation
+            # In production, this could come from a dedicated mark price stream
+            mid_price = payload.get("mid") or payload.get("price")
+            ts = payload.get("ts") or int(time.time() * 1000)
+
+            if symbol and mid_price:
+                mark_price = _d(mid_price)
+                if mark_price > decimal.Decimal("0"):
+                    self.update_mark_price(symbol, mark_price, ts_ms=ts)
+        except Exception as e:
+            self.logger.warning(f"Error processing market tick: {e}")
 
     def start(self) -> None:
-        """Start the position tracking component (subscription already done in __init__)."""
-        pass
+        """
+        Start the position tracking component.
+
+        TRUTH DOMAIN HARDENING:
+        - Do NOT emit a "fresh zero" portfolio at startup.
+        - First authoritative portfolio state must come from:
+          (a) DR snapshot + WAL replay, or (b) initial account sync (ACCOUNT_UPDATE/BALANCE_UPDATE).
+        """
+        self.logger.info(
+            "PositionTracking.start(): skipping initial EVT:PORTFOLIO_STATE_UPDATED (truth-first startup)"
+        )
+
+    def _write_wal_record(self, event: Message) -> Optional[str]:
+        """
+        Append a durability record for this event to WAL.
+
+        Timestamp contract:
+        - `timestamp` is epoch milliseconds (int) for DR filtering.
+        - `event_ts_ms` preserves the event's own logical timestamp (if present).
+        """
+        try:
+            event_ts_ms = None
+            try:
+                if isinstance(event.pld, dict) and event.pld.get("ts") is not None:
+                    event_ts_ms = event.pld.get("ts")
+            except Exception:
+                event_ts_ms = None
+
+            record = {
+                "op": event.op,
+                "verb": event.verb,
+                "pld": event.pld,
+                "src": event.src,
+                "dst": event.dst,
+                "rid": str(event.rid),
+                "timestamp": int(get_clock().now_ms()),
+                "event_ts_ms": event_ts_ms,
+            }
+
+            return wal.append(record)
+        except Exception as e:
+            self.logger.critical(
+                "CRITICAL: Failed to write event to WAL. "
+                f"Halting processing for safety. RID={getattr(event, 'rid', None)}, Error: {e}"
+            )
+            return None
 
     def on_trade_executed(self, event: Message) -> None:
         """
@@ -60,49 +318,37 @@ class PositionTracking:
         Args:
             event: FSM event with trade payload
         """
+        journal = get_shadow_journal(self)
+        initial_payload = event.pld or {}
+        initial_symbol = initial_payload.get("symbol")
+        before = snapshot_position_tracking_state(
+            self, initial_symbol) if journal is not None else None
         self.logger.info("Handling EVT:TRADE_EXECUTED...")
-        
+
         # --- WAL INTEGRATION (FSMP-RESILIENCE-T03-A) ---
         # Write event to WAL BEFORE processing to ensure disaster recovery
-        try:
-            event_dict = {
-                "op": event.op,
-                "verb": event.verb,
-                "pld": event.pld,
-                "src": event.src,
-                "dst": event.dst,
-                "rid": event.rid,
-                "timestamp": time.time()
-            }
-            wal_hash = wal.append(event_dict)
-            if wal_hash is None:
-                # WAL write failed due to lock timeout
-                self.logger.critical(
-                    f"CRITICAL: Failed to write EVT:TRADE_EXECUTED to WAL (lock timeout). "
-                    f"Halting processing for safety. RID={event.rid}"
-                )
-                return
-            self.logger.debug(f"WAL: Appended TRADE_EXECUTED to WAL with hash={wal_hash[:8]}...")
-        except Exception as e:
-            # Any WAL write failure is critical - we cannot process without durability guarantee
+        wal_hash = self._write_wal_record(event)
+        if wal_hash is None:
+            # WAL write failed due to lock timeout or exception.
             self.logger.critical(
-                f"CRITICAL: Failed to write EVT:TRADE_EXECUTED to WAL. "
-                f"Halting processing for safety. RID={event.rid}, Error: {e}"
+                "CRITICAL: Failed to write EVT:TRADE_EXECUTED to WAL. "
+                f"Halting processing for safety. RID={event.rid}"
             )
             return
+        self.logger.debug(
+            f"WAL: Appended TRADE_EXECUTED to WAL with hash={wal_hash[:8]}..."
+        )
         # --- END WAL INTEGRATION ---
-        
+
         payload = event.pld
 
         # Extract required fields from payload
         symbol = payload["symbol"]
         side = payload["side"]
-        price = decimal.Decimal(str(payload["price"]))
-        quantity = decimal.Decimal(str(payload["quantity"]))
+        price = _d(payload["price"])
+        quantity = _d(payload["quantity"])
         ts = payload["ts"]
-        fees = decimal.Decimal(str(payload.get("fees", 0)))
-        commission = decimal.Decimal(str(payload.get("commission", payload.get("fees", 0))))  # Use fees if commission not present
-        commission_asset = payload.get("commission_asset", "USDT")  # NEW: Extract commission asset
+        fees = _d(payload.get("fees"))
         venue = payload["venue"]
 
         # Convert side to quantity sign
@@ -114,16 +360,45 @@ class PositionTracking:
             raise ValueError(f"Invalid side: {side}")
 
         # Update position and calculate P&L
-        self._update_position(symbol, qty, price, fees, venue, commission)
+        self._update_position(symbol, qty, price, fees, venue)
+
+        # Calculate open positions notional (EXP-FIX: Portfolio Notional Hard Gate)
+        open_positions_usd = self._calculate_open_positions_notional()
+        # EXP-LEVERAGE-001: Calculate margin used (backward compatible)
+        open_positions_margin_usd = self._calc_margin_used_usd(
+            [], authoritative=False)
+        # EXP-DIRECTION: Calculate margin by side
+        margin_by_side = self._calculate_margin_by_side([])
+        # DET-BT-11: Use get_clock() for deterministic backtest (PT-002)
+        positions_last_ts_ms = get_clock().now_ms()
 
         # Emit portfolio state updated event
         portfolio_payload = {
             "ts": ts,
-            "equity": str(self._equity),  # Preserve Decimal precision as string
-            "realized_pnl": str(self._realized_pnl),  # Preserve Decimal precision as string
-            "unrealized_pnl": str(self._calculate_unrealized_pnl()),  # Preserve Decimal precision as string
-            "total_commissions": str(self._total_commissions),  # NEW: Include total commissions
-            "positions": self._get_positions_snapshot()
+            # Preserve Decimal precision as string
+            "equity": _ds(self._equity),
+            # EXP-FIX: Required by ExposureGuard (PT-001)
+            "equity_free_usdt": _ds(self._equity),
+            "realized_pnl": _ds(
+                self._realized_pnl
+            ),  # Preserve Decimal precision as string
+            "unrealized_pnl": _ds(
+                self._calculate_unrealized_pnl()
+            ),  # Preserve Decimal precision as string
+            "positions": self._get_positions_snapshot(),
+            "open_positions_usd": _ds(
+                open_positions_usd
+            ),  # EXP-FIX: Notional for exposure gate
+            "open_positions_margin_usd": _ds(
+                open_positions_margin_usd
+            ),  # EXP-LEVERAGE-001: Margin for exposure gate
+            # EXP-DIRECTION: Per-side margin for directional checks
+            "positions_by_side": {
+                "long_margin": _ds(margin_by_side["long_margin"]),
+                "short_margin": _ds(margin_by_side["short_margin"])
+            },
+            # EXP-FIX: Timestamp for staleness check
+            "positions_last_ts_ms": positions_last_ts_ms,
         }
 
         # Emit portfolio state updated event
@@ -131,72 +406,285 @@ class PositionTracking:
         self.fsm.emit(
             "EVT:PORTFOLIO_STATE_UPDATED",
             payload=portfolio_payload,
-            why=f"Portfolio updated after trade execution for {symbol}."
+            why=f"Portfolio updated after trade execution for {symbol}.",
         )
+
+        if journal is not None:
+            journal.record_transition(
+                event_name="EVT:TRADE_EXECUTED",
+                source_component="position_tracking",
+                source_path="portfolio:on_trade_executed",
+                event_origin_type="portfolio",
+                truth_owner="PositionTracking",
+                payload=payload,
+                rid=str(payload.get("rid")) if payload.get(
+                    "rid") is not None else getattr(event, "rid", None),
+                before=before,
+                after=snapshot_position_tracking_state(self, symbol),
+            )
 
         self.logger.info(f"Emitted portfolio update after trade for {symbol}.")
 
-    def _emit_portfolio_update(self, why: str):
-        """Constructs and emits the EVT:PORTFOLIO_STATE_UPDATED event."""
-        portfolio_payload = {
-            "ts": int(time.time() * 1000),
-            "equity": str(self._equity),
-            "realized_pnl": str(self._realized_pnl),
-            "unrealized_pnl": str(self._calculate_unrealized_pnl()),
-            "total_commissions": str(self._total_commissions),
-            "positions": self._get_positions_snapshot()
-        }
-        self.fsm.emit(
-            "EVT:PORTFOLIO_STATE_UPDATED",
-            payload=portfolio_payload,
-            why=why
-        )
-        self.logger.info(f"Emitted EVT:PORTFOLIO_STATE_UPDATED because: {why}")
-
     def on_account_update(self, event: Message) -> None:
         """
-        Handles account updates by performing a full state reconciliation.
-        This treats the incoming message as the single source of truth for open positions.
+        Handle incoming account update event from Binance API.
+
+        Args:
+            event: FSM event with account payload
         """
-        self.logger.info("Handling EVT:ACCOUNT_UPDATE_RECEIVED for full state reconciliation...")
+        self.logger.info("Handling EVT:ACCOUNT_UPDATE_RECEIVED...")
+
+        # --- WAL INTEGRATION (FSMP-RESILIENCE-T03-A) ---
+        # Write event to WAL BEFORE processing to ensure disaster recovery
+        wal_hash = self._write_wal_record(event)
+        if wal_hash is None:
+            self.logger.critical(
+                "CRITICAL: Failed to write EVT:ACCOUNT_UPDATE_RECEIVED to WAL. "
+                f"Halting processing for safety. RID={event.rid}"
+            )
+            return
+        self.logger.debug(
+            f"WAL: Appended ACCOUNT_UPDATE_RECEIVED to WAL with hash={wal_hash[:8]}..."
+        )
+        # --- END WAL INTEGRATION ---
+
         payload = event.pld
-        
-        real_positions_from_api = {pos['symbol']: pos for pos in payload.get('positions', [])}
-        internal_positions_before_sync = set(self._positions.keys())
-        reconciled_positions = {}
 
-        # Rebuild the positions dictionary from the ground truth
-        for symbol, pos_data_from_api in real_positions_from_api.items():
-            net_position = decimal.Decimal(str(pos_data_from_api.get('positionAmt', '0')))
-            if net_position == 0:
-                continue # Skip flat positions
+        # Update equity from account data
+        total_wallet_balance = _d(payload.get("totalWalletBalance"))
+        total_unrealized_profit = _d(payload.get("totalUnrealizedProfit"))
+        if "totalCrossWalletBalance" in payload:
+            total_cross_wallet_balance = _d(
+                payload.get("totalCrossWalletBalance"))
+        else:
+            total_cross_wallet_balance = total_wallet_balance - total_unrealized_profit
 
-            new_position = {
-                'net_position': net_position,
-                'avg_entry_price': decimal.Decimal(str(pos_data_from_api.get('entryPrice', '0'))),
-                'unrealized_pnl': decimal.Decimal(str(pos_data_from_api.get('unRealizedProfit', '0'))),
-                'last_update_ts': int(pos_data_from_api.get('updateTime', 0)),
-                'venues': []  # Initialize empty venues list for account update positions
-            }
+        self._equity = total_wallet_balance
 
-            # Preserve realized PnL if the position already existed
-            if symbol in self._positions:
-                new_position['realized_pnl'] = self._positions[symbol].get('realized_pnl', decimal.Decimal('0'))
+        # === AURORA_STATE_SYNC_V1: Recalculate realized_pnl from ACCOUNT_UPDATE ===
+        # totalCrossWalletBalance = balance without unrealized PnL
+        # realized_pnl = totalCrossWalletBalance - initial_balance
+        if self._initial_balance is None:
+            # First account update - set initial balance
+            self._initial_balance = total_cross_wallet_balance
+            self._realized_pnl = decimal.Decimal("0")
+            self.logger.info(
+                f"[STATE_SYNC] Initial balance set: ${self._initial_balance}"
+            )
+        else:
+            # Recalculate realized_pnl from cross wallet balance
+            old_realized_pnl = self._realized_pnl
+            self._realized_pnl = total_cross_wallet_balance - self._initial_balance
+
+            if old_realized_pnl != self._realized_pnl:
+                self.logger.debug(
+                    "[STATE_SYNC] Realized PnL recalculated: "
+                    f"${old_realized_pnl} → ${self._realized_pnl} "
+                    f"(cross_balance=${total_cross_wallet_balance}, initial=${self._initial_balance})"
+                )
+
+        # Update positions from account data
+        account_positions = payload.get("positions")
+        if account_positions is None:
+            account_positions = []
+
+        self.logger.info(
+            f"📊 SYNC: Received {len(account_positions)} positions from Binance")
+
+        # Track which symbols are in Binance vs our internal state
+        binance_symbols = set()
+
+        for pos in account_positions:
+            symbol = pos["symbol"]
+            quantity = _d(pos.get("positionAmt"))
+            binance_symbols.add(symbol)
+
+            if abs(quantity) > self.quantity_min_threshold:  # Only track non-zero positions
+                prev = self._positions[symbol] if symbol in self._positions else {
+                }
+                old_qty = prev["quantity"] if "quantity" in prev else decimal.Decimal(
+                    "0")
+                source_mark_price = _optional_positive_decimal(
+                    _first_present_value(pos, ("markPrice", "mark_price"))
+                )
+                source_unrealized_pnl = _optional_decimal(
+                    _first_present_value(
+                        pos,
+                        (
+                            "unRealizedProfit",
+                            "unrealizedProfit",
+                            "unrealizedPnl",
+                            "unrealized_pnl",
+                        ),
+                    )
+                )
+                source_unrealized_pnl_pct = _optional_decimal(
+                    _first_present_value(
+                        pos, ("unrealizedPnlPct", "unrealized_pnl_pct"))
+                )
+                self._positions[symbol] = {
+                    "quantity": quantity,
+                    "avg_price": _d(pos.get("entryPrice")),
+                    "venues": ["binance"],  # Assume Binance venue
+                    "mark_price": source_mark_price,
+                    "unrealized_pnl": source_unrealized_pnl,
+                    "unrealized_pnl_pct": source_unrealized_pnl_pct,
+                }
+                if old_qty != quantity:
+                    self.logger.info(
+                        f"📈 SYNC: {symbol} position updated: {old_qty} → {quantity}")
             else:
-                new_position['realized_pnl'] = decimal.Decimal('0')
-            
-            reconciled_positions[symbol] = new_position
+                # Remove flat positions
+                if symbol in self._positions:
+                    self.logger.info(
+                        f"📉 SYNC: {symbol} position closed (removed from tracking)")
+                self._positions.pop(symbol, None)
 
-        # Identify and log ghost positions that were removed
-        ghost_positions = internal_positions_before_sync - set(reconciled_positions.keys())
-        if ghost_positions:
-            self.logger.warning(f"Reconciliation removed {len(ghost_positions)} ghost position(s): {', '.join(ghost_positions)}")
+        # Check for positions in our state that are NOT in Binance (manual close)
+        our_symbols = set(self._positions.keys())
+        manually_closed = our_symbols - binance_symbols
 
-        self._positions = reconciled_positions
-        self._equity = decimal.Decimal(str(payload.get('totalWalletBalance', payload.get('wallet_balance', '0'))))
-        
-        self.logger.info(f"Reconciled portfolio state: equity={self._equity}, open_positions={len(self._positions)}")
-        self._emit_portfolio_update("full_sync_from_account_update")
+        if manually_closed:
+            self.logger.warning(
+                f"SYNC: Detected positions missing from Binance snapshot: {manually_closed}"
+            )
+            for symbol in list(manually_closed):
+                position_details = self._positions[symbol] if symbol in self._positions else {
+                }
+                close_proof = self._get_recent_execution_close_proof(symbol)
+
+                if close_proof is not None:
+                    self.logger.info(
+                        "SYNC: Removing %s from internal state after proven bracket close (%s)",
+                        symbol,
+                        close_proof.get("close_reason"),
+                    )
+                    self._append_disappearance_record(
+                        symbol=symbol,
+                        attribution="proven_exchange_bracket_close",
+                        position_details=position_details,
+                        proof=close_proof,
+                    )
+                    self._positions.pop(symbol, None)
+                    continue
+
+                self.manual_intervention_detected_total += 1
+                if self.alert_manager and hasattr(
+                    self.alert_manager, "check_position_disappearance"
+                ):
+                    self.alert_manager.check_position_disappearance(
+                        symbol=symbol,
+                        position_details=position_details,
+                        mechanism="unknown_disappearance",
+                    )
+                self._append_disappearance_record(
+                    symbol=symbol,
+                    attribution="unknown_disappearance",
+                    position_details=position_details,
+                )
+                self.logger.info(
+                    "SYNC: Removing %s from internal state after unproven disappearance",
+                    symbol,
+                )
+                self._positions.pop(symbol, None)
+            manually_closed = set()
+
+        if manually_closed:
+            self.logger.warning(
+                f"⚠️  SYNC: Detected manually closed positions: {manually_closed}")
+
+            # Increment manual intervention metric
+            self.manual_intervention_detected_total += len(manually_closed)
+
+            # Send alerts for each manually closed position
+            for symbol in manually_closed:
+                position_details = self._positions[symbol] if symbol in self._positions else {
+                }
+
+                # Alert via AlertManager if available
+                if self.alert_manager:
+                    self.alert_manager.check_manual_intervention(
+                        symbol=symbol,
+                        position_details=position_details
+                    )
+
+                self.logger.info(
+                    f"🧹 SYNC: Removing {symbol} from internal state (closed manually)")
+                self._positions.pop(symbol, None)
+
+        # Calculate open positions notional (EXP-FIX: Portfolio Notional Hard Gate)
+        open_positions_usd = self._calculate_open_positions_notional()
+        # EXP-LEVERAGE-001: Calculate margin used with positionRisk data if available
+        open_positions_margin_usd = self._calc_margin_used_usd(
+            account_positions, authoritative=True)
+        # EXP-DIRECTION: Calculate margin by side for directional ratio checks
+        margin_by_side = self._calculate_margin_by_side(account_positions)
+        # DET-BT-11: Use get_clock() for deterministic backtest (PT-002)
+        positions_last_ts_ms = get_clock().now_ms()
+
+        # Emit portfolio state updated event with real account data
+        portfolio_payload = {
+            "ts": get_clock().now_ms(),  # DET-BT-11: Consistent timebase
+            "equity": _ds(self._equity),  # Legacy field for compatibility
+            # EXP-FIX: Always include equity_free_usdt
+            "equity_free_usdt": _ds(self._equity),
+            "realized_pnl": _ds(
+                self._realized_pnl
+            ),  # Preserve Decimal precision as string
+            "unrealized_pnl": _ds(
+                self._calculate_unrealized_pnl(account_positions)
+            ),  # Preserve Decimal precision as string
+            "available_balance": _ds(
+                _d(payload["maxWithdrawAmount"]
+                   if "maxWithdrawAmount" in payload else self._equity)
+            ),  # Available margin for new positions
+            "positions": self._get_positions_snapshot(),
+            "open_positions_usd": _ds(
+                open_positions_usd
+            ),  # EXP-FIX: Notional for exposure gate
+            "open_positions_margin_usd": _ds(
+                open_positions_margin_usd
+            ),  # EXP-LEVERAGE-001: Margin for exposure gate
+            # EXP-DIRECTION: Per-side margin for directional checks
+            "positions_by_side": {
+                "long_margin": _ds(margin_by_side["long_margin"]),
+                "short_margin": _ds(margin_by_side["short_margin"])
+            },
+            # EXP-FIX: Timestamp for staleness check
+            "positions_last_ts_ms": positions_last_ts_ms,
+        }
+
+        # Add additional equity fields if USDT present in balance data (from account update)
+        # Note: account updates may not include full asset list, so equity computation might be limited
+        if "assets" in payload:
+            equity_data = self._compute_equity_from_balance(
+                payload["assets"], payload)
+            if equity_data:
+                portfolio_payload.update(
+                    {
+                        "equity_cross_usdt": equity_data["equity_cross_usdt"],
+                        "equity_ts": equity_data["equity_ts"],
+                    }
+                )
+
+        self.logger.info("Emitting EVT:PORTFOLIO_STATE_UPDATED...")
+        _now = time.time()
+        if _now - self._last_portfolio_emit_time < self._portfolio_emit_debounce_sec:
+            self.logger.debug(
+                "PORTFOLIO_STATE_UPDATED debounced from account update (last emit %.2fs ago)",
+                _now - self._last_portfolio_emit_time,
+            )
+        else:
+            self._last_portfolio_emit_time = _now
+            self.fsm.emit(
+                "EVT:PORTFOLIO_STATE_UPDATED",
+                payload=portfolio_payload,
+                why="Portfolio updated from Binance account data.",
+            )
+
+        self.logger.info(
+            f"Updated portfolio from account: equity={self._equity}, positions={len(self._positions)}"
+        )
 
     def on_balance_update(self, event: Message) -> None:
         """
@@ -208,107 +696,190 @@ class PositionTracking:
         self.logger.info("Handling EVT:BALANCE_UPDATE_RECEIVED...")
         payload = event.pld
 
-        # Calculate total equity from assets (only supported trading assets)
-        assets = payload.get('assets', [])
-        supported_assets = [
-            asset for asset in assets 
-            if asset.get('asset') in self.SUPPORTED_EQUITY_ASSETS
-        ]
-        total_equity = sum(decimal.Decimal(str(a.get('balance', '0'))) for a in supported_assets)
-        self._equity = total_equity  # Update our equity tracking
-        
-        self.logger.info(f"Balance update received: {len(assets)} total assets, {len(supported_assets)} supported for equity")
-        # Log equity calculation breakdown
-        if supported_assets:
-            self.logger.info("Equity calculation breakdown (supported assets only):")
-            for asset in supported_assets:
-                asset_name = asset.get('asset', 'UNKNOWN')
-                balance = asset.get('balance', '0')
-                self.logger.info(f"  {asset_name}: {balance}")
-            self.logger.info(f"Total equity: {total_equity}")
-        else:
-            self.logger.warning("No supported assets found for equity calculation!")
-            
-        # Log excluded assets for transparency
-        excluded_assets = [
-            asset for asset in assets 
-            if asset.get('asset') not in self.SUPPORTED_EQUITY_ASSETS
-        ]
-        if excluded_assets:
-            self.logger.info("Excluded assets (not supported for trading):")
-            for asset in excluded_assets:
-                asset_name = asset.get('asset', 'UNKNOWN')
-                balance = asset.get('balance', '0')
-                self.logger.info(f"  {asset_name}: {balance} (excluded)")
-                
-        self.logger.info(f"Calculated total equity: ${total_equity}")
-        self.logger.info(f"Updated self._equity to: ${self._equity}")
+        # Balance updates provide asset balances, but equity is tracked via account updates
+        # We can use this for additional validation or logging
+        assets = payload.get("assets")
+        if assets is None:
+            assets = []
+        self.logger.info(
+            f"Balance update received: {len(assets)} assets with balance > 0"
+        )
 
-        # Emit portfolio state updated event to initialize DecisionMaking
-        # This is important for the first trade decision before any trades are executed
+        # Compute equity metrics for USDT-M futures
+        equity_data = self._compute_equity_from_balance(assets)
+        if not equity_data:
+            self.logger.warning(
+                "Skipping portfolio update: no USDT in balance data")
+            return
+
+        # Update internal equity state
+        self._equity = decimal.Decimal(equity_data["equity_free_usdt"])
+
+        # Calculate open positions notional (EXP-FIX: Portfolio Notional Hard Gate)
+        open_positions_usd = self._calculate_open_positions_notional()
+        # EXP-LEVERAGE-001: Calculate margin used (fallback to config leverage)
+        open_positions_margin_usd = self._calc_margin_used_usd(
+            [], authoritative=False)
+        # EXP-DIRECTION: Calculate margin by side
+        margin_by_side = self._calculate_margin_by_side([])
+        # DET-BT-11: Use get_clock() for deterministic backtest (PT-002)
+        positions_last_ts_ms = get_clock().now_ms()
+
+        # Emit portfolio state updated event with equity fields for DecisionMaking
         portfolio_payload = {
-            "ts": int(time.time() * 1000),
-            "equity": str(self._equity),  # Preserve Decimal precision as string
-            "realized_pnl": str(self._realized_pnl),  # Preserve Decimal precision as string
-            "unrealized_pnl": "0",
-            "available_balance": str(total_equity),
-            "positions": self._get_positions_snapshot()
+            "ts": get_clock().now_ms(),  # DET-BT-11: Consistent timebase
+            # Legacy field for compatibility
+            "equity": equity_data["equity_free_usdt"],
+            "equity_free_usdt": equity_data["equity_free_usdt"],
+            "equity_cross_usdt": equity_data["equity_cross_usdt"],
+            "equity_ts": equity_data["equity_ts"],
+            "realized_pnl": _ds(
+                self._realized_pnl
+            ),  # Preserve Decimal precision as string
+            "unrealized_pnl": "0",  # Not available in balance update
+            "available_balance": equity_data["equity_free_usdt"],
+            "positions": self._get_positions_snapshot(),
+            "open_positions_usd": _ds(
+                open_positions_usd
+            ),  # EXP-FIX: Notional for exposure gate
+            "open_positions_margin_usd": _ds(
+                open_positions_margin_usd
+            ),  # EXP-LEVERAGE-001: Margin for exposure gate
+            # EXP-DIRECTION: Per-side margin for directional checks
+            "positions_by_side": {
+                "long_margin": _ds(margin_by_side["long_margin"]),
+                "short_margin": _ds(margin_by_side["short_margin"])
+            },
+            # EXP-FIX: Timestamp for staleness check
+            "positions_last_ts_ms": positions_last_ts_ms,
         }
 
-        self.logger.info(f"Portfolio payload equity: {portfolio_payload['equity']}")
-        self.logger.info("✅ Emitting EVT:PORTFOLIO_STATE_UPDATED from balance update...")
+        self.logger.info(
+            "✅ Emitting EVT:PORTFOLIO_STATE_UPDATED from balance update..."
+        )
+        now = time.time()
+        if now - self._last_portfolio_emit_time < self._portfolio_emit_debounce_sec:
+            self.logger.debug(
+                "PORTFOLIO_STATE_UPDATED debounced (last emit %.2fs ago, threshold=%.1fs)",
+                now - self._last_portfolio_emit_time,
+                self._portfolio_emit_debounce_sec,
+            )
+            return
+        self._last_portfolio_emit_time = now
         self.fsm.emit(
             "EVT:PORTFOLIO_STATE_UPDATED",
             payload=portfolio_payload,
-            why="Initial portfolio state from balance update for DecisionMaking"
+            why=equity_data["why"],
         )
 
-    def _update_position(self, symbol: str, quantity: decimal.Decimal, price: decimal.Decimal, fees: decimal.Decimal, venue: str, commission: decimal.Decimal = decimal.Decimal('0')) -> None:
+    def _compute_equity_from_balance(
+        self,
+        assets: List[Dict[str, Any]],
+        account_data: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Compute equity metrics for USDT-M futures account.
+
+        Args:
+            assets: List of asset balances from BALANCE_UPDATE
+            account_data: Optional account data from ACCOUNT_UPDATE
+
+        Returns:
+            Dict with equity_free_usdt, equity_cross_usdt, equity_ts, why or None if USDT not present
+        """
+        # Find USDT asset
+        usdt_asset = next(
+            (a for a in assets if a.get("asset") == "USDT"), None)
+        if not usdt_asset:
+            self.logger.warning(
+                "Skipping equity computation: USDT not present in balance data"
+            )
+            return None
+
+        # Compute free equity (available for new positions)
+        equity_free_usdt = _d(usdt_asset.get("balance"))
+
+        # Compute cross equity (total wallet balance including unrealized P&L)
+        if account_data:
+            # From ACCOUNT_UPDATE: use totalCrossWalletBalance + totalUnrealizedProfit
+            equity_cross_usdt = _d(account_data.get(
+                "totalCrossWalletBalance")) + _d(account_data.get("totalUnrealizedProfit"))
+            equity_ts = account_data["updateTime"] if "updateTime" in account_data else int(
+                time.time() * 1000)
+            why = "equity_from_account_update"
+        else:
+            # From BALANCE_UPDATE: use crossWalletBalance + crossUnPnl
+            equity_cross_usdt = _d(usdt_asset.get(
+                "crossWalletBalance")) + _d(usdt_asset.get("crossUnPnl"))
+            equity_ts = usdt_asset["updateTime"] if "updateTime" in usdt_asset else int(
+                time.time() * 1000)
+            why = "equity_from_balance_update"
+
+        return {
+            "equity_free_usdt": _ds(equity_free_usdt),
+            "equity_cross_usdt": _ds(equity_cross_usdt),
+            "equity_ts": equity_ts,
+            "why": why,
+        }
+
+    def _update_position(
+        self,
+        symbol: str,
+        quantity: decimal.Decimal,
+        price: decimal.Decimal,
+        fees: decimal.Decimal,
+        venue: str,
+    ) -> None:
         """
         Update position for a symbol and calculate realized P&L.
 
         Based on aurora/positions/ logic adapted for FSM events.
         """
-        existing = self._positions.get(symbol, {
-            "net_position": decimal.Decimal('0'),
-            "avg_entry_price": decimal.Decimal('0'),
-            "venues": []
-        })
+        existing = (
+            self._positions[symbol]
+            if symbol in self._positions
+            else {"quantity": decimal.Decimal("0"), "avg_price": decimal.Decimal("0"), "venues": []}
+        )
+        existing_mark_price = existing.get("mark_price")
+        existing_unrealized_pnl = existing.get("unrealized_pnl")
+        existing_unrealized_pnl_pct = existing.get("unrealized_pnl_pct")
 
-        pos_qty = existing["net_position"]
-        avg_px = existing["avg_entry_price"]
+        pos_qty = existing["quantity"]
+        avg_px = existing["avg_price"]
 
         # Determine position sign based on existing position (+1 long, -1 short)
-        pos_sign = decimal.Decimal('1') if pos_qty > decimal.Decimal('0') else decimal.Decimal('-1') if pos_qty < decimal.Decimal('0') else decimal.Decimal('0')
+        pos_sign = (
+            decimal.Decimal("1")
+            if pos_qty > decimal.Decimal("0")
+            else decimal.Decimal("-1")
+            if pos_qty < decimal.Decimal("0")
+            else decimal.Decimal("0")
+        )
 
         # Realized PnL accrues only when trade reduces/offsets existing position
-        realized_delta = decimal.Decimal('0')
-        if pos_sign != decimal.Decimal('0') and quantity * pos_qty < decimal.Decimal('0'):
+        realized_delta = decimal.Decimal("0")
+        if pos_sign != decimal.Decimal("0") and quantity * pos_qty < decimal.Decimal(
+            "0"
+        ):
             closed_qty = min(abs(pos_qty), abs(quantity))
-            # sign * qty_closed * (fill_px - avg_entry_px) - fees (keep fees for backward compatibility)
+            # sign * qty_closed * (fill_px - avg_entry_px) - fees
             realized_delta = pos_sign * closed_qty * (price - avg_px) - fees
 
-        # Update realized P&L (subtract commission separately if different from fees)
-        if commission != fees:
-            self._realized_pnl += (realized_delta - commission)
-        else:
-            self._realized_pnl += realized_delta
-        
-        # Accumulate total commissions
-        self._total_commissions += commission
-
-        self.logger.info(f"TRADE_PNL: Realized PnL {realized_delta:.4f}, Commission {commission:.4f}, Net PnL {realized_delta - commission:.4f}")
+        # Update realized P&L
+        self._realized_pnl += realized_delta
 
         # Update position quantity and average entry price
         new_qty = pos_qty + quantity
-        if abs(new_qty) < decimal.Decimal('1e-12'):
+        if abs(new_qty) < decimal.Decimal("1e-12"):
             # Flat position resets avg price
-            new_avg = decimal.Decimal('0')
+            new_avg = decimal.Decimal("0")
             venues = [venue]
         else:
             # Weighted average for same-side accumulation; if crossing through zero,
             # the new avg becomes current trade price for the residual side.
-            if pos_qty == decimal.Decimal('0') or (pos_qty * quantity > decimal.Decimal('0')):
+            if pos_qty == decimal.Decimal("0") or (
+                pos_qty * quantity > decimal.Decimal("0")
+            ):
                 # Same-side accumulation: recompute weighted average
                 new_avg = (pos_qty * avg_px + quantity * price) / new_qty
             else:
@@ -318,7 +889,7 @@ class PositionTracking:
                     new_avg = avg_px
                 elif abs(quantity) == abs(pos_qty):
                     # Fully closed handled by flat branch above, but keep consistency
-                    new_avg = decimal.Decimal('0')
+                    new_avg = decimal.Decimal("0")
                 else:
                     # Crossed through zero (flip): new position avg is current fill price
                     new_avg = price
@@ -329,100 +900,575 @@ class PositionTracking:
 
         # Update position
         self._positions[symbol] = {
-            "net_position": new_qty,
-            "avg_entry_price": new_avg,
-            "venues": venues
+            "quantity": new_qty,
+            "avg_price": new_avg,
+            "venues": venues,
+            "mark_price": existing_mark_price,
+            "unrealized_pnl": existing_unrealized_pnl,
+            "unrealized_pnl_pct": existing_unrealized_pnl_pct,
         }
 
-    def _calculate_unrealized_pnl(self) -> decimal.Decimal:
+    def _calculate_unrealized_pnl(self, positions: Optional[List[Dict[str, Any]]] = None) -> decimal.Decimal:
         """
-        Calculate unrealized P&L based on current positions and market prices.
-        
-        Formula: unrealized_pnl = sum((current_price - avg_entry_price) * net_position) for all positions
-        If current market price is not available, uses avg_entry_price as approximation (unrealized = 0).
+        Calculate total unrealized P&L for all positions.
+
+        Uses mark prices from:
+        1. positionRisk API data (if provided) - contains markPrice per position
+        2. Cached mark prices from EVT:MARKET_TICK_RECEIVED (if subscribed)
+        3. If no fresh mark price is available, the position contributes 0 PnL.
+
+        Formula: unrealized_pnl = Σ((mark_price - entry_price) * quantity)
+        - For LONG (qty > 0): profit when mark_price > entry_price
+        - For SHORT (qty < 0): profit when mark_price < entry_price
+
+        Args:
+            positions: Optional list of position dicts from positionRisk API
+                       containing 'markPrice', 'entryPrice', 'positionAmt'
+
+        Returns:
+            decimal.Decimal: Total unrealized P&L
         """
-        unrealized = decimal.Decimal('0')
-        
-        for symbol, position in self._positions.items():
-            net_position = position.get('net_position', decimal.Decimal('0'))
-            avg_entry_price = position.get('avg_entry_price', decimal.Decimal('0'))
-            
-            # TODO: Get current market price from market data feed
-            # For now, use entry price as fallback (unrealized P&L = 0)
-            current_price = avg_entry_price  # Fallback: assume no price movement
-            
-            if net_position != 0 and avg_entry_price > 0:
-                # Calculate P&L for this position
-                position_pnl = (current_price - avg_entry_price) * net_position
-                unrealized += position_pnl
-                self.logger.debug(
-                    f"Unrealized P&L for {symbol}: position={net_position}, "
-                    f"entry_price={avg_entry_price}, current_price={current_price}, pnl={position_pnl}"
+        total_unrealized_pnl = decimal.Decimal("0")
+        # DET-BT-11: Use get_clock() for deterministic backtest (stale check)
+        now_ms = get_clock().now_ms()
+
+        if positions:
+            # Use positionRisk API data (most accurate)
+            for p in positions:
+                symbol = p.get("symbol")
+                if symbol is None:
+                    symbol = "unknown"
+                position_amt = _d(_first_present_value(
+                    p, ("positionAmt", "position_amount", "net_position")))
+                entry_price = _d(_first_present_value(
+                    p, ("entryPrice", "entry_price", "avg_entry_price")))
+                mark_price = _optional_positive_decimal(
+                    _first_present_value(p, ("markPrice", "mark_price")))
+                unrealized_pnl = _optional_decimal(
+                    _first_present_value(
+                        p,
+                        (
+                            "unrealizedPnl",
+                            "unRealizedProfit",
+                            "unrealizedProfit",
+                            "unrealized_pnl",
+                        ),
+                    )
                 )
-        
-        self.logger.info(f"Total unrealized P&L: {unrealized}")
-        return unrealized
+
+                if (
+                    abs(position_amt) > self.quantity_min_threshold
+                    and mark_price is not None
+                    and entry_price > decimal.Decimal("0")
+                ):
+                    position_pnl = self._calculate_position_unrealized_pnl(
+                        position_amt,
+                        entry_price,
+                        mark_price,
+                    )
+                    total_unrealized_pnl += position_pnl
+
+                    self.logger.debug(
+                        f"Unrealized PnL for {symbol}: mark={mark_price}, entry={entry_price}, "
+                        f"qty={position_amt}, pnl={position_pnl}"
+                    )
+                elif abs(position_amt) > self.quantity_min_threshold and unrealized_pnl is not None:
+                    total_unrealized_pnl += unrealized_pnl.quantize(
+                        decimal.Decimal("0.01"))
+
+                    self.logger.debug(
+                        f"Unrealized PnL for {symbol}: using sourced pnl={unrealized_pnl}, "
+                        f"qty={position_amt}"
+                    )
+        else:
+            # Fallback to internal positions with cached mark prices
+            for symbol, position in self._positions.items():
+                quantity = position["quantity"]
+                entry_price = position["avg_price"]
+                stored_mark_price = _optional_positive_decimal(
+                    position.get("mark_price"))
+                stored_unrealized_pnl = _optional_decimal(
+                    position.get("unrealized_pnl"))
+
+                if abs(quantity) <= self.quantity_min_threshold:
+                    continue
+
+                if stored_mark_price is not None and entry_price > decimal.Decimal("0"):
+                    position_pnl = self._calculate_position_unrealized_pnl(
+                        quantity,
+                        entry_price,
+                        stored_mark_price,
+                    )
+                    total_unrealized_pnl += position_pnl
+
+                    self.logger.debug(
+                        f"Unrealized PnL for {symbol}: mark={stored_mark_price}, entry={entry_price}, "
+                        f"qty={quantity}, pnl={position_pnl} (from state)"
+                    )
+                    continue
+
+                if stored_unrealized_pnl is not None:
+                    total_unrealized_pnl += stored_unrealized_pnl.quantize(
+                        decimal.Decimal("0.01"))
+
+                    self.logger.debug(
+                        f"Unrealized PnL for {symbol}: using stored pnl={stored_unrealized_pnl} (from state)"
+                    )
+                    continue
+
+                # Try to get mark price from cache
+                mark_price_data = self._mark_prices[symbol] if symbol in self._mark_prices else {
+                }
+                mark_price = _d(mark_price_data.get("mark_price"))
+                mark_ts = mark_price_data["ts_ms"] if "ts_ms" in mark_price_data else 0
+
+                # Check if mark price is fresh enough
+                if mark_price > decimal.Decimal("0") and (now_ms - mark_ts) < self._mark_price_stale_ms:
+                    position_pnl = self._calculate_position_unrealized_pnl(
+                        quantity,
+                        entry_price,
+                        mark_price,
+                    )
+                    total_unrealized_pnl += position_pnl
+
+                    self.logger.debug(
+                        f"Unrealized PnL for {symbol}: mark={mark_price}, entry={entry_price}, "
+                        f"qty={quantity}, pnl={position_pnl} (from cache)"
+                    )
+                else:
+                    # No fresh mark price available - PnL for this position is 0
+                    self.logger.debug(
+                        f"No fresh mark price for {symbol}, unrealized PnL = 0"
+                    )
+
+        return total_unrealized_pnl.quantize(decimal.Decimal("0.01"))
+
+    def _calculate_position_unrealized_pnl(
+        self,
+        quantity: decimal.Decimal,
+        entry_price: decimal.Decimal,
+        mark_price: decimal.Decimal,
+    ) -> decimal.Decimal:
+        """Calculate per-position unrealized PnL using a fresh mark price."""
+        return ((mark_price - entry_price) * quantity).quantize(decimal.Decimal("0.01"))
+
+    def _calculate_position_unrealized_pnl_pct(
+        self,
+        quantity: decimal.Decimal,
+        entry_price: decimal.Decimal,
+        unrealized_pnl: decimal.Decimal,
+    ) -> Optional[decimal.Decimal]:
+        notional = abs(quantity) * entry_price
+        if notional <= decimal.Decimal("0"):
+            return None
+        return ((unrealized_pnl / notional) * decimal.Decimal("100")).quantize(decimal.Decimal("0.01"))
+
+    def _fresh_mark_price(
+        self,
+        symbol: str,
+        *,
+        now_ms: Optional[int] = None,
+    ) -> Optional[decimal.Decimal]:
+        mark_price_data = self._mark_prices.get(symbol)
+        if not mark_price_data:
+            return None
+
+        mark_price = _d(mark_price_data.get("mark_price"))
+        if mark_price <= decimal.Decimal("0"):
+            return None
+
+        mark_ts_raw = mark_price_data.get("ts_ms")
+        try:
+            mark_ts = int(mark_ts_raw)
+        except (TypeError, ValueError):
+            return None
+
+        if now_ms is None:
+            now_ms = get_clock().now_ms()
+        if (now_ms - mark_ts) >= self._mark_price_stale_ms:
+            return None
+
+        return mark_price
+
+    def update_mark_price(self, symbol: str, mark_price: decimal.Decimal, ts_ms: Optional[int] = None) -> None:
+        """
+        Update cached mark price for a symbol.
+
+        Called externally when EVT:MARKET_TICK_RECEIVED is received.
+
+        Args:
+            symbol: Trading symbol (e.g., 'BTCUSDT')
+            mark_price: Current mark/mid price
+            ts_ms: Timestamp in milliseconds (defaults to current time)
+        """
+        if ts_ms is None:
+            # DET-BT-11: Use get_clock() for deterministic backtest
+            ts_ms = get_clock().now_ms()
+
+        self._mark_prices[symbol] = {
+            "mark_price": mark_price,
+            "ts_ms": ts_ms,
+        }
+        self.logger.debug(
+            f"Updated mark price for {symbol}: {mark_price} @ {ts_ms}")
+
+    def _calculate_open_positions_notional(self) -> decimal.Decimal:
+        """
+        Calculate total notional value of open positions in USD.
+
+        EXP-FIX: Used by exposure gate to ensure portfolio positions are accounted for.
+        Returns sum of abs(positionAmt) * markPrice for all positions.
+        """
+        total_notional = decimal.Decimal("0")
+
+        # For now, use entry price as approximation since we don't have mark prices
+        # In production, this should use current mark prices from market data
+        for symbol, position in self._positions.items():
+            quantity = abs(position["quantity"])
+            entry_price = position["avg_price"]
+
+            if quantity > self.quantity_min_threshold and entry_price > decimal.Decimal(
+                "0"
+            ):
+                position_notional = quantity * entry_price
+                total_notional += position_notional
+                self.logger.debug(
+                    f"Position notional for {symbol}: {position_notional} USD"
+                )
+
+        # Round to 2 decimal places for consistency
+        return total_notional.quantize(decimal.Decimal("0.01"))
+
+    def _calc_margin_used_usd(self, positions: Optional[List[Dict[str, Any]]], authoritative: bool = True) -> decimal.Decimal:
+        """
+        Calculate total margin used by open positions in USD.
+
+        EXP-LEVERAGE-001: Margin-based exposure calculation with leverage.
+        If positions list is provided (from positionRisk API), use it.
+        Otherwise, fallback to internal position data with leverage from config.
+
+        Args:
+            positions: List of pos dicts from API, or None.
+            authoritative: If True, an empty list means "user has no positions" (clear cache).
+                           If False, an empty list means "no data provided" (preserve cache).
+        """
+        total_margin = decimal.Decimal("0")
+
+        # FIX-AUDITED-ISSUES-01 (Part A): Differentiate explicit empty list (FLAT) from missing (FALLBACK)
+        # BUGFIX-007: Only clear cache if authoritative source says list is empty
+        if positions is not None:
+            # Explicit API data available (even if empty)
+
+            # 1. Sync internal state to API snapshot
+            # If positions is empty list, this correctly clears internal positions.
+            # If populated, we should ideally sync them, but for now we prioritize preventing 'ghosts' on empty.
+            if len(positions) == 0:
+                if authoritative:
+                    self.logger.info(
+                        "🟢 _calc_margin_used_usd(): Clearing positions cache (authoritative empty list)")
+                    self._positions.clear()
+                else:
+                    self.logger.debug(
+                        "🟡 _calc_margin_used_usd(): Ignoring empty positions list (non-authoritative)")
+
+            # Use positionRisk data if available
+            self.logger.info(
+                f"💚 _calc_margin_used_usd() USING API: {len(positions)} positions from /fapi/v2/positionRisk")
+            for p in positions:
+                # Extract notional: try positionRisk fields first, fallback to calculation
+                notional = _d(p.get("notional") or (
+                    _d(p.get("positionAmt")) *
+                    _d(p.get("markPrice") or p.get("entryPrice") or "0")
+                ))
+
+                # Extract leverage: try positionRisk field, fallback to default
+                lev = _d(p.get("leverage") or "1")
+                if lev <= 0:
+                    lev = decimal.Decimal("1")
+
+                # Calculate margin for this position
+                margin = abs(notional) / lev
+                total_margin += margin
+
+                self.logger.debug(
+                    f"Position margin for {(p.get('symbol') if p.get('symbol') is not None else 'unknown')}: notional={notional}, lev={lev}, margin={margin}"
+                )
+        else:
+            # Fallback to internal position data with leverage from SSOT (instruments.yaml)
+            self.logger.warning(
+                f"🔴 _calc_margin_used_usd() FALLBACK MODE: API returned empty, using {len(self._positions)} internal positions from self._positions")
+            self.logger.warning(
+                f"   Internal positions: {list(self._positions.keys())}")
+
+            for symbol, position in self._positions.items():
+                quantity = abs(position["quantity"])
+                entry_price = position["avg_price"]
+
+                if quantity > self.quantity_min_threshold and entry_price > decimal.Decimal("0"):
+                    # Calculate notional
+                    position_notional = quantity * entry_price
+
+                    # SSOT: instruments.<SYM>.execution.target_leverage
+                    symbol_leverage = self._resolve_leverage_for_symbol(symbol)
+
+                    # Calculate margin
+                    margin = position_notional / symbol_leverage
+                    total_margin += margin
+
+                    self.logger.debug(
+                        f"Position margin for {symbol}: notional={position_notional}, lev={symbol_leverage}, margin={margin}"
+                    )
+
+        # Round to 2 decimal places for consistency
+        self.logger.info(
+            f"📊 _calc_margin_used_usd() TOTAL: {total_margin.quantize(decimal.Decimal('0.01'))} USD (API={len(positions) if positions is not None else 'FALLBACK'})")
+        return total_margin.quantize(decimal.Decimal("0.01"))
+
+    def _calculate_margin_by_side(self, positions: list[dict]) -> dict:
+        """
+        Calculate margin used by long and short positions separately.
+
+        EXP-DIRECTION: Per-side margin calculation for directional ratio checks.
+
+        Returns:
+            Dict with 'long_margin' and 'short_margin' keys (as Decimal).
+        """
+        long_margin = decimal.Decimal("0")
+        short_margin = decimal.Decimal("0")
+
+        if positions:
+            # Use positionRisk data if available
+            for p in positions:
+                # Extract notional
+                notional = _d(p.get("notional") or (
+                    _d(p.get("positionAmt")) *
+                    _d(p.get("markPrice") or p.get("entryPrice") or "0")
+                ))
+
+                # Extract leverage
+                lev = _d(p.get("leverage") or "1")
+                if lev <= 0:
+                    lev = decimal.Decimal("1")
+
+                # Calculate margin for this position
+                margin = abs(notional) / lev
+
+                # Determine side from positionAmt sign
+                amount = _d(p.get("positionAmt"))
+                if amount > 0:
+                    long_margin += margin
+                elif amount < 0:
+                    short_margin += margin
+        else:
+            # Fallback to internal positions with SSOT leverage (instruments.yaml)
+            for symbol, position in self._positions.items():
+                quantity = position["quantity"]
+                entry_price = position["avg_price"]
+
+                if abs(quantity) > self.quantity_min_threshold and entry_price > decimal.Decimal("0"):
+                    # Calculate notional
+                    position_notional = abs(quantity) * entry_price
+
+                    # SSOT: instruments.<SYM>.execution.target_leverage
+                    symbol_leverage = self._resolve_leverage_for_symbol(symbol)
+
+                    # Calculate margin
+                    margin = position_notional / symbol_leverage
+
+                    # Determine side
+                    if quantity > 0:
+                        long_margin += margin
+                    else:
+                        short_margin += margin
+
+        return {
+            "long_margin": long_margin.quantize(decimal.Decimal("0.01")),
+            "short_margin": short_margin.quantize(decimal.Decimal("0.01"))
+        }
+
+    def get_metrics(self) -> Dict[str, Any]:
+        """Get position tracking metrics for monitoring."""
+        return {
+            "manual_intervention_detected_total": self.manual_intervention_detected_total,
+            "positions_tracked": len(self._positions),
+            "equity_usd": float(self._equity),
+            "realized_pnl_usd": float(self._realized_pnl)
+        }
 
     def get_positions(self) -> Dict[str, Dict[str, Any]]:
-        """Returns a copy of the internal positions dictionary."""
-        return self._positions.copy()
+        """Return open positions in a backward-compatible mapping format.
+
+        Shape:
+            {
+                "BTCUSDT": {
+                    "quantity": Decimal(...),
+                    "avg_price": Decimal(...),
+                    "venues": [...],
+                },
+                ...
+            }
+
+        This method is intentionally conservative and only returns non-flat
+        positions to preserve legacy startup restore/planner expectations.
+        """
+        positions: Dict[str, Dict[str, Any]] = {}
+        for symbol, position in self._positions.items():
+            qty = _d(position.get("quantity", "0"))
+            if abs(qty) <= decimal.Decimal(str(self.quantity_min_threshold)):
+                continue
+            positions[str(symbol).upper()] = {
+                "quantity": qty,
+                "avg_price": _d(position.get("avg_price", "0")),
+                "venues": position.get("venues", ["binance"]),
+            }
+        return positions
+
+    def _resolve_leverage_for_symbol(self, symbol: str) -> decimal.Decimal:
+        """
+        Resolve leverage for a specific symbol from instruments.yaml SSOT.
+
+        SSOT: instruments.<SYM>.execution.target_leverage
+
+        Args:
+            symbol: Trading symbol (e.g., 'BTCUSDT')
+
+        Returns:
+            decimal.Decimal: Leverage value >= 1
+
+        Raises:
+            ConfigContractError: If leverage not found in instruments.yaml (no silent defaults)
+        """
+        instruments = getattr(self.config, "instruments", None)
+        if instruments is None or not isinstance(instruments, dict):
+            raise ConfigContractError(
+                path="instruments",
+                why=f"Missing instruments config for leverage resolution (symbol={symbol})"
+            )
+
+        spec = instruments.get(symbol)
+        if spec is None:
+            raise ConfigContractError(
+                path=f"instruments.{symbol}",
+                why=f"Symbol {symbol} not found in instruments.yaml"
+            )
+
+        exec_cfg = getattr(spec, "execution", None)
+        if exec_cfg is None:
+            raise ConfigContractError(
+                path=f"instruments.{symbol}.execution",
+                why=f"Missing execution config for {symbol}"
+            )
+
+        target_leverage = getattr(exec_cfg, "target_leverage", None)
+        if target_leverage is None:
+            raise ConfigContractError(
+                path=f"instruments.{symbol}.execution.target_leverage",
+                why=f"Missing target_leverage for {symbol} in instruments.yaml (no silent defaults)"
+            )
+
+        return max(decimal.Decimal(str(target_leverage)), decimal.Decimal("1"))
 
     def _get_positions_snapshot(self) -> List[Dict[str, Any]]:
         """
         Get current positions snapshot in the format expected by portfolio_state_v1.json.
+
+        Symbol-scoped economics are exported only when the cached mark price is
+        fresh enough to be considered usable.
         """
         positions = []
+        now_ms = get_clock().now_ms()
         for symbol, position in self._positions.items():
-            if abs(position["net_position"]) > decimal.Decimal('1e-9'):  # Only include non-zero positions
-                positions.append({
-                    "symbol": symbol,
-                    "net_position": str(position["net_position"]),  # Preserve Decimal precision as string
-                    "avg_entry_price": str(position["avg_entry_price"]),  # Preserve Decimal precision as string
-                    "venues": position["venues"]
-                })
+            if abs(position["quantity"]) > decimal.Decimal(
+                str(self.quantity_min_threshold)
+            ):  # Only include non-zero positions
+                mark_price = _optional_positive_decimal(
+                    position.get("mark_price"))
+                if mark_price is None:
+                    mark_price = self._fresh_mark_price(symbol, now_ms=now_ms)
+
+                unrealized_pnl = _optional_decimal(
+                    position.get("unrealized_pnl"))
+                unrealized_pnl_pct = _optional_decimal(
+                    position.get("unrealized_pnl_pct"))
+
+                if mark_price is not None and position["avg_price"] > decimal.Decimal("0"):
+                    unrealized_pnl = self._calculate_position_unrealized_pnl(
+                        position["quantity"],
+                        position["avg_price"],
+                        mark_price,
+                    )
+                    unrealized_pnl_pct = self._calculate_position_unrealized_pnl_pct(
+                        position["quantity"],
+                        position["avg_price"],
+                        unrealized_pnl,
+                    )
+                elif unrealized_pnl is not None and position["avg_price"] > decimal.Decimal("0"):
+                    if unrealized_pnl_pct is None:
+                        unrealized_pnl_pct = self._calculate_position_unrealized_pnl_pct(
+                            position["quantity"],
+                            position["avg_price"],
+                            unrealized_pnl,
+                        )
+                positions.append(
+                    {
+                        "symbol": symbol,
+                        "net_position": _ds(
+                            position["quantity"]
+                        ),  # Preserve Decimal precision as string
+                        "avg_entry_price": _ds(
+                            position["avg_price"]
+                        ),  # Preserve Decimal precision as string
+                        "markPrice": _ds(mark_price) if mark_price is not None else None,
+                        "unrealizedPnl": _ds(unrealized_pnl) if unrealized_pnl is not None else None,
+                        "unrealizedPnlPct": _ds(unrealized_pnl_pct) if unrealized_pnl_pct is not None else None,
+                        "venues": position["venues"],
+                    }
+                )
         return positions
 
     def get_snapshot(self) -> dict:
         """
         Serializes the current state of the position_tracking domain for DR purposes.
-        
+
         Returns a snapshot compliant with snapshot_v1.schema.json for disaster recovery.
         All numeric values are preserved as Decimal-encoded strings to maintain precision.
-        
+
         Returns:
             dict: DR snapshot with domain state, hash, and metadata
         """
         # Build positions dictionary with Decimal precision preservation
         positions_state = {}
         for symbol, position in self._positions.items():
-            if abs(position["net_position"]) > decimal.Decimal('1e-9'):  # Only include non-zero positions
-                qty = position["net_position"]
+            if abs(position["quantity"]) > decimal.Decimal(
+                str(self.quantity_min_threshold)
+            ):  # Only include non-zero positions
+                qty = position["quantity"]
                 positions_state[symbol] = {
-                    "net_position": str(qty),
-                    "avg_entry_price": str(position["avg_entry_price"]),
+                    "qty": str(qty),
+                    "avg_price": str(position["avg_price"]),
                     "side": "long" if qty > 0 else "short",
-                    "unrealized_pnl": "0.0"  # Placeholder - would need current market price
+                    "unrealized_pnl": "0.0",  # Placeholder - would need current market price
                 }
-        
+
         # Build portfolio state with precision preservation
         portfolio_state = {
-            "equity": str(self._equity),
-            "balance": str(self._equity - self._realized_pnl),  # Simplified calculation
+            "equity": _ds(self._equity),
+            # Simplified calculation
+            "balance": _ds(self._equity - self._realized_pnl),
             "margin_used": "0.0",  # Placeholder - would need real margin calculation
-            "total_commissions": str(self._total_commissions)  # NEW: Include total commissions
         }
-        
+
         # Complete state object
-        state_data = {
-            "positions": positions_state,
-            "portfolio": portfolio_state
-        }
-        
+        state_data = {"positions": positions_state,
+                      "portfolio": portfolio_state}
         # Compute state hash for integrity verification
         state_str = json.dumps(state_data, sort_keys=True)
-        state_hash = hashlib.sha256(state_str.encode('utf-8')).hexdigest()
-        
+        state_hash = hashlib.sha256(state_str.encode("utf-8")).hexdigest()
+
         # Build snapshot with metadata
+        # NOTE: worker_id is legacy metadata and is not part of the typed config contract.
+        worker_id = "unknown"
+
         snapshot = {
             "domain": "position_tracking",
             "version": "1.0.0",
@@ -430,17 +1476,19 @@ class PositionTracking:
             "state_hash": f"sha256:{state_hash}",
             "state": state_data,
             "metadata": {
-                "worker_id": self.config.get("system", {}).get("worker_id", "unknown"),
+                "worker_id": worker_id,
                 "positions_count": len(positions_state),
-                "sequence_number": int(time.time() * 1000)  # Use timestamp as sequence for now
-            }
+                "sequence_number": int(
+                    time.time() * 1000
+                ),  # Use timestamp as sequence for now
+            },
         }
-        
+
         self.logger.info(
             f"DR Snapshot created: {len(positions_state)} positions, "
             f"equity={self._equity}, hash={state_hash[:16]}..."
         )
-        
+
         return snapshot
 
     def load_snapshot(self, snapshot_data: dict) -> bool:
@@ -457,14 +1505,19 @@ class PositionTracking:
         Returns:
             bool: True if load succeeded, False otherwise.
         """
+        journal = get_shadow_journal(self)
+        before = snapshot_position_tracking_state(
+            self, None) if journal is not None else None
         try:
-            state_to_load = snapshot_data['state']
-            state_hash_field = snapshot_data.get('state_hash', '')
-            expected_hash = state_hash_field.split(':')[-1] if state_hash_field else None
+            state_to_load = snapshot_data["state"]
+            state_hash_field = snapshot_data["state_hash"] if "state_hash" in snapshot_data else ""
+            expected_hash = (
+                state_hash_field.split(":")[-1] if state_hash_field else None
+            )
 
             # Verify integrity
             state_str = json.dumps(state_to_load, sort_keys=True)
-            actual_hash = hashlib.sha256(state_str.encode('utf-8')).hexdigest()
+            actual_hash = hashlib.sha256(state_str.encode("utf-8")).hexdigest()
 
             if expected_hash and actual_hash != expected_hash:
                 self.logger.error(
@@ -474,39 +1527,36 @@ class PositionTracking:
 
             # Restore positions (convert strings back to Decimal)
             positions_loaded: Dict[str, Dict[str, Any]] = {}
-            for symbol, pos in state_to_load.get('positions', {}).items():
+            positions_block = state_to_load["positions"] if "positions" in state_to_load else {
+            }
+            for symbol, pos in positions_block.items():
                 try:
-                    qty = decimal.Decimal(str(pos.get('net_position', '0')))
-                    avg_price = decimal.Decimal(str(pos.get('avg_entry_price', '0')))
+                    qty_raw = pos["qty"] if "qty" in pos else "0"
+                    avg_price_raw = pos["avg_price"] if "avg_price" in pos else "0"
+                    qty = decimal.Decimal(str(qty_raw))
+                    avg_price = decimal.Decimal(str(avg_price_raw))
                 except (ValueError, TypeError, decimal.InvalidOperation) as e:
-                    self.logger.error(f"Invalid numeric in snapshot for {symbol}: {e}")
+                    self.logger.error(
+                        f"Invalid numeric in snapshot for {symbol}: {e}")
                     return False
 
                 positions_loaded[symbol] = {
-                    'net_position': qty,
-                    'avg_entry_price': avg_price,
-                    'venues': pos.get('venues', [])
+                    "quantity": qty,
+                    "avg_price": avg_price,
+                    "venues": pos["venues"] if "venues" in pos else [],
                 }
 
             # Restore portfolio/equity if present
-            portfolio = state_to_load.get('portfolio', {})
-            equity_str = portfolio.get('equity')
-            balance_str = portfolio.get('balance')
-            commissions_str = portfolio.get('total_commissions')  # NEW: Restore total commissions
+            portfolio = state_to_load["portfolio"] if "portfolio" in state_to_load else {
+            }
+            equity_str = portfolio.get("equity")
+            balance_str = portfolio.get("balance")
 
             if equity_str is not None:
                 try:
                     self._equity = decimal.Decimal(str(equity_str))
                 except (ValueError, TypeError, decimal.InvalidOperation):
                     self.logger.error("Invalid equity value in snapshot")
-                    return False
-
-            # Restore total commissions if present
-            if commissions_str is not None:
-                try:
-                    self._total_commissions = decimal.Decimal(str(commissions_str))
-                except (ValueError, TypeError, decimal.InvalidOperation):
-                    self.logger.error("Invalid total_commissions value in snapshot")
                     return False
 
             # Try to reconstruct realized pnl if balance provided: realized = equity - balance
@@ -516,23 +1566,45 @@ class PositionTracking:
                     # realized_pnl = equity - balance
                     self._realized_pnl = self._equity - balance_dec
                 except (ValueError, TypeError, decimal.InvalidOperation):
-                    self.logger.warning("Invalid balance value in snapshot; leaving realized_pnl unchanged")
+                    self.logger.warning(
+                        "Invalid balance value in snapshot; leaving realized_pnl unchanged"
+                    )
 
             # Apply restored positions
             self._positions = positions_loaded
 
+            snapshot_ts = snapshot_data["timestamp_utc"] if "timestamp_utc" in snapshot_data else "unknown"
             self.logger.info(
-                f"Successfully loaded state from snapshot created at {snapshot_data.get('timestamp_utc', 'unknown')}. "
+                f"Successfully loaded state from snapshot created at {snapshot_ts}. "
                 f"Restored {len(self._positions)} positions."
             )
+
+            if journal is not None:
+                journal.record_transition(
+                    event_name="RESTORE:POSITION_TRACKING_SNAPSHOT_LOAD",
+                    source_component="position_tracking",
+                    source_path="restore:position_tracking_snapshot_load",
+                    event_origin_type="restore",
+                    truth_owner="PositionTracking",
+                    payload={
+                        "restore_marker": True,
+                        "positions_count": len(self._positions),
+                        "snapshot_timestamp_utc": snapshot_ts,
+                    },
+                    before=before,
+                    after=snapshot_position_tracking_state(self, None),
+                    restore_marker=True,
+                )
 
             return True
 
         except KeyError as e:
-            self.logger.critical(f"Failed to load snapshot due to missing key: {e}")
+            self.logger.critical(
+                f"Failed to load snapshot due to missing key: {e}")
             return False
         except (TypeError, json.JSONDecodeError) as e:
-            self.logger.critical(f"Failed to load snapshot due to invalid format: {e}")
+            self.logger.critical(
+                f"Failed to load snapshot due to invalid format: {e}")
             return False
 
     def stop(self) -> None:

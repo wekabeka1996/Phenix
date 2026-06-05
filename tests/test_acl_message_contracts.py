@@ -1,4 +1,5 @@
 """Tests for execution_position domain contracts"""
+
 import pytest
 import sys
 from pathlib import Path
@@ -25,9 +26,9 @@ def test_order_payload_valid():
         qty=1.0,
         order_type=OrderType.LIMIT,
         price=50000.0,
-        tif=TimeInForce.GTC
+        tif=TimeInForce.GTC,
     )
-    
+
     assert order.symbol == "BTCUSDT"
     assert order.side == Side.BUY
     assert order.qty == Decimal("1.0")  # Now returns Decimal
@@ -42,7 +43,7 @@ def test_order_payload_qty_too_small():
             side=Side.SELL,
             qty=0.0001,  # Too small
             order_type=OrderType.LIMIT,
-            price=3000.0
+            price=3000.0,
         )
 
 
@@ -54,7 +55,7 @@ def test_order_payload_qty_too_large():
             side=Side.BUY,
             qty=10000.0,  # Too large
             order_type=OrderType.LIMIT,
-            price=50000.0
+            price=50000.0,
         )
 
 
@@ -66,19 +67,16 @@ def test_order_payload_price_negative():
             side=Side.BUY,
             qty=1.0,
             order_type=OrderType.LIMIT,
-            price=-100.0  # Negative
+            price=-100.0,  # Negative
         )
 
 
 def test_order_payload_market_order():
     """Test market order (no price)"""
     order = OrderPayload(
-        symbol="BTCUSDT",
-        side=Side.BUY,
-        qty=0.5,
-        order_type=OrderType.MARKET
+        symbol="BTCUSDT", side=Side.BUY, qty=0.5, order_type=OrderType.MARKET
     )
-    
+
     assert order.price is None
     assert order.order_type == OrderType.MARKET
 
@@ -91,9 +89,9 @@ def test_position_payload():
         qty=10.0,
         avg_price=3000.0,
         unrealized_pnl=500.0,
-        realized_pnl=100.0
+        realized_pnl=100.0,
     )
-    
+
     assert position.symbol == "ETHUSDT"
     assert position.qty == Decimal("10.0")  # Now returns Decimal
     assert position.unrealized_pnl == Decimal("500.0")  # Now returns Decimal
@@ -106,9 +104,9 @@ def test_validate_order_command_valid():
         "side": "BUY",
         "qty": 1.0,
         "order_type": "LIMIT",
-        "price": 50000.0
+        "price": 50000.0,
     }
-    
+
     assert validate_order_command(pld) is True
 
 
@@ -118,9 +116,9 @@ def test_validate_order_command_invalid():
         "symbol": "BTC",  # Too short
         "side": "BUY",
         "qty": -1.0,  # Negative
-        "order_type": "LIMIT"
+        "order_type": "LIMIT",
     }
-    
+
     assert validate_order_command(pld) is False
 
 

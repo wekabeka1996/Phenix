@@ -1,0 +1,812 @@
+debug:
+  disable_positions_stale_gate: false
+  disable_daily_loss_limit: false
+decision_making:
+  position_sizing:
+    min_position_size_usd: 10.0
+    liquidity_based_cap_usd: 10000.0
+  entry_plan:
+    enabled: true
+    atr_period: 14
+    entry_k_atr: 0.3
+    sl_k_atr: 1.5
+    tp_k_atr: 2.0
+    obi_weight: 0.18
+    obi_mod_clamp_min: 0.8
+    obi_mod_clamp_max: 1.2
+    require_atr: true
+    obi_missing_policy: neutral
+    structural_stop_enabled: false
+    base_atr_mult: 1.5
+    confidence_scale: 0.5
+    min_stop_bps: 15
+  qos:
+    exposure_block_cooldown_sec: 60
+    symbol_cooldown_sec: 3
+    max_intents_per_minute_per_symbol: 20
+    mode: enforce
+    enforce: true
+    apply_to_strategies:
+    - aurora
+    - md_amr
+  features:
+    ttl_sec: 30
+  bar_gating:
+    enable: false
+    bar_ms: 900000
+  behavior_fsm:
+    enable: false
+    high_vol_multiplier: 2.0
+    low_vol_multiplier: 0.5
+  risk_skew:
+    max_skew_sec: 5
+    max_defer_count: 3
+    defer_cooldown_sec: 2
+    defer_window_sec: 60
+    until_refresh_retry_sec: 30
+    until_refresh_max_hold_sec: 300
+  risk_gate:
+    threshold_pct_testnet: 20.0
+    threshold_pct_production: 50.0
+    min_intents_for_check: 10
+  arming:
+    require_regime_warmup: true
+    retry_backoff_ms: 250
+    max_attempts: 3
+  directional_sanity:
+    enabled: true
+    min_abs_delta_price: 0.0
+    min_confidence: 0.0
+    min_regime_confidence: 0.35
+    min_regime_confidence_by_regime:
+      DEFAULT: 0.35
+      TREND_UP: 0.20
+      TREND_DOWN: 0.20
+    max_regime_confidence_by_regime:
+      TREND_UP: 0.43
+      TREND_DOWN: 0.40
+    hard_veto_consecutive_bars: 2
+    hard_veto_consecutive_bars_by_regime: {}
+    consecutive_bars: 1
+    nrr026_enabled: false
+    nrr027_enabled: false
+  low_vol_cost_floor_gate:
+    enabled: true
+    enforce_in_modes:
+    - testnet
+    - hybrid_live_data_testnet_exec
+    observe_only_in_modes:
+    - live
+    - production
+    regimes:
+    - LOW_VOLATILITY
+    fee:
+      open_fee_bps: 4.0
+      close_fee_bps: 4.0
+      fee_source: explicit_config
+    slippage:
+      buffer_bps: 2.0
+      source: explicit_config
+    thresholds:
+      target_net_fee_multiple: 2.0
+      min_tp_fee_coverage: 3.0
+      min_rr: 1.2
+      min_regime_confidence_by_regime:
+        DEFAULT: 0.45
+        LOW_VOLATILITY: 0.39
+      min_regime_confidence_overrides_by_strategy_symbol:
+        aurora:
+          XRPUSDT:
+            DEFAULT: 0.46
+            LOW_VOLATILITY: 0.45
+        md_amr:
+          XRPUSDT:
+            DEFAULT: 0.46
+            LOW_VOLATILITY: 0.45
+      min_direction_confidence_by_regime:
+        DEFAULT: 0.55
+        LOW_VOLATILITY: 0.25
+      min_direction_confidence_overrides_by_strategy_symbol:
+        aurora:
+          XRPUSDT:
+            DEFAULT: 0.55
+            LOW_VOLATILITY: 0.25
+        md_amr:
+          XRPUSDT:
+            DEFAULT: 0.55
+            LOW_VOLATILITY: 0.59
+      min_raw_score_by_regime:
+        DEFAULT: 0.55
+        LOW_VOLATILITY: 0.25
+      min_normalized_confidence_by_regime:
+        DEFAULT: 0.55
+        LOW_VOLATILITY: 0.25
+      min_raw_score_overrides_by_strategy_symbol:
+        aurora:
+          XRPUSDT:
+            DEFAULT: 0.55
+            LOW_VOLATILITY: 0.25
+      min_normalized_confidence_overrides_by_strategy_symbol:
+        md_amr:
+          XRPUSDT:
+            DEFAULT: 0.55
+            LOW_VOLATILITY: 0.59
+    direction_confidence:
+      required: true
+      raw_signed_score_sources:
+      - signal_score
+      - final_score
+      normalized_confidence_sources:
+      - strategy_confidence
+      judge_confidence_live_producer_required: false
+      missing_policy: fail_closed
+    geometry:
+      require_tpsl: true
+      missing_policy: fail_closed
+  price_motion_sanity:
+    enabled: false
+    k_vol: 2.0
+    flash_window_sec: 60
+    bleed_window_sec: 300
+    flash_threshold_norm: 1.0
+    bleed_threshold_norm: 0.5
+    require_bleed_ready: true
+    pm_norm_clip_abs: 10.0
+  flip:
+    enabled: false
+  regime_loss_embargo:
+    enabled: true
+    min_loss_threshold_net: 0.0
+    fee_only_close_policy: ignore
+  judge_bridge:
+    enabled: true
+    authority_mode: shadow
+    allowed_runtime_modes:
+    - backtest
+    - testnet
+    - hybrid_live_data_testnet_exec
+    forbidden_runtime_modes:
+    - production
+    - live
+    confidence_policy:
+      unknown_policy: fail_closed
+      allow_overlapping_bands: false
+      open_bands:
+      - min: 0.55
+        max: 0.85
+        action: allow
+      suppress_bands:
+      - min: 0.90
+        max: 1.00
+        action: suppress
+    hard_gates:
+      judge_cannot_override:
+      - panic_killswitch
+      - exchange_filter_fail
+      - exposure_limit
+      - stale_features
+      - stale_regime
+      - order_guardian_block
+    calibration_guard:
+      required_for_hybrid_gated: false
+      required_for_live_gated: true
+      accepted_artifact_path: null
+      auto_apply: false
+    shadow_capture:
+      enabled: true
+      output_dir: logs/shadow_telemetry
+      evidence_envelope_file: judge_evidence_envelope_v2.jsonl
+      policy_verdict_file: judge_policy_verdict_v2.jsonl
+      bridge_decision_file: judge_bridge_decision_v1.jsonl
+      calibration_row_file: judge_shadow_calibration_row_v1.jsonl
+      meta_scoring:
+        schema_version: "1.0.0"
+        agreement_weight: 0.35
+        confidence_weight: 0.35
+        regime_weight: 0.15
+        historical_surface_weight: 0.10
+        missingness_penalty_weight: 0.02
+        freshness_penalty_weight: 1.0
+        disagreement_penalty_weight: 0.20
+        no_expert_penalty: 0.40
+        unknown_cap: 0.25
+        min_confidence: 0.0
+        max_confidence: 1.0
+        verdict_thresholds:
+          open_long_min_confidence: 0.60
+          open_short_min_confidence: 0.60
+          suppress_max_confidence: 0.20
+          unknown_max_evidence_score: 0.05
+        stale_policy:
+          stale_regime_penalty: 0.10
+          stale_market_penalty: 0.10
+          missing_execution_readiness_penalty: 0.05
+          missing_risk_context_penalty: 0.05
+          missing_portfolio_context_penalty: 0.05
+        hard_unknown_conditions:
+          no_strategy_experts: true
+          missing_regime_context: false
+          missing_market_context: false
+        agreement_state_scores:
+          agree: 1.0
+          single_expert: 0.45
+          unknown: 0.0
+          disagree: 0.0
+          no_experts: 0.0
+  neocortex_enforcement_mode: shadow
+  fail_closed_on_degraded_context: false
+  degraded_context_critical_keys: []
+  degraded_context_critical_keys_by_strategy: {}
+  degraded_context_contracts_by_strategy:
+    aurora:
+      enabled: false
+      critical_keys:
+      - price
+      - pillar_sum
+    mean_reversion:
+      enabled: false
+      critical_keys:
+      - tfi
+      - obi
+      - price_motion
+      - liquidity_kappa
+    md_amr:
+      enabled: false
+      critical_keys:
+      - price_ref
+      - sentiment_state
+      - atr
+      - liquidity
+      - obi_close
+  portfolio_warmup_timeout_sec: 30
+feature_engineering:
+  enabled_timeframes_sec:
+  - 180
+  - 300
+  - 900
+  enable_new_metrics: true
+  trace_features: false
+  legacy_features_log:
+    mode: full
+    sample_every_n: 10
+  volume_input_mode: integrate
+  ema:
+    period_short: 1
+    period_long: 2
+  volume:
+    sma_length: 2
+    window_sec: 5
+    min_window_volume_usd: 0.0
+  volatility:
+    sma_length: 10
+    window_sec: 60
+  liquidity:
+    depth_half: 1000.0
+    kappa_min: 0.3
+    kappa_max: 1.0
+  ema_bias:
+    clamp_min: -0.02
+    clamp_max: 0.02
+  volume_spike:
+    cap_max: 3.0
+    sma_len: 5
+    eps: 1.0e-09
+  volume_zscore:
+    clip_sigma: 5.0
+  large_trade_imbalance:
+    enabled: true
+    window_ms: 1000
+    min_trades: 1
+    eps: 1.0e-12
+    use_notional: false
+  volatility_state:
+    cap_max: 3.0
+    tick_floor: 0.0001
+    division_eps: 1.0e-09
+  depth_imbalance:
+    use_laplace_smoothing: true
+  delta_price:
+    spike_filter_ms: 600000
+  macro_sync:
+    enabled: true
+    time_diff_threshold_ms: 60000
+    ttl_ms: 60000
+    min_buffer_size: 2
+    window: 12
+    bin_ms: 5000
+    max_gap_bins: 2
+    max_late_ms: 5000
+    eps: 1.0e-12
+    anchors:
+    - BTCUSDT
+    - ETHUSDT
+    align_mode: tail_min_len
+    anchor_update_from_ticks: true
+  defaults:
+    neutral_value: 0.5
+    zero_value: 0.0
+    correlation_default: 0.0
+    ms_per_sec: 1000
+  readiness_registry:
+    declared_keys:
+    - obi
+    - tfi
+    - delta_price
+    - depth_imbalance
+    - liquidity_kappa
+    - absorption
+    - ema_bias
+    - volume_spike
+    - volatility_state
+    - macro_sync
+    - macro_resid
+    - spread_bps
+    - large_trade_imbalance
+    - volume_zscore
+  warmup:
+    enforcement_mode: fail_fast
+    check_full_ready_invariant: true
+    degraded_allowed_strategies:
+    - md_amr
+  spread_bps:
+    health_gate:
+      enabled: true
+      max_age_sec: 5.0
+      min_update_events: 1
+      min_trades_count: 1
+      window_sec: 10.0
+  feature_sanity:
+    enabled: true
+    nan_inf_behavior: neutral_and_not_ready
+    feature_bounds:
+      obi:
+        min: -1.0
+        max: 1.0
+      tfi:
+        min: -1.0
+        max: 1.0
+      absorption:
+        min: -1.0
+        max: 1.0
+      macro_resid:
+        min: -3.0
+        max: 3.0
+      ema_bias:
+        min: 0.0
+        max: 1.0
+      volatility_state:
+        min: 0.0
+        max: 1.0
+      liquidity_kappa:
+        min: 0.0
+        max: 1.0
+      depth_imbalance:
+        min: 0.0
+        max: 1.0
+      volume_spike:
+        min: 0.0
+        max: 10.0
+      volume_zscore:
+        min: 0.0
+        max: 1.0
+      macro_sync:
+        min: 0.0
+        max: 1.0
+      large_trade_imbalance:
+        min: 0.0
+        max: 1.0
+      spread_bps:
+        min: 0.0
+        max: 10000.0
+  macro_resid:
+    enabled: true
+    beta_window: 60
+    mad_window: 30
+    winsor_percentile: 0.05
+    var_floor: 1.0e-09
+    scale_floor: 0.0001
+    clip: 3.0
+    neutral: 0.0
+  absorption:
+    mode: full
+    proxy:
+      source: aggressive_trade_imbalance
+      window: 30
+      eps: 0.0001
+      dp_cap_pct: 0.02
+    dedup:
+      enabled: true
+      window: 60
+      threshold: 0.8
+    clip: 1.0
+    neutral: 0.0
+  pillars:
+    enabled: true
+    tactician:
+      enabled: true
+      timeframe_sec: 900
+      roc_period: 14
+      sensitivity: 8.0
+      min_bars: 20
+    operator:
+      enabled: true
+      timeframe_sec: 14400
+      linreg_period: 20
+      adx_period: 14
+      sensitivity: 6.0
+      min_bars: 50
+    strategist:
+      enabled: true
+      timeframe_sec: 86400
+      sma_period: 200
+      sensitivity: 0.8
+      min_bars: 200
+    weights:
+      tactician: 0.65
+      operator: 0.3
+      strategist: 0.05
+    backfill:
+      enabled: true
+      d1_candles: 200
+      h4_candles: 100
+      m15_candles: 50
+ta_features:
+  enabled: true
+  timeframes_sec:
+  - 180
+  - 300
+  - 900
+  warm_up_bars: 30
+  buffer_max_bars: 300
+  log_calculations: true
+  log_max_bytes: 10485760
+  log_backup_count: 5
+risk_management:
+  risk_score_weights:
+    delta_price_pct: 0.1
+    obi: 0.3
+    tfi: 0.3
+    absorption_inverse: 0.3
+    absorption_feature: 0.2
+  trading_allowed_thresholds:
+    max_risk_score: 0.96
+  validation:
+    total_weight_min: 0.5
+    total_weight_max: 2.0
+  use_absorption_penalty: true
+  absorption_dp_cap_pct: 0.02
+  absorption_penalty_source: feature
+  absorption_feature_clip_min: 0.0
+  absorption_feature_clip_max: 1.0
+position_tracking:
+  precision:
+    quantity_min_threshold: 1.0e-09
+    flat_position_threshold: 1.0e-12
+    decimal_places: 2
+  positions_stale_ttl_sec: 15
+  enable_market_tick_subscription: true
+execution_position:
+  fallback:
+    policy: fail_closed
+  exposure_guard:
+    pending_ttl_sec: 90
+    post_fill_ttl_sec: 5
+    stale_ttl_sec: 60
+    max_equity_utilization_pct: 150.0
+    max_portfolio_fraction: 150.0
+    max_long_utilization_pct: 150.0
+    max_short_utilization_pct: 150.0
+    max_directional_ratio: 20.0
+    max_concentration_pct: 500.0
+  fsm_open:
+    idempotency_window_sec: 60
+  order_index:
+    ttl_sec: 3600
+  inflight_reconcile:
+    inflight_ttl_sec: 60
+    max_ttl_sec: 120
+    reconcile_interval_sec: 10
+    verbose_logging: true
+  metrics_collector:
+    window_size_minutes: 60
+    recent_rejections_minutes: 5
+  idempotent_cancel:
+    max_retries: 2
+  utils:
+    client_order_id_max_length: 32
+    basis_points_base: 10000.0
+  event_dedup:
+    max_size: 100000
+    ttl_ms: 86400000
+    warm_state:
+      enabled: true
+      storage_path: logs/execution_terminal_identity_cache_v1.json
+      max_entries: 2000
+  pending_entry_ttl:
+    enabled: true
+    ttl_by_tf_sec:
+      '180': 600
+      '300': 1200
+      '900': 1800
+    reject_unknown_tf: true
+    cancel_on_regime_change: true
+    regime_change_cancel_mode: let_ttl_expire
+    cancel_on_supersede: true
+    cancel_on_panic: true
+    supersede_cancel_timeout_sec: 5.0
+    supersede_reprice_guard:
+      enabled: true
+      enforce: true
+      min_price_improvement_bps: 5.0
+      min_price_improvement_atr_mult: 0.1
+    advanced_stale_cancel:
+      enabled: true
+      min_age_before_cancel_sec: 300
+      drift_away:
+        mode: atr
+        atr_mult: 0.5
+      may_cancel_regimes:
+        BUY:
+        - TREND_DOWN
+        SELL:
+        - TREND_UP
+      never_cancel_regimes:
+      - UNCERTAIN
+      - MEAN_REVERSION
+      - LOW_VOLATILITY
+  maker_only_entry:
+    enabled: false
+  order_capabilities:
+    supported_order_types:
+    - LIMIT
+    - MARKET
+    supported_tif:
+    - GTC
+    - GTX
+    - IOC
+    - FOK
+  bracket_placement:
+    tp_widen_first_bps: 25
+    tp_widen_second_bps: 60
+    retry_backoff_ms:
+    - 200
+    - 400
+  order_lifecycle:
+    fill_settlement_delay_ms: 500
+    position_close_cleanup_delay_ms: 2000
+  shadow_check:
+    enabled: true
+    check_every_n_requests: 10
+    tolerance_pct: 1.0
+    absolute_threshold_usd: 5000.0
+    use_absolute_for_large_portfolios: true
+    large_portfolio_threshold_usd: 1000000.0
+  guardian:
+    poll_interval_ms: 500
+    unified: true
+    # Deprecated compatibility alias; keep equal to emit_tidy_monitoring_event.
+    emit_tidy_event: true
+    emit_tidy_monitoring_event: true
+    cleanup_ttl_ms: 6000
+    symbol_cooldown_ms: 4000
+  intent_boundary_audit:
+    enabled: true
+    route_ttl_ms: 2000
+    downstream_ttl_ms: 5000
+  bracket_health_check:
+    enabled: true
+    interval_sec: 45
+    grace_period_ms: 15000
+    max_placements_per_cycle: 2
+  restore_artifact:
+    mode: authoritative
+    storage_path: ops/restore/execution_position_restore_envelope_v1.json
+    flush_interval_ms: 30000
+    dark_read_max_artifact_age_ms: 300000
+  startup_truth_artifact:
+    mode: writer_only
+    storage_path: ops/restore/execution_position_startup_truth_v1.jsonl
+  position_policy_sidecar:
+    mode: enable
+    freshness:
+      portfolio_max_age_ms: 60000
+      features_max_age_ms: 15000
+      regime_max_age_ms: 30000
+      order_state_max_age_ms: 15000
+    startup_grace:
+      startup_grace_ms: 30000
+      post_fill_grace_ms: 15000
+      min_portfolio_updates: 1
+      min_feature_updates: 1
+      min_regime_updates: 1
+    profitability_guard:
+      enabled: true
+      min_unrealized_pnl_pct: 0.25
+      min_unrealized_pnl_usdt: 0.0
+    scoring:
+      weights:
+        microstructure_adverse_pressure: 0.3
+        regime_exhaustion_hint: 0.3
+        conviction_decay: 0.15
+        unrealized_loss_pressure: 0.25
+      caps:
+        microstructure_adverse_pressure: 1.0
+        regime_exhaustion_hint: 1.0
+        conviction_decay: 1.0
+        unrealized_loss_pressure: 1.0
+    thresholds:
+      recommend_soft_close_at: 0.3
+      loss_bps_full_pressure: 50.0
+      adverse_price_distance_bps_full_pressure: 25.0
+      book_imbalance_full_pressure: 0.35
+      regime_confidence_floor: 0.55
+      signal_score_floor: 0.0
+      adverse_regimes_long:
+      - TREND_DOWN
+      adverse_regimes_short:
+      - TREND_UP
+    logging:
+      emit_internal_bus_events: true
+      write_trade_lifecycle_jsonl: true
+      trade_lifecycle_log_path: logs/trade_lifecycle.jsonl
+      include_score_payloads: true
+    allowed_actions:
+      soft_close_symbol_current_net_only: true
+      partial_reduce: false
+      bracket_mutation: false
+      exact_targeting: false
+    peak_giveback_close:
+      enabled: false
+      edge_arm_usd: 25.0
+      giveback_trigger_pct: 50.0
+    shadow_percent_notional_arm:
+      enabled: true
+      candidate_pcts:
+      - 0.02
+      - 0.05
+      - 0.07
+    shadow_fee_aware_arm:
+      enabled: true
+      fee_source_priority:
+      - realized_lifecycle_fee
+      - order_log_fee
+      - configured_fee_model
+      candidate_fee_multiples:
+      - 1.0
+      - 1.5
+      - 2.0
+      configured_fee_model:
+        enabled: false
+        round_trip_fee_bps: null
+      optional_pct_notional_floor:
+        enabled: true
+        candidate_pcts:
+        - 0.02
+        - 0.05
+shadow_telemetry:
+  enabled: true
+  required_for_mode: false
+  ingest:
+    source: ipc_tap
+    ipc_endpoint: tcp://127.0.0.1:7101
+    allowlist_events:
+    - EVT:BAR_CLOSED
+    - EVT:FEATURES_CALCULATED
+    - EVT:TICK_FEATURES_CALCULATED
+    - EVT:RISK_ASSESSMENT_COMPLETED
+    - EVT:REGIME_DETECTED
+    - EVT:STRATEGY_SIGNAL_PRODUCED
+    - EVT:TRADE_INTENT_PROPOSED
+    - EVT:TRADE_INTENT_REJECTED
+    - EVT:INTENT_DEFERRED
+    - EVT:DECISION_BLOCKED
+    - EVT:STRATEGY_DECISION_BLOCKED
+    - EVT:ORDER_PLACED
+    - EVT:ORDER_REJECTED
+    - EVT:ORDER_STATE_CHANGED
+    - EVT:TRADE_EXECUTED
+    - EVT:POSITION_CLOSED
+    - EVT:LLM_INTENT_RECEIVED_V1
+    - EVT:LLM_INTENT_REJECTED_V1
+    - EVT:LLM_INTENT_ACCEPTED_V1
+    queue_maxsize: 50000
+    overflow_policy: fail_closed
+  api:
+    enabled: true
+    host: 127.0.0.1
+    port: 8443
+    tls: false
+    auth_mode: loopback_optional_bearer
+    write:
+      enabled: true
+      intents_endpoint: /intents/llm/v1
+      rate_limit_per_min: 30
+      max_body_kb: 64
+      symbol_allowlist:
+      - DOGEUSDT
+      - BTCUSDT
+      - ETHUSDT
+      - XRPUSDT
+      - BNBUSDT
+      - SOLUSDT
+      require_snapshot_ref: true
+      idempotency_ttl_sec: 300
+      consequential: true
+  egress_to_main:
+    mode: ipc
+    ipc_commands_endpoint: tcp://127.0.0.1:7102
+    queue_maxsize: 50000
+    overflow_policy: fail_closed
+  ledger:
+    queue_maxsize: 50000
+    overflow_policy: fail_closed
+    enqueue_timeout_ms: 5
+    shutdown_timeout_ms: 2000
+  lifecycle:
+    stop_timeout_ms: 2000
+  snapshot:
+    trigger_event: EVT:FEATURES_CALCULATED
+    tf_policy:
+      bar_snapshots_enabled: true
+      tick_snapshots_mode: sampled
+      tick_sample_every_n: 20
+      min_tf_sec_for_full: 60
+    output_dir: data/shadow_telemetry/snapshots
+objective_engine:
+  enabled: true
+  data_requirements:
+    require_arce: true
+    require_portfolio: true
+    require_execution: false
+    strict_fail_closed: true
+  explainability:
+    enabled: true
+    emit_subcomponents: true
+    emit_normalization_stats: false
+  components:
+    cost:
+      enabled: true
+      normalization: null
+      parameters:
+        alpha_fee: 1.0
+        alpha_slippage: 1.0
+        alpha_spread: 0.5
+        base_fee_bps: 4.0
+        slippage_from_spread_ratio: 0.5
+    risk:
+      enabled: true
+      normalization: null
+      parameters:
+        phi_inventory: 1.0
+        phi_overflow: 3.0
+        phi_volatility: 0.6
+    edge:
+      enabled: true
+      normalization: null
+      parameters:
+        omega_rr: 0.9
+        omega_threshold_margin: 0.8
+        phi_stop_distance: 0.15
+        phi_rr_consistency: 0.2
+    execution:
+      enabled: true
+      normalization: null
+      parameters:
+        omega_liquidity: 1.0
+        phi_spread_drag: 0.35
+        phi_notional_pressure: 0.25
+    information:
+      enabled: true
+      normalization: null
+      parameters:
+        phi_staleness: 0.1
+        omega_regime_confidence: 0.6
+        omega_readiness: 0.5
+    behavior:
+      enabled: true
+      normalization: null
+      parameters:
+        phi_cancel_replace: 0.1
+        phi_blocked_intents: 0.08
+        phi_reentry: 0.12
+        window_sec: 3600

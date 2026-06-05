@@ -1,0 +1,281 @@
+{
+  "executed_trades_master_authority_status": "DERIVED_CONVENIENCE_REPORT_ONLY",
+  "recommended_canonical_source": "BUILD_BRIDGE_DATASET_DECISION_LEDGER_TO_ORDER_LOG",
+  "confidence": "MEDIUM",
+  "reasons": [
+    "The only active producer found is scripts/forensics/build_order_flow_master.py, a manual CLI forensics script with no repo-wired invocation surface.",
+    "Current master CSV outputs are stale relative to current runtime logs and contain only four timeout rows plus a header-only executed subset.",
+    "decision_ledger and order_log provide current realized-outcome evidence, while executed_trades_master does not.",
+    "The best exact identity surface for calibration is the decision_ledger -> order_log bridge, not executed_trades_master directly."
+  ],
+  "risks": [
+    "order_log remains a mixed event stream and needs explicit canonicalization rules",
+    "decision_ledger realized fields are partial",
+    "executed_trades_master may still be useful as a convenience export but is not proven authoritative"
+  ],
+  "evidence": {
+    "producer": {
+      "active_writers": [
+        {
+          "path": "scripts/forensics/build_order_flow_master.py",
+          "line": 450,
+          "target": "executed_trades_master.csv",
+          "kind": "active_writer",
+          "snippet": "df[df['outcome'] == OUTCOME_EXECUTED].to_csv(REPORTS_DIR / \"executed_trades_master.csv\", index=False)"
+        },
+        {
+          "path": "scripts/forensics/build_order_flow_master.py",
+          "line": 451,
+          "target": "rejected_attempts_master.csv",
+          "kind": "active_writer",
+          "snippet": "df[df['outcome'] != OUTCOME_EXECUTED].to_csv(REPORTS_DIR / \"rejected_attempts_master.csv\", index=False)"
+        },
+        {
+          "path": "scripts/forensics/build_order_flow_master.py",
+          "line": 452,
+          "target": "order_attempts_master.csv",
+          "kind": "active_writer",
+          "snippet": "df.to_csv(REPORTS_DIR / \"order_attempts_master.csv\", index=False)"
+        }
+      ],
+      "writer_path": "scripts/forensics/build_order_flow_master.py",
+      "invocation_mode": "manual_cli_only_unreferenced",
+      "reads_all_logs_inventory": true,
+      "uses_order_log_exact_actions": true,
+      "uses_decision_ledger_explicitly": false,
+      "uses_order_ledger_explicitly": false,
+      "uses_trade_lifecycle_explicitly": false,
+      "writes_header_only_when_empty": true,
+      "current_report_stale_vs_runtime": true,
+      "current_report_rows": 0,
+      "current_rejected_rows": 4,
+      "current_order_attempt_rows": 4,
+      "current_coverage_rows": 2,
+      "tests_found": []
+    },
+    "reports": {
+      "executed_trades_master.csv": {
+        "exists": true,
+        "rows": 0,
+        "header": [
+          "attempt_id",
+          "synthetic_id",
+          "symbol",
+          "side",
+          "regime",
+          "intent_price",
+          "intent_ts",
+          "outcome",
+          "confidence",
+          "reject_reason",
+          "order_instance_id",
+          "exit_ts",
+          "exit_price",
+          "realized_pnl",
+          "commission",
+          "exact_roundtrip"
+        ],
+        "size_bytes": 177,
+        "last_write_time_utc": "2026-04-26T22:15:03.415540+00:00",
+        "sample_rows": []
+      },
+      "rejected_attempts_master.csv": {
+        "exists": true,
+        "rows": 4,
+        "header": [
+          "attempt_id",
+          "synthetic_id",
+          "symbol",
+          "side",
+          "regime",
+          "intent_price",
+          "intent_ts",
+          "outcome",
+          "confidence",
+          "reject_reason",
+          "order_instance_id",
+          "exit_ts",
+          "exit_price",
+          "realized_pnl",
+          "commission",
+          "exact_roundtrip"
+        ],
+        "size_bytes": 673,
+        "last_write_time_utc": "2026-04-26T22:15:03.419125+00:00",
+        "sample_rows": [
+          {
+            "attempt_id": "SYN_723a771f8e9f",
+            "synthetic_id": "True",
+            "symbol": "ETHUSDT",
+            "side": "UNKNOWN",
+            "regime": "",
+            "intent_price": "0.0",
+            "intent_ts": "2026-04-26T20:20:04.606000+00:00",
+            "outcome": "timeout_non_fill",
+            "confidence": "unlinked",
+            "reject_reason": "",
+            "order_instance_id": "",
+            "exit_ts": "",
+            "exit_price": "0.0",
+            "realized_pnl": "0.0",
+            "commission": "0.0",
+            "exact_roundtrip": "False"
+          },
+          {
+            "attempt_id": "SYN_723a771f8e9f",
+            "synthetic_id": "True",
+            "symbol": "ETHUSDT",
+            "side": "UNKNOWN",
+            "regime": "",
+            "intent_price": "0.0",
+            "intent_ts": "2026-04-26T20:20:04.606000+00:00",
+            "outcome": "timeout_non_fill",
+            "confidence": "unlinked",
+            "reject_reason": "",
+            "order_instance_id": "",
+            "exit_ts": "",
+            "exit_price": "0.0",
+            "realized_pnl": "0.0",
+            "commission": "0.0",
+            "exact_roundtrip": "False"
+          },
+          {
+            "attempt_id": "SYN_55c5298718fb",
+            "synthetic_id": "True",
+            "symbol": "ETHUSDT",
+            "side": "UNKNOWN",
+            "regime": "",
+            "intent_price": "0.0",
+            "intent_ts": "2026-04-26T22:10:00.538000+00:00",
+            "outcome": "timeout_non_fill",
+            "confidence": "unlinked",
+            "reject_reason": "",
+            "order_instance_id": "",
+            "exit_ts": "",
+            "exit_price": "0.0",
+            "realized_pnl": "0.0",
+            "commission": "0.0",
+            "exact_roundtrip": "False"
+          }
+        ]
+      },
+      "order_attempts_master.csv": {
+        "exists": true,
+        "rows": 4,
+        "header": [
+          "attempt_id",
+          "synthetic_id",
+          "symbol",
+          "side",
+          "regime",
+          "intent_price",
+          "intent_ts",
+          "outcome",
+          "confidence",
+          "reject_reason",
+          "order_instance_id",
+          "exit_ts",
+          "exit_price",
+          "realized_pnl",
+          "commission",
+          "exact_roundtrip"
+        ],
+        "size_bytes": 673,
+        "last_write_time_utc": "2026-04-26T22:15:03.421136+00:00",
+        "sample_rows": [
+          {
+            "attempt_id": "SYN_723a771f8e9f",
+            "synthetic_id": "True",
+            "symbol": "ETHUSDT",
+            "side": "UNKNOWN",
+            "regime": "",
+            "intent_price": "0.0",
+            "intent_ts": "2026-04-26T20:20:04.606000+00:00",
+            "outcome": "timeout_non_fill",
+            "confidence": "unlinked",
+            "reject_reason": "",
+            "order_instance_id": "",
+            "exit_ts": "",
+            "exit_price": "0.0",
+            "realized_pnl": "0.0",
+            "commission": "0.0",
+            "exact_roundtrip": "False"
+          },
+          {
+            "attempt_id": "SYN_723a771f8e9f",
+            "synthetic_id": "True",
+            "symbol": "ETHUSDT",
+            "side": "UNKNOWN",
+            "regime": "",
+            "intent_price": "0.0",
+            "intent_ts": "2026-04-26T20:20:04.606000+00:00",
+            "outcome": "timeout_non_fill",
+            "confidence": "unlinked",
+            "reject_reason": "",
+            "order_instance_id": "",
+            "exit_ts": "",
+            "exit_price": "0.0",
+            "realized_pnl": "0.0",
+            "commission": "0.0",
+            "exact_roundtrip": "False"
+          },
+          {
+            "attempt_id": "SYN_55c5298718fb",
+            "synthetic_id": "True",
+            "symbol": "ETHUSDT",
+            "side": "UNKNOWN",
+            "regime": "",
+            "intent_price": "0.0",
+            "intent_ts": "2026-04-26T22:10:00.538000+00:00",
+            "outcome": "timeout_non_fill",
+            "confidence": "unlinked",
+            "reject_reason": "",
+            "order_instance_id": "",
+            "exit_ts": "",
+            "exit_price": "0.0",
+            "realized_pnl": "0.0",
+            "commission": "0.0",
+            "exact_roundtrip": "False"
+          }
+        ]
+      },
+      "coverage_ledger.csv": {
+        "exists": true,
+        "rows": 2,
+        "header": [
+          "outcome",
+          "unlinked",
+          "All"
+        ],
+        "size_bytes": 53,
+        "last_write_time_utc": "2026-04-26T22:15:03.413224+00:00",
+        "sample_rows": [
+          {
+            "outcome": "timeout_non_fill",
+            "unlinked": "4",
+            "All": "4"
+          },
+          {
+            "outcome": "All",
+            "unlinked": "4",
+            "All": "4"
+          }
+        ]
+      }
+    },
+    "order_log": {
+      "rows": 1564,
+      "position_closed_rows": 49,
+      "rows_with_realized_pnl_net": 49
+    },
+    "decision_ledger": {
+      "rows": 40,
+      "rows_with_realized_pnl_net": 7,
+      "terminal_status_counts": {
+        "INVALID_FOR_DATASET": 13,
+        "REJECTED_UPSTREAM": 20,
+        "EXECUTED_AND_CLOSED": 7
+      }
+    }
+  }
+}

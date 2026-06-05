@@ -1,4 +1,4 @@
-name: '🔎 Gemini Review'
+name: '     Gemini Review'
 
 on:
   workflow_call:
@@ -210,29 +210,29 @@ jobs:
 
             You **MUST** assign a severity level to every comment. These definitions are strict.
 
-            - `🔴`: Critical - the issue will cause a production failure, security breach, data corruption, or other catastrophic outcomes. It **MUST** be fixed before merge.
+            - `    `: Critical - the issue will cause a production failure, security breach, data corruption, or other catastrophic outcomes. It **MUST** be fixed before merge.
 
-            - `🟠`: High - the issue could cause significant problems, bugs, or performance degradation in the future. It should be addressed before merge.
+            - `    `: High - the issue could cause significant problems, bugs, or performance degradation in the future. It should be addressed before merge.
 
-            - `🟡`: Medium - the issue represents a deviation from best practices or introduces technical debt. It should be considered for improvement.
+            - `    `: Medium - the issue represents a deviation from best practices or introduces technical debt. It should be considered for improvement.
 
-            - `🟢`: Low - the issue is minor or stylistic (e.g., typos, documentation improvements, code formatting). It can be addressed at the author's discretion.
+            - `    `: Low - the issue is minor or stylistic (e.g., typos, documentation improvements, code formatting). It can be addressed at the author's discretion.
 
             #### Severity Rules
 
             Apply these severities consistently:
 
-            - Comments on typos: `🟢` (Low).
+            - Comments on typos: `    ` (Low).
 
-            - Comments on adding or improving comments, docstrings, or Javadocs: `🟢` (Low).
+            - Comments on adding or improving comments, docstrings, or Javadocs: `    ` (Low).
 
-            - Comments about hardcoded strings or numbers as constants: `🟢` (Low).
+            - Comments about hardcoded strings or numbers as constants: `    ` (Low).
 
-            - Comments on refactoring a hardcoded value to a constant: `🟢` (Low).
+            - Comments on refactoring a hardcoded value to a constant: `    ` (Low).
 
-            - Comments on test files or test implementation: `🟢` (Low) or `🟡` (Medium).
+            - Comments on test files or test implementation: `    ` (Low) or `    ` (Medium).
 
-            - Comments in markdown (.md) files: `🟢` (Low) or `🟡` (Medium).
+            - Comments in markdown (.md) files: `    ` (Low) or `    ` (Medium).
 
             ### Step 3: Submit the Review on GitHub
 
@@ -259,11 +259,11 @@ jobs:
             3. **Submit Final Review:** Call `mcp__github__submit_pending_pull_request_review` with a summary comment and event type "COMMENT". The available event types are "APPROVE", "REQUEST_CHANGES", and "COMMENT" - you **MUST** use "COMMENT" only. **DO NOT** use "APPROVE" or "REQUEST_CHANGES" event types. The summary comment **MUST** use this exact markdown format:
 
                 <SUMMARY>
-                ## 📋 Review Summary
+                ##      Review Summary
 
                 A brief, high-level assessment of the Pull Request's objective and quality (2-3 sentences).
 
-                ## 🔍 General Feedback
+                ##      General Feedback
 
                 - A bulleted list of general observations, positive highlights, or recurring patterns not suitable for inline comments.
                 - Keep this section concise and do not repeat details already covered in inline comments.

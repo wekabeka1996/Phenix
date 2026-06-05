@@ -1,0 +1,381 @@
+{
+  "generated_at_utc": "2026-05-21T09:44:21.167957+00:00",
+  "source_manifest": "artifacts/calibration_datasets/_post_03t_multiday_realized_outcome/dataset_manifest.json",
+  "source_snapshot_manifest": "artifacts/calibration_datasets/_post_03t_multiday_realized_outcome/source_snapshot/source_snapshot_manifest.json",
+  "rows": [
+    {
+      "rid": "aurora_BNBUSDT_1778518204673",
+      "decision_id": "1482d207-3da6-43a1-9819-ec276ee29061",
+      "lifecycle_id": "0df1e777-b0a1-4bab-8e87-f90a5c3af6d3",
+      "symbol": "BNBUSDT",
+      "strategy_id": "aurora",
+      "side": "LONG",
+      "regime": "TREND_UP",
+      "intent_ts_ms": 1778518204694,
+      "entry_ts_ms": 1778518286943,
+      "exit_ts_ms": 1778539967451,
+      "entry_price": 662.23,
+      "exit_price": 668.59,
+      "qty": 8.21,
+      "close_reason": "TP",
+      "terminal_status": "INVALID_FOR_DATASET",
+      "gross_pnl": 52.2156,
+      "realized_pnl_net": 48.932568790000005,
+      "fees": 3.28303121,
+      "commission": 3.28303121,
+      "exact_roundtrip": true,
+      "source_paths": [
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\order_log_v1.jsonl",
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\shadow_telemetry\\decision_ledger_v1.jsonl"
+      ],
+      "diagnostics_flags": [
+        "MFE_MISSING",
+        "MAE_MISSING",
+        "TERMINAL_STATUS_INVALID_FOR_DATASET"
+      ]
+    },
+    {
+      "rid": "aurora_XRPUSDT_1778548203246",
+      "decision_id": "dc7d554b-ee50-4804-971b-ed977ac4f97a",
+      "lifecycle_id": "93bb42f0-b1e1-443d-80b2-04ce14d302f9",
+      "symbol": "XRPUSDT",
+      "strategy_id": "aurora",
+      "side": "LONG",
+      "regime": "TREND_UP",
+      "intent_ts_ms": 1778548203261,
+      "entry_ts_ms": 1778548204474,
+      "exit_ts_ms": 1778549654217,
+      "entry_price": 1.4752000000000003,
+      "exit_price": 1.4688,
+      "qty": 3829.7999999999997,
+      "close_reason": "SL",
+      "terminal_status": "EXECUTED_AND_CLOSED",
+      "gross_pnl": -24.48448,
+      "realized_pnl_net": -27.860889720000003,
+      "fees": 3.37640972,
+      "commission": 3.37640972,
+      "exact_roundtrip": true,
+      "source_paths": [
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\order_log_v1.jsonl",
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\shadow_telemetry\\decision_ledger_v1.jsonl"
+      ],
+      "diagnostics_flags": [
+        "MFE_MISSING",
+        "MAE_MISSING"
+      ]
+    },
+    {
+      "rid": "aurora_ETHUSDT_1778551804640",
+      "decision_id": "2f637b2b-717a-4a95-8a03-3eb198a164d0",
+      "lifecycle_id": "7e08e289-09e3-4f1f-a340-3de2ffef97d2",
+      "symbol": "ETHUSDT",
+      "strategy_id": "aurora",
+      "side": "SHORT",
+      "regime": "TREND_DOWN",
+      "intent_ts_ms": 1778551804661,
+      "entry_ts_ms": 1778551849357,
+      "exit_ts_ms": 1778559288520,
+      "entry_price": 2314.62,
+      "exit_price": 2306.68,
+      "qty": 1.849,
+      "close_reason": "TP",
+      "terminal_status": "INVALID_FOR_DATASET",
+      "gross_pnl": 14.68106,
+      "realized_pnl_net": 12.11909301,
+      "fees": 2.56196699,
+      "commission": 2.56196699,
+      "exact_roundtrip": true,
+      "source_paths": [
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\order_log_v1.jsonl",
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\shadow_telemetry\\decision_ledger_v1.jsonl"
+      ],
+      "diagnostics_flags": [
+        "MFE_MISSING",
+        "MAE_MISSING",
+        "TERMINAL_STATUS_INVALID_FOR_DATASET"
+      ]
+    },
+    {
+      "rid": "aurora_BNBUSDT_1778560504646",
+      "decision_id": "ec7098ca-6f22-4ecd-b2ea-d96b0d5854ba",
+      "lifecycle_id": "32a3e850-8442-486a-9c04-6ed2e2e84159",
+      "symbol": "BNBUSDT",
+      "strategy_id": "aurora",
+      "side": "SHORT",
+      "regime": "MEAN_REVERSION",
+      "intent_ts_ms": 1778560504685,
+      "entry_ts_ms": 1778560786913,
+      "exit_ts_ms": 1778560820798,
+      "entry_price": 663.4400000000002,
+      "exit_price": 663.59,
+      "qty": 9.08,
+      "close_reason": "CLOSE",
+      "terminal_status": "REJECTED_UPSTREAM",
+      "gross_pnl": -0.003,
+      "realized_pnl_net": -0.6107121100000003,
+      "fees": 0.6077121100000002,
+      "commission": 0.6077121100000002,
+      "exact_roundtrip": true,
+      "source_paths": [
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\order_log_v1.jsonl",
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\shadow_telemetry\\decision_ledger_v1.jsonl"
+      ],
+      "diagnostics_flags": [
+        "MFE_MISSING",
+        "MAE_MISSING",
+        "TERMINAL_STATUS_REJECTED_UPSTREAM"
+      ]
+    },
+    {
+      "rid": "aurora_BNBUSDT_1778562904748",
+      "decision_id": "e067ba27-ad50-428a-a61a-999732e2f54a",
+      "lifecycle_id": "c5f08e2e-3bc7-4bcb-bdac-345d8f096e3c",
+      "symbol": "BNBUSDT",
+      "strategy_id": "aurora",
+      "side": "SHORT",
+      "regime": "MEAN_REVERSION",
+      "intent_ts_ms": 1778562904775,
+      "entry_ts_ms": 1778563066504,
+      "exit_ts_ms": 1778568668254,
+      "entry_price": 663.46,
+      "exit_price": 661.59,
+      "qty": 4.53,
+      "close_reason": "TP",
+      "terminal_status": "INVALID_FOR_DATASET",
+      "gross_pnl": 8.4711,
+      "realized_pnl_net": 6.671204169999999,
+      "fees": 1.79989583,
+      "commission": 1.79989583,
+      "exact_roundtrip": true,
+      "source_paths": [
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\order_log_v1.jsonl",
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\shadow_telemetry\\decision_ledger_v1.jsonl"
+      ],
+      "diagnostics_flags": [
+        "MFE_MISSING",
+        "MAE_MISSING",
+        "TERMINAL_STATUS_INVALID_FOR_DATASET"
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778552701340",
+      "decision_id": "924bf1e4-cf19-47e0-8a3c-0a4e459ae513",
+      "lifecycle_id": "ac47ae82-09d2-4a3d-bfdd-eca698d6fd08",
+      "symbol": "BTCUSDT",
+      "strategy_id": "aurora",
+      "side": "SHORT",
+      "regime": "MEAN_REVERSION",
+      "intent_ts_ms": 1778552701358,
+      "entry_ts_ms": 1778552931006,
+      "exit_ts_ms": 1778569572308,
+      "entry_price": 81192.5,
+      "exit_price": 80891.7,
+      "qty": 0.041,
+      "close_reason": "TP",
+      "terminal_status": "INVALID_FOR_DATASET",
+      "gross_pnl": 12.3328,
+      "realized_pnl_net": 10.340397620000001,
+      "fees": 1.9924023800000001,
+      "commission": 1.9924023800000001,
+      "exact_roundtrip": true,
+      "source_paths": [
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\order_log_v1.jsonl",
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\shadow_telemetry\\decision_ledger_v1.jsonl"
+      ],
+      "diagnostics_flags": [
+        "MFE_MISSING",
+        "MAE_MISSING",
+        "TERMINAL_STATUS_INVALID_FOR_DATASET"
+      ]
+    },
+    {
+      "rid": "aurora_BNBUSDT_1778585405291",
+      "decision_id": "dcd15e38-c2fd-468f-8bb9-0ee532a1679f",
+      "lifecycle_id": "5569b94e-be64-482f-a4de-618c16eb27c8",
+      "symbol": "BNBUSDT",
+      "strategy_id": "aurora",
+      "side": "LONG",
+      "regime": "MEAN_REVERSION",
+      "intent_ts_ms": 1778585405308,
+      "entry_ts_ms": 1778585728988,
+      "exit_ts_ms": 1778589646412,
+      "entry_price": 662.42,
+      "exit_price": 665.08,
+      "qty": 4.55,
+      "close_reason": "TP",
+      "terminal_status": "INVALID_FOR_DATASET",
+      "gross_pnl": 12.103,
+      "realized_pnl_net": 10.28975222,
+      "fees": 1.81324778,
+      "commission": 1.81324778,
+      "exact_roundtrip": true,
+      "source_paths": [
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\order_log_v1.jsonl",
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\shadow_telemetry\\decision_ledger_v1.jsonl"
+      ],
+      "diagnostics_flags": [
+        "MFE_MISSING",
+        "MAE_MISSING",
+        "TERMINAL_STATUS_INVALID_FOR_DATASET"
+      ]
+    },
+    {
+      "rid": "aurora_XRPUSDT_1778577601352",
+      "decision_id": "10695f66-d3b1-474d-b3a2-584747e70cdb",
+      "lifecycle_id": "911f020c-8d00-4180-bf05-d7e6c30f733c",
+      "symbol": "XRPUSDT",
+      "strategy_id": "aurora",
+      "side": "SHORT",
+      "regime": "TREND_DOWN",
+      "intent_ts_ms": 1778577601364,
+      "entry_ts_ms": 1778577856851,
+      "exit_ts_ms": 1778594115323,
+      "entry_price": 1.4554,
+      "exit_price": 1.4421,
+      "qty": 1925.9,
+      "close_reason": "TP",
+      "terminal_status": "INVALID_FOR_DATASET",
+      "gross_pnl": 25.61447,
+      "realized_pnl_net": 23.94294288,
+      "fees": 1.67152712,
+      "commission": 1.67152712,
+      "exact_roundtrip": true,
+      "source_paths": [
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\order_log_v1.jsonl",
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\shadow_telemetry\\decision_ledger_v1.jsonl"
+      ],
+      "diagnostics_flags": [
+        "MFE_MISSING",
+        "MAE_MISSING",
+        "TERMINAL_STATUS_INVALID_FOR_DATASET"
+      ]
+    },
+    {
+      "rid": "aurora_BNBUSDT_1778594405405",
+      "decision_id": "5c3de5f1-3453-4d92-bc35-9988c35d26fa",
+      "lifecycle_id": "5000d889-7088-49d1-b4e6-936f1f9f0c85",
+      "symbol": "BNBUSDT",
+      "strategy_id": "aurora",
+      "side": "SHORT",
+      "regime": "TREND_DOWN",
+      "intent_ts_ms": 1778594405420,
+      "entry_ts_ms": null,
+      "exit_ts_ms": 1778595375706,
+      "entry_price": null,
+      "exit_price": 658.81,
+      "qty": 8.71,
+      "close_reason": "CLOSE",
+      "terminal_status": "REJECTED_UPSTREAM",
+      "gross_pnl": -2.6102,
+      "realized_pnl_net": -9.49160721,
+      "fees": 6.88140721,
+      "commission": 6.88140721,
+      "exact_roundtrip": false,
+      "source_paths": [
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\order_log_v1.jsonl",
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\shadow_telemetry\\decision_ledger_v1.jsonl"
+      ],
+      "diagnostics_flags": [
+        "NON_EXACT_ROUNDTRIP",
+        "MISSING_ENTRY_TS",
+        "MISSING_ENTRY_PRICE",
+        "MFE_MISSING",
+        "MAE_MISSING",
+        "TERMINAL_STATUS_REJECTED_UPSTREAM"
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778623504656",
+      "decision_id": "acaade72-1d20-458e-a49a-8ebada12d843",
+      "lifecycle_id": "b88a495c-b6df-4e1a-92ef-93c1ef8233d7",
+      "symbol": "BTCUSDT",
+      "strategy_id": "aurora",
+      "side": "LONG",
+      "regime": "MEAN_REVERSION",
+      "intent_ts_ms": 1778623504676,
+      "entry_ts_ms": 1778623508956,
+      "exit_ts_ms": 1778635260283,
+      "entry_price": 80607.3,
+      "exit_price": 80835.0,
+      "qty": 0.042,
+      "close_reason": "TP",
+      "terminal_status": "INVALID_FOR_DATASET",
+      "gross_pnl": 9.5634,
+      "realized_pnl_net": 7.528270679999999,
+      "fees": 2.0351293200000002,
+      "commission": 2.0351293200000002,
+      "exact_roundtrip": true,
+      "source_paths": [
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\order_log_v1.jsonl",
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\shadow_telemetry\\decision_ledger_v1.jsonl"
+      ],
+      "diagnostics_flags": [
+        "MFE_MISSING",
+        "MAE_MISSING",
+        "TERMINAL_STATUS_INVALID_FOR_DATASET"
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778669703907",
+      "decision_id": "c6b7a981-79ba-43cc-a51f-8d309e839513",
+      "lifecycle_id": "cfa378a5-7bef-4799-9243-faa08a215d77",
+      "symbol": "BTCUSDT",
+      "strategy_id": "aurora",
+      "side": "SHORT",
+      "regime": "MEAN_REVERSION",
+      "intent_ts_ms": 1778669703915,
+      "entry_ts_ms": 1778669706653,
+      "exit_ts_ms": 1778673461905,
+      "entry_price": 80800.5,
+      "exit_price": 80479.0,
+      "qty": 0.042,
+      "close_reason": "TP",
+      "terminal_status": "INVALID_FOR_DATASET",
+      "gross_pnl": 13.503,
+      "realized_pnl_net": 11.472228600000001,
+      "fees": 2.0307714,
+      "commission": 2.0307714,
+      "exact_roundtrip": true,
+      "source_paths": [
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\order_log_v1.jsonl",
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\shadow_telemetry\\decision_ledger_v1.jsonl"
+      ],
+      "diagnostics_flags": [
+        "MFE_MISSING",
+        "MAE_MISSING",
+        "TERMINAL_STATUS_INVALID_FOR_DATASET"
+      ]
+    },
+    {
+      "rid": "aurora_BTCUSDT_1778676306439",
+      "decision_id": "cbc2c783-61ea-4472-9180-1a5a0c0e035b",
+      "lifecycle_id": "02587f49-a984-4340-a134-98485385340e",
+      "symbol": "BTCUSDT",
+      "strategy_id": "aurora",
+      "side": "SHORT",
+      "regime": "TREND_DOWN",
+      "intent_ts_ms": 1778676306450,
+      "entry_ts_ms": 1778676308197,
+      "exit_ts_ms": 1778685535914,
+      "entry_price": 80200.0,
+      "exit_price": 79578.9935,
+      "qty": 0.08,
+      "close_reason": "TP",
+      "terminal_status": "INVALID_FOR_DATASET",
+      "gross_pnl": 49.68052,
+      "realized_pnl_net": 45.850792240000004,
+      "fees": 3.82972776,
+      "commission": 3.82972776,
+      "exact_roundtrip": true,
+      "source_paths": [
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\order_log_v1.jsonl",
+        "logs\\frozen\\calibrators_03u_multiday_post_03t_20260513T190409Z\\logs\\shadow_telemetry\\decision_ledger_v1.jsonl"
+      ],
+      "diagnostics_flags": [
+        "MFE_MISSING",
+        "MAE_MISSING",
+        "TERMINAL_STATUS_INVALID_FOR_DATASET"
+      ]
+    }
+  ]
+}

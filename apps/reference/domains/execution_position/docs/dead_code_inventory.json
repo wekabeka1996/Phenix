@@ -1,0 +1,372 @@
+{
+  "schema_version": 1,
+  "package": "execution_position",
+  "phase": "9G",
+  "created_in_phase": "9F",
+  "mode": "forensic_dead_code_inventory",
+  "root_anchor_exclusions": [
+    "apps/reference/domains/execution_position/fsm.py",
+    "apps/reference/domains/execution_position/contracts.py",
+    "apps/reference/domains/execution_position/reasons.py",
+    "apps/reference/domains/execution_position/utils.py"
+  ],
+  "classification_definitions": {
+    "active_runtime": "Used by live runtime code paths in the current package.",
+    "active_test_only": "Not used by live runtime callers in-repo, but exercised by tests as a retained API or helper surface.",
+    "shadow_runtime": "Off-path or shadow-mode surface that is intentionally retained for validation, operator analysis, or dark execution workflows.",
+    "dormant_but_intentional": "Not on the current hot path, but intentionally retained for compatibility, operator usage, soldier-pattern semantics, or bounded future cleanup.",
+    "compatibility_stub": "Flat-path or legacy-path import shim retained until a later import-rewire phase.",
+    "removable_candidate": "Surface appears removable only when import, patch-target, registry/schema, docs, and test evidence are all clear.",
+    "unknown_requires_dynamic_probe": "Static evidence is not enough to safely classify the surface without runtime tracing."
+  },
+  "compatibility_stubs": {
+    "ledger_path": "apps/reference/domains/execution_position/docs/compatibility_stub_ledger.json",
+    "classification": "compatibility_stub",
+    "count": 64,
+    "protected_in_phase_9f": true,
+    "future_policy_default": "keep_until_import_rewire",
+    "group_counts": {
+      "adapters": 4,
+      "contract_layer": 3,
+      "flows/close": 6,
+      "flows/manage": 7,
+      "flows/open": 7,
+      "guardian": 8,
+      "guards": 7,
+      "orchestration": 2,
+      "sidecar": 2,
+      "state": 10,
+      "support": 2,
+      "telemetry": 6
+    },
+    "why_not_removable": "Phase 8 physical migration intentionally left these shims in place. They stay protected until a later import-rewire or external import audit phase."
+  },
+  "structured_metrics_logger_like_surfaces": [
+    "apps/reference/domains/execution_position/telemetry/metrics_aggregator.py::StructuredMetricsLogger"
+  ],
+  "phase_9g_focus_surfaces": [
+    "apps/reference/domains/execution_position/telemetry/metrics_aggregator.py",
+    "apps/reference/domains/execution_position/telemetry/drift_monitor.py",
+    "apps/reference/domains/execution_position/guardian/idempotent_cancel.py::IdempotentCancelHelper.generate_deterministic_clientOrderId",
+    "apps/reference/domains/execution_position/flows/close/fsm_close.py::CloseFlowFSM._check_close_conditions",
+    "apps/reference/domains/execution_position/orchestration/event_handlers.py::DEAD-CODE(PHASE 4) marker near reservation_id write"
+  ],
+  "entries": [
+    {
+      "path": "apps/reference/domains/execution_position/telemetry/metrics_aggregator.py",
+      "path_kind": "file",
+      "surface": "apps/reference/domains/execution_position/telemetry/metrics_aggregator.py",
+      "classification": "dormant_but_intentional",
+      "semantic_group": "telemetry",
+      "proof": {
+        "runtime_import_sites": [],
+        "patch_targets": [],
+        "test_references": [
+          "tests/unit/test_metrics_aggregator.py",
+          "tests/unit/test_phase6_integration.py"
+        ],
+        "docs_references": [
+          "apps/reference/domains/execution_position/README.md",
+          "apps/reference/domains/execution_position/docs/compatibility_stub_ledger.json"
+        ],
+        "registry_or_schema_references": [],
+        "runtime_wiring_references": []
+      },
+      "import_site_count": 1,
+      "patch_target_count": 0,
+      "test_reference_count": 2,
+      "docs_reference_count": 2,
+      "runtime_wiring_reference_count": 0,
+      "recommended_next_action": "keep_as_documented_operator_or_compliance_helper_until_external_usage_audit",
+      "why_not_removable": "Telemetry modules are explicitly protected from dead-code conclusions based only on lack of hot-path imports. This module remains a metrics/compliance utility surface and is still exercised by tests."
+    },
+    {
+      "path": "apps/reference/domains/execution_position/telemetry/metrics_aggregator.py",
+      "path_kind": "file",
+      "surface": "apps/reference/domains/execution_position/telemetry/metrics_aggregator.py::StructuredMetricsLogger",
+      "classification": "active_test_only",
+      "semantic_group": "telemetry",
+      "proof": {
+        "runtime_import_sites": [],
+        "patch_targets": [],
+        "test_references": [
+          "tests/unit/test_metrics_aggregator.py",
+          "tests/unit/test_phase6_integration.py"
+        ],
+        "docs_references": [],
+        "registry_or_schema_references": []
+      },
+      "why_not_removable": "The symbol is not imported by current runtime callers in-repo, but the class remains an asserted public helper surface in unit and integration tests."
+    },
+    {
+      "path": "apps/reference/domains/execution_position/telemetry/metrics_aggregator.py",
+      "path_kind": "file",
+      "surface": "apps/reference/domains/execution_position/telemetry/metrics_aggregator.py::MetricAggregator",
+      "classification": "active_test_only",
+      "semantic_group": "telemetry",
+      "proof": {
+        "runtime_import_sites": [
+          "apps/reference/domains/execution_position/telemetry/metrics_aggregator.py::StructuredMetricsLogger"
+        ],
+        "patch_targets": [],
+        "test_references": [
+          "tests/unit/test_metrics_aggregator.py",
+          "tests/unit/test_phase6_integration.py"
+        ],
+        "docs_references": [],
+        "registry_or_schema_references": []
+      },
+      "why_not_removable": "This internal aggregator is still the backing state owner for StructuredMetricsLogger and remains covered by test expectations."
+    },
+    {
+      "path": "apps/reference/domains/execution_position/telemetry/drift_monitor.py",
+      "path_kind": "file",
+      "surface": "apps/reference/domains/execution_position/telemetry/drift_monitor.py",
+      "classification": "shadow_runtime",
+      "semantic_group": "telemetry",
+      "proof": {
+        "runtime_import_sites": [],
+        "patch_targets": [],
+        "test_references": [
+          "tests/domains/execution_position/test_drift_monitor_contracts_v1.py",
+          "tests/audit/test_execution_position_dead_modules_event_emission.py"
+        ],
+        "docs_references": [
+          "apps/reference/domains/execution_position/README.md",
+          "apps/reference/domains/execution_position/docs/ATLAS.md"
+        ],
+        "registry_or_schema_references": [],
+        "runtime_wiring_references": []
+      },
+      "import_site_count": 1,
+      "patch_target_count": 0,
+      "test_reference_count": 2,
+      "docs_reference_count": 3,
+      "runtime_wiring_reference_count": 0,
+      "recommended_next_action": "keep_as_shadow_validation_surface_until_shadow_mode_retirement_decision",
+      "why_not_removable": "The module header explicitly declares shadow-mode validation and off-path computation. Shadow-only surfaces are protected until shadow mode is explicitly retired."
+    },
+    {
+      "path": "apps/reference/domains/execution_position/telemetry/drift_monitor.py",
+      "path_kind": "file",
+      "surface": "apps/reference/domains/execution_position/telemetry/drift_monitor.py::compute_drift",
+      "classification": "shadow_runtime",
+      "semantic_group": "telemetry",
+      "proof": {
+        "runtime_import_sites": [],
+        "patch_targets": [],
+        "test_references": [
+          "tests/domains/execution_position/test_drift_monitor_contracts_v1.py",
+          "tests/domains/test_drift_monitor.py",
+          "tests/test_drift_unit.py",
+          "tests/vfoundation/cli/test_cli_deep_coverage.py"
+        ],
+        "docs_references": [],
+        "registry_or_schema_references": []
+      },
+      "why_not_removable": "This is the primary drift-analysis API for shadow-mode validation and CLI/operator coverage. Static lack of hot-path imports is not enough to classify it as dead."
+    },
+    {
+      "path": "apps/reference/domains/execution_position/telemetry/drift_monitor.py",
+      "path_kind": "file",
+      "surface": "apps/reference/domains/execution_position/telemetry/drift_monitor.py::aggregate_drift_metrics",
+      "classification": "shadow_runtime",
+      "semantic_group": "telemetry",
+      "proof": {
+        "runtime_import_sites": [],
+        "patch_targets": [],
+        "test_references": [
+          "tests/domains/execution_position/test_drift_monitor_contracts_v1.py",
+          "tests/domains/test_drift_monitor.py",
+          "tests/test_drift_unit.py"
+        ],
+        "docs_references": [],
+        "registry_or_schema_references": []
+      },
+      "why_not_removable": "Aggregate drift summaries remain part of the retained shadow-monitor surface and are still asserted by tests."
+    },
+    {
+      "path": "apps/reference/domains/execution_position/guardian/idempotent_cancel.py",
+      "path_kind": "file",
+      "surface": "apps/reference/domains/execution_position/guardian/idempotent_cancel.py::IdempotentCancelHelper.generate_deterministic_clientOrderId",
+      "classification": "active_test_only",
+      "semantic_group": "guardian",
+      "proof": {
+        "runtime_import_sites": [],
+        "patch_targets": [],
+        "test_references": [
+          "tests/unit/test_idempotent_cancel.py"
+        ],
+        "docs_references": [
+          "apps/reference/domains/execution_position/guardian/cancel_submission_adapter.py"
+        ],
+        "registry_or_schema_references": [
+          "apps/reference/domains/execution_position/domain_dict.json"
+        ],
+        "runtime_wiring_references": []
+      },
+      "import_site_count": 0,
+      "patch_target_count": 0,
+      "test_reference_count": 1,
+      "docs_reference_count": 2,
+      "runtime_wiring_reference_count": 0,
+      "recommended_next_action": "retain_as_tested_helper_until_cancel_api_surface_decision_and_external_usage_audit",
+      "why_not_removable": "Static search found no live runtime caller in-repo, but the helper remains a tested deterministic-ID surface inside the guardian cancellation package and is still documented in domain metadata."
+    },
+    {
+      "path": "apps/reference/domains/execution_position/guardian/idempotent_cancel.py",
+      "path_kind": "file",
+      "surface": "apps/reference/domains/execution_position/guardian/idempotent_cancel.py::IdempotentCancelHelper._backoff_wait",
+      "classification": "active_runtime",
+      "semantic_group": "guardian",
+      "proof": {
+        "runtime_import_sites": [
+          "apps/reference/domains/execution_position/guardian/idempotent_cancel.py::IdempotentCancelHelper.cancel_order_idempotent"
+        ],
+        "patch_targets": [],
+        "test_references": [
+          "tests/unit/test_idempotent_cancel_logic.py"
+        ],
+        "docs_references": [],
+        "registry_or_schema_references": []
+      },
+      "why_not_removable": "This helper is still called by the runtime cancellation loop and patched by tests to prove retry behavior."
+    },
+    {
+      "path": "apps/reference/domains/execution_position/guardian/idempotent_cancel.py",
+      "path_kind": "file",
+      "surface": "apps/reference/domains/execution_position/guardian/idempotent_cancel.py::IdempotentCancelHelper.log_cancel_result",
+      "classification": "active_runtime",
+      "semantic_group": "guardian",
+      "proof": {
+        "runtime_import_sites": [
+          "apps/reference/domains/execution_position/fsm.py"
+        ],
+        "patch_targets": [],
+        "test_references": [
+          "tests/unit/test_idempotent_cancel.py"
+        ],
+        "docs_references": [],
+        "registry_or_schema_references": []
+      },
+      "why_not_removable": "The root orchestration FSM still calls this helper to emit cancellation audit logs."
+    },
+    {
+      "path": "apps/reference/domains/execution_position/flows/close/fsm_close.py",
+      "path_kind": "file",
+      "surface": "apps/reference/domains/execution_position/flows/close/fsm_close.py::CloseFlowFSM._check_close_conditions",
+      "classification": "dormant_but_intentional",
+      "semantic_group": "flows/close",
+      "proof": {
+        "runtime_import_sites": [
+          "apps/reference/domains/execution_position/flows/close/fsm_close.py"
+        ],
+        "patch_targets": [],
+        "test_references": [
+          "tests/telemetry/test_shadow_hardening_corrective_v1.py"
+        ],
+        "docs_references": [],
+        "registry_or_schema_references": [],
+        "runtime_wiring_references": [
+          "apps/reference/domains/execution_position/fsm.py",
+          "apps/reference/domains/execution_position/flows/close/fsm_close.py"
+        ]
+      },
+      "import_site_count": 0,
+      "patch_target_count": 0,
+      "test_reference_count": 1,
+      "docs_reference_count": 0,
+      "runtime_wiring_reference_count": 2,
+      "recommended_next_action": "keep_stub_until_close_architecture_explicitly_changes_soldier_pattern_semantics",
+      "why_not_removable": "The method is intentionally retained as a soldier-pattern stub. Close-flow semantics explicitly disable autonomous close rules while keeping the decision hook surface stable."
+    },
+    {
+      "path": "apps/reference/domains/execution_position/orchestration/event_handlers.py",
+      "path_kind": "file",
+      "surface": "apps/reference/domains/execution_position/orchestration/event_handlers.py::DEAD-CODE(PHASE 4) marker near reservation_id write",
+      "classification": "dormant_but_intentional",
+      "semantic_group": "orchestration",
+      "proof": {
+        "runtime_import_sites": [
+          "apps/reference/domains/execution_position/orchestration/event_handlers.py"
+        ],
+        "patch_targets": [
+          "tests/telemetry/test_trade_lifecycle_logger.py",
+          "tests/domains/execution_position/test_fees_accumulation.py",
+          "tests/domains/execution_position/test_late_ack_reject_race_and_fill_truth_reconciliation.py",
+          "tests/domains/execution_position/test_lifecycle_id_propagation.py",
+          "tests/domains/execution_position/test_manage_flow_lifecycle_cleanup.py",
+          "tests/domains/execution_position/test_net_pnl_computation.py",
+          "tests/domains/execution_position/test_position_closed_event_contract.py",
+          "tests/domains/execution_position/test_position_closed_identity.py",
+          "tests/domains/execution_position/test_trade_executed_rid_canonicalization.py"
+        ],
+        "test_references": [
+          "tests/telemetry/test_trade_lifecycle_logger.py",
+          "tests/domains/execution_position/test_fees_accumulation.py",
+          "tests/domains/execution_position/test_late_ack_reject_race_and_fill_truth_reconciliation.py",
+          "tests/domains/execution_position/test_lifecycle_id_propagation.py",
+          "tests/domains/execution_position/test_manage_flow_lifecycle_cleanup.py",
+          "tests/domains/execution_position/test_net_pnl_computation.py",
+          "tests/domains/execution_position/test_pending_brackets_wal_corrupt_row_policy.py",
+          "tests/domains/execution_position/test_position_closed_event_contract.py",
+          "tests/domains/execution_position/test_position_closed_identity.py",
+          "tests/domains/execution_position/test_trade_executed_rid_canonicalization.py"
+        ],
+        "docs_references": [
+          "apps/reference/domains/execution_position/README.md",
+          "apps/reference/domains/execution_position/docs/ATLAS.md",
+          "apps/reference/domains/execution_position/docs/compatibility_stub_ledger.json"
+        ],
+        "registry_or_schema_references": [
+          "apps/reference/schemas/order_logger_v1.json"
+        ],
+        "runtime_wiring_references": [
+          "apps/reference/domains/execution_position/fsm.py"
+        ]
+      },
+      "import_site_count": 2,
+      "patch_target_count": 17,
+      "test_reference_count": 10,
+      "docs_reference_count": 3,
+      "runtime_wiring_reference_count": 1,
+      "recommended_next_action": "defer_to_later_comment_only_cleanup_after_explicit_confirmation_that_explicit_none_reservation_id_writes_should_change",
+      "why_not_removable": "The executable line is an intentional None placeholder for reservation_id writes. The stale get_intent_for_order note was reduced to comment-only cleanup debt, but event-ordering and fill-ingress logic remain out of scope."
+    },
+    {
+      "path": "apps/reference/domains/execution_position/__pycache__",
+      "path_kind": "directory",
+      "surface": "apps/reference/domains/execution_position/__pycache__",
+      "classification": "dormant_but_intentional",
+      "semantic_group": "artifacts",
+      "proof": {
+        "runtime_import_sites": [],
+        "patch_targets": [],
+        "test_references": [
+          "tests/domains/execution_position/test_ep_domain_structural_guardrails.py::TestNoPycacheGhosts.test_no_stale_root_pycache_entries"
+        ],
+        "docs_references": [],
+        "registry_or_schema_references": []
+      },
+      "why_not_removable": "Bytecode caches are repository artifacts rather than runtime source. The structural guardrail only requires them to stay in sync with live source files."
+    },
+    {
+      "path": "apps/reference/domains/execution_position/infra/__pycache__",
+      "path_kind": "directory",
+      "surface": "apps/reference/domains/execution_position/infra/__pycache__",
+      "classification": "dormant_but_intentional",
+      "semantic_group": "artifacts",
+      "proof": {
+        "runtime_import_sites": [],
+        "patch_targets": [],
+        "test_references": [
+          "tests/domains/execution_position/test_ep_domain_structural_guardrails.py::TestNoPycacheGhosts.test_no_stale_infra_pycache_entries"
+        ],
+        "docs_references": [],
+        "registry_or_schema_references": []
+      },
+      "why_not_removable": "Legacy infra bytecode caches are still guarded as live-or-stale artifacts while the legacy import path remains present."
+    }
+  ],
+  "removable_candidates": []
+}

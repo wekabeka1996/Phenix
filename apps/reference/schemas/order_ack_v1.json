@@ -1,0 +1,42 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://phenix.local/schemas/order_ack_v1.json",
+    "title": "Order Acknowledgment Event",
+    "description": "Schema for EVT:ORDER_ACK events emitted by ExecutionPosition when an order is acknowledged by the exchange",
+    "type": "object",
+    "properties": {
+        "symbol": {
+            "type": "string",
+            "description": "Trading symbol (e.g., BTCUSDT)"
+        },
+        "order_id": {
+            "type": "string",
+            "description": "Exchange-assigned order ID"
+        },
+        "client_id": {
+            "type": "string",
+            "description": "Internal client order ID"
+        },
+        "side": {
+            "type": "string",
+            "enum": [
+                "BUY",
+                "SELL"
+            ],
+            "description": "Order side"
+        },
+        "status": {
+            "type": "string",
+            "description": "Order status (e.g., NEW, PARTIALLY_FILLED)"
+        },
+        "timestamp": {
+            "type": "integer",
+            "description": "Unix timestamp in milliseconds"
+        }
+    },
+    "required": [
+        "symbol",
+        "order_id",
+        "status"
+    ]
+}

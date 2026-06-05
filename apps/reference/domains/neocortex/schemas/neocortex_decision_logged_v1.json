@@ -1,0 +1,115 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/neocortex_decision_logged_v1.json",
+  "title": "EVT:NEOCORTEX_DECISION_LOGGED payload schema",
+  "description": "Canonical decision-evidence payload for Neocortex shadow and journal-only control decisions. Legacy SHADOW event-name delivery may remain in-process, but the protocol/schema surface is EVT:NEOCORTEX_DECISION_LOGGED.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "decision_id",
+    "rid",
+    "symbol",
+    "decision_ts_ms",
+    "response_ts_ms",
+    "decision_basis_ts",
+    "authority_mode",
+    "apply_result",
+    "action",
+    "causal_state_snapshot",
+    "data_quality_flags"
+  ],
+  "properties": {
+    "event_name": {
+      "type": "string",
+      "const": "SHADOW:NEOCORTEX_DECISION_LOGGED",
+      "description": "Optional legacy event-name compatibility field preserved by the standalone WAL sink."
+    },
+    "decision_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rid": {
+      "type": "string",
+      "minLength": 1
+    },
+    "symbol": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision_ts_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "request_ts_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "response_ts_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "decision_basis_ts": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "authority_mode": {
+      "type": "string",
+      "minLength": 1
+    },
+    "apply_result": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "action": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fallback_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "reason_code": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "reason_text": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "capture_mode": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authority_applied": {
+      "type": "boolean"
+    },
+    "no_effect": {
+      "type": "boolean"
+    },
+    "shadow_logged": {
+      "type": "boolean"
+    },
+    "causal_state_snapshot": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true
+    },
+    "data_quality_flags": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

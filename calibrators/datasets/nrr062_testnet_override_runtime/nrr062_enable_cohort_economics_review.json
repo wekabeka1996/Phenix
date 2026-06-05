@@ -1,0 +1,99 @@
+{
+  "package_f_replay": {
+    "candidate_rows": 79,
+    "tp": 25,
+    "sl": 2,
+    "timeout": 52,
+    "estimated_net_pnl_quote": 825.2672997047,
+    "profit_factor": 4.92434390438585
+  },
+  "package_breakout": {
+    "H": {
+      "override_count": 1,
+      "bucket_counts": {
+        "INCONCLUSIVE": 1
+      },
+      "resolved_closes": 0,
+      "wins": 0,
+      "losses": 0,
+      "flats": 0,
+      "submitted_not_filled": 0,
+      "filled_position_still_open": 0,
+      "downstream_no_effect_confirmed": 0,
+      "net_pnl_quote": 0
+    },
+    "L": {
+      "override_count": 7,
+      "bucket_counts": {
+        "DOWNSTREAM_NO_EFFECT_CONFIRMED": 7
+      },
+      "resolved_closes": 0,
+      "wins": 0,
+      "losses": 0,
+      "flats": 0,
+      "submitted_not_filled": 0,
+      "filled_position_still_open": 0,
+      "downstream_no_effect_confirmed": 7,
+      "net_pnl_quote": 0
+    },
+    "N": {
+      "override_count": 22,
+      "bucket_counts": {
+        "CLOSED_CANONICAL_LOSS": 5,
+        "CLOSED_CANONICAL_PROFIT": 3,
+        "CLOSED_NON_CANONICAL_EVIDENCE": 2,
+        "DOWNSTREAM_NO_EFFECT_CONFIRMED": 9,
+        "FILLED_POSITION_STILL_OPEN": 1,
+        "SUBMITTED_NOT_FILLED": 2
+      },
+      "resolved_closes": 10,
+      "wins": 3,
+      "losses": 5,
+      "flats": 0,
+      "submitted_not_filled": 2,
+      "filled_position_still_open": 1,
+      "downstream_no_effect_confirmed": 9,
+      "net_pnl_quote": 4.948720610000007
+    }
+  },
+  "package_n_latest": {
+    "override_count": 22,
+    "bucket_counts": {
+      "CLOSED_CANONICAL_LOSS": 5,
+      "CLOSED_CANONICAL_PROFIT": 3,
+      "CLOSED_NON_CANONICAL_EVIDENCE": 2,
+      "DOWNSTREAM_NO_EFFECT_CONFIRMED": 9,
+      "FILLED_POSITION_STILL_OPEN": 1,
+      "SUBMITTED_NOT_FILLED": 2
+    },
+    "resolved_closes": 10,
+    "wins": 3,
+    "losses": 5,
+    "flats": 0,
+    "submitted_not_filled": 2,
+    "filled_position_still_open": 1,
+    "downstream_no_effect_confirmed": 9,
+    "net_pnl_quote": 4.948720610000007
+  },
+  "combined_enable_latest": {
+    "override_count": 30,
+    "bucket_counts": {
+      "CLOSED_CANONICAL_LOSS": 5,
+      "CLOSED_CANONICAL_PROFIT": 3,
+      "CLOSED_NON_CANONICAL_EVIDENCE": 2,
+      "DOWNSTREAM_NO_EFFECT_CONFIRMED": 16,
+      "FILLED_POSITION_STILL_OPEN": 1,
+      "INCONCLUSIVE": 1,
+      "SUBMITTED_NOT_FILLED": 2
+    },
+    "resolved_closes": 10,
+    "wins": 3,
+    "losses": 5,
+    "flats": 0,
+    "submitted_not_filled": 2,
+    "filled_position_still_open": 1,
+    "downstream_no_effect_confirmed": 16,
+    "net_pnl_quote": 4.948720610000007
+  },
+  "verdict": "ENABLE_RUNTIME_NET_POSITIVE_SAMPLE_STILL_THIN"
+}

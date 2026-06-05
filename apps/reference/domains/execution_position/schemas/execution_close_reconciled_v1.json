@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "execution_close_reconciled_v1.json",
+  "title": "EVT:EXECUTION_CLOSE_RECONCILED payload schema",
+  "description": "Structured telemetry for authoritative execution close reconciliation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ts_ms",
+    "symbol",
+    "source",
+    "business_close_reconciled",
+    "why"
+  ],
+  "properties": {
+    "ts_ms": { "type": "integer", "minimum": 0 },
+    "symbol": { "type": "string", "minLength": 1 },
+    "rid": { "type": ["string", "null"] },
+    "source": { "type": "string", "minLength": 1 },
+    "business_close_reconciled": { "type": "boolean", "const": true },
+    "why": { "type": "string", "maxLength": 80 }
+  }
+}

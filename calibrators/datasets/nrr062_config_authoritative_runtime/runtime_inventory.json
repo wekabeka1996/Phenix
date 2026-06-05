@@ -1,0 +1,196 @@
+{
+  "generated_at_utc": "2026-05-14T05:13:05.630617+00:00",
+  "bundle_root": "logs/frozen/nrr062_fresh_capture_20260514_050245",
+  "manifest_path": "logs/frozen/nrr062_fresh_capture_20260514_050245/MANIFEST.json",
+  "freeze_report_path": "logs/frozen/nrr062_fresh_capture_20260514_050245/FREEZE_REPORT.md",
+  "config_snapshot_manifest_path": "logs/frozen/nrr062_fresh_capture_20260514_050245/config_snapshot_manifest.json",
+  "runtime_window": {
+    "order_log_start_utc": "2026-05-11T15:10:03.413000+00:00",
+    "order_log_end_utc": "2026-05-14T04:55:09.316000+00:00",
+    "order_log_first_event_type": "BOOT",
+    "order_log_last_event_type": "ORDER_FILLED",
+    "logs_cleared_before_start": true,
+    "boot_rows": 9,
+    "symbols_active": [
+      "BNBUSDT",
+      "BTCUSDT",
+      "ETHUSDT",
+      "XRPUSDT",
+      "_SYSTEM_"
+    ],
+    "strategy_ids": [
+      "aurora",
+      "md_amr"
+    ]
+  },
+  "order_log": {
+    "rows_total": 923,
+    "nrr062_rows": 227,
+    "accepted_intent_rows": 0,
+    "position_closed_rows": 32,
+    "order_cancelled_rows": 51,
+    "order_timeout_rows": 7,
+    "rows_with_low_vol_metadata": 313
+  },
+  "decision_ledger": {
+    "path": "logs/frozen/nrr062_fresh_capture_20260514_050245/logs/shadow_telemetry/decision_ledger_v1.jsonl",
+    "rows_total": 416,
+    "time_range_utc": [
+      "2026-05-09T22:15:03.634000+00:00",
+      "2026-05-14T04:05:01.236000+00:00"
+    ],
+    "terminal_status_counts": {
+      "EXECUTED_AND_CLOSED": 24,
+      "INVALID_FOR_DATASET": 49,
+      "REJECTED_UPSTREAM": 343
+    },
+    "neocortex_action_counts": {
+      "ALLOW": 416
+    },
+    "rows_with_low_vol_marker": 0,
+    "sha256": "f1e93f8a3c4da82f9a6c534fa197c921da9cbb157eef1c0107a682909d3f6369"
+  },
+  "trade_lifecycle": {
+    "rows_total": 279119,
+    "time_range_utc": [
+      "2026-05-11T14:54:11.586000+00:00",
+      "2026-05-14T05:02:43.281000+00:00"
+    ],
+    "terminal_close_rows": 0,
+    "sidecar_rows": 278324,
+    "rows_with_low_vol_marker": 3
+  },
+  "regime_confidence_audit": {
+    "rows_total": 4929,
+    "time_range_utc": [
+      "2026-05-11T15:00:00+00:00",
+      "2026-05-14T05:00:00+00:00"
+    ],
+    "rows_with_low_vol_marker": 2551
+  },
+  "config_snapshot": {
+    "required_present": 8,
+    "required_files": 8,
+    "optional_present": 3,
+    "missing_configs": [],
+    "parse_status_counts": {
+      "PARSED_MAPPING": 11
+    },
+    "all_required_present": true,
+    "key_hashes": {
+      "config/aurora/domains.yaml": "cf3a9dbea58b573be8cfb30993e0ab9daf6cb05ebf12610fe8aa7aceebf5b962",
+      "config/aurora/trading.yaml": "82831ed38641795e082f5145262b1ae55a5075e50bcd6ba57fe7d14fe753fbbc",
+      "config/aurora/strategies.yaml": "23984d9512aa93a218abfa91c3c85046f7513afccf2eab51bfd2b271122a21be",
+      "config/aurora/observability.yaml": "5479754806940ed74f7262ac6d8a5d21c7b8511084617fa2011437bbb9cc1f6c"
+    }
+  },
+  "recorder_coverage": {
+    "evaluated": true,
+    "coverage_sufficient": false,
+    "symbols": {
+      "BTCUSDT": {
+        "rows": 76,
+        "max_case_ts_ms": 1778726700716,
+        "required_horizon_end_ts_ms": 1778733900716,
+        "has_any_sufficient_timeframe": true,
+        "timeframes": {
+          "180": {
+            "path": "C:/Users/user/Music/Phenix/data/recorder/2026-05-14/BTCUSDT_180.csv",
+            "min_ts_ms": 1778716799999,
+            "max_ts_ms": 1778734799999,
+            "covers_required_horizon_end": true
+          },
+          "300": {
+            "path": "C:/Users/user/Music/Phenix/data/recorder/2026-05-14/BTCUSDT_300.csv",
+            "min_ts_ms": 1778716799999,
+            "max_ts_ms": 1778734799999,
+            "covers_required_horizon_end": true
+          },
+          "900": {
+            "path": "C:/Users/user/Music/Phenix/data/recorder/2026-05-14/BTCUSDT_900.csv",
+            "min_ts_ms": 1778716799999,
+            "max_ts_ms": 1778734799999,
+            "covers_required_horizon_end": true
+          }
+        }
+      },
+      "ETHUSDT": {
+        "rows": 108,
+        "max_case_ts_ms": 1778728202256,
+        "required_horizon_end_ts_ms": 1778735402256,
+        "has_any_sufficient_timeframe": false,
+        "timeframes": {
+          "180": {
+            "path": "C:/Users/user/Music/Phenix/data/recorder/2026-05-14/ETHUSDT_180.csv",
+            "min_ts_ms": 1778716799999,
+            "max_ts_ms": 1778734799999,
+            "covers_required_horizon_end": false
+          },
+          "300": {
+            "path": "C:/Users/user/Music/Phenix/data/recorder/2026-05-14/ETHUSDT_300.csv",
+            "min_ts_ms": 1778716799999,
+            "max_ts_ms": 1778734799999,
+            "covers_required_horizon_end": false
+          },
+          "900": {
+            "path": "C:/Users/user/Music/Phenix/data/recorder/2026-05-14/ETHUSDT_900.csv",
+            "min_ts_ms": 1778716799999,
+            "max_ts_ms": 1778734799999,
+            "covers_required_horizon_end": false
+          }
+        }
+      },
+      "XRPUSDT": {
+        "rows": 43,
+        "max_case_ts_ms": 1778726104850,
+        "required_horizon_end_ts_ms": 1778733304850,
+        "has_any_sufficient_timeframe": true,
+        "timeframes": {
+          "180": {
+            "path": "C:/Users/user/Music/Phenix/data/recorder/2026-05-14/XRPUSDT_180.csv",
+            "min_ts_ms": 1778716799999,
+            "max_ts_ms": 1778734799999,
+            "covers_required_horizon_end": true
+          },
+          "300": {
+            "path": "C:/Users/user/Music/Phenix/data/recorder/2026-05-14/XRPUSDT_300.csv",
+            "min_ts_ms": 1778716799999,
+            "max_ts_ms": 1778734799999,
+            "covers_required_horizon_end": true
+          },
+          "900": {
+            "path": "C:/Users/user/Music/Phenix/data/recorder/2026-05-14/XRPUSDT_900.csv",
+            "min_ts_ms": 900,
+            "max_ts_ms": 1778734799999,
+            "covers_required_horizon_end": true
+          }
+        }
+      }
+    }
+  },
+  "capture_integrity": {
+    "active_runtime_processes_observed_pre_capture": [
+      "python -m apps.reference.main",
+      "python -m apps.reference.domains.shadow_telemetry.main --config-dir config/aurora --host 127.0.0.1 --port 8443 --log-level INFO",
+      "python -m uvicorn apps.reference.api.main:app --host 127.0.0.1 --port 8000"
+    ],
+    "active_capture_gaps_remediated_post_capture": [
+      "copied logs/shadow_telemetry/decision_ledger_v1.jsonl into frozen bundle",
+      "generated FREEZE_REPORT.md at bundle root"
+    ],
+    "source_logs_hot_at_capture": [
+      "logs/aurora_core.log",
+      "data/recorder/2026-05-14/1000PEPEUSDT_180.csv",
+      "data/recorder/2026-05-14/BNBUSDT_180.csv",
+      "data/recorder/2026-05-14/BTCUSDT_180.csv",
+      "data/recorder/2026-05-14/DOGEUSDT_180.csv",
+      "data/recorder/2026-05-14/ETHUSDT_180.csv",
+      "data/recorder/2026-05-14/SOLUSDT_180.csv",
+      "data/recorder/2026-05-14/XRPUSDT_180.csv",
+      "logs/shadow_telemetry/decision_ledger_v1.jsonl",
+      "generated:FREEZE_REPORT.md"
+    ],
+    "copy_mode": "capture_time_copy_only_not_quiesced_shutdown_snapshot",
+    "order_log_stable_before_capture": true
+  }
+}

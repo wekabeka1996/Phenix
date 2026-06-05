@@ -1,0 +1,2280 @@
+{
+  "boundary": {
+    "bundle_invalid_trade_jsonl_lines": 1,
+    "bundle_linked_shadow_rows": 4884,
+    "bundle_root": "logs/frozen/package_o_smoke/nrr062_fresh_capture_20260605_133915",
+    "config_compare": {
+      "accepted_domains_sha256": "3ece313409a6f0db2fd0ee5ce44a9ee0ff5e94a6fad98c1a878e8c6f3a5394d5",
+      "accepted_enable_bundle": "frozen/sidecar_peak_giveback_disabled_runtime_20260515T094228Z",
+      "accepted_sidecar_mode": "enable",
+      "current_domains_sha256": "5f7a330b12a7e52ae3c412b967960726c9926c156e3b97acf26aac94d7339a12",
+      "current_sidecar_mode": "enable",
+      "full_hash_matches": false,
+      "sidecar_block_equal": true
+    },
+    "config_snapshot": {
+      "config_snapshot_manifest_sha256": "26dce8821c606859872e261191b35cde8764022d202772282c25586708bd0a6a",
+      "optional_files": null,
+      "optional_present": 3,
+      "required_files": 8,
+      "required_present": 8
+    },
+    "decision_ledger_frozen_in_bundle": true,
+    "manifest": {
+      "capture_verdict": "CAPTURE_COMPLETE",
+      "decision_ledger_present": null,
+      "order_log_nrr062_rows": 42,
+      "recorder_coverage_sufficient": null,
+      "scan_ts": "2026-06-05T13:39:15.039014+00:00"
+    },
+    "mismatch_counts": {
+      "override_name": 0,
+      "regime": 0,
+      "selected_scale": 0,
+      "selected_source": 0,
+      "side": 79,
+      "threshold_family": 0,
+      "trading_mode": 0
+    },
+    "verdict": "BOUNDARY_REVIEW_REQUIRED"
+  },
+  "comparison": {
+    "bundle_root": "logs/frozen/package_o_smoke/nrr062_fresh_capture_20260605_133915",
+    "packages": [
+      {
+        "active_symbols": [
+          "BTCUSDT"
+        ],
+        "bucket_counts": {
+          "CLOSED_CANONICAL_PROFIT": 1
+        },
+        "bundle_root": "logs/frozen/nrr062_fresh_capture_20260515_180927",
+        "distinct_rid_count": 1,
+        "downstream_no_effect_confirmed": 0,
+        "fees_quote": 1.9257384,
+        "filled_position_still_open": 0,
+        "flats": 0,
+        "gross_pnl_quote": 24.6,
+        "losses": 0,
+        "net_pnl_quote": 22.6742616,
+        "package": "H",
+        "profit_factor": null,
+        "resolved_closes": 1,
+        "row_count": 1,
+        "submitted_not_filled": 0,
+        "terminal_status_counts": {
+          "INVALID_FOR_DATASET": 1
+        },
+        "win_rate_percent": 100.0,
+        "wins": 1
+      },
+      {
+        "active_symbols": [
+          "BTCUSDT"
+        ],
+        "bucket_counts": {
+          "DOWNSTREAM_NO_EFFECT_CONFIRMED": 7
+        },
+        "bundle_root": "logs/frozen/nrr062_fresh_capture_20260517_210245",
+        "distinct_rid_count": 7,
+        "downstream_no_effect_confirmed": 7,
+        "fees_quote": 0.0,
+        "filled_position_still_open": 0,
+        "flats": 0,
+        "gross_pnl_quote": 0.0,
+        "losses": 0,
+        "net_pnl_quote": 0.0,
+        "package": "L",
+        "profit_factor": null,
+        "resolved_closes": 0,
+        "row_count": 7,
+        "submitted_not_filled": 0,
+        "terminal_status_counts": {
+          "REJECTED_UPSTREAM": 7
+        },
+        "win_rate_percent": null,
+        "wins": 0
+      },
+      {
+        "active_symbols": [
+          "1000PEPEUSDT",
+          "BTCUSDT",
+          "ETHUSDT",
+          "XRPUSDT"
+        ],
+        "bucket_counts": {
+          "CLOSED_CANONICAL_LOSS": 5,
+          "CLOSED_CANONICAL_PROFIT": 3,
+          "CLOSED_NON_CANONICAL_EVIDENCE": 2,
+          "DOWNSTREAM_NO_EFFECT_CONFIRMED": 9,
+          "FILLED_POSITION_STILL_OPEN": 1,
+          "SUBMITTED_NOT_FILLED": 2
+        },
+        "bundle_root": "logs/frozen/nrr062_fresh_capture_20260529_065313",
+        "distinct_rid_count": 22,
+        "downstream_no_effect_confirmed": 9,
+        "fees_quote": 17.23021793,
+        "filled_position_still_open": 1,
+        "flats": 0,
+        "gross_pnl_quote": 22.178938540000004,
+        "losses": 5,
+        "net_pnl_quote": 4.948720610000013,
+        "package": "N",
+        "profit_factor": 1.0819827427133113,
+        "resolved_closes": 10,
+        "row_count": 22,
+        "submitted_not_filled": 2,
+        "terminal_status_counts": {
+          "INVALID_FOR_DATASET": 10,
+          "REJECTED_UPSTREAM": 11
+        },
+        "win_rate_percent": 30.0,
+        "wins": 3
+      },
+      {
+        "active_symbols": [
+          "1000PEPEUSDT",
+          "BTCUSDT",
+          "ETHUSDT",
+          "SOLUSDT",
+          "XRPUSDT"
+        ],
+        "bucket_counts": {
+          "CLOSED_CANONICAL_LOSS": 16,
+          "CLOSED_CANONICAL_PROFIT": 8,
+          "CLOSED_NON_CANONICAL_EVIDENCE": 3,
+          "DOWNSTREAM_NO_EFFECT_CONFIRMED": 20,
+          "FILLED_POSITION_STILL_OPEN": 2,
+          "SUBMITTED_NOT_FILLED": 30
+        },
+        "bundle_root": "logs/frozen/package_o_smoke/nrr062_fresh_capture_20260605_133915",
+        "distinct_rid_count": 79,
+        "downstream_no_effect_confirmed": 20,
+        "fees_quote": 37.17135905999999,
+        "filled_position_still_open": 2,
+        "flats": 0,
+        "gross_pnl_quote": -94.73414646,
+        "losses": 16,
+        "net_pnl_quote": -131.90550552,
+        "package": "P",
+        "profit_factor": 0.6275905480548548,
+        "resolved_closes": 27,
+        "row_count": 79,
+        "submitted_not_filled": 30,
+        "terminal_status_counts": {
+          "EXECUTED_AND_CLOSED": 11,
+          "INVALID_FOR_DATASET": 45,
+          "REJECTED_UPSTREAM": 22
+        },
+        "win_rate_percent": 29.629629629629626,
+        "wins": 8
+      }
+    ],
+    "verdict": "P_REMAINS_ENABLE_COHORT_ALIGNED_WITH_H_L_N_HISTORY"
+  },
+  "economics": {
+    "bundle_root": "logs/frozen/package_o_smoke/nrr062_fresh_capture_20260605_133915",
+    "candidate_rows": 79,
+    "downstream_no_effect_confirmed": 20,
+    "fees_quote": 37.17135906,
+    "filled_position_still_open": 2,
+    "flats": 0,
+    "gross_pnl_quote": -94.73414645999999,
+    "losses": 16,
+    "net_pnl_quote": -131.90550552,
+    "profit_factor": 0.6275905480548548,
+    "resolved_closes": 27,
+    "submitted_not_filled": 30,
+    "verdict": "ENABLE_RUNTIME_NOT_YET_POSITIVE_CONTINUE_TESTNET_COLLECTION_ONLY",
+    "win_rate_percent": 29.629629629629626,
+    "wins": 8
+  },
+  "inventory": {
+    "accepted_low_vol_row_count": 79,
+    "accepted_low_vol_rows": 79,
+    "analysis_scope": "sealed_bundle_only",
+    "bucket_counts": {
+      "CLOSED_CANONICAL_LOSS": 16,
+      "CLOSED_CANONICAL_PROFIT": 8,
+      "CLOSED_NON_CANONICAL_EVIDENCE": 3,
+      "DOWNSTREAM_NO_EFFECT_CONFIRMED": 20,
+      "FILLED_POSITION_STILL_OPEN": 2,
+      "SUBMITTED_NOT_FILLED": 30
+    },
+    "bundle_complete": true,
+    "bundle_root": "logs/frozen/package_o_smoke/nrr062_fresh_capture_20260605_133915",
+    "config_snapshot": {
+      "config_snapshot_manifest_sha256": "26dce8821c606859872e261191b35cde8764022d202772282c25586708bd0a6a",
+      "optional_files": null,
+      "optional_present": 3,
+      "required_files": 8,
+      "required_present": 8
+    },
+    "decision_ledger_stats": {
+      "execution_outcome_counts": {
+        "EXCHANGE_REJECTED": 130,
+        "EXECUTED": 42,
+        "PENDING_TIMEOUT": 184
+      },
+      "invalid_rows": 0,
+      "terminal_status_counts": {
+        "EXECUTED_AND_CLOSED": 42,
+        "INVALID_FOR_DATASET": 184,
+        "REJECTED_UPSTREAM": 130
+      },
+      "valid_rows": 356
+    },
+    "decision_ledger_terminal_status_counts": {
+      "EXECUTED_AND_CLOSED": 11,
+      "INVALID_FOR_DATASET": 45,
+      "REJECTED_UPSTREAM": 22
+    },
+    "invalid_jsonl_lines": {
+      "decision_ledger": 0,
+      "order_log": 0,
+      "regime_confidence_audit": 0,
+      "shadow_journal": 0,
+      "trade_lifecycle": 1
+    },
+    "manifest": {
+      "capture_verdict": "CAPTURE_COMPLETE",
+      "decision_ledger_present": null,
+      "order_log_nrr062_rows": 42,
+      "recorder_coverage_sufficient": null,
+      "scan_ts": "2026-06-05T13:39:15.039014+00:00"
+    },
+    "order_log_event_top": [
+      [
+        "ORDER_FILLED",
+        1022
+      ],
+      [
+        "ORDER_INTENT",
+        382
+      ],
+      [
+        "DECISION_INTENT_REJECTED",
+        237
+      ],
+      [
+        "ORDER_PLACED",
+        129
+      ],
+      [
+        "ORDER_CANCELLED",
+        87
+      ],
+      [
+        "POSITION_CLOSED",
+        57
+      ],
+      [
+        "ORDER_TIMEOUT",
+        41
+      ],
+      [
+        "LIMIT_PRICE_ADJUSTED",
+        14
+      ],
+      [
+        "ORDER_REJECTED",
+        8
+      ],
+      [
+        "BOOT",
+        7
+      ]
+    ],
+    "override_row_count": 79,
+    "override_rows": 79,
+    "runtime_window": {
+      "end_ts_ms": 1780666582411,
+      "end_ts_utc": "2026-06-05T13:36:22.411000+00:00",
+      "start_ts_ms": 1779521103373,
+      "start_ts_utc": "2026-05-23T07:25:03.373000+00:00"
+    },
+    "shadow_journal_stats": {
+      "event_name_counts_top": [
+        [
+          "EVT:EXPOSURE_SUMMARY_UPDATED",
+          81826
+        ],
+        [
+          "EVT:PORTFOLIO_STATE_UPDATED",
+          80664
+        ],
+        [
+          "EVT:REGIME_DETECTED",
+          24210
+        ],
+        [
+          "EVT:QUADRATIC_DECISION_TRACE",
+          8923
+        ],
+        [
+          "EVT:STRATEGY_DECISION_BLOCKED",
+          5164
+        ],
+        [
+          "EVT:TRADE_EXECUTED",
+          3190
+        ],
+        [
+          "EVT:STRATEGY_SIGNAL_PRODUCED",
+          1112
+        ],
+        [
+          "HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_MISS",
+          1022
+        ],
+        [
+          "EVT:GATE_CHAIN_TRACE",
+          982
+        ],
+        [
+          "EVT:TRADE_INTENT_REJECTED",
+          804
+        ]
+      ],
+      "invalid_rows": 0,
+      "record_type_counts_top": [
+        [
+          "event",
+          206056
+        ],
+        [
+          "transition",
+          4195
+        ],
+        [
+          "comparison",
+          62
+        ],
+        [
+          "restore",
+          8
+        ]
+      ],
+      "truth_owner_counts_top": [
+        [
+          "UNKNOWN",
+          206056
+        ],
+        [
+          "FSMCore",
+          1146
+        ],
+        [
+          "ManageFlowFSM",
+          1023
+        ],
+        [
+          "PositionTracking",
+          1022
+        ],
+        [
+          "OrderIndex",
+          815
+        ],
+        [
+          "ExecPosFSM",
+          149
+        ],
+        [
+          "CloseFlowFSM",
+          48
+        ],
+        [
+          "CloseExecutor",
+          46
+        ],
+        [
+          "ExecutionTruthHardening",
+          16
+        ]
+      ],
+      "valid_rows": 210321
+    },
+    "shadow_record_top": [
+      [
+        "event",
+        206056
+      ],
+      [
+        "transition",
+        4195
+      ],
+      [
+        "comparison",
+        62
+      ],
+      [
+        "restore",
+        8
+      ]
+    ],
+    "sidecar_linked_rows": 4884,
+    "surfaces": [
+      {
+        "invalid_rows": null,
+        "present": true,
+        "row_count": null,
+        "sha256": "3d1f8a5af2c8f4a6af033c4d5e5222801933731f76fcb6c845abb0e22f1b9dda",
+        "surface": "MANIFEST.json"
+      },
+      {
+        "invalid_rows": null,
+        "present": true,
+        "row_count": null,
+        "sha256": "ab4c61acbc22381892d8dd44b05278a875f89c7baf39bc82bef1f7e36aec5edf",
+        "surface": "FREEZE_REPORT.md"
+      },
+      {
+        "invalid_rows": 0,
+        "present": true,
+        "row_count": 1984,
+        "sha256": "63fcc0174c70d1c97a33f62312611c0deadd953a7049c6e9a382ac202b25b789",
+        "surface": "logs/order_log_v1.jsonl"
+      },
+      {
+        "invalid_rows": 1,
+        "present": true,
+        "row_count": 640410,
+        "sha256": "2b0e0118a56d22461accbfefbc75fce0863668c2a4944c46c83b72e2852791ad",
+        "surface": "logs/trade_lifecycle.jsonl"
+      },
+      {
+        "invalid_rows": 0,
+        "present": true,
+        "row_count": 210321,
+        "sha256": "81ee6f2f5c9792500685b561dc14086693c108e507a91190b62ef492e973ca25",
+        "surface": "logs/shadow_critical_event_journal_v1.jsonl"
+      },
+      {
+        "invalid_rows": 0,
+        "present": true,
+        "row_count": 356,
+        "sha256": "ea4e79520fb4736a667a8e51b96516d39590571f375a0edc33a2dfd3aa8863b8",
+        "surface": "logs/shadow_telemetry/decision_ledger_v1.jsonl"
+      },
+      {
+        "invalid_rows": 0,
+        "present": true,
+        "row_count": 11349,
+        "sha256": "75e7c6a9ff6e5e8df20d9fc7620a096e19ef0e10ec4080b3fdebd6f4c0687e14",
+        "surface": "logs/regime_confidence_audit_v1.jsonl"
+      }
+    ],
+    "terminal_status_counts": {
+      "EXECUTED_AND_CLOSED": 11,
+      "INVALID_FOR_DATASET": 45,
+      "REJECTED_UPSTREAM": 22
+    },
+    "trade_lifecycle_event_top": [
+      [
+        "POSITION_POLICY_SIDECAR_SUPPRESSED",
+        634474
+      ],
+      [
+        "POSITION_POLICY_SIDECAR_SCORES",
+        1520
+      ],
+      [
+        "POSITION_POLICY_SIDECAR_EVALUATED",
+        1520
+      ],
+      [
+        "EXECUTION_FILL_INGRESS",
+        1022
+      ],
+      [
+        "TRADE_LIFECYCLE_FILLED",
+        949
+      ],
+      [
+        "POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE",
+        180
+      ],
+      [
+        "TRADE_LIFECYCLE_ORDERED",
+        107
+      ],
+      [
+        "EXECUTION_BRACKET_DEFERRED_STORED",
+        107
+      ],
+      [
+        "ORPHANED_TTL",
+        70
+      ],
+      [
+        "POSITION_DISAPPEARANCE_ATTRIBUTED",
+        59
+      ]
+    ],
+    "trade_lifecycle_stats": {
+      "event_counts_top": [
+        [
+          "POSITION_POLICY_SIDECAR_SUPPRESSED",
+          634474
+        ],
+        [
+          "POSITION_POLICY_SIDECAR_SCORES",
+          1520
+        ],
+        [
+          "POSITION_POLICY_SIDECAR_EVALUATED",
+          1520
+        ],
+        [
+          "EXECUTION_FILL_INGRESS",
+          1022
+        ],
+        [
+          "TRADE_LIFECYCLE_FILLED",
+          949
+        ],
+        [
+          "POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE",
+          180
+        ],
+        [
+          "TRADE_LIFECYCLE_ORDERED",
+          107
+        ],
+        [
+          "EXECUTION_BRACKET_DEFERRED_STORED",
+          107
+        ],
+        [
+          "ORPHANED_TTL",
+          70
+        ],
+        [
+          "POSITION_DISAPPEARANCE_ATTRIBUTED",
+          59
+        ]
+      ],
+      "invalid_rows": 1,
+      "status_counts_top": [
+        [
+          "FILLED",
+          995
+        ],
+        [
+          "ORDERED",
+          107
+        ],
+        [
+          "ORPHANED_TTL",
+          70
+        ],
+        [
+          "CLOSED",
+          57
+        ],
+        [
+          "CANCELLED",
+          41
+        ],
+        [
+          "PARTIALLY_FILLED",
+          37
+        ],
+        [
+          "REJECTED",
+          27
+        ]
+      ],
+      "valid_rows": 640410
+    }
+  },
+  "lifecycle": {
+    "bucket_counts": {
+      "CLOSED_CANONICAL_LOSS": 16,
+      "CLOSED_CANONICAL_PROFIT": 8,
+      "CLOSED_NON_CANONICAL_EVIDENCE": 3,
+      "DOWNSTREAM_NO_EFFECT_CONFIRMED": 20,
+      "FILLED_POSITION_STILL_OPEN": 2,
+      "SUBMITTED_NOT_FILLED": 30
+    },
+    "bundle_root": "logs/frozen/package_o_smoke/nrr062_fresh_capture_20260605_133915",
+    "entry_filled_count": 29,
+    "execution_outcome_counts": {
+      "EXCHANGE_REJECTED": 22,
+      "EXECUTED": 11,
+      "PENDING_TIMEOUT": 45
+    },
+    "flats": 0,
+    "losses": 16,
+    "order_primary_bucket_counts": {
+      "POSITION_CLOSED present": 24,
+      "alternative terminal event present": 30,
+      "entry fill present": 5,
+      "order placed only": 20
+    },
+    "order_submitted_count": 59,
+    "position_closed_count": 24,
+    "resolved_closes": 27,
+    "rows": [
+      {
+        "bucket": "CLOSED_CANONICAL_PROFIT",
+        "close_reason": "TP",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": 1.84984389,
+        "gross_pnl": 27.10116,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": 25.25131611,
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "sidecar_observed": true,
+        "sidecar_rows": 34,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1779827104357",
+        "sidecar_observed": true,
+        "sidecar_rows": 10,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_BTCUSDT_1779832200681",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_LOSS",
+        "close_reason": "TP",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": 2.1759779100000003,
+        "gross_pnl": 0.0,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": -2.1759779100000003,
+        "rid": "aurora_BTCUSDT_1779834002946",
+        "sidecar_observed": true,
+        "sidecar_rows": 43,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_BTCUSDT_1779834603905",
+        "sidecar_observed": true,
+        "sidecar_rows": 10,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_LOSS",
+        "close_reason": "SL",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": 1.86915831,
+        "gross_pnl": -17.15112,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": -19.02027831,
+        "rid": "aurora_ETHUSDT_1779863704872",
+        "sidecar_observed": true,
+        "sidecar_rows": 82,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1779864300791",
+        "sidecar_observed": true,
+        "sidecar_rows": 10,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "FILLED_POSITION_STILL_OPEN",
+        "close_reason": null,
+        "entry_filled": true,
+        "exact_roundtrip": false,
+        "execution_outcome": null,
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1779966603745",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": null
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1779967204450",
+        "sidecar_observed": true,
+        "sidecar_rows": 10,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1779968400764",
+        "sidecar_observed": true,
+        "sidecar_rows": 10,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_PROFIT",
+        "close_reason": "TP",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": 1.8334571299999998,
+        "gross_pnl": 25.99761,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": 24.164152870000002,
+        "rid": "aurora_ETHUSDT_1780005902619",
+        "sidecar_observed": true,
+        "sidecar_rows": 424,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_1000PEPEUSDT_1780006203472",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780006503737",
+        "sidecar_observed": true,
+        "sidecar_rows": 10,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_PROFIT",
+        "close_reason": "TP",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": 1.28389336,
+        "gross_pnl": 17.1801,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": 15.896206639999999,
+        "rid": "aurora_XRPUSDT_1780008901982",
+        "sidecar_observed": true,
+        "sidecar_rows": 83,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_LOSS",
+        "close_reason": "CLOSE",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": 3.68913411,
+        "gross_pnl": -4.36694146,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": -8.056075569999999,
+        "rid": "aurora_1000PEPEUSDT_1780008902243",
+        "sidecar_observed": true,
+        "sidecar_rows": 178,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_XRPUSDT_1780009502891",
+        "sidecar_observed": true,
+        "sidecar_rows": 10,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "CLOSED_NON_CANONICAL_EVIDENCE",
+        "close_reason": null,
+        "entry_filled": true,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_1000PEPEUSDT_1780009503140",
+        "sidecar_observed": true,
+        "sidecar_rows": 283,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780022704821",
+        "sidecar_observed": true,
+        "sidecar_rows": 9,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_LOSS",
+        "close_reason": "CLOSE",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": 2.64415155,
+        "gross_pnl": -5.20987,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": -7.85402155,
+        "rid": "aurora_XRPUSDT_1780024503086",
+        "sidecar_observed": true,
+        "sidecar_rows": 33,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "CLOSED_NON_CANONICAL_EVIDENCE",
+        "close_reason": null,
+        "entry_filled": true,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_XRPUSDT_1780025103181",
+        "sidecar_observed": true,
+        "sidecar_rows": 130,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_LOSS",
+        "close_reason": "SL",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": 1.88460167,
+        "gross_pnl": -21.372,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": -23.25660167,
+        "rid": "aurora_ETHUSDT_1780025703409",
+        "sidecar_observed": true,
+        "sidecar_rows": 41,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780026304478",
+        "sidecar_observed": true,
+        "sidecar_rows": 10,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_LOSS",
+        "close_reason": "CLOSE",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "EXECUTED",
+        "fees": 0.6182821200000002,
+        "gross_pnl": -0.007299999999999973,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": -0.6255821200000001,
+        "rid": "aurora_ETHUSDT_1780044604564",
+        "sidecar_observed": true,
+        "sidecar_rows": 444,
+        "terminal_status": "EXECUTED_AND_CLOSED"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_PROFIT",
+        "close_reason": "TP",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": 1.83961422,
+        "gross_pnl": 34.6880688,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": 32.84845458,
+        "rid": "aurora_1000PEPEUSDT_1780044605952",
+        "sidecar_observed": true,
+        "sidecar_rows": 643,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780045200920",
+        "sidecar_observed": true,
+        "sidecar_rows": 10,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_1000PEPEUSDT_1780045203444",
+        "sidecar_observed": true,
+        "sidecar_rows": 10,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_XRPUSDT_1780055403989",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_XRPUSDT_1780056006462",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_PROFIT",
+        "close_reason": "TP",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": 1.30949266,
+        "gross_pnl": 15.57843,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": 14.26893734,
+        "rid": "aurora_XRPUSDT_1780056605446",
+        "sidecar_observed": true,
+        "sidecar_rows": 34,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_XRPUSDT_1780057804434",
+        "sidecar_observed": true,
+        "sidecar_rows": 10,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_LOSS",
+        "close_reason": "CLOSE",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": 1.8858745799999999,
+        "gross_pnl": -14.601000000000003,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": -16.486874580000002,
+        "rid": "aurora_ETHUSDT_1780061100121",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_LOSS",
+        "close_reason": "CLOSE",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "EXECUTED",
+        "fees": 0.61969138,
+        "gross_pnl": -0.11050000000000004,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": -0.7301913800000001,
+        "rid": "aurora_ETHUSDT_1780098004604",
+        "sidecar_observed": true,
+        "sidecar_rows": 24,
+        "terminal_status": "EXECUTED_AND_CLOSED"
+      },
+      {
+        "bucket": "CLOSED_NON_CANONICAL_EVIDENCE",
+        "close_reason": null,
+        "entry_filled": true,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780104603518",
+        "sidecar_observed": true,
+        "sidecar_rows": 86,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780113003746",
+        "sidecar_observed": true,
+        "sidecar_rows": 10,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "FILLED_POSITION_STILL_OPEN",
+        "close_reason": null,
+        "entry_filled": true,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_XRPUSDT_1780125604862",
+        "sidecar_observed": true,
+        "sidecar_rows": 1019,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_XRPUSDT_1780126206436",
+        "sidecar_observed": true,
+        "sidecar_rows": 10,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780590001239",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_LOSS",
+        "close_reason": "CLOSE",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "EXECUTED",
+        "fees": 0.42000374,
+        "gross_pnl": -0.26474000000000003,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": -0.68474374,
+        "rid": "aurora_XRPUSDT_1780590002174",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "EXECUTED_AND_CLOSED"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_LOSS",
+        "close_reason": "CLOSE",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "EXECUTED",
+        "fees": 1.76082252,
+        "gross_pnl": -11.419083,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": -13.17990552,
+        "rid": "aurora_1000PEPEUSDT_1780590002872",
+        "sidecar_observed": true,
+        "sidecar_rows": 59,
+        "terminal_status": "EXECUTED_AND_CLOSED"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780590602489",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780591203015",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780591798880",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_XRPUSDT_1780592099961",
+        "sidecar_observed": true,
+        "sidecar_rows": 10,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780592400097",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780593601502",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_XRPUSDT_1780593602434",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780594202871",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_LOSS",
+        "close_reason": "CLOSE",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "EXECUTED",
+        "fees": 1.16423543,
+        "gross_pnl": -19.46882,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": -20.633055430000002,
+        "rid": "aurora_XRPUSDT_1780594204360",
+        "sidecar_observed": true,
+        "sidecar_rows": 24,
+        "terminal_status": "EXECUTED_AND_CLOSED"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_LOSS",
+        "close_reason": "CLOSE",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "EXECUTED",
+        "fees": 1.65812206,
+        "gross_pnl": -16.3190106,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": -17.97713266,
+        "rid": "aurora_1000PEPEUSDT_1780594506167",
+        "sidecar_observed": true,
+        "sidecar_rows": 126,
+        "terminal_status": "EXECUTED_AND_CLOSED"
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_XRPUSDT_1780594805995",
+        "sidecar_observed": true,
+        "sidecar_rows": 10,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_LOSS",
+        "close_reason": "SL",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "EXECUTED",
+        "fees": 1.5284050599999999,
+        "gross_pnl": -98.2527,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": -99.78110506,
+        "rid": "aurora_SOLUSDT_1780595400715",
+        "sidecar_observed": true,
+        "sidecar_rows": 56,
+        "terminal_status": "EXECUTED_AND_CLOSED"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780597504143",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780598701169",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_PROFIT",
+        "close_reason": "TP",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": 1.0271587,
+        "gross_pnl": 5.68323,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": 4.6560713,
+        "rid": "aurora_XRPUSDT_1780599604111",
+        "sidecar_observed": true,
+        "sidecar_rows": 32,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780600203091",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780600803917",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_PROFIT",
+        "close_reason": "TP",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "EXECUTED",
+        "fees": 1.4586402299999999,
+        "gross_pnl": 26.2219798,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": 24.76333957,
+        "rid": "aurora_1000PEPEUSDT_1780600805534",
+        "sidecar_observed": true,
+        "sidecar_rows": 24,
+        "terminal_status": "EXECUTED_AND_CLOSED"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780601405055",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_1000PEPEUSDT_1780601408249",
+        "sidecar_observed": true,
+        "sidecar_rows": 10,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780602000623",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780602601468",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780603202921",
+        "sidecar_observed": true,
+        "sidecar_rows": 17,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780603803121",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_1000PEPEUSDT_1780604405707",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780605005176",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780605600798",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780606201609",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_1000PEPEUSDT_1780606203336",
+        "sidecar_observed": true,
+        "sidecar_rows": 17,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780606802418",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780608900496",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_LOSS",
+        "close_reason": "CLOSE",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": 1.08161602,
+        "gross_pnl": -64.31525,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": -65.39686602,
+        "rid": "aurora_XRPUSDT_1780608900747",
+        "sidecar_observed": true,
+        "sidecar_rows": 24,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780609501492",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_XRPUSDT_1780609501991",
+        "sidecar_observed": true,
+        "sidecar_rows": 10,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "SUBMITTED_NOT_FILLED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "PENDING_TIMEOUT",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": true,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780610102218",
+        "sidecar_observed": true,
+        "sidecar_rows": 19,
+        "terminal_status": "INVALID_FOR_DATASET"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_LOSS",
+        "close_reason": "SL",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "EXECUTED",
+        "fees": 1.50762741,
+        "gross_pnl": -1.0977700000000001,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": -2.60539741,
+        "rid": "aurora_ETHUSDT_1780610703120",
+        "sidecar_observed": true,
+        "sidecar_rows": 28,
+        "terminal_status": "EXECUTED_AND_CLOSED"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_LOSS",
+        "close_reason": "CLOSE",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "EXECUTED",
+        "fees": 1.00650912,
+        "gross_pnl": -54.72452,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": -55.731029119999995,
+        "rid": "aurora_XRPUSDT_1780617904471",
+        "sidecar_observed": true,
+        "sidecar_rows": 84,
+        "terminal_status": "EXECUTED_AND_CLOSED"
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_XRPUSDT_1780618505669",
+        "sidecar_observed": true,
+        "sidecar_rows": 10,
+        "terminal_status": "REJECTED_UPSTREAM"
+      },
+      {
+        "bucket": "CLOSED_CANONICAL_PROFIT",
+        "close_reason": "TP",
+        "entry_filled": true,
+        "exact_roundtrip": true,
+        "execution_outcome": "EXECUTED",
+        "fees": 1.05504588,
+        "gross_pnl": 81.4959,
+        "order_submitted": true,
+        "position_closed": true,
+        "realized_pnl_net": 80.44085412000001,
+        "rid": "aurora_ETHUSDT_1780625104644",
+        "sidecar_observed": true,
+        "sidecar_rows": 24,
+        "terminal_status": "EXECUTED_AND_CLOSED"
+      },
+      {
+        "bucket": "DOWNSTREAM_NO_EFFECT_CONFIRMED",
+        "close_reason": null,
+        "entry_filled": false,
+        "exact_roundtrip": false,
+        "execution_outcome": "EXCHANGE_REJECTED",
+        "fees": null,
+        "gross_pnl": null,
+        "order_submitted": false,
+        "position_closed": false,
+        "realized_pnl_net": null,
+        "rid": "aurora_ETHUSDT_1780626301288",
+        "sidecar_observed": true,
+        "sidecar_rows": 10,
+        "terminal_status": "REJECTED_UPSTREAM"
+      }
+    ],
+    "terminal_status_counts": {
+      "EXECUTED_AND_CLOSED": 11,
+      "INVALID_FOR_DATASET": 45,
+      "REJECTED_UPSTREAM": 22
+    },
+    "trade_event_top": [
+      [
+        "POSITION_POLICY_SIDECAR_SUPPRESSED",
+        634474
+      ],
+      [
+        "POSITION_POLICY_SIDECAR_SCORES",
+        1520
+      ],
+      [
+        "POSITION_POLICY_SIDECAR_EVALUATED",
+        1520
+      ],
+      [
+        "EXECUTION_FILL_INGRESS",
+        1022
+      ],
+      [
+        "TRADE_LIFECYCLE_FILLED",
+        949
+      ],
+      [
+        "POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE",
+        180
+      ],
+      [
+        "TRADE_LIFECYCLE_ORDERED",
+        107
+      ],
+      [
+        "EXECUTION_BRACKET_DEFERRED_STORED",
+        107
+      ],
+      [
+        "ORPHANED_TTL",
+        70
+      ],
+      [
+        "POSITION_DISAPPEARANCE_ATTRIBUTED",
+        59
+      ]
+    ],
+    "verdict": "MIXED_ENABLE_COHORT_WITH_CANONICAL_AND_NO_EFFECT_BUCKETS",
+    "wins": 8
+  },
+  "replay_vs_runtime": {
+    "bundle_root": "logs/frozen/package_o_smoke/nrr062_fresh_capture_20260605_133915",
+    "net_pnl_delta_vs_replay_candidate": -522.9531924915,
+    "override_sample_fraction_vs_replay_candidate": 0.5163398692810458,
+    "replay_candidate_net_pnl_quote": 391.0476869715,
+    "replay_candidate_profit_factor": 1.4120756633,
+    "replay_candidate_rows": 153,
+    "replay_candidate_valid_rows": 153,
+    "resolved_close_fraction_vs_replay_candidate": 0.17647058823529413,
+    "runtime_net_pnl_quote": -131.90550552,
+    "runtime_override_rows": 79,
+    "runtime_profit_factor": 0.6275905480548548,
+    "runtime_resolved_closes": 27,
+    "verdict": "ENABLE_RUNTIME_NOT_YET_DIRECTIONALLY_ALIGNED_WITH_POSITIVE_REPLAY"
+  },
+  "shadow": {
+    "bundle_root": "logs/frozen/package_o_smoke/nrr062_fresh_capture_20260605_133915",
+    "event_name_counts": {
+      "CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_EMPTY": 2,
+      "CACHE:EXECUTION_TERMINAL_IDENTITY_CACHE_LOADED": 6,
+      "CMD:CLOSE": 32,
+      "CMD:OPEN": 133,
+      "DEC:BATCH": 1,
+      "DEC:CLOSE": 16,
+      "DEC:OPEN": 113,
+      "EVT:CLOSE_SHADOW_BRIDGE": 16,
+      "EVT:CLOSE_SHADOW_SUBMISSION": 23,
+      "EVT:CLOSE_SHADOW_SUBMIT_BOUNDARY": 23,
+      "EVT:DECISION_TRACE_EMITTED": 370,
+      "EVT:EXPOSURE_SUMMARY_UPDATED": 81826,
+      "EVT:GATE_CHAIN_TRACE": 982,
+      "EVT:NEOCORTEX_AUTHORITY_SEAM_DECISION": 175,
+      "EVT:ORDER_PLACED": 107,
+      "EVT:ORDER_REJECTED": 7,
+      "EVT:ORDER_STATE_CHANGED": 140,
+      "EVT:PORTFOLIO_STATE_UPDATED": 80664,
+      "EVT:POSITION_POLICY_SIDECAR_FEE_AWARE_SHADOW_ARM_STATE": 180,
+      "EVT:QUADRATIC_DECISION_TRACE": 8923,
+      "EVT:REGIME_DETECTED": 24210,
+      "EVT:STRATEGY_DECISION_BLOCKED": 5164,
+      "EVT:STRATEGY_SIGNAL_PRODUCED": 1112,
+      "EVT:TRADE_EXECUTED": 3190,
+      "EVT:TRADE_INTENT_PROPOSED": 133,
+      "EVT:TRADE_INTENT_REJECTED": 804,
+      "HARDENING:TRADE_EXECUTED_SUPPRESSED": 124,
+      "HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_MISS": 1022,
+      "ORDER_INDEX:ATTACH_EXCHANGE_ID": 129,
+      "ORDER_INDEX:CANCEL_RESERVATION": 19,
+      "ORDER_INDEX:MARK_TERMINAL": 404,
+      "ORDER_INDEX:RESERVE_ENTRY": 133,
+      "ORDER_INDEX:UPSERT_OPEN": 130,
+      "RESTORE:EXECUTION_TRUTH_HARDENING_RESET": 8
+    },
+    "invalid_rows": 0,
+    "linked_rows": [
+      {
+        "causation_rid": null,
+        "event_name": "EVT:QUADRATIC_DECISION_TRACE",
+        "lifecycle_id": null,
+        "record_type": "event",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "decision_making.aurora",
+        "truth_owner": null,
+        "ts_utc": "2026-05-26T20:15:03.830000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "EVT:STRATEGY_SIGNAL_PRODUCED",
+        "lifecycle_id": null,
+        "record_type": "event",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "decision_making.aurora",
+        "truth_owner": null,
+        "ts_utc": "2026-05-26T20:15:03.834000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "EVT:GATE_CHAIN_TRACE",
+        "lifecycle_id": null,
+        "record_type": "event",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "decision_making.strategy_gateway",
+        "truth_owner": null,
+        "ts_utc": "2026-05-26T20:15:03.836000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "EVT:NEOCORTEX_AUTHORITY_SEAM_DECISION",
+        "lifecycle_id": null,
+        "record_type": "event",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "unknown",
+        "truth_owner": null,
+        "ts_utc": "2026-05-26T20:15:03.842000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "ORDER_INDEX:RESERVE_ENTRY",
+        "lifecycle_id": null,
+        "record_type": "transition",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "execution_position.order_index",
+        "truth_owner": "OrderIndex",
+        "ts_utc": "2026-05-26T20:15:03.844000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "EVT:DECISION_TRACE_EMITTED",
+        "lifecycle_id": "f4cd3f57-1ecc-49e3-837c-2adc72bc6355",
+        "record_type": "event",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "decision_making.intent_builder",
+        "truth_owner": null,
+        "ts_utc": "2026-05-26T20:15:03.848000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "EVT:TRADE_INTENT_PROPOSED",
+        "lifecycle_id": "f4cd3f57-1ecc-49e3-837c-2adc72bc6355",
+        "record_type": "event",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "decision_making.intent_builder",
+        "truth_owner": null,
+        "ts_utc": "2026-05-26T20:15:03.904000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "CMD:OPEN",
+        "lifecycle_id": "f4cd3f57-1ecc-49e3-837c-2adc72bc6355",
+        "record_type": "transition",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "execution_position.fsm",
+        "truth_owner": "ExecPosFSM",
+        "ts_utc": "2026-05-26T20:15:03.964000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "DEC:OPEN",
+        "lifecycle_id": "f4cd3f57-1ecc-49e3-837c-2adc72bc6355",
+        "record_type": "event",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "execution_position",
+        "truth_owner": null,
+        "ts_utc": "2026-05-26T20:15:03.966000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "ORDER_INDEX:UPSERT_OPEN",
+        "lifecycle_id": "f4cd3f57-1ecc-49e3-837c-2adc72bc6355",
+        "record_type": "transition",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "execution_position.order_index",
+        "truth_owner": "OrderIndex",
+        "ts_utc": "2026-05-26T20:15:05.120000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "ORDER_INDEX:ATTACH_EXCHANGE_ID",
+        "lifecycle_id": null,
+        "record_type": "transition",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "execution_position.order_index",
+        "truth_owner": "OrderIndex",
+        "ts_utc": "2026-05-26T20:15:05.122000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "EVT:ORDER_PLACED",
+        "lifecycle_id": null,
+        "record_type": "event",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "execution_position",
+        "truth_owner": null,
+        "ts_utc": "2026-05-26T20:15:05.290000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "EVT:TRADE_EXECUTED",
+        "lifecycle_id": "aurora_ETHUSDT_1779826503829",
+        "record_type": "event",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "binance_ws_client",
+        "truth_owner": null,
+        "ts_utc": "2026-05-26T20:15:28.350000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_MISS",
+        "lifecycle_id": "aurora_ETHUSDT_1779826503829",
+        "record_type": "transition",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "binance_ws_client",
+        "truth_owner": "FSMCore",
+        "ts_utc": "2026-05-26T20:15:28.353000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "EVT:EXPOSURE_SUMMARY_UPDATED",
+        "lifecycle_id": null,
+        "record_type": "event",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "position_tracking",
+        "truth_owner": null,
+        "ts_utc": "2026-05-26T20:15:28.360000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "EVT:TRADE_EXECUTED",
+        "lifecycle_id": "aurora_ETHUSDT_1779826503829",
+        "record_type": "transition",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "execution_position.fsm_manage",
+        "truth_owner": "ManageFlowFSM",
+        "ts_utc": "2026-05-26T20:15:28.362000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "EVT:TRADE_EXECUTED",
+        "lifecycle_id": "aurora_ETHUSDT_1779826503829",
+        "record_type": "transition",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "position_tracking",
+        "truth_owner": "PositionTracking",
+        "ts_utc": "2026-05-26T20:15:28.458000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "EVT:TRADE_EXECUTED",
+        "lifecycle_id": null,
+        "record_type": "event",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "execution_position.watchdog",
+        "truth_owner": null,
+        "ts_utc": "2026-05-26T20:15:37.598000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_MISS",
+        "lifecycle_id": null,
+        "record_type": "transition",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "execution_position.watchdog",
+        "truth_owner": "FSMCore",
+        "ts_utc": "2026-05-26T20:15:37.601000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "EVT:TRADE_EXECUTED",
+        "lifecycle_id": null,
+        "record_type": "transition",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "execution_position.fsm_manage",
+        "truth_owner": "ManageFlowFSM",
+        "ts_utc": "2026-05-26T20:15:37.605000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "EVT:TRADE_EXECUTED",
+        "lifecycle_id": null,
+        "record_type": "transition",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "position_tracking",
+        "truth_owner": "PositionTracking",
+        "ts_utc": "2026-05-26T20:15:37.690000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "EVT:EXPOSURE_SUMMARY_UPDATED",
+        "lifecycle_id": null,
+        "record_type": "event",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "position_tracking",
+        "truth_owner": null,
+        "ts_utc": "2026-05-26T20:15:37.693000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "ORDER_INDEX:MARK_TERMINAL",
+        "lifecycle_id": null,
+        "record_type": "transition",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "execution_position.order_index",
+        "truth_owner": "OrderIndex",
+        "ts_utc": "2026-05-26T20:15:38.150000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "EVT:TRADE_EXECUTED",
+        "lifecycle_id": "aurora_ETHUSDT_1779826503829",
+        "record_type": "event",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "binance_ws_client",
+        "truth_owner": null,
+        "ts_utc": "2026-05-26T20:15:38.152000+00:00"
+      },
+      {
+        "causation_rid": null,
+        "event_name": "HARDENING:TRADE_EXECUTED_TERMINAL_IDENTITY_CACHE_MISS",
+        "lifecycle_id": "aurora_ETHUSDT_1779826503829",
+        "record_type": "transition",
+        "rid": "aurora_ETHUSDT_1779826503829",
+        "source_component": "binance_ws_client",
+        "truth_owner": "FSMCore",
+        "ts_utc": "2026-05-26T20:15:38.155000+00:00"
+      }
+    ],
+    "linked_rows_count": 4884,
+    "record_type_counts": {
+      "comparison": 62,
+      "event": 206056,
+      "restore": 8,
+      "transition": 4195
+    },
+    "source_component_counts": {
+      "apps.reference.domains.execution_position.close_executor": 46,
+      "apps.reference.domains.execution_position.fsm_close": 16,
+      "binance_ws_client": 2087,
+      "decision_making": 5948,
+      "decision_making.aurora": 10035,
+      "decision_making.intent_builder": 503,
+      "decision_making.strategy_gateway": 982,
+      "execution_position": 288,
+      "execution_position.fsm": 149,
+      "execution_position.fsm_close": 32,
+      "execution_position.fsm_manage": 1023,
+      "execution_position.order_index": 815,
+      "execution_position.watchdog": 304,
+      "execution_truth_hardening": 16,
+      "position_tracking": 163512,
+      "unknown": 24565
+    },
+    "truth_owner_counts": {
+      "CloseExecutor": 46,
+      "CloseFlowFSM": 48,
+      "ExecPosFSM": 149,
+      "ExecutionTruthHardening": 16,
+      "FSMCore": 1146,
+      "ManageFlowFSM": 1023,
+      "OrderIndex": 815,
+      "PositionTracking": 1022,
+      "UNKNOWN": 206056
+    },
+    "valid_rows": 210321,
+    "verdict": "SHADOW_APPENDIX_ONLY_NOT_USED_IN_ENABLE_ECONOMICS"
+  }
+}
