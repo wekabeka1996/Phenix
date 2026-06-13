@@ -18,6 +18,7 @@ Field mapping:
 
 Override prefix normalisation:
   score_override "mean_reversion.*"  → "alpha_search_system.mean_reversion.*"
+  score_override "strategy.mean_reversion.*" → "mean_reversion.*"
   score_override "ensemble.*"        → "alpha_search_system.ensemble.*"
   score_override "momentum.*"        → "alpha_search_system.momentum.*"
   score_override "volatility.*"      → "alpha_search_system.volatility.*"
@@ -62,6 +63,11 @@ _BASE_REFS: Dict[str, Dict[str, str]] = {
         "alpha_search": "config/alpha_search.yaml",
         "alpha_search_system": "config/alpha_search_system.yaml",
     },
+    "md_amr": {
+        "md_amr": "config/aurora/strategies/md_amr.yaml",
+        "alpha_search": "config/alpha_search.yaml",
+        "alpha_search_system": "config/alpha_search_system.yaml",
+    },
 }
 
 # Prefixes in score_overrides that need alpha_search_system. prepended
@@ -76,7 +82,7 @@ _SYSTEM_CONFIG_PREFIXES = (
 # Production aurora.yaml restricts each symbol to specific regimes (e.g. BTC → HIGH_VOLATILITY only).
 # Alpha_input data is 100% UNCERTAIN regime → without this override, all aurora scenarios score=0.
 _SHADOW_AURORA_SYMBOLS = [
-    "BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT", "BNBUSDT",
+    "BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT", "BNBUSDT", "1000PEPEUSDT",
 ]
 
 # All regimes that can appear in alpha_input; shadow lab observes signals in all of them.
@@ -91,6 +97,9 @@ def _strategy_type(spec: ShadowScenarioSpec) -> str:
     provider = spec.score_provider
     family = spec.family
 
+    # MD-AMR is its own strategy type regardless of provider
+    if family == ScenarioFamily.MD_AMR:
+        return "md_amr"
     if provider == "aurora":
         return "aurora"
     # ta_ensemble with mean_reversion family uses the mean_reversion strategy plugin
@@ -101,6 +110,18 @@ def _strategy_type(spec: ShadowScenarioSpec) -> str:
 
 def _normalise_override_key(key: str) -> str:
     """Prepend alpha_search_system. to system-config override paths."""
+    if key.startswith("strategy.mean_reversion."):
+        return key[len("strategy."):]
+
+    if key.startswith("ensemble."):
+        parts = key.split(".")
+        if len(parts) == 3 and parts[1] in ("mean_reversion_v1", "momentum_v1", "volatility_v1"):
+            return f"alpha_search.providers.ta_ensemble.ensemble.models.{parts[1]}.{parts[2]}"
+        elif len(parts) == 4 and parts[1] == "models" and parts[2] in ("mean_reversion_v1", "momentum_v1", "volatility_v1"):
+            return f"alpha_search.providers.ta_ensemble.ensemble.models.{parts[2]}.{parts[3]}"
+        elif len(parts) == 2 and parts[1] in ("rebalance_frequency_days", "risk_adjustment"):
+            return f"alpha_search.providers.ta_ensemble.ensemble.{parts[1]}"
+
     for prefix in _SYSTEM_CONFIG_PREFIXES:
         if key.startswith(prefix):
             return f"alpha_search_system.{key}"
@@ -122,6 +143,10 @@ def _build_overrides(spec: ShadowScenarioSpec, strategy_type: str) -> Dict[str, 
     if strategy_type == "aurora":
         overrides["aurora.decision.signal_threshold"] = thr
         overrides["alpha_search.providers.aurora.threshold"] = thr
+        overrides["alpha_search.providers.aurora.enabled"] = True
+        overrides["alpha_search.providers.judge_sw.enabled"] = True
+        overrides["alpha_search.providers.judge_fn.enabled"] = False  # Disabled: -2356 USDT across all 12 aurora scenarios
+        overrides["alpha_search.providers.ta_ensemble.enabled"] = False
         # Shadow-only: unlock UNCERTAIN regime per asset.
         # Production aurora.yaml has restrictive allowed_regimes (e.g. BTC=["HIGH_VOLATILITY"]).
         # Alpha_input replay data is 100% UNCERTAIN → without this, all aurora scenarios score=0.
@@ -130,11 +155,30 @@ def _build_overrides(spec: ShadowScenarioSpec, strategy_type: str) -> Dict[str, 
             # Production aurora.yaml has regime_thresholds.UNCERTAIN=99.0 for BTC/ETH
             # (impossible threshold multiplier). Shadow lab normalises to 1.0.
             overrides[f"aurora.assets.{_sym}.regime_thresholds.UNCERTAIN"] = 1.0
+        # Decision-level UNCERTAIN multiplier: scenario_matrix sets 2.5-3.0 in prod
+        # (intentional tightening for live regime detector). Shadow replay feeds 100%
+        # UNCERTAIN, so the multiplier suppresses every signal. Normalise to 1.0 here
+        # so per-scenario signal_threshold is the single lever.
+        overrides["aurora.decision.regime_threshold_multipliers.UNCERTAIN"] = 1.0
     elif strategy_type == "mean_reversion":
         overrides["mean_reversion.strategy.entry_threshold"] = thr
         overrides["alpha_search.providers.ta_ensemble.threshold"] = thr
+        overrides["alpha_search.providers.ta_ensemble.enabled"] = True
+        overrides["alpha_search.providers.aurora.enabled"] = False
+        overrides["alpha_search.providers.judge_sw.enabled"] = False
+        overrides["alpha_search.providers.judge_fn.enabled"] = False
+    elif strategy_type == "md_amr":
+        overrides["alpha_search.providers.ta_ensemble.threshold"] = thr
+        overrides["alpha_search.providers.ta_ensemble.enabled"] = True
+        overrides["alpha_search.providers.aurora.enabled"] = False
+        overrides["alpha_search.providers.judge_sw.enabled"] = False
+        overrides["alpha_search.providers.judge_fn.enabled"] = False
     else:  # ensemble
         overrides["alpha_search.providers.ta_ensemble.threshold"] = thr
+        overrides["alpha_search.providers.ta_ensemble.enabled"] = True
+        overrides["alpha_search.providers.aurora.enabled"] = False
+        overrides["alpha_search.providers.judge_sw.enabled"] = False
+        overrides["alpha_search.providers.judge_fn.enabled"] = False
 
     # --- score_overrides normalisation ---
     for raw_key, value in (spec.score_overrides or {}).items():

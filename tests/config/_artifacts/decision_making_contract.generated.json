@@ -467,6 +467,11 @@
         "default_factory": null,
         "required": true
       },
+      "judge_bridge": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
       "neocortex_enforcement_mode": {
         "default": "'<required>'",
         "default_factory": null,
@@ -922,11 +927,6 @@
         "default_factory": null,
         "required": true
       },
-      "missing_policy": {
-        "default": "'<required>'",
-        "default_factory": null,
-        "required": true
-      },
       "raw_signed_score_sources": {
         "default": "PydanticUndefined",
         "default_factory": "list",
@@ -941,6 +941,11 @@
         "default": "False",
         "default_factory": null,
         "required": false
+      },
+      "missing_policy": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
       }
     }
   },
@@ -1127,22 +1132,22 @@
         "default_factory": null,
         "required": false
       },
-      "max_by_regime": {
-        "default": "None",
-        "default_factory": null,
-        "required": false
-      },
-      "max_by_symbol": {
-        "default": "None",
-        "default_factory": null,
-        "required": false
-      },
       "min_by_regime_side": {
         "default": "None",
         "default_factory": null,
         "required": false
       },
       "min_by_symbol_regime_side": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "max_by_regime": {
+        "default": "None",
+        "default_factory": null,
+        "required": false
+      },
+      "max_by_symbol": {
         "default": "None",
         "default_factory": null,
         "required": false

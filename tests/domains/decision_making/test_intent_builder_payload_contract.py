@@ -438,6 +438,11 @@ def test_build_and_emit_persists_order_intent_admission_threshold_metadata() -> 
 
     logged_entry = mock_order_logger.call_args.args[0]
     assert logged_entry["event_type"] == "ORDER_INTENT"
+    assert logged_entry["strategy_id"] == "aurora"
+    assert logged_entry["regime"] == "TREND_UP"
+    assert logged_entry["confidence"] == 0.91
+    assert logged_entry["decision_id"] == "decision-accepted-1"
+    assert logged_entry["intent_id"] == logged_entry["lifecycle_id"]
     metadata = logged_entry["metadata"]
     assert metadata["resolved_min_regime_confidence"] == 0.45
     assert metadata["threshold_applied"] is True

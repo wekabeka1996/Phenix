@@ -31,6 +31,7 @@ class ScenarioFamily(str, Enum):
     MICROSTRUCTURE = "microstructure"
     REGIME_ADAPTIVE = "regime_adaptive"
     COST_EXECUTION = "cost_execution"
+    MD_AMR = "md_amr"
 
 
 class ExitModel(str, Enum):

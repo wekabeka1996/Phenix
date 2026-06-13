@@ -422,6 +422,8 @@ def build_order_intent_log_entry(
     sg: Any,
     regime_provenance: Optional[dict],
     normalize_mode: str,
+    decision_id: Optional[str] = None,
+    intent_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """Build the ORDER_INTENT payload written to OrderLogger."""
     metadata = {
@@ -450,17 +452,28 @@ def build_order_intent_log_entry(
     low_vol_cost_floor = getattr(sg, "low_vol_cost_floor_details", None)
     if isinstance(low_vol_cost_floor, dict) and low_vol_cost_floor:
         metadata["low_vol_cost_floor"] = dict(low_vol_cost_floor)
+    lineage_warnings: list[str] = []
+    if strategy_id in (None, ""):
+        lineage_warnings.append("strategy_id_unavailable_at_strategy_intent")
+    if getattr(sg, "regime", None) in (None, ""):
+        lineage_warnings.append("regime_unavailable_at_strategy_intent")
+    if lineage_warnings:
+        metadata["lineage_warnings"] = lineage_warnings
+    signal_confidence = getattr(sg, "signal_score", None)
     return {
         "rid": rid,
         "event_type": "ORDER_INTENT",
         "lifecycle_id": lifecycle_id,
         "symbol": symbol,
         "strategy_id": strategy_id,
+        "decision_id": decision_id,
+        "intent_id": intent_id or lifecycle_id,
         "side": side.upper(),
         "quantity": float(qty),
         "price": float(price),
         "source_fsm": "DecisionMaking",
         "regime": sg.regime,
+        "confidence": signal_confidence,
         "regime_confidence": sg.regime_confidence,
         "regime_provenance": regime_provenance if isinstance(regime_provenance, dict) else None,
         "metadata": metadata,

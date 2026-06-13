@@ -164,6 +164,8 @@ class TestContractRegistryOwnership:
         non_canonical = [
             p for p in all_registries
             if p.resolve() != canonical.resolve()
+            and "frozen" not in p.parts
+            and ".venv" not in p.parts
         ]
         assert not non_canonical, (
             f"Alternative verb registries found: {non_canonical}. "

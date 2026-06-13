@@ -128,8 +128,6 @@ class TAEnsembleConfig(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-<<<<<<< HEAD
-=======
 class JudgeExpertProviderConfig(BaseModel):
     """Configuration for a judge expert provider.
 
@@ -145,7 +143,6 @@ class JudgeExpertProviderConfig(BaseModel):
     model_config = {"extra": "forbid"}
 
 
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 class ProviderConfig(BaseModel):
     """Configuration for a single alpha provider."""
 
@@ -173,25 +170,12 @@ class ProviderConfig(BaseModel):
     # Provider-specific config (only one should be set)
     adapter: Optional[AuroraAdapterConfig] = None
     ensemble: Optional[TAEnsembleConfig] = None
-<<<<<<< HEAD
-=======
     judge_expert: Optional["JudgeExpertProviderConfig"] = None
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
     model_config = {"extra": "forbid"}
 
     @model_validator(mode="after")
     def validate_provider_type(self):
-<<<<<<< HEAD
-        """Ensure exactly one provider type is configured."""
-        has_adapter = self.adapter is not None
-        has_ensemble = self.ensemble is not None
-
-        if has_adapter and has_ensemble:
-            raise ValueError(
-                "Provider cannot have both 'adapter' and 'ensemble' config")
-        if not has_adapter and not has_ensemble:
-=======
         """Ensure at most one provider type is configured."""
         has_adapter = self.adapter is not None
         has_ensemble = self.ensemble is not None
@@ -204,7 +188,6 @@ class ProviderConfig(BaseModel):
                 "or 'judge_expert' config"
             )
         if count == 0:
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
             # Default to ensemble if neither specified (for backwards compat)
             pass  # OK, will use default ensemble
         return self
@@ -345,8 +328,6 @@ class AlphaSearchSystemConfig(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-<<<<<<< HEAD
-=======
 from apps.reference.domains.alpha_search.judge.config_models import JudgeCortexConfig  # noqa: E402
 
 
@@ -380,7 +361,6 @@ class SimulatorShutdownExportConfig(BaseModel):
         return self
 
 
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 class AlphaSearchConfig(BaseModel):
     """
     Root configuration for alpha_search domain.
@@ -416,8 +396,6 @@ class AlphaSearchConfig(BaseModel):
         default_factory=ObjectiveFeedbackConfig
     )
 
-<<<<<<< HEAD
-=======
     # LLM Judge cortex config (Phase 1: contracts-only, mode='off' enforced)
     judge: Optional[JudgeCortexConfig] = Field(
         default=None,
@@ -432,7 +410,6 @@ class AlphaSearchConfig(BaseModel):
         description="Phase 5 simulator auto-export on shutdown. None or disabled = no-op."
     )
 
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     # Explicit legacy bucket — allows old fields without breaking strict validation.
     # Migration: move augmenter/signals/models/ensemble here, then remove them.
     legacy: Optional[Dict[str, Any]] = Field(
@@ -457,8 +434,6 @@ class AlphaSearchConfig(BaseModel):
                 )
         return self
 
-<<<<<<< HEAD
-=======
     @model_validator(mode="after")
     def validate_judge_provider_threshold_alignment(self):
         """Judge provider thresholds must match their bound expert config."""
@@ -496,7 +471,6 @@ class AlphaSearchConfig(BaseModel):
                 )
         return self
 
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
 def load_alpha_search_config(config_path: str) -> AlphaSearchConfig:
     """

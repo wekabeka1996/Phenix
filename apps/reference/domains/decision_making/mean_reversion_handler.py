@@ -11,5 +11,8 @@ warnings.warn(
     stacklevel=2,
 )
 
-from apps.reference.domains.strategies.runtimes.mean_reversion.handler import *  # noqa: F401,F403
-from apps.reference.domains.strategies.runtimes.mean_reversion.handler import MeanReversionHandler  # noqa: F401
+from apps.reference.domains.strategies.runtimes.mean_reversion.handler import (
+    MeanReversionHandler,
+)
+
+__all__ = ["MeanReversionHandler"]

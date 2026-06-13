@@ -11,5 +11,6 @@ warnings.warn(
     stacklevel=2,
 )
 
-from apps.reference.domains.strategies.runtimes.md_amr.handler import *  # noqa: F401,F403
-from apps.reference.domains.strategies.runtimes.md_amr.handler import MDAMRHandler  # noqa: F401
+from apps.reference.domains.strategies.runtimes.md_amr.handler import MDAMRHandler
+
+__all__ = ["MDAMRHandler"]

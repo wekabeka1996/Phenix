@@ -205,7 +205,7 @@ class TestThresholdSync:
             pytest.skip("Aurora provider not initialized")
 
         snap_hv = AlphaInputV1.model_validate(
-            make_snapshot(regime="HIGH_VOLATILITY")
+            make_snapshot(symbol="TESTUSDT", regime="HIGH_VOLATILITY")
         )
         worker.process_snapshot(snap_hv)
         assert worker._plugin.provider_configs["aurora"].threshold == pytest.approx(
@@ -214,6 +214,7 @@ class TestThresholdSync:
 
         snap_tu = AlphaInputV1.model_validate(
             make_snapshot(
+                symbol="TESTUSDT",
                 regime="TREND_UP",
                 ts_ms=1740000005000,
                 bar_close_ts=1740000005000,

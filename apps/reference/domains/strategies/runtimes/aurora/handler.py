@@ -43,6 +43,10 @@ from apps.reference.domains.strategies.runtimes.aurora.scoring_helpers import Au
 from apps.reference.domains.strategies.runtimes.aurora.decision import AuroraDecisionMixin
 from apps.reference.domains.strategies.runtimes.aurora.config_loader import AuroraConfigLoaderMixin
 from apps.reference.domains.strategies.runtimes.aurora.holding_period import AuroraHoldingPeriodMixin
+from apps.reference.domains.strategies.runtimes.aurora.policies import (
+    RegimeInertiaPolicy,
+    RegimeInertiaSnapshot,
+)
 from apps.reference.shared.decision_primitives.shields.context_shield import ContextShield
 from apps.reference.shared.decision_primitives.shields.memory_shield import MemoryShield
 from apps.reference.shared.decision_primitives.shields.danger_zone import DangerZoneShield
@@ -409,49 +413,24 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         later when the configured confirmation windows permit it.
         """
         state = self._symbol_states[symbol]
-        now = float(self.monotonic_fn())
-
-        if state.regime_raw is None and state.regime_effective is None:
-            state.regime_raw = raw_regime
-            state.regime_effective = raw_regime
-            state.regime_raw_change_ts = now
-            return
-
-        if raw_regime != state.regime_raw:
-            state.regime_raw = raw_regime
-            state.regime_raw_change_ts = now
-
-        if not getattr(self, "anti_churn_enabled", False) or self.regime_inertia_confirm_window_sec <= 0.0:
-            state.regime_effective = state.regime_raw
-            return
-
-        current_eff = state.regime_effective
-        raw = state.regime_raw
-        if raw == current_eff:
-            return
-
-        eff_sev = self._get_regime_severity(current_eff)
-        raw_sev = self._get_regime_severity(raw)
-
-        if self.regime_inertia_immediate_risk_off and raw_sev > eff_sev:
-            state.regime_effective = raw
-            return
-
-        if raw_sev == eff_sev and self.regime_inertia_confirm_window_same_severity_sec > 0.0:
-            raw_change_ts = state.regime_raw_change_ts
-            if raw_change_ts is None:
-                state.regime_effective = raw
-                return
-            if (now - raw_change_ts) >= self.regime_inertia_confirm_window_same_severity_sec:
-                state.regime_effective = raw
-            return
-
-        raw_change_ts = state.regime_raw_change_ts
-        if raw_change_ts is None:
-            state.regime_effective = raw
-            return
-        if (now - raw_change_ts) >= self.regime_inertia_confirm_window_sec:
-            state.regime_effective = raw
+        result = RegimeInertiaPolicy(self._get_regime_severity).apply(
+            RegimeInertiaSnapshot(
+                raw_previous=state.regime_raw,
+                effective_previous=state.regime_effective,
+                raw_candidate=raw_regime,
+                raw_change_ts=state.regime_raw_change_ts,
+                now_monotonic=float(self.monotonic_fn()),
+                anti_churn_enabled=bool(getattr(self, "anti_churn_enabled", False)),
+                confirm_window_sec=float(self.regime_inertia_confirm_window_sec),
+                same_severity_confirm_window_sec=float(
+                    self.regime_inertia_confirm_window_same_severity_sec
+                ),
+                immediate_risk_off=bool(self.regime_inertia_immediate_risk_off),
+            )
+        )
+        state.regime_raw = result.raw
+        state.regime_effective = result.effective
+        state.regime_raw_change_ts = result.raw_change_ts
 
     def _check_regime_liveness(
         self,

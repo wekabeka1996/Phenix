@@ -207,6 +207,8 @@ class TestProcessSnapshot:
             {
                 "scenario_id": "S_PIPE",
                 "strategy_type": "aurora",
+                "version": None,
+                "family": "aurora",
                 "ts_ms": snapshot.ts_ms,
                 "symbol": "ETHUSDT",
                 "score": 0.33,
@@ -218,6 +220,9 @@ class TestProcessSnapshot:
                 "why": ["score-ready"],
                 "features_used": ["obi", "delta_price"],
                 "shadow": True,
+                "shadow_only": True,
+                "authority_applied": False,
+                "no_effect": True,
                 "regime": "TREND_UP",
             }
         ]

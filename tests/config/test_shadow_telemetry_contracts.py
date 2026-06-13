@@ -101,7 +101,14 @@ def test_current_aurora_config_loads_shadow_telemetry_contract() -> None:
     assert st.api.port == 8443
     assert st.api.tls is False
     assert st.api.auth_mode == "loopback_optional_bearer"
-    assert st.api.write.symbol_allowlist == ["1000PEPEUSDT"]
+    assert st.api.write.symbol_allowlist == [
+        "DOGEUSDT",
+        "BTCUSDT",
+        "ETHUSDT",
+        "XRPUSDT",
+        "BNBUSDT",
+        "SOLUSDT",
+    ]
     assert st.api.write.require_snapshot_ref is True
     assert st.egress_to_main.mode == "ipc"
     assert st.egress_to_main.ipc_commands_endpoint == "tcp://127.0.0.1:7102"

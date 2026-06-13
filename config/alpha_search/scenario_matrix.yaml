@@ -18,8 +18,8 @@ matrix_id: v6b_dedup_noflip_cooldown_20260307
 version: 8
 
 runtime:
-  max_scenarios: 12
-  max_concurrent_scenarios: 12
+  max_scenarios: 16
+  max_concurrent_scenarios: 16
   parallelism: thread_pool          # sequential | thread_pool
   max_workers: 4
   queue_maxsize: 4000
@@ -36,7 +36,7 @@ hot_reload:
 
 input:
   source_mode: live_tail       # live_tail = concurrent with main.py (FeatureMirrorWriter appends, standalone tails)
-  stream_path: logs/alpha_input/alpha_input_v1.jsonl
+  stream_path: logs/alpha_input/alpha_input_v1_live.jsonl
 
 scenarios:
 
@@ -56,6 +56,8 @@ scenarios:
       alpha_search: config/alpha_search.yaml
       alpha_search_system: config/alpha_search_system.yaml
     overrides:
+      alpha_search.providers.judge_sw.enabled: false
+      alpha_search.providers.judge_fn.enabled: false
       alpha_search_system.mean_reversion.weights.rsi: 0.55
       alpha_search_system.mean_reversion.weights.bb: 0.25
       alpha_search_system.mean_reversion.weights.sma: 0.10
@@ -76,6 +78,10 @@ scenarios:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
     overrides:
+      alpha_search.providers.aurora.enabled: true
+      alpha_search.providers.judge_sw.enabled: true
+      alpha_search.providers.judge_fn.enabled: true
+      alpha_search.providers.ta_ensemble.enabled: false
       aurora.decision.signal_threshold: 0.26       # v6: 0.16→0.26 (reduce trades ~55%)
       aurora.decision.signal_weights.obi: 0.18
       aurora.decision.signal_weights.tfi: 0.28
@@ -90,7 +96,7 @@ scenarios:
       aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 1.25
       aurora.decision.regime_threshold_multipliers.HIGH_VOLATILITY: 1.60
       aurora.decision.regime_threshold_multipliers.LOW_VOLATILITY: 0.88
-      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 3.00       # v6: 2.00→3.00
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 1.50       # v7: 3.00→1.50 (alpha_input feeds UNCERTAIN-only after regime format change; 3.0 killed all signals)
       aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
 
   - scenario_id: S05_AURORA_MACRO_RESIDUAL
@@ -104,6 +110,10 @@ scenarios:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
     overrides:
+      alpha_search.providers.aurora.enabled: true
+      alpha_search.providers.judge_sw.enabled: true
+      alpha_search.providers.judge_fn.enabled: true
+      alpha_search.providers.ta_ensemble.enabled: false
       aurora.decision.signal_threshold: 0.22       # v6: 0.11→0.22 (reduce trades ~55%)
       aurora.decision.signal_weights.obi: 0.25
       aurora.decision.signal_weights.tfi: 0.12
@@ -118,7 +128,7 @@ scenarios:
       aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 0.80
       aurora.decision.regime_threshold_multipliers.TREND_UP: 0.85
       aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.85
-      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 2.50       # v6: 0.85→2.50 (UNCERTAIN regime tightened)
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 1.50       # v7: 2.50→1.50 (alpha_input feeds UNCERTAIN-only; 2.5 killed all signals)
       aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
 
   - scenario_id: S06_AURORA_ETH_CALIBRATED
@@ -132,6 +142,10 @@ scenarios:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
     overrides:
+      alpha_search.providers.aurora.enabled: true
+      alpha_search.providers.judge_sw.enabled: true
+      alpha_search.providers.judge_fn.enabled: true
+      alpha_search.providers.ta_ensemble.enabled: false
       aurora.decision.signal_threshold: 0.22       # v6: 0.10→0.22 (reduce trades ~55%)
       aurora.decision.signal_weights.obi: 0.19
       aurora.decision.signal_weights.tfi: 0.09
@@ -146,7 +160,7 @@ scenarios:
       aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 0.80
       aurora.decision.regime_threshold_multipliers.TREND_UP: 0.88
       aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.88
-      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 3.00       # v6: 1.80→3.00
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 1.50       # v7: 3.00→1.50 (alpha_input feeds UNCERTAIN-only; 3.0 killed all signals)
       aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
 
   - scenario_id: S20_AURORA_MICROSTRUCTURE_DEPTH
@@ -160,6 +174,10 @@ scenarios:
       aurora: config/aurora/strategies/aurora.yaml
       alpha_search: config/alpha_search.yaml
     overrides:
+      alpha_search.providers.aurora.enabled: true
+      alpha_search.providers.judge_sw.enabled: true
+      alpha_search.providers.judge_fn.enabled: true
+      alpha_search.providers.ta_ensemble.enabled: false
       aurora.decision.signal_threshold: 0.15       # v6b: 0.22→0.15 restored (0.22 degraded G/1k from 0.195→0.119)
       aurora.decision.signal_weights.obi: 0.48
       aurora.decision.signal_weights.tfi: 0.15
@@ -174,7 +192,7 @@ scenarios:
       aurora.decision.regime_threshold_multipliers.MEAN_REVERSION: 1.10
       aurora.decision.regime_threshold_multipliers.TREND_UP: 0.82
       aurora.decision.regime_threshold_multipliers.TREND_DOWN: 0.82
-      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 3.00       # v6: 2.00→3.00
+      aurora.decision.regime_threshold_multipliers.UNCERTAIN: 1.50       # v7: 3.00→1.50 (alpha_input feeds UNCERTAIN-only; 3.0 killed all signals)
       aurora.decision.regime_threshold_multipliers.DEFAULT: 1.00
 
   # ============================================================================
@@ -202,6 +220,8 @@ scenarios:
       alpha_search: config/alpha_search.yaml
       alpha_search_system: config/alpha_search_system.yaml
     overrides:
+      alpha_search.providers.judge_sw.enabled: false
+      alpha_search.providers.judge_fn.enabled: false
       alpha_search_system.mean_reversion.rsi.oversold: 22       # v6: 25→22 (tighter RSI filter)
       alpha_search_system.mean_reversion.rsi.overbought: 78      # v6: 75→78
       alpha_search.providers.aurora.threshold: 0.33              # v6: 0.19→0.33
@@ -216,12 +236,92 @@ scenarios:
       alpha_search: config/alpha_search.yaml
       alpha_search_system: config/alpha_search_system.yaml
     overrides:
+      alpha_search.providers.judge_sw.enabled: false
+      alpha_search.providers.judge_fn.enabled: false
       alpha_search_system.mean_reversion.weights.bb: 0.6
       alpha_search_system.mean_reversion.weights.rsi: 0.2
       alpha_search_system.mean_reversion.weights.sma: 0.1
       alpha_search_system.mean_reversion.weights.stoch: 0.1
       alpha_search.providers.aurora.threshold: 0.30       # v6: 0.14→0.30
       alpha_search.providers.ta_ensemble.threshold: 0.30  # v6: 0.13→0.30
+
+  - scenario_id: S31_LIVE_MR_BASELINE
+    enabled: true
+    strategy_type: mean_reversion
+    config_mode: override
+    base_refs:
+      mean_reversion: config/aurora/strategies/mean_reversion.yaml
+      alpha_search: config/alpha_search.yaml
+      alpha_search_system: config/alpha_search_system.yaml
+    overrides:
+      alpha_search.providers.judge_sw.enabled: false
+      alpha_search.providers.judge_fn.enabled: false
+      alpha_search.providers.ta_ensemble.enabled: true
+      alpha_search.providers.aurora.enabled: false
+      mean_reversion.strategy.entry_threshold: 0.18
+      mean_reversion.strategy.bb_window: 20
+      mean_reversion.strategy.bb_num_std: 2.0
+      mean_reversion.strategy.rsi_oversold: 30
+      mean_reversion.strategy.rsi_overbought: 70
+      mean_reversion.strategy.min_bars: 25
+      alpha_search.providers.ta_ensemble.threshold: 0.18
+
+  - scenario_id: S32_LIVE_MR_RSI_STRICT
+    enabled: true
+    strategy_type: mean_reversion
+    config_mode: override
+    base_refs:
+      mean_reversion: config/aurora/strategies/mean_reversion.yaml
+      alpha_search: config/alpha_search.yaml
+      alpha_search_system: config/alpha_search_system.yaml
+    overrides:
+      alpha_search.providers.judge_sw.enabled: false
+      alpha_search.providers.judge_fn.enabled: false
+      alpha_search.providers.ta_ensemble.enabled: true
+      alpha_search.providers.aurora.enabled: false
+      mean_reversion.strategy.entry_threshold: 0.16
+      mean_reversion.strategy.rsi_oversold: 25
+      mean_reversion.strategy.rsi_overbought: 75
+      alpha_search.providers.ta_ensemble.threshold: 0.16
+
+  - scenario_id: S33_LIVE_MR_EXTREME_DEVIATION
+    enabled: true
+    strategy_type: mean_reversion
+    config_mode: override
+    base_refs:
+      mean_reversion: config/aurora/strategies/mean_reversion.yaml
+      alpha_search: config/alpha_search.yaml
+      alpha_search_system: config/alpha_search_system.yaml
+    overrides:
+      alpha_search.providers.judge_sw.enabled: false
+      alpha_search.providers.judge_fn.enabled: false
+      alpha_search.providers.ta_ensemble.enabled: true
+      alpha_search.providers.aurora.enabled: false
+      mean_reversion.strategy.entry_threshold: 0.14
+      mean_reversion.strategy.bb_num_std: 2.8
+      mean_reversion.strategy.min_bars: 25
+      mean_reversion.strategy.rsi_oversold: 25
+      mean_reversion.strategy.rsi_overbought: 75
+      alpha_search.providers.ta_ensemble.threshold: 0.14
+
+  - scenario_id: S34_LIVE_MR_LOW_VOL_SAFE
+    enabled: true
+    strategy_type: mean_reversion
+    config_mode: override
+    base_refs:
+      mean_reversion: config/aurora/strategies/mean_reversion.yaml
+      alpha_search: config/alpha_search.yaml
+      alpha_search_system: config/alpha_search_system.yaml
+    overrides:
+      alpha_search.providers.judge_sw.enabled: false
+      alpha_search.providers.judge_fn.enabled: false
+      alpha_search.providers.ta_ensemble.enabled: true
+      alpha_search.providers.aurora.enabled: false
+      mean_reversion.strategy.entry_threshold: 0.18
+      mean_reversion.strategy.min_bb_width: 0.004
+      mean_reversion.strategy.max_bb_width: 0.08
+      mean_reversion.strategy.cooldown_sec: 180
+      alpha_search.providers.ta_ensemble.threshold: 0.18
 
   # ============================================================================
   # ENSEMBLE FAMILY (S15, S18, S19, S21) - 4 scenarios
@@ -235,6 +335,8 @@ scenarios:
       alpha_search: config/alpha_search.yaml
       alpha_search_system: config/alpha_search_system.yaml
     overrides:
+      alpha_search.providers.judge_sw.enabled: false
+      alpha_search.providers.judge_fn.enabled: false
       alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.enabled: true
       alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.weight: 0.34
       alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.enabled: true
@@ -253,6 +355,8 @@ scenarios:
       alpha_search: config/alpha_search.yaml
       alpha_search_system: config/alpha_search_system.yaml
     overrides:
+      alpha_search.providers.judge_sw.enabled: false
+      alpha_search.providers.judge_fn.enabled: false
       alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.enabled: true
       alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.weight: 0.8
       alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.enabled: true
@@ -260,11 +364,11 @@ scenarios:
       alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.enabled: true
       alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.weight: 0.1
       alpha_search.providers.ta_ensemble.ensemble.rebalance_frequency_days: 99999
-      alpha_search.providers.aurora.threshold: 0.28              # v6: 0.10→0.28
-      alpha_search.providers.ta_ensemble.threshold: 0.28        # v6: 0.10→0.28
+      alpha_search.providers.aurora.threshold: 0.18              # v7: 0.28→0.18 (S18 dead 11/11 sessions; momentum_v1.w=0.8 caps weighted score below 0.28)
+      alpha_search.providers.ta_ensemble.threshold: 0.18        # v7: 0.28→0.18 (matches aurora)
       # flip_on_reversal removed (v6b): increased MaxDD 1229→2341, worse win rate 28→27%
 
-  - scenario_id: S19_ENSEMBLE_MR_SHORT_BIAS
+  - scenario_id: S19_ENSEMBLE_MR_BALANCED_VARIANT
     enabled: true
     strategy_type: ensemble
     config_mode: override
@@ -272,6 +376,8 @@ scenarios:
       alpha_search: config/alpha_search.yaml
       alpha_search_system: config/alpha_search_system.yaml
     overrides:
+      alpha_search.providers.judge_sw.enabled: false
+      alpha_search.providers.judge_fn.enabled: false
       alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.enabled: true
       alpha_search.providers.ta_ensemble.ensemble.models.mean_reversion_v1.weight: 0.5
       alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.enabled: true
@@ -290,6 +396,8 @@ scenarios:
       alpha_search: config/alpha_search.yaml
       alpha_search_system: config/alpha_search_system.yaml
     overrides:
+      alpha_search.providers.judge_sw.enabled: false
+      alpha_search.providers.judge_fn.enabled: false
       alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.enabled: true
       alpha_search.providers.ta_ensemble.ensemble.models.volatility_v1.weight: 0.5
       alpha_search.providers.ta_ensemble.ensemble.models.momentum_v1.enabled: true

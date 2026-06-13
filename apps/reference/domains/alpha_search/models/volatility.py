@@ -71,38 +71,51 @@ class VolatilityAlphaModel(AlphaModel):
 
         # ATR ratio signal: >1 = higher volatility, <1 = lower volatility
         atr_signal = atr_ratio - Decimal('1.0')  # Center on 0
-        atr_signal = max(
-            Decimal('-2.0'), min(Decimal('2.0'), atr_signal))  # Clamp
+        atr_clamp = Decimal(str(self.config.get("signal_clamp", {}).get("atr", 2.0)))
+        atr_signal = max(-atr_clamp, min(atr_clamp, atr_signal))  # Clamp
 
         # BB width change signal: positive = expanding, negative = contracting
-        bb_signal = bb_width_change * Decimal('10')  # Amplify small changes
+        bb_cfg = self.config.get("bb", {})
+        bb_amplifier = Decimal(str(bb_cfg.get("amplifier", 10)))
+        bb_signal = bb_width_change * bb_amplifier  # Amplify small changes
         bb_signal = max(Decimal('-1.0'), min(Decimal('1.0'), bb_signal))
 
         # Realized volatility trend: 1h vs 1d
         rv_trend = rv_1h - rv_1d  # Positive = increasing vol, negative = decreasing
-        rv_signal = rv_trend / max(rv_1d, Decimal('0.001'))  # Normalize
-        rv_signal = max(Decimal('-2.0'), min(Decimal('2.0'), rv_signal))
+        rv_signal = Decimal('0')
+        if rv_1d > 0:
+            rv_signal = rv_trend / rv_1d  # Normalize
+        else:
+            rv_signal = rv_trend / Decimal('0.001')
+        rv_clamp = Decimal(str(self.config.get("signal_clamp", {}).get("rv", 2.0)))
+        rv_signal = max(-rv_clamp, min(rv_clamp, rv_signal))
 
         # Range ratio signal
         range_signal = range_ratio - Decimal('1.0')  # Center on 0
         range_signal = max(Decimal('-1.0'), min(Decimal('1.0'), range_signal))
 
         # Volume-volatility correlation
+        vol_vol_cfg = self.config.get("volume_vol", {})
+        vol_vol_high_thresh = Decimal(str(vol_vol_cfg.get("high_threshold", 1.2)))
+        vol_vol_low_thresh = Decimal(str(vol_vol_cfg.get("low_threshold", 0.8)))
+        vol_vol_sig_strength = Decimal(str(vol_vol_cfg.get("signal_strength", 0.2)))
+
         vol_corr_signal = Decimal('0')
-        if vol_vol_ratio > 1.2:
+        if vol_vol_ratio > vol_vol_high_thresh:
             # High volume + high vol = confirmation
-            vol_corr_signal = Decimal('0.2')
-        elif vol_vol_ratio < 0.8:
+            vol_corr_signal = vol_vol_sig_strength
+        elif vol_vol_ratio < vol_vol_low_thresh:
             # Low volume + low vol = weak signal
-            vol_corr_signal = -Decimal('0.2')
+            vol_corr_signal = -vol_vol_sig_strength
 
         # Combine signals with weights
+        weights_cfg = self.config.get("weights", {})
         weights = {
-            'atr': Decimal('0.4'),
-            'bb': Decimal('0.25'),
-            'rv': Decimal('0.2'),
-            'range': Decimal('0.1'),
-            'vol_corr': Decimal('0.05')
+            'atr': Decimal(str(weights_cfg.get('atr', 0.4))),
+            'bb': Decimal(str(weights_cfg.get('bb', 0.25))),
+            'rv': Decimal(str(weights_cfg.get('rv', 0.2))),
+            'range': Decimal(str(weights_cfg.get('range', 0.1))),
+            'vol_corr': Decimal(str(weights_cfg.get('vol_corr', 0.05)))
         }
 
         combined_score = (
@@ -114,12 +127,17 @@ class VolatilityAlphaModel(AlphaModel):
         )
 
         # Absolute volatility level filter
-        volatility_level = (atr_ratio + bb_width *
-                            Decimal('20') + rv_1h) / Decimal('3')
-        if volatility_level < 0.5:  # Very low volatility
-            combined_score *= Decimal('0.5')  # Reduce signal strength
-        elif volatility_level > 2.0:  # Very high volatility
-            combined_score *= Decimal('1.2')  # Amplify signal strength
+        vol_level_cfg = self.config.get("vol_level", {})
+        vol_low_level = Decimal(str(vol_level_cfg.get("low_level", 0.5)))
+        vol_low_penalty = Decimal(str(vol_level_cfg.get("low_penalty", 0.5)))
+        vol_high_level = Decimal(str(vol_level_cfg.get("high_level", 2.0)))
+        vol_high_boost = Decimal(str(vol_level_cfg.get("high_boost", 1.2)))
+
+        volatility_level = (atr_ratio + bb_width * Decimal('20') + rv_1h) / Decimal('3')
+        if volatility_level < vol_low_level:  # Very low volatility
+            combined_score *= vol_low_penalty  # Reduce signal strength
+        elif volatility_level > vol_high_level:  # Very high volatility
+            combined_score *= vol_high_boost  # Amplify signal strength
 
         # Clamp to [-1, 1]
         final_score = max(Decimal('-1.0'), min(Decimal('1.0'), combined_score))
@@ -142,7 +160,7 @@ class VolatilityAlphaModel(AlphaModel):
         )
 
     def _calculate_confidence(self, atr_sig: Decimal, bb_sig: Decimal,
-                              rv_sig: Decimal, range_sig: Decimal) -> Decimal:
+                               rv_sig: Decimal, range_sig: Decimal) -> Decimal:
         """Calculate confidence based on signal agreement and strength."""
         signals = [atr_sig, bb_sig, rv_sig, range_sig]
 
@@ -151,21 +169,26 @@ class VolatilityAlphaModel(AlphaModel):
         negative_count = sum(1 for s in signals if s < -0.1)
 
         total_strong_signals = positive_count + negative_count
+        
+        conf_cfg = self.config.get("confidence", {})
+        conf_base = Decimal(str(conf_cfg.get("base", 0.6)))
+        agreement_factor = Decimal(str(conf_cfg.get("agreement_factor", 0.3)))
+        strength_base = Decimal(str(conf_cfg.get("strength_base", 0.7)))
+        no_signal_val = Decimal(str(conf_cfg.get("no_signal", 0.4)))
+
         if total_strong_signals == 0:
-            return Decimal('0.4')  # Low confidence if no strong signals
+            return no_signal_val  # Low confidence if no strong signals
 
         # Agreement ratio
         agreement_ratio = max(
             positive_count, negative_count) / total_strong_signals
 
         # Base confidence from agreement
-        base_confidence = Decimal(
-            '0.6') + (Decimal(str(agreement_ratio)) * Decimal('0.3'))
+        base_confidence = conf_base + (Decimal(str(agreement_ratio)) * agreement_factor)
 
         # Strength factor: average absolute signal strength
         avg_strength = sum(abs(s) for s in signals) / len(signals)
-        strength_factor = min(Decimal('1.3'), Decimal(
-            '0.7') + Decimal(str(avg_strength)))
+        strength_factor = min(Decimal('1.3'), strength_base + Decimal(str(avg_strength)))
 
         return min(Decimal('1.0'), base_confidence * strength_factor)
 

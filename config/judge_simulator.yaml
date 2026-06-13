@@ -47,3 +47,10 @@ judge_simulator:
   #   min_notional_policy: "fail_closed"    # or "skip" (alias for fail_closed)
   #   roi_usd_targets: [5.0, 8.0]           # absolute USD profit thresholds to track
   #   instruments_config_path: "config/aurora/instruments.yaml"
+
+research:
+  mr_stress:
+    fee_multiplier: 2.0
+    slippage_spread_fraction: 1.0
+    taker_round_trip_fee_bps: 25
+    max_drawdown_guardrail: null

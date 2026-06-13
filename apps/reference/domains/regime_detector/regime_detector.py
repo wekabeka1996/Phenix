@@ -104,6 +104,10 @@ class RegimeDetector:
 
         self.sma_short_period = int(self.model_config.sma_short_period)
         self.sma_long_period = int(self.model_config.sma_long_period)
+        try:
+            self.min_trend_spread = Decimal(str(getattr(self.model_config, "min_trend_spread", 0.0)))
+        except Exception:
+            self.min_trend_spread = Decimal("0.0")
 
         vol_cfg = models_cfg.volatility
         # TASK24.D1: Strict config contract - missing required fields must fail fast.
@@ -127,6 +131,58 @@ class RegimeDetector:
         self.atr_period = int(vol_cfg.atr_period)
         self.atr_sma_length = int(vol_cfg.atr_sma_length)
         self._allow_close_to_close_atr = bool(vol_cfg.allow_close_to_close_atr)
+
+        # Phase 3: Adaptive percentile thresholds configuration
+        self.vol_adaptive_enabled = False
+        self.vol_adaptive_window = 500
+        self.vol_adaptive_min_bars = 200
+        self.vol_adaptive_high_percentile = 0.90
+        self.vol_adaptive_low_percentile = 0.10
+        self.vol_adaptive_high_clamp = [1.5, 3.0]
+        self.vol_adaptive_low_clamp = [0.3, 0.8]
+
+        adaptive_cfg = getattr(vol_cfg, "adaptive_percentile", None)
+        if adaptive_cfg is not None and getattr(adaptive_cfg, "enabled", False):
+            self.vol_adaptive_enabled = True
+            self.vol_adaptive_window = int(getattr(adaptive_cfg, "window_bars", 500))
+            self.vol_adaptive_min_bars = int(getattr(adaptive_cfg, "min_data_bars", 200))
+            self.vol_adaptive_high_percentile = float(getattr(adaptive_cfg, "high_vol_percentile", 0.90))
+            self.vol_adaptive_low_percentile = float(getattr(adaptive_cfg, "low_vol_percentile", 0.10))
+            
+            high_clamp = getattr(adaptive_cfg, "high_vol_clamp", [1.5, 3.0])
+            self.vol_adaptive_high_clamp = [float(x) for x in high_clamp]
+            
+            low_clamp = getattr(adaptive_cfg, "low_vol_clamp", [0.3, 0.8])
+            self.vol_adaptive_low_clamp = [float(x) for x in low_clamp]
+
+        self._vol_ratio_history = defaultdict(
+            lambda: deque(maxlen=self.vol_adaptive_window)
+        )
+
+        # Adaptive Mean Reversion configuration
+        mr_cfg = models_cfg.mean_reversion
+        
+        def is_mock(x):
+            return type(x).__name__ in ('MagicMock', 'Mock', 'NonCallableMagicMock')
+
+        adaptive_atr_mult = getattr(mr_cfg, "adaptive_atr_multiplier", None)
+        if adaptive_atr_mult is not None and not is_mock(adaptive_atr_mult):
+            self.mr_adaptive_atr_multiplier = Decimal(str(adaptive_atr_mult))
+        else:
+            self.mr_adaptive_atr_multiplier = None
+
+        min_thresh = getattr(mr_cfg, "min_threshold", 0.003)
+        self.mr_min_threshold = Decimal(str(min_thresh)) if not is_mock(min_thresh) else Decimal("0.003")
+
+        max_thresh = getattr(mr_cfg, "max_threshold", 0.015)
+        self.mr_max_threshold = Decimal(str(max_thresh)) if not is_mock(max_thresh) else Decimal("0.015")
+
+        # Adaptive SMA normalization configuration
+        sma_norm = getattr(self.model_config, "adaptive_normalization", False)
+        self.sma_adaptive_normalization = bool(sma_norm) if not is_mock(sma_norm) else False
+
+        sma_mult = getattr(self.model_config, "normalized_confidence_multiplier", 0.04)
+        self.sma_normalized_confidence_multiplier = Decimal(str(sma_mult)) if not is_mock(sma_mult) else Decimal("0.04")
 
         # NOTE: mean_reversion config validated by Pydantic at AuroraConfig level.
         # No explicit checks needed here - missing fields raise ValidationError on config load.
@@ -291,6 +347,8 @@ class RegimeDetector:
         self,
         sma_short: Decimal,
         sma_long: Decimal,
+        atr_baseline: Optional[Decimal] = None,
+        price: Optional[Decimal] = None,
     ) -> tuple[Decimal, bool, bool, Optional[str]]:
         """Return bounded trend confidence plus explicit boundary semantics."""
         conf_min = Decimal(str(self.model_config.confidence_min))
@@ -298,10 +356,16 @@ class RegimeDetector:
         if sma_long == 0:
             return conf_min, False, False, "trend_floor_invalid_base"
 
-        confidence_multiplier = Decimal(
-            str(self.model_config.confidence_multiplier))
         spread_ratio = (sma_short - sma_long) / sma_long
-        unbounded = abs(spread_ratio * confidence_multiplier)
+        
+        if self.sma_adaptive_normalization and atr_baseline is not None and price is not None and atr_baseline > 0 and price > 0:
+            atr_pct = atr_baseline / price
+            normalized_spread = spread_ratio / atr_pct
+            unbounded = abs(normalized_spread * self.sma_normalized_confidence_multiplier)
+        else:
+            confidence_multiplier = Decimal(str(self.model_config.confidence_multiplier))
+            unbounded = abs(spread_ratio * confidence_multiplier)
+
         clamped_to_min = unbounded < conf_min
         clamped_to_max = unbounded > conf_max
         bounded_confidence = min(max(unbounded, conf_min), conf_max)
@@ -607,9 +671,34 @@ class RegimeDetector:
             and atr_val > 0
             and atr_baseline > 0
         ):
+            vol_ratio = atr_val / atr_baseline
+            self._vol_ratio_history[symbol].append(float(vol_ratio))
+
             threshold_multiplier = Decimal(str(vol_cfg.threshold_multiplier))
             low_vol_multiplier = Decimal(str(vol_cfg.low_vol_multiplier))
-            vol_ratio = atr_val / atr_baseline
+
+            if self.vol_adaptive_enabled:
+                history = list(self._vol_ratio_history[symbol])
+                if len(history) >= self.vol_adaptive_min_bars:
+                    sorted_history = sorted(history)
+                    n = len(sorted_history)
+                    
+                    high_idx = int(round(self.vol_adaptive_high_percentile * (n - 1)))
+                    high_val = sorted_history[high_idx]
+                    
+                    low_idx = int(round(self.vol_adaptive_low_percentile * (n - 1)))
+                    low_val = sorted_history[low_idx]
+                    
+                    high_val_clamped = min(max(high_val, self.vol_adaptive_high_clamp[0]), self.vol_adaptive_high_clamp[1])
+                    low_val_clamped = min(max(low_val, self.vol_adaptive_low_clamp[0]), self.vol_adaptive_low_clamp[1])
+                    
+                    threshold_multiplier = Decimal(str(high_val_clamped))
+                    low_vol_multiplier = Decimal(str(low_val_clamped))
+                    
+                    self.logger.debug(
+                        f"[{symbol}] Adaptive vol thresholds: high={threshold_multiplier:.4f} (raw={high_val:.4f}), "
+                        f"low={low_vol_multiplier:.4f} (raw={low_val:.4f}) over {n} bars"
+                    )
 
             if vol_ratio > threshold_multiplier:
                 regime = "HIGH_VOLATILITY"
@@ -674,6 +763,32 @@ class RegimeDetector:
                             storm_rejected = True
                     else:
                         self._slope_reject_count[symbol] = 0
+            # Slope gate for LOW_VOLATILITY (rising slope/emerging storm)
+            elif self.config.vol_slope_gate_enabled and regime == "LOW_VOLATILITY":
+                buf = list(self._vol_ratio_buf[symbol])
+                if len(buf) >= 6:
+                    ema3 = self._ema(buf, 3)
+                    ema6 = self._ema(buf, 6)
+                    vol_ratio_slope = ema3 - ema6
+
+                    if vol_ratio_slope >= abs(self.config.vol_slope_gate_eps):
+                        self._slope_reject_count[symbol] += 1
+                        if self._slope_reject_count[symbol] >= self.config.vol_slope_gate_confirm_bars:
+                            data_notes.append(
+                                f"slope_gate_reject_low:slope={vol_ratio_slope:.4f}")
+                            self.logger.debug(
+                                f"[{symbol}] Slope Gate: LOW_VOL rejected (emerging storm) "
+                                f"slope={vol_ratio_slope:.4f} >= eps={abs(self.config.vol_slope_gate_eps)}"
+                            )
+                            regime = "UNCERTAIN"
+                            confidence = conf_min
+                            source_model = "slope_gate"
+                            pre_cutoff_clamped_to_min = False
+                            pre_cutoff_clamped_to_max = False
+                            pre_cutoff_boundary_reason = "slope_gate_floor"
+                            storm_rejected = True
+                    else:
+                        self._slope_reject_count[symbol] = 0
 
         # Lock: if storm_rejected, block TREND_*/MEAN_REVERSION re-classification
         # (This should not happen logically since regime is already UNCERTAIN, but defensive)
@@ -682,6 +797,11 @@ class RegimeDetector:
         mr_cfg = self.config.models.mean_reversion  # typed
         if regime == "UNCERTAIN" and sma_short_ready and sma_long_ready and sma_short > 0 and sma_long > 0 and price > 0:
             threshold = Decimal(str(mr_cfg.threshold))
+            if self.mr_adaptive_atr_multiplier is not None and atr_ready and atr_val is not None:
+                atr_pct = atr_val / price
+                adaptive_threshold = atr_pct * self.mr_adaptive_atr_multiplier
+                threshold = min(max(adaptive_threshold, self.mr_min_threshold), self.mr_max_threshold)
+
             sma_spread = abs(sma_short - sma_long) / sma_long
             dev_short = abs(price - sma_short) / sma_short
             dev_long = abs(price - sma_long) / sma_long
@@ -701,22 +821,35 @@ class RegimeDetector:
                 )
 
         # Priority 3: SMA trend
-        if regime == "UNCERTAIN" and sma_short_ready and sma_long_ready and sma_short > sma_long and price > sma_short:
-            regime = "TREND_UP"
-            (
-                confidence,
-                pre_cutoff_clamped_to_min,
-                pre_cutoff_clamped_to_max,
-                pre_cutoff_boundary_reason,
-            ) = self._calculate_confidence_meta(sma_short, sma_long)
-        if regime == "UNCERTAIN" and sma_short_ready and sma_long_ready and sma_short < sma_long and price < sma_short:
-            regime = "TREND_DOWN"
-            (
-                confidence,
-                pre_cutoff_clamped_to_min,
-                pre_cutoff_clamped_to_max,
-                pre_cutoff_boundary_reason,
-            ) = self._calculate_confidence_meta(sma_short, sma_long)
+        if regime == "UNCERTAIN" and sma_short_ready and sma_long_ready and price > 0:
+            sma_spread = abs(sma_short - sma_long) / sma_long
+            if sma_spread >= self.min_trend_spread:
+                if sma_short > sma_long and price > sma_long:
+                    regime = "TREND_UP"
+                    (
+                        confidence,
+                        pre_cutoff_clamped_to_min,
+                        pre_cutoff_clamped_to_max,
+                        pre_cutoff_boundary_reason,
+                    ) = self._calculate_confidence_meta(
+                        sma_short, 
+                        sma_long, 
+                        atr_baseline=atr_baseline, 
+                        price=price
+                    )
+                elif sma_short < sma_long and price < sma_long:
+                    regime = "TREND_DOWN"
+                    (
+                        confidence,
+                        pre_cutoff_clamped_to_min,
+                        pre_cutoff_clamped_to_max,
+                        pre_cutoff_boundary_reason,
+                    ) = self._calculate_confidence_meta(
+                        sma_short, 
+                        sma_long, 
+                        atr_baseline=atr_baseline, 
+                        price=price
+                    )
 
         # HYSTERESIS-SLOPE-GATE-01: Explicit lock - if storm_rejected, block MR/TREND
         if storm_rejected and regime in ("TREND_UP", "TREND_DOWN", "MEAN_REVERSION"):

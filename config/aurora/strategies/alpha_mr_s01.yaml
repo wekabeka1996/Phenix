@@ -1,0 +1,64 @@
+alpha_mr_s01:
+  enabled: true
+  mode: testnet_candidate
+  source_scenario_id: S01_MR_RSI_HEAVY
+  strategy_version: "1.0.0"
+  timeframe_sec: 300
+  threshold: 0.08
+  weights:
+    bb: 0.25
+    rsi: 0.55
+    sma: 0.10
+    stoch: 0.10
+  rsi:
+    oversold: 28
+    overbought: 72
+  sma:
+    deviation_normalizer: 0.05
+  stochastic:
+    oversold_zone: 20
+    overbought_zone: 80
+    signal_strength: 0.3
+  volume:
+    enabled: true
+    confirm_multiplier: 1.2
+    contradict_multiplier: 0.8
+    high_threshold: 1.5
+    low_threshold: 0.7
+  bb_width:
+    min_width: 0.001
+    max_width: 0.19
+    narrow_penalty_enabled: true
+    narrow_threshold: 0.02
+    narrow_penalty: 0.7
+    wide_boost_enabled: true
+    wide_threshold: 0.05
+    max_multiplier: 1.5
+  safety:
+    allowed_regimes:
+      - FLAT_LOW
+      - FLAT_NORMAL
+      - FLAT_HIGH
+      - MEAN_REVERSION
+      - LOW_VOLATILITY
+    forbid_uncertain: true
+    cooldown_sec: 60
+    signal_ttl_ms: 300000
+    missing_component_policy: suppress
+    max_intents_per_symbol_hour: null
+  assets:
+    BTCUSDT:
+      enabled: true
+    ETHUSDT:
+      enabled: true
+    SOLUSDT:
+      enabled: false
+    BNBUSDT:
+      enabled: true
+    XRPUSDT:
+      enabled: true
+    DOGEUSDT:
+      enabled: false
+    1000PEPEUSDT:
+      enabled: true
+

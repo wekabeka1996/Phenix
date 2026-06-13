@@ -1256,8 +1256,8 @@ def _compute_flat_regime_labels(df: pd.DataFrame, regime_col: str = "computed_re
     for idx in df.index:
         aurora_regime = str(df.loc[idx, regime_col]
                             ) if regime_col in df.columns else ""
-        atr_pct_val = float(atr_pct.loc[idx]) if pd.notna(
-            atr_pct.loc[idx]) else 0.0
+        atr_pct_val = Decimal(str(float(atr_pct.loc[idx]))) if pd.notna(
+            atr_pct.loc[idx]) else Decimal("0")
         flat = map_to_flat_regime(aurora_regime, atr_pct_val, thresholds)
         result.loc[idx] = str(flat) if flat else ""
     return result

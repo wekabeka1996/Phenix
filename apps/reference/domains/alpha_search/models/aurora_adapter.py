@@ -12,11 +12,7 @@ import logging
 from typing import Dict, Any, Optional, List
 
 from ..alpha_model import AlphaModel, AlphaScore
-<<<<<<< HEAD
-from apps.reference.domains.decision_making.quadratic_scoring_kernel import (
-=======
 from apps.reference.shared.decision_primitives.scoring_kernel import (
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     QuadraticScoringKernel,
     ScoringResult,
 )
@@ -37,7 +33,6 @@ class AuroraAlphaAdapter(AlphaModel):
     # Default essential features (from aurora.yaml:decision.essential_features)
     DEFAULT_ESSENTIAL_FEATURES = ["obi", "delta_price", "macro_resid"]
 
-<<<<<<< HEAD
     # Default signal weights (from aurora.yaml:decision.signal_weights)
     DEFAULT_SIGNAL_WEIGHTS = {
         "obi": 0.15,
@@ -65,8 +60,6 @@ class AuroraAlphaAdapter(AlphaModel):
         "absorption": 0.0,   # R2: SIGNED feature, neutral is 0.0
     }
 
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     # Default direction/strength config
     DEFAULT_DIRECTION_STRENGTH_CFG = {
         "directional_features": [
@@ -94,11 +87,8 @@ class AuroraAlphaAdapter(AlphaModel):
         self,
         config: Optional[Dict[str, Any]] = None,
         essential_features: Optional[List[str]] = None,
-<<<<<<< HEAD
         signal_weights: Optional[Dict[str, float]] = None,
         feature_neutrals: Optional[Dict[str, float]] = None,
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
         direction_strength_cfg: Optional[Dict[str, Any]] = None,
         regime_thresholds: Optional[Dict[str, float]] = None,
         base_threshold: float = 0.12,
@@ -111,11 +101,8 @@ class AuroraAlphaAdapter(AlphaModel):
         Args:
             config: Base model config (optional)
             essential_features: Required features for scoring
-<<<<<<< HEAD
             signal_weights: Feature weights for scoring
             feature_neutrals: Neutral values for features
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
             direction_strength_cfg: Direction/strength scoring config
             regime_thresholds: Regime-based threshold multipliers
             base_threshold: Base signal threshold
@@ -126,23 +113,17 @@ class AuroraAlphaAdapter(AlphaModel):
         self._scoring_version = scoring_version
 
         self._essential_features = essential_features or self.DEFAULT_ESSENTIAL_FEATURES
-<<<<<<< HEAD
         self._signal_weights = signal_weights or self.DEFAULT_SIGNAL_WEIGHTS
         self._feature_neutrals = feature_neutrals or self.DEFAULT_FEATURE_NEUTRALS
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
         self._direction_strength_cfg = direction_strength_cfg or self.DEFAULT_DIRECTION_STRENGTH_CFG
         self._regime_thresholds = regime_thresholds or self.DEFAULT_REGIME_THRESHOLDS
         self._base_threshold = decimal.Decimal(str(base_threshold))
         self._delta_price_cap_pct = decimal.Decimal(str(delta_price_cap_pct))
-<<<<<<< HEAD
         self._blocked_regimes: set[str] = set()
         self._symbol_allowed_regimes: Dict[str, set[str]] = {}
         self._symbol_signal_weights: Dict[str, Dict[str, float]] = {}
         self._symbol_feature_neutrals: Dict[str, Dict[str, float]] = {}
         self._symbol_regime_thresholds: Dict[str, Dict[str, float]] = {}
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
         super().__init__(config or {})
 
@@ -207,7 +188,6 @@ class AuroraAlphaAdapter(AlphaModel):
         # Get regime (default to "DEFAULT" if not provided)
         regime = context.get("regime", "DEFAULT")
 
-<<<<<<< HEAD
         if regime in (self._blocked_regimes or set()):
             return self._fail_closed_score(
                 symbol,
@@ -227,40 +207,46 @@ class AuroraAlphaAdapter(AlphaModel):
         feature_neutrals = self._resolve_symbol_feature_neutrals(symbol)
         regime_thresholds = self._resolve_symbol_regime_thresholds(symbol)
 
+        # ── Synthetic linear_score fallback ────────────────────────────
+        # QuadraticScoringKernel reads ONLY pillar_sum (or linear_score).
+        # In backtest replay, pillar_sum is often missing because the FE
+        # pillar aggregation subsystem requires multi-timeframe warmup
+        # (M15/H4/D1) that is unavailable in snapshot replay mode.
+        # When pillar_sum is absent, compute a synthetic linear_score
+        # from signal_weights × (feature − neutral) to unblock scoring.
+        synthetic_linear_score = None
+        if features.get("pillar_sum") is None:
+            synthetic_linear_score = self._compute_synthetic_linear_score(
+                features, signal_weights, feature_neutrals
+            )
+            if synthetic_linear_score is None:
+                return self._fail_closed_score(
+                    symbol,
+                    reason="no_scorable_features",
+                    why=["pillar_sum missing and no scorable features available"],
+                )
+
         # Run Quadratic kernel
-=======
-        # Run Quadratic kernel — signal_weights/feature_neutrals intentionally
-        # omitted: QuadraticScoringKernel reads pillar_sum only.
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
         try:
             result: ScoringResult = QuadraticScoringKernel.compute(
                 symbol=symbol,
                 features=features,
                 warmup_readiness=warmup_readiness,
                 price=decimal.Decimal(str(price)),
-<<<<<<< HEAD
                 signal_weights=signal_weights,
                 feature_neutrals=feature_neutrals,
                 essential_features=self._essential_features,
                 base_threshold=self._base_threshold,
                 regime_name=regime,
                 regime_thresholds=regime_thresholds,
-=======
-                essential_features=self._essential_features,
-                base_threshold=self._base_threshold,
-                regime_name=regime,
-                regime_thresholds=self._regime_thresholds,
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
                 side_bias_state=None,  # No side bias for alpha_search
                 direction_strength_cfg=self._direction_strength_cfg,
                 delta_price_cap_pct=self._delta_price_cap_pct,
                 scoring_version=self._scoring_version,
                 neutral_threshold=None,
                 current_side="",
-<<<<<<< HEAD
                 admission_mode="linear",  # Match live aurora.yaml decision_geometry.admission_mode
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
+                linear_score=synthetic_linear_score,  # Bypass pillar_sum when missing
             )
         except Exception as e:
             LOG.warning(f"[{symbol}] Aurora kernel error: {e}")
@@ -367,7 +353,6 @@ class AuroraAlphaAdapter(AlphaModel):
             why.append(w)
 
         return why
-<<<<<<< HEAD
 
     def _resolve_symbol_signal_weights(self, symbol: str) -> Dict[str, float]:
         weights = (self._symbol_signal_weights or {}).get(symbol)
@@ -386,5 +371,78 @@ class AuroraAlphaAdapter(AlphaModel):
         if thresholds:
             return dict(thresholds)
         return dict(self._regime_thresholds)
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
+
+    def _compute_synthetic_linear_score(
+        self,
+        features: Dict[str, Any],
+        signal_weights: Dict[str, float],
+        feature_neutrals: Dict[str, float],
+    ) -> Optional[float]:
+        """Compute synthetic linear_score from signal_weights × (feature − neutral).
+
+        When pillar_sum is absent (backtest replay without multi-TF warmup),
+        this recreates the aggregate conviction that the pillar subsystem
+        would normally provide.
+
+        The computation mirrors the live FE pillar contract:
+        - Directional features (obi, tfi, delta_price, ema_bias, etc.)
+          contribute sign × magnitude.
+        - Strength features (volume_spike, volatility_state) amplify but
+          do not flip direction.
+
+        Returns:
+            Computed linear score, or None if no scorable features found.
+        """
+        dir_features = set(
+            self._direction_strength_cfg.get("directional_features", [])
+        )
+        strength_features = set(
+            self._direction_strength_cfg.get("strength_features", [])
+        )
+        strength_alpha = self._direction_strength_cfg.get("strength_alpha", 0.5)
+        strength_cap = self._direction_strength_cfg.get("strength_cap", 1.0)
+
+        dir_score = 0.0
+        dir_count = 0
+        strength_sum = 0.0
+        strength_count = 0
+
+        for feat_name, weight in signal_weights.items():
+            if abs(weight) < 1e-9:
+                continue
+
+            raw_val = features.get(feat_name)
+            if raw_val is None:
+                continue
+
+            try:
+                val = float(raw_val)
+            except (TypeError, ValueError):
+                continue
+
+            neutral = feature_neutrals.get(feat_name, 0.0)
+            deviation = val - neutral
+
+            if feat_name in strength_features:
+                # Strength features contribute as abs multiplier
+                strength_sum += abs(weight) * abs(deviation)
+                strength_count += 1
+            else:
+                # Directional features: weight × deviation
+                dir_score += weight * deviation
+                dir_count += 1
+
+        if dir_count == 0:
+            return None
+
+        # Apply strength amplification (same logic as live aurora_math)
+        if strength_count > 0:
+            strength_factor = min(
+                strength_cap,
+                1.0 + strength_alpha * strength_sum,
+            )
+        else:
+            strength_factor = 1.0
+
+        linear_score = dir_score * strength_factor
+        return linear_score

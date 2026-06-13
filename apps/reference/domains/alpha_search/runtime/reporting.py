@@ -1,30 +1,30 @@
-﻿"""
+"""
 Aggregate Reporter
 ==================
 
 Cross-scenario comparison metrics written to aggregate CSV and JSONL.
 Follows TelemetryLogger pattern from neocortex domain.
+
+Extended with:
+- Per-symbol breakdown (symbol_breakdown.csv)
+- Per-regime breakdown (regime_breakdown.csv)
+- Temporal analysis (temporal_breakdown.csv)
 """
 
-<<<<<<< HEAD
-from collections import Counter
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
+from collections import Counter, defaultdict
 import csv
 import json
 import time
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 CSV_COLUMNS = [
     "timestamp",
     "scenario_id",
     "strategy_type",
-<<<<<<< HEAD
     "version",
     "family",
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     "symbol",
     "ts_ms",
     "score",
@@ -32,7 +32,6 @@ CSV_COLUMNS = [
     "threshold",
     "side",
     "provider_id",
-<<<<<<< HEAD
     "shadow_only",
     "authority_applied",
     "no_effect",
@@ -58,11 +57,39 @@ SCENARIO_MATRIX_COLUMNS = [
     "init_error",
 ]
 
-=======
-    "regime",
+SYMBOL_BREAKDOWN_COLUMNS = [
+    "scenario_id",
+    "symbol",
+    "evaluated_rows",
+    "BUY_count",
+    "SELL_count",
+    "NEUTRAL_count",
+    "buy_pct",
+    "sell_pct",
 ]
 
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
+REGIME_BREAKDOWN_COLUMNS = [
+    "scenario_id",
+    "regime",
+    "evaluated_rows",
+    "BUY_count",
+    "SELL_count",
+    "NEUTRAL_count",
+    "buy_pct",
+    "sell_pct",
+]
+
+TEMPORAL_BREAKDOWN_COLUMNS = [
+    "scenario_id",
+    "hour_utc",
+    "day_of_week",
+    "evaluated_rows",
+    "BUY_count",
+    "SELL_count",
+    "NEUTRAL_count",
+    "buy_pct",
+]
+
 
 class AggregateReporter:
     """
@@ -72,6 +99,9 @@ class AggregateReporter:
     - aggregate_metrics.csv: per-score CSV for tabular analysis
     - health.jsonl: health events from all scenarios
     - summary.jsonl: periodic scenario-level summaries
+    - symbol_breakdown.csv: per-scenario per-symbol signal counts
+    - regime_breakdown.csv: per-scenario per-regime signal counts
+    - temporal_breakdown.csv: per-scenario per-hour/day signal counts
     """
 
     def __init__(self, session_dir: Path):
@@ -82,12 +112,27 @@ class AggregateReporter:
         self._csv_path = self._agg_dir / "aggregate_metrics.csv"
         self._health_path = self._agg_dir / "health.jsonl"
         self._summary_path = self._agg_dir / "summary.jsonl"
-<<<<<<< HEAD
         self._scenario_matrix_path = self._agg_dir / "scenario_runtime_matrix.csv"
+        self._symbol_breakdown_path = self._agg_dir / "symbol_breakdown.csv"
+        self._regime_breakdown_path = self._agg_dir / "regime_breakdown.csv"
+        self._temporal_breakdown_path = self._agg_dir / "temporal_breakdown.csv"
 
         self._csv_initialized = False
         self._rows_written = 0
         self._scenario_runtime: Dict[str, Dict[str, Any]] = {}
+
+        # Per-symbol counters: scenario_id -> symbol -> Counter({BUY, SELL, NEUTRAL})
+        self._symbol_stats: Dict[str, Dict[str, Counter]] = defaultdict(
+            lambda: defaultdict(Counter)
+        )
+        # Per-regime counters: scenario_id -> regime -> Counter({BUY, SELL, NEUTRAL})
+        self._regime_stats: Dict[str, Dict[str, Counter]] = defaultdict(
+            lambda: defaultdict(Counter)
+        )
+        # Temporal counters: scenario_id -> (hour, day_name) -> Counter({BUY, SELL, NEUTRAL})
+        self._temporal_stats: Dict[str, Dict[Tuple[int, str], Counter]] = defaultdict(
+            lambda: defaultdict(Counter)
+        )
 
     def register_scenarios(self, scenarios: List[Any]) -> None:
         """Pre-register every configured scenario so none disappear silently from runtime outputs."""
@@ -113,11 +158,6 @@ class AggregateReporter:
                 "_missing_features": set(),
             }
         self._write_scenario_matrix()
-=======
-
-        self._csv_initialized = False
-        self._rows_written = 0
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
     def log_result(self, result: Dict[str, Any]) -> None:
         """Append a single score result to aggregate CSV."""
@@ -132,22 +172,19 @@ class AggregateReporter:
             writer.writerow(row)
 
         self._rows_written += 1
-<<<<<<< HEAD
         self._update_scenario_runtime(result)
+        self._update_symbol_stats(result)
+        self._update_regime_stats(result)
+        self._update_temporal_stats(result)
         self._write_scenario_matrix()
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
     def log_health(self, event: Dict[str, Any]) -> None:
         """Append health event to aggregate health.jsonl."""
         record = {"ts": time.time(), **event}
         with open(self._health_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, default=str) + "\n")
-<<<<<<< HEAD
         self._update_health_runtime(event)
         self._write_scenario_matrix()
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
     def log_summary(self, summaries: Dict[str, Dict[str, Any]]) -> None:
         """Write periodic summary from all scenarios."""
@@ -158,6 +195,12 @@ class AggregateReporter:
         with open(self._summary_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, default=str) + "\n")
 
+    def flush_breakdowns(self) -> None:
+        """Write all breakdown CSVs. Called periodically or at shutdown."""
+        self._write_symbol_breakdown()
+        self._write_regime_breakdown()
+        self._write_temporal_breakdown()
+
     def _init_csv(self) -> None:
         """Write CSV header if file is new."""
         if not self._csv_path.exists() or self._csv_path.stat().st_size == 0:
@@ -166,7 +209,6 @@ class AggregateReporter:
                 writer.writeheader()
         self._csv_initialized = True
 
-<<<<<<< HEAD
     def _ensure_scenario_runtime(self, scenario_id: str) -> Dict[str, Any]:
         runtime = self._scenario_runtime.setdefault(
             scenario_id,
@@ -223,6 +265,105 @@ class AggregateReporter:
         if runtime["init_status"] == "REGISTERED":
             runtime["init_status"] = "EVALUATED"
 
+    # -------------------------------------------------------------------------
+    # Per-symbol / per-regime / temporal stats
+    # -------------------------------------------------------------------------
+
+    def _update_symbol_stats(self, result: Dict[str, Any]) -> None:
+        """Increment per-symbol signal counter."""
+        scenario_id = str(result.get("scenario_id", "")).strip()
+        symbol = str(result.get("symbol", "")).strip()
+        side = str(result.get("side", "NEUTRAL")).upper()
+        if scenario_id and symbol and side in {"BUY", "SELL", "NEUTRAL"}:
+            self._symbol_stats[scenario_id][symbol][side] += 1
+
+    def _update_regime_stats(self, result: Dict[str, Any]) -> None:
+        """Increment per-regime signal counter."""
+        scenario_id = str(result.get("scenario_id", "")).strip()
+        regime = str(result.get("regime", "DEFAULT")).strip()
+        side = str(result.get("side", "NEUTRAL")).upper()
+        if scenario_id and regime and side in {"BUY", "SELL", "NEUTRAL"}:
+            self._regime_stats[scenario_id][regime][side] += 1
+
+    def _update_temporal_stats(self, result: Dict[str, Any]) -> None:
+        """Increment per-hour/day signal counter."""
+        scenario_id = str(result.get("scenario_id", "")).strip()
+        side = str(result.get("side", "NEUTRAL")).upper()
+        ts_ms = result.get("ts_ms")
+        if not scenario_id or not ts_ms or side not in {"BUY", "SELL", "NEUTRAL"}:
+            return
+        try:
+            dt = datetime.fromtimestamp(int(ts_ms) / 1000.0, tz=timezone.utc)
+            hour = dt.hour
+            day_name = dt.strftime("%A")
+            self._temporal_stats[scenario_id][(hour, day_name)][side] += 1
+        except (OSError, OverflowError, ValueError, TypeError):
+            pass
+
+    # -------------------------------------------------------------------------
+    # Breakdown CSV writers
+    # -------------------------------------------------------------------------
+
+    def _write_symbol_breakdown(self) -> None:
+        """Write per-scenario per-symbol signal breakdown CSV."""
+        with open(self._symbol_breakdown_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=SYMBOL_BREAKDOWN_COLUMNS)
+            writer.writeheader()
+            for scenario_id in sorted(self._symbol_stats):
+                for symbol in sorted(self._symbol_stats[scenario_id]):
+                    counts = self._symbol_stats[scenario_id][symbol]
+                    total = sum(counts.values())
+                    writer.writerow({
+                        "scenario_id": scenario_id,
+                        "symbol": symbol,
+                        "evaluated_rows": total,
+                        "BUY_count": counts.get("BUY", 0),
+                        "SELL_count": counts.get("SELL", 0),
+                        "NEUTRAL_count": counts.get("NEUTRAL", 0),
+                        "buy_pct": round(counts.get("BUY", 0) / max(total, 1) * 100, 2),
+                        "sell_pct": round(counts.get("SELL", 0) / max(total, 1) * 100, 2),
+                    })
+
+    def _write_regime_breakdown(self) -> None:
+        """Write per-scenario per-regime signal breakdown CSV."""
+        with open(self._regime_breakdown_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=REGIME_BREAKDOWN_COLUMNS)
+            writer.writeheader()
+            for scenario_id in sorted(self._regime_stats):
+                for regime in sorted(self._regime_stats[scenario_id]):
+                    counts = self._regime_stats[scenario_id][regime]
+                    total = sum(counts.values())
+                    writer.writerow({
+                        "scenario_id": scenario_id,
+                        "regime": regime,
+                        "evaluated_rows": total,
+                        "BUY_count": counts.get("BUY", 0),
+                        "SELL_count": counts.get("SELL", 0),
+                        "NEUTRAL_count": counts.get("NEUTRAL", 0),
+                        "buy_pct": round(counts.get("BUY", 0) / max(total, 1) * 100, 2),
+                        "sell_pct": round(counts.get("SELL", 0) / max(total, 1) * 100, 2),
+                    })
+
+    def _write_temporal_breakdown(self) -> None:
+        """Write per-scenario temporal signal breakdown CSV."""
+        with open(self._temporal_breakdown_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=TEMPORAL_BREAKDOWN_COLUMNS)
+            writer.writeheader()
+            for scenario_id in sorted(self._temporal_stats):
+                for (hour, day_name) in sorted(self._temporal_stats[scenario_id]):
+                    counts = self._temporal_stats[scenario_id][(hour, day_name)]
+                    total = sum(counts.values())
+                    writer.writerow({
+                        "scenario_id": scenario_id,
+                        "hour_utc": hour,
+                        "day_of_week": day_name,
+                        "evaluated_rows": total,
+                        "BUY_count": counts.get("BUY", 0),
+                        "SELL_count": counts.get("SELL", 0),
+                        "NEUTRAL_count": counts.get("NEUTRAL", 0),
+                        "buy_pct": round(counts.get("BUY", 0) / max(total, 1) * 100, 2),
+                    })
+
     def _update_health_runtime(self, event: Dict[str, Any]) -> None:
         scenario_id = str(event.get("scenario_id", "")).strip()
         if not scenario_id:
@@ -239,15 +380,13 @@ class AggregateReporter:
                 row = self._scenario_runtime[scenario_id]
                 writer.writerow({col: row.get(col, "") for col in SCENARIO_MATRIX_COLUMNS})
 
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     @property
     def stats(self) -> Dict[str, Any]:
         return {
             "csv_rows": self._rows_written,
             "csv_path": str(self._csv_path),
-<<<<<<< HEAD
             "scenario_matrix_path": str(self._scenario_matrix_path),
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
+            "symbol_breakdown_path": str(self._symbol_breakdown_path),
+            "regime_breakdown_path": str(self._regime_breakdown_path),
+            "temporal_breakdown_path": str(self._temporal_breakdown_path),
         }

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Override Allowlists per Strategy Type
 ======================================
 
@@ -17,11 +17,11 @@ LOG = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Aurora Strategy ΓÇö Allowlisted Override Paths
+# Aurora Strategy — Allowlisted Override Paths
 # =============================================================================
 
 AURORA_OVERRIDE_PATHS: Set[str] = {
-    # Global decision params (aurora.yaml ΓÇö for reference, adapter uses adapter.* paths)
+    # Global decision params (aurora.yaml — for reference, adapter uses adapter.* paths)
     "aurora.decision.signal_threshold",
     "aurora.decision.neutral_threshold",
     "aurora.decision.gates.anti_flat_sigma",
@@ -33,16 +33,12 @@ AURORA_OVERRIDE_PATHS: Set[str] = {
     "aurora.decision.feature_neutrals.*",
     # Regime threshold multipliers in aurora.yaml
     "aurora.decision.regime_threshold_multipliers.*",
-<<<<<<< HEAD
     # Regime blocking policy in aurora.yaml
     "aurora.decision.blocked_regimes",
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     # Direction strength scoring in aurora.yaml
     "aurora.decision.direction_strength_scoring.strength_alpha",
     "aurora.decision.direction_strength_scoring.strength_cap",
     "aurora.decision.direction_strength_scoring.strength_exp",
-<<<<<<< HEAD
     "aurora.decision.exit.time_exit_enabled",
     "aurora.decision.exit.max_hold_time_sec",
     "aurora.decision.exit.signal_exit_enabled",
@@ -57,15 +53,9 @@ AURORA_OVERRIDE_PATHS: Set[str] = {
     "aurora.assets.*.exit.max_hold_sec",
     "aurora.assets.*.exit.regime_tpsl.*",
     "aurora.assets.*.trailing_stop.*",
-=======
-    # Per-asset overrides in aurora.yaml
-    "aurora.assets.*.weights.*",
-    "aurora.assets.*.regime_thresholds.*",
-    "aurora.assets.*.signal_threshold",
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     # ------------------------------------------------------------------
     # alpha_search adapter params (SSOT for alpha_search scoring).
-    # These override the adapter directly ΓÇö no need to touch aurora.yaml.
+    # These override the adapter directly — no need to touch aurora.yaml.
     # ------------------------------------------------------------------
     "alpha_search.providers.aurora.threshold",
     "alpha_search.providers.aurora.symbols",
@@ -83,11 +73,17 @@ AURORA_OVERRIDE_PATHS: Set[str] = {
     "alpha_search.objective_feedback.quality_metric_weights.*",
     "alpha_search.objective_feedback.min_provider_weight",
     "alpha_search.objective_feedback.max_provider_weight",
+    # Judge providers
+    "alpha_search.providers.judge_sw.enabled",
+    "alpha_search.providers.judge_fn.enabled",
+    # Provider enablement
+    "alpha_search.providers.aurora.enabled",
+    "alpha_search.providers.ta_ensemble.enabled",
 }
 
 
 # =============================================================================
-# Mean Reversion Strategy ΓÇö Allowlisted Override Paths
+# Mean Reversion Strategy — Allowlisted Override Paths
 # =============================================================================
 
 MR_OVERRIDE_PATHS: Set[str] = {
@@ -100,6 +96,8 @@ MR_OVERRIDE_PATHS: Set[str] = {
     "mean_reversion.strategy.sl_atr_mult",
     "mean_reversion.strategy.cooldown_sec",
     "mean_reversion.strategy.min_bars",
+    "mean_reversion.strategy.min_bb_width",
+    "mean_reversion.strategy.max_bb_width",
     # Per-asset MR tuning
     "mean_reversion.assets.*.strategy.*",
     # Alpha search system model tuning
@@ -130,11 +128,17 @@ MR_OVERRIDE_PATHS: Set[str] = {
     "alpha_search.objective_feedback.quality_metric_weights.*",
     "alpha_search.objective_feedback.min_provider_weight",
     "alpha_search.objective_feedback.max_provider_weight",
+    # Judge providers
+    "alpha_search.providers.judge_sw.enabled",
+    "alpha_search.providers.judge_fn.enabled",
+    # Provider enablement
+    "alpha_search.providers.aurora.enabled",
+    "alpha_search.providers.ta_ensemble.enabled",
 }
 
 
 # =============================================================================
-# Ensemble Strategy ΓÇö Allowlisted Override Paths
+# Ensemble Strategy — Allowlisted Override Paths
 # =============================================================================
 
 ENSEMBLE_OVERRIDE_PATHS: Set[str] = {
@@ -168,6 +172,70 @@ ENSEMBLE_OVERRIDE_PATHS: Set[str] = {
     "alpha_search.objective_feedback.quality_metric_weights.*",
     "alpha_search.objective_feedback.min_provider_weight",
     "alpha_search.objective_feedback.max_provider_weight",
+    # Judge providers
+    "alpha_search.providers.judge_sw.enabled",
+    "alpha_search.providers.judge_fn.enabled",
+    # Provider enablement
+    "alpha_search.providers.aurora.enabled",
+    "alpha_search.providers.ta_ensemble.enabled",
+}
+
+
+# =============================================================================
+# MD-AMR Strategy — Allowlisted Override Paths
+# =============================================================================
+
+MD_AMR_OVERRIDE_PATHS: Set[str] = {
+    # Core scoring parameters
+    "md_amr.thr_base",
+    "md_amr.thr_floor",
+    "md_amr.alpha",
+    "md_amr.hysteresis_mult",
+    "md_amr.channel_window_bars",
+    "md_amr.atr_window",
+    "md_amr.atr_stats_window",
+    "md_amr.threshold_z",
+    "md_amr.volatility_dampening_factor",
+    "md_amr.atr_zscore_clamp",
+    "md_amr.atr_std_floor_pct",
+    # Position management
+    "md_amr.max_hold_bars",
+    "md_amr.hold_edge_min",
+    "md_amr.target_approach_pct",
+    "md_amr.scaleout_fraction",
+    "md_amr.scaleout_cost_model",
+    # Cost model
+    "md_amr.fee_bps",
+    "md_amr.slippage_buffer_bps",
+    # Multi-timeframe weights
+    "md_amr.weights.d1",
+    "md_amr.weights.h1",
+    "md_amr.weights.m30",
+    "md_amr.weights.m15",
+    # Per-asset overrides
+    "md_amr.assets.*.allowed_regimes",
+    "md_amr.assets.*.sl_pct",
+    "md_amr.assets.*.tp_rr",
+    # Provider thresholds
+    "alpha_search.providers.ta_ensemble.threshold",
+    "alpha_search.providers.ta_ensemble.enabled",
+    "alpha_search.providers.aurora.threshold",
+    "alpha_search.providers.aurora.enabled",
+    "alpha_search.providers.judge_sw.enabled",
+    "alpha_search.providers.judge_fn.enabled",
+    # Virtual trader tuning
+    "alpha_search.virtual_trader.flip_on_reversal",
+    "alpha_search.virtual_trader.notional_size",
+    "alpha_search.virtual_trader.exit.cooldown_bars_after_close",
+    "alpha_search.virtual_trader.exit.max_drawdown_exit",
+    "alpha_search.virtual_trader.exit.max_bars",
+    # Objective feedback
+    "alpha_search.objective_feedback.window_trades",
+    "alpha_search.objective_feedback.min_trades_before_reweight",
+    "alpha_search.objective_feedback.rebalance_every_closed_trades",
+    "alpha_search.objective_feedback.quality_metric_weights.*",
+    "alpha_search.objective_feedback.min_provider_weight",
+    "alpha_search.objective_feedback.max_provider_weight",
 }
 
 
@@ -179,6 +247,7 @@ STRATEGY_ALLOWLISTS: Dict[str, Set[str]] = {
     "aurora": AURORA_OVERRIDE_PATHS,
     "mean_reversion": MR_OVERRIDE_PATHS,
     "ensemble": ENSEMBLE_OVERRIDE_PATHS,
+    "md_amr": MD_AMR_OVERRIDE_PATHS,
 }
 
 
@@ -195,7 +264,7 @@ def validate_overrides(
     Validate override paths against strategy-type allowlist.
 
     Args:
-        strategy_type: aurora | mean_reversion | ensemble
+        strategy_type: aurora | mean_reversion | ensemble | md_amr
         overrides: dot-path -> value mapping
 
     Returns:

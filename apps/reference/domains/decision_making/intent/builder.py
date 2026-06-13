@@ -1010,6 +1010,12 @@ class IntentBuilder:
                 sg=sg,
                 regime_provenance=regime_provenance,
                 normalize_mode=normalize_mode,
+                decision_id=(
+                    str(resolved_strategy_trace.get("decision_id"))
+                    if resolved_strategy_trace.get("decision_id") not in (None, "")
+                    else None
+                ),
+                intent_id=str(trade_intent["idempotent_key"]),
             )
         )
 

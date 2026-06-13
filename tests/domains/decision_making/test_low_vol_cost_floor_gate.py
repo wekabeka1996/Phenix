@@ -85,7 +85,7 @@ def _gate_config(**overrides):
     return domain_dm.LowVolCostFloorGateConfig.model_validate(payload)
 
 
-def _make_dm(*, trading_mode: str):
+def _make_dm(*, trading_mode: str, gate_cfg=None):
     with patch.object(DecisionMaking, "__init__", lambda *_args, **_kwargs: None):
         dm = DecisionMaking.__new__(DecisionMaking)
     dm.logger = MagicMock()
@@ -97,7 +97,7 @@ def _make_dm(*, trading_mode: str):
         trading_mode=trading_mode,
         domains=SimpleNamespace(
             decision_making=SimpleNamespace(
-                low_vol_cost_floor_gate=_gate_config(),
+                low_vol_cost_floor_gate=_gate_config() if gate_cfg is None else gate_cfg,
             )
         ),
     )
@@ -280,7 +280,7 @@ def test_gate_allows_in_testnet_when_fee_floor_rr_and_confidence_pass() -> None:
     assert evaluation.details["rr_ratio"] == 1.2
 
 
-def test_sell_direction_only_raw_signal_candidate_is_allowed_by_segment_override() -> None:
+def test_sell_direction_only_raw_signal_candidate_is_allowed_by_pure_testnet_segment_override() -> None:
     evaluation = _segment_candidate_evaluation()
 
     assert evaluation.block is False
@@ -298,6 +298,39 @@ def test_sell_direction_only_raw_signal_candidate_is_allowed_by_segment_override
     assert evaluation.details["threshold_family"] == "raw_signed_score"
     assert evaluation.details["violations"] == [
         "direction_confidence_below_threshold"]
+
+
+def test_hybrid_sell_direction_only_raw_signal_candidate_remains_blocked() -> None:
+    evaluation = _segment_candidate_evaluation(
+        trading_mode="hybrid_live_data_testnet_exec")
+
+    assert evaluation.block is True
+    assert evaluation.threshold_failed is True
+    assert evaluation.reason == "LOW_VOL_COST_FLOOR_BLOCKED"
+    assert evaluation.details["reason"] == "LOW_VOL_DIRECTION_CONFIDENCE_BLOCKED"
+    assert evaluation.details["gate_reason"] == "LOW_VOL_COST_FLOOR_BLOCKED"
+    assert evaluation.details["nrr062_segment_override_applied"] is False
+    assert evaluation.details["nrr062_segment_override_name"] is None
+    assert evaluation.details["nrr062_segment_override_no_production"] is False
+    assert evaluation.details["violations"] == [
+        "direction_confidence_below_threshold"]
+
+
+def test_decision_chain_disabled_observes_but_does_not_block_nrr062() -> None:
+    evaluation = _segment_candidate_evaluation(
+        trading_mode="hybrid_live_data_testnet_exec",
+        gate_cfg=_gate_config(decision_chain_enabled=False),
+    )
+
+    assert evaluation.block is False
+    assert evaluation.threshold_failed is True
+    assert evaluation.reason == "LOW_VOL_COST_FLOOR_PASS"
+    assert evaluation.details["reason"] == "LOW_VOL_DIRECTION_CONFIDENCE_BLOCKED"
+    assert evaluation.details["gate_reason"] == "LOW_VOL_COST_FLOOR_PASS"
+    assert evaluation.details["decision_chain_enabled"] is False
+    assert evaluation.details["would_block"] is True
+    assert evaluation.details["block_suppressed_by_config"] is True
+    assert evaluation.details["nrr062_segment_override_applied"] is False
 
 
 def test_buy_direction_only_raw_signal_remains_blocked() -> None:
@@ -1408,9 +1441,8 @@ def test_propose_trade_intent_blocks_low_vol_cost_floor_in_testnet() -> None:
     assert metadata["low_vol_cost_floor"]["persistence_context"]["order_logger_event"] == "DECISION_INTENT_REJECTED"
 
 
-@pytest.mark.parametrize("trading_mode", ["testnet", "hybrid_live_data_testnet_exec"])
-def test_propose_trade_intent_allows_segment_override_in_enforced_runtime_modes(trading_mode: str) -> None:
-    dm = _make_dm(trading_mode=trading_mode)
+def test_propose_trade_intent_allows_segment_override_in_pure_testnet() -> None:
+    dm = _make_dm(trading_mode="testnet")
     sg = _allow_sg()
     sg.intent_side = "SHORT"
     sg.signal_score = -0.2
@@ -1421,7 +1453,7 @@ def test_propose_trade_intent_allows_segment_override_in_enforced_runtime_modes(
         qty=1,
         price=100.0,
         why_chain=["signal_score=-0.2"],
-        rid=f"rid-low-vol-segment-{trading_mode}",
+        rid="rid-low-vol-segment-testnet",
         reduce_only=False,
         strategy_id="aurora",
         decision_ts_ms=1_700_000_000_999,
@@ -1448,6 +1480,75 @@ def test_propose_trade_intent_allows_segment_override_in_enforced_runtime_modes(
     assert low_vol_details["selected_scale"] == "raw_signed_score"
     assert low_vol_details["threshold_family"] == "raw_signed_score"
     assert kwargs["sg"].low_vol_cost_floor_details["nrr062_segment_override_applied"] is True
+    assert kwargs["sg"].low_vol_cost_floor_details["persistence_context"]["decision_outcome"] == "ALLOW"
+
+
+def test_propose_trade_intent_blocks_segment_override_in_hybrid_runtime() -> None:
+    dm = _make_dm(trading_mode="hybrid_live_data_testnet_exec")
+    sg = _allow_sg()
+    sg.intent_side = "SHORT"
+    sg.signal_score = -0.2
+
+    dm._propose_trade_intent(
+        symbol="BTCUSDT",
+        side="SELL",
+        qty=1,
+        price=100.0,
+        why_chain=["signal_score=-0.2"],
+        rid="rid-low-vol-segment-hybrid-blocked",
+        reduce_only=False,
+        strategy_id="aurora",
+        decision_ts_ms=1_700_000_000_999,
+        stop_price=100.25,
+        target_price=99.50,
+        strategy_trace=None,
+        safety_gate_result=sg,
+    )
+
+    dm._builder.build_and_emit.assert_not_called()
+    dm._emitter.emit_trade_intent_rejected.assert_called_once()
+    rejected = dm._emitter.emit_trade_intent_rejected.call_args.kwargs
+    assert rejected["reason_code"] == NormalizedRejectReasons.LOW_VOL_COST_FLOOR_BLOCKED
+    assert rejected["details"]["reason"] == "LOW_VOL_DIRECTION_CONFIDENCE_BLOCKED"
+    assert rejected["details"]["nrr062_segment_override_applied"] is False
+    assert rejected["details"]["nrr062_segment_override_no_production"] is False
+    assert rejected["details"]["persistence_context"]["decision_outcome"] == "DENY"
+
+
+def test_propose_trade_intent_allows_hybrid_when_low_vol_gate_removed_from_decision_chain() -> None:
+    dm = _make_dm(
+        trading_mode="hybrid_live_data_testnet_exec",
+        gate_cfg=_gate_config(decision_chain_enabled=False),
+    )
+    sg = _allow_sg()
+    sg.intent_side = "SHORT"
+    sg.signal_score = -0.2
+
+    dm._propose_trade_intent(
+        symbol="BTCUSDT",
+        side="SELL",
+        qty=1,
+        price=100.0,
+        why_chain=["signal_score=-0.2"],
+        rid="rid-low-vol-decision-chain-disabled",
+        reduce_only=False,
+        strategy_id="aurora",
+        decision_ts_ms=1_700_000_000_999,
+        stop_price=100.25,
+        target_price=99.50,
+        strategy_trace=None,
+        safety_gate_result=sg,
+    )
+
+    dm._emitter.emit_trade_intent_rejected.assert_not_called()
+    dm._builder.build_and_emit.assert_called_once()
+    kwargs = dm._builder.build_and_emit.call_args.kwargs
+    low_vol_details = kwargs["strategy_trace"]["low_vol_cost_floor"]
+
+    assert low_vol_details["threshold_failed"] is True
+    assert low_vol_details["decision_chain_enabled"] is False
+    assert low_vol_details["would_block"] is True
+    assert low_vol_details["block_suppressed_by_config"] is True
     assert kwargs["sg"].low_vol_cost_floor_details["persistence_context"]["decision_outcome"] == "ALLOW"
 
 

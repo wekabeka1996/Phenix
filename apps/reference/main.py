@@ -76,8 +76,11 @@ from apps.reference.contracts.runtime_bar_identity import (
 from apps.reference.domains.strategies.registry import StrategyPluginRegistry, StrategyRuntime
 from apps.reference.domains.strategies.plugins.aurora_builtin import AuroraBuiltinPlugin
 from apps.reference.domains.strategies.plugins.mean_reversion import MeanReversionPlugin
+from apps.reference.domains.strategies.plugins.alpha_mr_s01 import AlphaMrS01Plugin
+from apps.reference.domains.strategies.plugins.alpha_ta_ensemble import AlphaTaEnsemblePlugin
 from apps.reference.domains.strategies.plugins.md_amr import MDAMRPlugin
 from apps.reference.domains.strategies.plugins.llm_microstructure import LlmMicrostructurePlugin
+
 from apps.reference.domains.shadow_telemetry.main_bridge import (
     ShadowTapDeliveryCriticalError,
     ShadowEventTapPublisher,
@@ -87,11 +90,13 @@ from apps.reference.domains.shadow_telemetry.main_bridge import (
 from apps.reference.domains.shadow_telemetry.ledger_writer import ShadowTelemetrySink
 from vfoundation.dr.wal_gc import WALGarbageCollector
 from apps.reference.telemetry.alerts import AlertManager, AlertLevel, AlertType
+from apps.reference.telemetry.order_logger import order_logger
 from vfoundation.core import FSMCore
 from vfoundation.core.schema_registry import init_global_registry
 from vfoundation.core.protocol import Message
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -916,12 +921,16 @@ def main() -> None:
     strategy_plugins = StrategyPluginRegistry()
     strategy_plugins.register(AuroraBuiltinPlugin())
     strategy_plugins.register(MeanReversionPlugin())
+    strategy_plugins.register(AlphaMrS01Plugin())
+    strategy_plugins.register(AlphaTaEnsemblePlugin())
     strategy_plugins.register(MDAMRPlugin())
     strategy_plugins.register(LlmMicrostructurePlugin())
+
     started_strategy_handlers = StrategyRuntime(
         fsm=fsm,
         config=config,
         registry=strategy_plugins,
+        telemetry_writer=order_logger.write,
     ).start()
     LOG.info(" RegimeDetector initialized and subscribed to EVT:FEATURES_CALCULATED")
     restore_report = None
@@ -997,6 +1006,7 @@ def main() -> None:
     try:
         from apps.reference.domains.alpha_search.backtest_plugin import AlphaSearchBacktestPlugin
         from apps.reference.domains.alpha_search.config_models import load_alpha_search_config
+        from apps.reference.domains.alpha_search.runtime.feature_mirror_writer import FeatureMirrorWriter
 
         _as_config_path = project_root / "config" / "alpha_search.yaml"
         _as_config = load_alpha_search_config(str(_as_config_path))
@@ -1004,9 +1014,37 @@ def main() -> None:
             event_bus=fsm,
             config=_as_config,
         )
+
+        mirror_output_raw = os.environ.get(
+            "ALPHA_SEARCH_LIVE_MIRROR_PATH",
+            str(project_root / "logs" / "alpha_input" / "alpha_input_v1_live.jsonl"),
+        )
+        mirror_output_path = Path(mirror_output_raw)
+        if not mirror_output_path.is_absolute():
+            mirror_output_path = project_root / mirror_output_path
+
+        mirror_symbols = set()
+        mirror_all_symbols = False
+        for provider_cfg in _as_config.providers.values():
+            if not provider_cfg.enabled:
+                continue
+            if provider_cfg.symbols is None:
+                mirror_all_symbols = True
+                break
+            mirror_symbols.update(str(symbol).upper() for symbol in provider_cfg.symbols)
+
+        feature_mirror_writer = FeatureMirrorWriter(
+            event_bus=fsm,
+            output_path=mirror_output_path,
+            symbols=None if mirror_all_symbols else sorted(mirror_symbols),
+        )
         LOG.info(
             f" AlphaSearch Plugin registered (shadow={_as_config.shadow_mode}, "
             f"providers={list(alpha_plugin.providers.keys())})"
+        )
+        LOG.info(
+            " AlphaSearch FeatureMirrorWriter registered "
+            f"(output={mirror_output_path}, symbols={'ALL' if mirror_all_symbols else sorted(mirror_symbols)})"
         )
     except Exception as e:
         LOG.warning(f" AlphaSearch Plugin disabled (init failed): {e}")

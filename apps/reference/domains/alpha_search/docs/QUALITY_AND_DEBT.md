@@ -1,25 +1,3 @@
-<<<<<<< HEAD
-# Якість коду та технічний борг Alpha Search
-
-## 1. Архітектурні Hotspots
-- **Ensemble Performance Proxy**: Наразі ребалансування ваг за замовчуванням використовує `confidence` як проксі для успішності. Це може призводити до перекосу в бік моделей, які "впевнені" у собі, але помиляються.
-- **Single-Threaded Loop**: Розрахунок усіх моделей у реєстрі виконується послідовно. При великій кількості складних моделей це може стати вузьким місцем по затримці (latency).
-
-## 2. Технічний борг (Debt Ledger)
-
-| Елемент | Ризик | Доказ | Рекомендація | Пріоритет |
-|---------|-------|-------|--------------|-----------|
-| **Hardcoded Weights** | Деякі моделі мають магічні числа у формулах. | `alpha_model.py` / `models/` | Винести коефіцієнти в `alpha_search.yaml`. | Medium |
-| **Global Only Config** | Неможливо задати різні налаштування для BTC та SOL. | `config_models.py` | Впровадити per-instrument overrides (Phase 3). | High |
-| **Memory Leak Risk** | Необмежене зростання історії продуктивності. | `ensemble.py` | Використовувати `collections.deque` з фіксованим розміром. | Low |
-
-## 3. Мертвий код
-- `PHASE3_INTEGRATION_GUIDE.md`: Містить плани, які ще не реалізовані повністю у коді. Має бути перетворений на таски у трекері.
-
-## 4. Рекомендації по покращенню
-- Впровадити **Virtual Trader feedback** як основне джерело для ребалансування ваг.
-- Додати підтримку паралельного виконання моделей через `asyncio.gather`.
-=======
 # Alpha Search Quality and Debt
 
 ## 1. Current Quality Position
@@ -71,6 +49,8 @@ This increases the chance of accidental cross-boundary changes, especially attem
 | Legacy compatibility surfaces | old config and scenario shapes can be mistaken for the current production authority | AlphaSearchConfig still carries a legacy bucket and compatibility parsing | treat legacy paths as compatibility seams, not as the preferred architecture |
 | Split test trees | important coverage is divided across tests/domains/... and tests/apps/reference/... which is easy to under-sample during focused work | both test families are populated in the current tree | choose targeted test slices deliberately instead of assuming one directory is enough |
 | Shutdown export coupling | shutdown export reuses the offline CLI path and can be over-interpreted as a live runtime mode | backtest_plugin.shutdown() reuses simulator loader and runner | keep the hook bounded, optional, and fail-closed |
+| UNCERTAIN regime gating split between two override paths | shadow scenarios silently produced 0 signals when only the per-asset regime override was applied | shadow/registry_adapter.py overrides both `aurora.assets.{sym}.regime_thresholds.UNCERTAIN` and `aurora.decision.regime_threshold_multipliers.UNCERTAIN`; scenario_matrix.yaml S03/S05/S06/S20 use the latter directly | when adjusting UNCERTAIN behavior, audit both paths together — they target different config surfaces |
+| Scenario IDs naming drift | scenario_id can promise a directional behavior (e.g. former `S19_ENSEMBLE_MR_SHORT_BIAS`) that the override weights do not implement; misleads readers and reports | renamed to `S19_ENSEMBLE_MR_BALANCED_VARIANT`; ensemble.py has no directional flip mechanism for ta_ensemble | only encode behavior in scenario_id that is implemented in code or override; if a directional bias is wanted, add an explicit flip mechanism rather than a name |
 
 ## 4. Non-Debt Boundaries That Must Stay Fixed
 
@@ -91,4 +71,3 @@ If this domain is extended later, the lowest-risk improvements are:
 - preserve fail-closed behavior on new provider or simulator surfaces
 - add verification at the seam being changed instead of broad refactors
 - isolate experimental complexity in new helper layers rather than widening existing runtime authority
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b

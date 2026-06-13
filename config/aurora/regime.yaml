@@ -1,5 +1,5 @@
 basis_tf_sec: 300
-uncertain_cutoff: 0.15
+uncertain_cutoff: 0.25
 liveness_factor: 3
 basis_import_buffer: 20
 hysteresis_bars: 2
@@ -13,6 +13,9 @@ models:
     confidence_multiplier: 80.0
     confidence_min: 0.15
     confidence_max: 0.85
+    min_trend_spread: 0.005
+    adaptive_normalization: true
+    normalized_confidence_multiplier: 0.04
   volatility:
     enabled: true
     atr_period: 14
@@ -22,9 +25,20 @@ models:
     low_vol_multiplier: 0.7
     high_vol_confidence_multiplier: 2.5
     low_vol_confidence_multiplier: 3.0
+    adaptive_percentile:
+      enabled: true
+      window_bars: 500
+      min_data_bars: 200
+      high_vol_percentile: 0.90
+      low_vol_percentile: 0.10
+      high_vol_clamp: [1.5, 3.0]
+      low_vol_clamp: [0.3, 0.8]
   mean_reversion:
-    threshold: 0.005
+    threshold: 0.008
     confidence_multiplier: 120.0
+    adaptive_atr_multiplier: 1.5
+    min_threshold: 0.003
+    max_threshold: 0.015
 system_stress:
   enabled: true
   sources_enabled:

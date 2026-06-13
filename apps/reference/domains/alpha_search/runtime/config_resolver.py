@@ -1,4 +1,4 @@
-﻿"""
+"""
 Scenario Config Resolver
 ========================
 
@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Any, Dict, Tuple, Optional
 
 import yaml
-<<<<<<< HEAD
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from apps.reference.config_models import (
@@ -25,8 +24,6 @@ from apps.reference.config_models import (
     AuroraInstrumentConfig,
     CANONICAL_WEIGHT_KEYS,
 )
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
 from ..config_models import (
     AlphaSearchConfig,
@@ -40,7 +37,6 @@ from .override_allowlist import validate_overrides, warn_partial_aurora_override
 LOG = logging.getLogger(__name__)
 
 
-<<<<<<< HEAD
 SUPPORTED_AURORA_DECISION_FIELDS = {
     "signal_threshold",
     "signal_weights",
@@ -95,8 +91,6 @@ class AuroraScenarioStrategyConfig(BaseModel):
     assets: Dict[str, AuroraInstrumentConfig] = Field(default_factory=dict)
 
 
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 class ConfigResolutionError(RuntimeError):
     """Raised when scenario config resolution fails (fail-closed)."""
 
@@ -180,6 +174,17 @@ def _resolve_override_mode(
     # --- Apply overrides to raw configs ---
     for dot_path, value in overrides.items():
         _apply_dot_path_override(raw_configs, dot_path, value, sid)
+
+    # --- Propagate aurora decision overrides to assets and judge to prevent shadowing ---
+    if scenario.strategy_type == "aurora":
+        for dot_path, value in overrides.items():
+            if dot_path.startswith("aurora.decision."):
+                _propagate_aurora_decision_override_to_assets(
+                    raw_configs, dot_path, value, sid, overrides
+                )
+                _propagate_aurora_decision_override_to_judge(
+                    raw_configs, dot_path, value, sid, overrides
+                )
 
     # --- Build typed configs ---
     alpha_search_config = _build_alpha_search_config(raw_configs, sid)
@@ -284,6 +289,84 @@ def _apply_dot_path_override(
     target[key_parts[-1]] = value
 
 
+def _propagate_aurora_decision_override_to_assets(
+    raw_configs: Dict[str, Dict[str, Any]],
+    dot_path: str,
+    value: Any,
+    scenario_id: str,
+    explicit_overrides: Dict[str, Any]
+) -> None:
+    """Propagate global aurora.decision.* overrides to all assets to prevent shadowing."""
+    aurora_config = raw_configs.get("aurora", {})
+    assets = aurora_config.get("assets", {})
+    if not assets:
+        return
+        
+    parts = dot_path.split(".")
+    
+    def apply_if_not_explicit(asset_path: str):
+        if asset_path not in explicit_overrides:
+            _apply_dot_path_override(raw_configs, asset_path, value, scenario_id)
+
+    # Format: aurora.decision.signal_weights.obi
+    if len(parts) == 4 and parts[2] == "signal_weights":
+        key = parts[3]
+        for symbol in assets.keys():
+            apply_if_not_explicit(f"aurora.assets.{symbol}.weights.{key}")
+            
+    # Format: aurora.decision.feature_neutrals.obi
+    elif len(parts) == 4 and parts[2] == "feature_neutrals":
+        key = parts[3]
+        for symbol in assets.keys():
+            apply_if_not_explicit(f"aurora.assets.{symbol}.feature_neutrals.{key}")
+            
+    # Format: aurora.decision.regime_threshold_multipliers.HIGH_VOLATILITY
+    elif len(parts) == 4 and parts[2] == "regime_threshold_multipliers":
+        key = parts[3]
+        for symbol in assets.keys():
+            apply_if_not_explicit(f"aurora.assets.{symbol}.regime_thresholds.{key}")
+            
+    # Format: aurora.decision.signal_threshold
+    elif len(parts) == 3 and parts[2] == "signal_threshold":
+        for symbol in assets.keys():
+            if isinstance(assets[symbol], dict) and "signal_threshold" in assets[symbol]:
+                apply_if_not_explicit(f"aurora.assets.{symbol}.signal_threshold.value")
+
+
+def _propagate_aurora_decision_override_to_judge(
+    raw_configs: Dict[str, Dict[str, Any]],
+    dot_path: str,
+    value: Any,
+    scenario_id: str,
+    explicit_overrides: Dict[str, Any]
+) -> None:
+    """Propagate global aurora.decision.* overrides to judge experts to keep them synchronized."""
+    parts = dot_path.split(".")
+    
+    def apply_if_not_explicit(path: str):
+        if path not in explicit_overrides:
+            _apply_dot_path_override(raw_configs, path, value, scenario_id)
+
+    # Format: aurora.decision.signal_weights.obi
+    if len(parts) == 4 and parts[2] == "signal_weights":
+        key = parts[3]
+        apply_if_not_explicit(f"alpha_search.judge.experts.signal_weights.signal_weights.{key}")
+        apply_if_not_explicit(f"alpha_search.judge.experts.feature_neutrals.signal_weights.{key}")
+
+    # Format: aurora.decision.feature_neutrals.obi
+    elif len(parts) == 4 and parts[2] == "feature_neutrals":
+        key = parts[3]
+        apply_if_not_explicit(f"alpha_search.judge.experts.signal_weights.feature_neutrals.{key}")
+        apply_if_not_explicit(f"alpha_search.judge.experts.feature_neutrals.feature_neutrals.{key}")
+
+    # Format: aurora.decision.signal_threshold
+    elif len(parts) == 3 and parts[2] == "signal_threshold":
+        apply_if_not_explicit("alpha_search.judge.experts.signal_weights.signal_threshold")
+        apply_if_not_explicit("alpha_search.judge.experts.feature_neutrals.signal_threshold")
+        apply_if_not_explicit("alpha_search.providers.judge_sw.threshold")
+        apply_if_not_explicit("alpha_search.providers.judge_fn.threshold")
+
+
 # =============================================================================
 # Config building helpers
 # =============================================================================
@@ -339,20 +422,17 @@ def _extract_strategy_config(
 ) -> Dict[str, Any]:
     """Extract strategy-specific raw config dict for adapter injection."""
     if strategy_type == "aurora":
-<<<<<<< HEAD
         return _validate_aurora_strategy_subset(raw_configs.get("aurora", {}))
-=======
-        return copy.deepcopy(raw_configs.get("aurora", {}))
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     elif strategy_type == "mean_reversion":
         return copy.deepcopy(raw_configs.get("mean_reversion", {}))
+    elif strategy_type == "md_amr":
+        return copy.deepcopy(raw_configs.get("md_amr", {}))
     elif strategy_type == "ensemble":
         # Ensemble uses alpha_search + alpha_search_system (no separate strategy file)
         return {}
     return {}
 
 
-<<<<<<< HEAD
 def _validate_aurora_strategy_subset(raw_strategy: Dict[str, Any]) -> Dict[str, Any]:
     """Validate the Aurora surfaces consumed by alpha_search scenarios."""
     if not raw_strategy:
@@ -390,8 +470,6 @@ def _validate_aurora_strategy_subset(raw_strategy: Dict[str, Any]) -> Dict[str, 
     return validated
 
 
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 # =============================================================================
 # Config persistence
 # =============================================================================

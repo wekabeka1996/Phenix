@@ -166,20 +166,14 @@ trading:
     authority_mode: full_auto
     require_telemetry: true
     symbols_llm:
-    - DOGEUSDT
     - BTCUSDT
     - ETHUSDT
-    - SOLUSDT
     allowlist_symbols:
-    - DOGEUSDT
     - BTCUSDT
     - ETHUSDT
-    - SOLUSDT
     context_symbols:
-    - DOGEUSDT
     - BTCUSDT
     - ETHUSDT
-    - SOLUSDT
     fast_cycle_sec: 300
     deep_cycle_sec: 900
     guardian_cycle_sec: 60

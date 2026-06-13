@@ -47,11 +47,13 @@ def test_safety_deny_logs_decision_intent_rejected_not_runtime_order_rejected():
             "rid-phase4-alias-cleanup",
             [],
             _make_sg(),
-            strategy_id="aurora",
+            strategy_id="md_amr",
         )
 
     logged_entry = write_mock.call_args_list[-1].args[0]
     assert logged_entry["event_type"] == "DECISION_INTENT_REJECTED"
+    assert logged_entry["strategy_id"] == "md_amr"
+    assert logged_entry["regime"] == "TREND_UP"
     assert logged_entry["origin_class"] == "decision_alias"
     assert logged_entry["metadata"]["alias_of"] == "TRADE_INTENT_REJECTED"
     assert logged_entry["metadata"]["canonical_event_family"] == "TRADE_INTENT_REJECTED"

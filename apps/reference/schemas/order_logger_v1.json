@@ -18,6 +18,7 @@
       "type": "string",
       "enum": [
         "BOOT",
+        "STRATEGY_REGISTRY_SNAPSHOT",
         "ORDER_INTENT",
         "ORDER_PLACED",
         "ORDER_FILLED",
@@ -131,7 +132,87 @@
     "regime_provenance": {
       "type": ["object", "null"],
       "description": "Structured detector/cache provenance block carried additively to the order log."
+    },
+    "strategy_id": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "description": "Originating strategy identifier when the event is strategy-originated."
+    },
+    "decision_id": {
+      "type": ["string", "null"],
+      "description": "Stable decision identifier when available."
+    },
+    "intent_id": {
+      "type": ["string", "null"],
+      "description": "Stable intent identifier when available."
+    },
+    "confidence": {
+      "type": ["number", "null"],
+      "description": "Strategy signal confidence or score when available."
+    },
+    "schema_version": {
+      "type": "string",
+      "description": "Order-log telemetry schema version."
+    },
+    "non_financial": {
+      "type": "boolean",
+      "description": "True for telemetry records that must not be counted as financial/order events."
+    },
+    "strategies": {
+      "type": "array",
+      "description": "Configured and registered strategy visibility snapshot; non-financial telemetry only.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "strategy_id",
+          "status",
+          "plugin_file",
+          "runtime_handler",
+          "can_emit_order_intent",
+          "configured_enabled",
+          "observed_in_current_runtime",
+          "notes"
+        ],
+        "properties": {
+          "strategy_id": {"type": "string", "minLength": 1},
+          "status": {
+            "type": "string",
+            "enum": [
+              "active_live",
+              "configured_enabled",
+              "configured_disabled",
+              "shadow_only",
+              "observe_only",
+              "historical_or_dead_code",
+              "unknown"
+            ]
+          },
+          "plugin_file": {"type": "string"},
+          "runtime_handler": {"type": "string"},
+          "can_emit_order_intent": {"type": "boolean"},
+          "configured_enabled": {"type": "boolean"},
+          "observed_in_current_runtime": {"type": "boolean"},
+          "notes": {"type": "string"}
+        }
+      }
     }
   },
-  "required": ["rid", "event_type", "symbol", "source_fsm"]
+  "required": ["rid", "event_type", "symbol", "source_fsm"],
+  "allOf": [
+    {
+      "if": {
+        "properties": {"event_type": {"const": "STRATEGY_REGISTRY_SNAPSHOT"}},
+        "required": ["event_type"]
+      },
+      "then": {
+        "required": ["schema_version", "non_financial", "strategies"],
+        "properties": {
+          "source_fsm": {"const": "OrderLoggerV1"},
+          "symbol": {"const": "_SYSTEM_"},
+          "non_financial": {"const": true}
+        }
+      }
+    }
+  ]
 }

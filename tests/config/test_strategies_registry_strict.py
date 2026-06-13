@@ -112,6 +112,13 @@ def create_strategy_profiles(temp_config_dir):
     (strategies_dir / "llm_microstructure.yaml").write_text(
         _read_canonical_yaml("strategies/llm_microstructure.yaml"), encoding="utf-8"
     )
+    (strategies_dir / "alpha_mr_s01.yaml").write_text(
+        _read_canonical_yaml("strategies/alpha_mr_s01.yaml"), encoding="utf-8"
+    )
+    (strategies_dir / "alpha_ta_ensemble.yaml").write_text(
+        _read_canonical_yaml("strategies/alpha_ta_ensemble.yaml"), encoding="utf-8"
+    )
+
 
 
 def _enable_mean_reversion_asset(config_dir: Path, symbol: str) -> None:

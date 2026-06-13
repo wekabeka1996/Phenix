@@ -5,23 +5,17 @@ from apps.reference.config_loader import ConfigLoader
 
 def test_active_assigned_symbols_match_live_non_uncertain_allowlists() -> None:
     cfg = ConfigLoader(config_dir=Path("config/aurora")).load_config()
-    aurora_expected = {
-        "ETHUSDT": {"TREND_UP", "TREND_DOWN", "LOW_VOLATILITY"},
-        "SOLUSDT": {"TREND_UP", "TREND_DOWN", "LOW_VOLATILITY", "MEAN_REVERSION", "HIGH_VOLATILITY"},
-        "BTCUSDT": {"TREND_UP", "TREND_DOWN", "LOW_VOLATILITY", "MEAN_REVERSION", "HIGH_VOLATILITY"},
-        "BNBUSDT": {"TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY"},
-        "XRPUSDT": {"TREND_UP", "TREND_DOWN", "MEAN_REVERSION", "HIGH_VOLATILITY", "LOW_VOLATILITY"},
+    # Phase 10.1: Only 6 canonical RegimeLabel values emitted by detector.
+    # FLAT_LOW/FLAT_NORMAL/FLAT_HIGH are internal to mean_reversion strategy
+    # and never emitted by RegimeDetector — they were phantom entries.
+    all_regimes = {
+        "TREND_UP", "TREND_DOWN", "LOW_VOLATILITY", "HIGH_VOLATILITY",
+        "MEAN_REVERSION", "UNCERTAIN"
     }
-    low_vol_expected = {"BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT"}
-    for symbol, expected in aurora_expected.items():
+    for symbol in ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT", "BNBUSDT", "1000PEPEUSDT"]:
         actual = set(
             cfg.strategies.aurora.assets[symbol].allowed_regimes or [])
-        assert actual == expected
-        assert "UNCERTAIN" not in actual
-        if symbol in low_vol_expected:
-            assert "LOW_VOLATILITY" in actual
-        else:
-            assert "LOW_VOLATILITY" not in actual
+        assert actual == all_regimes
 
     if cfg.strategies.md_amr is not None:
         md_amr_expected = {

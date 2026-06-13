@@ -58,13 +58,19 @@ class MomentumAlphaModel(AlphaModel):
         mom_1h = Decimal(str(features["price_momentum_1h"] if "price_momentum_1h" in features else 0))
         mom_1d = Decimal(str(features["price_momentum_1d"] if "price_momentum_1d" in features else 0))
         vol_mom_5m = Decimal(str(features["volume_momentum_5m"] if "volume_momentum_5m" in features else 0))
-        rsi = Decimal(str(features["rsi_14"] if "rsi_14" in features else 50))
+        
+        rsi_val = features.get("rsi_14", 50)
+        if isinstance(rsi_val, (int, float, str)) and float(rsi_val) <= 1.0:
+            rsi_val = float(rsi_val) * 100.0
+        rsi = Decimal(str(rsi_val))
+        
         macd_signal = Decimal(str(features["macd_signal"] if "macd_signal" in features else 0))
 
         # Calculate weighted momentum score
-        short_weight = Decimal('0.3')
-        medium_weight = Decimal('0.4')
-        long_weight = Decimal('0.3')
+        weights_cfg = self.config.get("weights", {})
+        short_weight = Decimal(str(weights_cfg.get("short", 0.3)))
+        medium_weight = Decimal(str(weights_cfg.get("medium", 0.4)))
+        long_weight = Decimal(str(weights_cfg.get("long", 0.3)))
 
         momentum_score = (
             mom_5m * short_weight +
@@ -73,32 +79,46 @@ class MomentumAlphaModel(AlphaModel):
         )
 
         # Volume confirmation (amplifies signal if volume supports direction)
+        vol_cfg = self.config.get("volume", {})
+        vol_confirm_mult = Decimal(str(vol_cfg.get("confirm_multiplier", 1.2)))
+        vol_contradict_mult = Decimal(str(vol_cfg.get("contradict_multiplier", 0.8)))
+
         volume_multiplier = Decimal('1.0')
         if momentum_score > 0 and vol_mom_5m > 0:
-            volume_multiplier = Decimal('1.2')  # Volume supports upward move
+            volume_multiplier = vol_confirm_mult  # Volume supports upward move
         elif momentum_score < 0 and vol_mom_5m < 0:
-            volume_multiplier = Decimal('1.2')  # Volume supports downward move
+            volume_multiplier = vol_confirm_mult  # Volume supports downward move
         elif momentum_score != 0 and vol_mom_5m * momentum_score < 0:
-            volume_multiplier = Decimal('0.8')  # Volume contradicts price
+            volume_multiplier = vol_contradict_mult  # Volume contradicts price
 
         momentum_score *= volume_multiplier
 
         # RSI-based confidence adjustment
+        rsi_cfg = self.config.get("rsi", {})
+        rsi_overbought = Decimal(str(rsi_cfg.get("overbought", 70)))
+        rsi_oversold = Decimal(str(rsi_cfg.get("oversold", 30)))
+        rsi_conf_penalty = Decimal(str(rsi_cfg.get("confidence_penalty", 0.7)))
+
         rsi_confidence = Decimal('1.0')
-        if rsi > 70:  # Overbought
-            rsi_confidence = Decimal('0.7')
-        elif rsi < 30:  # Oversold
-            rsi_confidence = Decimal('0.7')
+        if rsi > rsi_overbought:  # Overbought
+            rsi_confidence = rsi_conf_penalty
+        elif rsi < rsi_oversold:  # Oversold
+            rsi_confidence = rsi_conf_penalty
 
         # MACD confirmation
+        macd_cfg = self.config.get("macd", {})
+        macd_confirm_boost = Decimal(str(macd_cfg.get("confirm_boost", 1.1)))
+        macd_contradict_penalty = Decimal(str(macd_cfg.get("contradict_penalty", 0.9)))
+
         macd_confidence = Decimal('1.0')
         if (momentum_score > 0 and macd_signal > 0) or (momentum_score < 0 and macd_signal < 0):
-            macd_confidence = Decimal('1.1')
+            macd_confidence = macd_confirm_boost
         elif macd_signal * momentum_score < 0:
-            macd_confidence = Decimal('0.9')
+            macd_confidence = macd_contradict_penalty
 
         # Overall confidence based on signal consistency and filters
-        base_confidence = Decimal('0.8')  # Base confidence
+        conf_cfg = self.config.get("confidence", {})
+        base_confidence = Decimal(str(conf_cfg.get("base", 0.8)))  # Base confidence
         consistency_factor = self._calculate_consistency(
             mom_5m, mom_1h, mom_1d)
 
@@ -162,5 +182,9 @@ class MomentumAlphaModel(AlphaModel):
         consistency_ratio = Decimal(
             str(agreements)) / Decimal(str(total_pairs))
 
-        # Map to multiplier: 0% agreement = 0.7x, 100% agreement = 1.3x
-        return Decimal('0.7') + (consistency_ratio * Decimal('0.6'))
+        conf_cfg = self.config.get("confidence", {})
+        consistency_min = Decimal(str(conf_cfg.get("consistency_min", 0.7)))
+        consistency_range = Decimal(str(conf_cfg.get("consistency_range", 0.6)))
+
+        # Map to multiplier: 0% agreement = consistency_min, 100% agreement = consistency_min + consistency_range
+        return consistency_min + (consistency_ratio * consistency_range)

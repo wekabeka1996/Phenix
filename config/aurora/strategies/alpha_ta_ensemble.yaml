@@ -1,0 +1,208 @@
+alpha_ta_ensemble:
+  enabled: true
+  mode: testnet_candidate
+  strategy_version: "1.0.0"
+  timeframe_sec: 300
+  threshold: 0.12
+
+  # Default sub-model settings
+  momentum:
+    weights:
+      short: 0.3
+      medium: 0.4
+      long: 0.3
+    volume:
+      confirm_multiplier: 1.2
+      contradict_multiplier: 0.8
+    rsi:
+      overbought: 70.0
+      oversold: 30.0
+      confidence_penalty: 0.7
+    macd:
+      confirm_boost: 1.1
+      contradict_penalty: 0.9
+    confidence:
+      base: 0.8
+      consistency_min: 0.7
+      consistency_range: 0.6
+
+  mean_reversion:
+    weights:
+      bb: 0.25
+      rsi: 0.55
+      sma: 0.1
+      stoch: 0.1
+    rsi:
+      oversold: 30.0
+      overbought: 70.0
+    sma:
+      deviation_normalizer: 0.05
+    stochastic:
+      oversold_zone: 20.0
+      overbought_zone: 80.0
+      signal_strength: 0.3
+    volume:
+      confirm_multiplier: 1.2
+      contradict_multiplier: 0.8
+      high_threshold: 1.5
+      low_threshold: 0.7
+    bb_width:
+      wide_threshold: 0.05
+      narrow_threshold: 0.02
+      max_multiplier: 1.5
+      narrow_penalty: 0.7
+    confidence:
+      base: 0.5
+      agreement_factor: 0.4
+      strength_base: 0.8
+      signal_threshold: 0.1
+
+  volatility:
+    weights:
+      atr: 0.4
+      bb: 0.25
+      rv: 0.2
+      range: 0.1
+      vol_corr: 0.05
+    bb:
+      amplifier: 10.0
+    signal_clamp:
+      atr: 2.0
+      rv: 2.0
+    volume_vol:
+      high_threshold: 1.2
+      low_threshold: 0.8
+      signal_strength: 0.2
+    vol_level:
+      low_level: 0.5
+      low_penalty: 0.5
+      high_level: 2.0
+      high_boost: 1.2
+    confidence:
+      base: 0.6
+      agreement_factor: 0.3
+      strength_base: 0.7
+      no_signal: 0.4
+
+  ensemble:
+    rebalance_frequency_days: 7
+    performance_window_days: 30
+    risk_adjustment: true
+    models:
+      mean_reversion_v1:
+        enabled: true
+      momentum_v1:
+        enabled: true
+      volatility_v1:
+        enabled: true
+
+  # Profiles registry
+  profiles:
+    S06_MR_EXTREME_DEVIATION_ONLY:
+      profile_id: S06_MR_EXTREME_DEVIATION_ONLY
+      name: "MR Extreme Deviation Filter"
+      entry_threshold: 0.18
+      allowed_regimes:
+        - LOW_VOLATILITY
+        - MEAN_REVERSION
+        - HIGH_VOLATILITY
+      allowed_sides:
+        - BUY
+        - SELL
+      score_overrides:
+        ensemble.mean_reversion_v1.weight: 0.7
+        ensemble.momentum_v1.weight: 0.15
+        ensemble.volatility_v1.weight: 0.15
+        mean_reversion.weights.bb: 0.5
+        mean_reversion.weights.rsi: 0.3
+        mean_reversion.weights.sma: 0.12
+        mean_reversion.weights.stoch: 0.08
+        mean_reversion.rsi.oversold: 20.0
+        mean_reversion.rsi.overbought: 80.0
+
+    S09_TREND_PULLBACK_CONTINUATION:
+      profile_id: S09_TREND_PULLBACK_CONTINUATION
+      name: "Trend Pullback Continuation"
+      entry_threshold: 0.07
+      allowed_regimes:
+        - TREND_UP
+        - TREND_DOWN
+        - LOW_VOLATILITY
+      allowed_sides:
+        - BUY
+        - SELL
+      score_overrides:
+        ensemble.momentum_v1.weight: 0.5
+        ensemble.mean_reversion_v1.weight: 0.35
+        ensemble.volatility_v1.weight: 0.15
+
+    S15_HIGH_VOL_FAST_EXIT:
+      profile_id: S15_HIGH_VOL_FAST_EXIT
+      name: "High Vol Fast Exit"
+      entry_threshold: 0.1
+      allowed_regimes:
+        - HIGH_VOLATILITY
+      allowed_sides:
+        - BUY
+        - SELL
+      score_overrides:
+        ensemble.volatility_v1.weight: 0.6
+        ensemble.momentum_v1.weight: 0.3
+        ensemble.mean_reversion_v1.weight: 0.1
+
+    S29_FEE_AWARE_EDGE_ONLY:
+      profile_id: S29_FEE_AWARE_EDGE_ONLY
+      name: "Fee Aware Edge Only"
+      entry_threshold: 0.12
+      allowed_regimes:
+        - TREND_UP
+        - TREND_DOWN
+        - LOW_VOLATILITY
+        - MEAN_REVERSION
+        - HIGH_VOLATILITY
+        - UNCERTAIN
+      allowed_sides:
+        - BUY
+        - SELL
+      score_overrides:
+        ensemble.momentum_v1.weight: 0.4
+        ensemble.mean_reversion_v1.weight: 0.35
+        ensemble.volatility_v1.weight: 0.25
+
+  safety:
+    allowed_regimes:
+      - TREND_UP
+      - TREND_DOWN
+      - LOW_VOLATILITY
+      - MEAN_REVERSION
+      - HIGH_VOLATILITY
+      - UNCERTAIN
+    forbid_uncertain: false
+    cooldown_sec: 60
+    signal_ttl_ms: 300000
+    min_feature_freshness_sec: 60
+    max_intents_per_symbol_hour: null
+
+  assets:
+    ETHUSDT:
+      enabled: false
+      profile_id: S29_FEE_AWARE_EDGE_ONLY
+    SOLUSDT:
+      enabled: true
+      profile_id: S06_MR_EXTREME_DEVIATION_ONLY
+    BTCUSDT:
+      enabled: false
+      profile_id: S29_FEE_AWARE_EDGE_ONLY
+    BNBUSDT:
+      enabled: false
+      profile_id: S09_TREND_PULLBACK_CONTINUATION
+    XRPUSDT:
+      enabled: false
+      profile_id: S06_MR_EXTREME_DEVIATION_ONLY
+    1000PEPEUSDT:
+      enabled: false
+      profile_id: S15_HIGH_VOL_FAST_EXIT
+    DOGEUSDT:
+      enabled: true
+      profile_id: S06_MR_EXTREME_DEVIATION_ONLY
+

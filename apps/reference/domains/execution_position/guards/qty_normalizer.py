@@ -20,6 +20,10 @@ from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_DOWN
 from typing import Optional
 
+from apps.reference.domains.execution_position.exchange_filter_cache import (
+    ExchangeFilterSnapshot,
+)
+
 
 @dataclass
 class QtyNormalizeResult:
@@ -202,6 +206,22 @@ def normalize_qty(
         min_notional=min_notional_d,
         price=price_d,
         notional=notional,
+    )
+
+
+def normalize_qty_with_filter(
+    *,
+    raw_qty: Decimal | float | str,
+    price: Decimal | float | str,
+    exchange_filter: ExchangeFilterSnapshot,
+) -> QtyNormalizeResult:
+    """Normalize quantity from the current exchange filter snapshot."""
+    return normalize_qty(
+        raw_qty=raw_qty,
+        price=price,
+        step_size=exchange_filter.step_size,
+        min_qty=exchange_filter.min_qty,
+        min_notional=exchange_filter.min_notional,
     )
 
 

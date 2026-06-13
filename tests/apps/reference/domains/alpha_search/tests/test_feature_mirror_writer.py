@@ -45,6 +45,14 @@ class TestOnFeatures:
             }
         }
         writer._on_features(event)
+        writer._on_ta_features({
+            "pld": {
+                "symbol": "BTCUSDT",
+                "tf_sec": 300,
+                "ts": 1740000000000,
+                "is_warm": True,
+            }
+        })
 
         assert output.exists()
         record = json.loads(output.read_text(encoding="utf-8").strip())
@@ -67,6 +75,14 @@ class TestOnFeatures:
             }
         }
         writer._on_features(event)
+        writer._on_ta_features({
+            "pld": {
+                "symbol": "BTCUSDT",
+                "tf_sec": 300,
+                "ts": 1740000000000,
+                "is_warm": True,
+            }
+        })
 
         record = json.loads(output.read_text(encoding="utf-8").strip())
         assert record["regime"] == "TRENDING"
@@ -82,6 +98,14 @@ class TestOnFeatures:
                 "features": {"obi": 0.12, "close": 96000.0},
                 "tf_sec": 300,
                 "ts": 1740000000000,
+            }
+        })
+        writer._on_ta_features({
+            "pld": {
+                "symbol": "BTCUSDT",
+                "tf_sec": 300,
+                "ts": 1740000000000,
+                "is_warm": True,
             }
         })
 
@@ -196,6 +220,14 @@ class TestWriterLifecycle:
                 "features": {"obi": 0.12, "close": 96000.0},
                 "tf_sec": 300,
                 "ts": 1740000000000,
+            }
+        })
+        writer._on_ta_features({
+            "pld": {
+                "symbol": "BTCUSDT",
+                "tf_sec": 300,
+                "ts": 1740000000000,
+                "is_warm": True,
             }
         })
         writer._on_features({

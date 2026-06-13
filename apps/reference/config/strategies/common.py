@@ -7,6 +7,9 @@ from apps.reference.config.strategies.llm_microstructure import (
     LLMMicrostructureStrategyConfig,
 )
 from apps.reference.config.strategies.aurora import AuroraStrategyConfig
+from apps.reference.config.strategies.alpha_mr_s01 import AlphaMrS01StrategyConfig
+from apps.reference.config.strategies.alpha_ta_ensemble import AlphaTaEnsembleStrategyConfig
+
 
 from typing import Dict, List, Literal, Optional
 
@@ -143,3 +146,10 @@ class StrategiesConfig(BaseModel):
     llm_microstructure: Optional["LLMMicrostructureStrategyConfig"] = Field(
         ..., description="LLM microstructure strategy config (from strategies/llm_microstructure.yaml)",
     )
+    alpha_mr_s01: Optional["AlphaMrS01StrategyConfig"] = Field(
+        ..., description="S01 weighted mean-reversion live-candidate strategy config (from strategies/alpha_mr_s01.yaml)",
+    )
+    alpha_ta_ensemble: Optional["AlphaTaEnsembleStrategyConfig"] = Field(
+        ..., description="Alpha TA Ensemble strategy config (from strategies/alpha_ta_ensemble.yaml)",
+    )
+

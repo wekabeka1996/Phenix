@@ -21,6 +21,9 @@ from apps.reference.shared.decision_primitives.tpsl_owner import (
     TPSL_OWNER_LOSS_TP_WRONG_SIDE,
     TPSL_OWNER_LOSS_UNSUPPORTED_MODE,
 )
+from apps.reference.domains.strategies.runtimes.aurora.policies import (
+    RegimeTpslCalculator,
+)
 
 if TYPE_CHECKING:
     from apps.reference.domains.strategies.runtimes.aurora.handler import SymbolState
@@ -157,9 +160,11 @@ class AuroraTpslMixin:
                 "[%s] Invalid entry_price for TP/SL: %s", symbol, entry_price
             )
             return None
-        regime_used = regime or "DEFAULT"
-        if getattr(self, "anti_churn_enabled", False) and state.regime_effective:
-            regime_used = state.regime_effective
+        regime_used = RegimeTpslCalculator().select_regime(
+            raw_regime=regime,
+            effective_regime=state.regime_effective,
+            anti_churn_enabled=bool(getattr(self, "anti_churn_enabled", False)),
+        ).regime_used
 
         mode = getattr(regime_tpsl_cfg, "mode", "pct_mult")
 

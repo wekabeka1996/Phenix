@@ -179,7 +179,7 @@ def test_model_validator_rejects_root_execution_in_direct_construction() -> None
     """Pydantic validator rejects execution != None at root, even without the loader."""
     cfg = ConfigLoader(CONFIG_DIR).load_config()
 
-    root_dict = cfg.model_dump()
+    root_dict = cfg.model_dump(exclude_none=True)
     # Inject a non-None execution at root — should trigger the fail-closed guard
     root_dict["execution"] = cfg.trading.model_dump().get("execution")
 

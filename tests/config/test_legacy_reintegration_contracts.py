@@ -16,6 +16,12 @@ from apps.reference.domains.feature_engineering.feature_engineering import Featu
 def _copy_config_to_tmp(tmp_path: Path) -> Path:
     cfg_dir = tmp_path / "aurora"
     shutil.copytree(Path("config/aurora"), cfg_dir)
+    # Force llm_orchestration.mode to baseline to avoid strategy validation errors in legacy tests
+    trading_path = cfg_dir / "trading.yaml"
+    trading_data = yaml.safe_load(trading_path.read_text(encoding="utf-8"))
+    if "trading" in trading_data and "llm_orchestration" in trading_data["trading"]:
+        trading_data["trading"]["llm_orchestration"]["mode"] = "baseline"
+    _write_yaml(trading_path, trading_data)
     return cfg_dir
 
 
@@ -31,6 +37,17 @@ def _enable_md_amr_asset(cfg_dir: Path, symbol: str) -> None:
     assert symbol in assets and isinstance(assets[symbol], dict)
     assets[symbol]["enabled"] = True
     _write_yaml(md_amr_path, md_amr_data)
+
+
+def _enable_mean_reversion_asset(cfg_dir: Path, symbol: str) -> None:
+    mr_path = cfg_dir / "strategies" / "mean_reversion.yaml"
+    mr_data = yaml.safe_load(mr_path.read_text(encoding="utf-8"))
+    assets = mr_data["mean_reversion"]["assets"]
+    assert isinstance(assets, dict)
+    assert symbol in assets and isinstance(assets[symbol], dict)
+    assets[symbol]["enabled"] = True
+    _write_yaml(mr_path, mr_data)
+
 
 
 class _DummyFSM:
@@ -85,7 +102,7 @@ def test_md_amr_profile_loads_when_assigned_in_registry(tmp_path: Path) -> None:
     assert config.strategies_registry is not None
     assert config.strategies_registry.assignments["BTCUSDT"] == [
         "aurora", "md_amr"]
-    assert config.strategies_registry.arbitration.priority["md_amr"] == 3
+    assert config.strategies_registry.arbitration.priority["md_amr"] == 4
 
 
 def test_bracket_health_uses_md_amr_exit_profile(tmp_path: Path) -> None:
@@ -197,6 +214,7 @@ def test_bracket_health_mean_reversion_recovery_fails_closed_without_aurora_fall
         strategies_path.read_text(encoding="utf-8"))
     strategies_data["assignments"]["DOGEUSDT"] = ["mean_reversion"]
     _write_yaml(strategies_path, strategies_data)
+    _enable_mean_reversion_asset(cfg_dir, "DOGEUSDT")
     config = ConfigLoader(config_dir=cfg_dir).load_config()
 
     ep = ExecPosFSM(config=config, fsm=MagicMock(), shadow_mode=True)

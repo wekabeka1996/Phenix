@@ -1,4 +1,4 @@
-﻿"""
+"""
 Scenario Manager
 ================
 
@@ -6,7 +6,7 @@ Owns the lifecycle of all ScenarioWorkers.
 Loads the scenario matrix, creates workers, fans out snapshots, collects results.
 
 Supports:
-- Mixed strategy types (aurora, mean_reversion, ensemble)
+- Mixed strategy types (aurora, mean_reversion, ensemble, md_amr)
 - Per-scenario config resolution and log isolation
 - Sequential and thread-pool parallel fan-out
 - Health heartbeat and graceful degradation
@@ -62,10 +62,7 @@ class ScenarioManager:
 
         # Aggregate reporter
         self._reporter = AggregateReporter(session_dir)
-<<<<<<< HEAD
         self._reporter.register_scenarios(self._config.scenarios)
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
         # Stats
         self._snapshots_dispatched = 0
@@ -87,13 +84,10 @@ class ScenarioManager:
         for spec in enabled:
             try:
                 self._init_worker(spec)
-<<<<<<< HEAD
                 self._reporter.log_health({
                     "event": "SCENARIO_INIT_OK",
                     "scenario_id": spec.scenario_id,
                 })
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
                 initialized += 1
             except ConfigResolutionError as e:
                 LOG.error(
@@ -203,7 +197,7 @@ class ScenarioManager:
         return all_results
 
     def get_aggregate_summary(self) -> Dict[str, Any]:
-        """Collect summaries from all workers."""
+        """Collect summaries from all workers with granular breakdowns."""
         summaries = {}
         for sid, worker in self._workers.items():
             try:
@@ -211,6 +205,10 @@ class ScenarioManager:
                 book = self._shadow_books.get(sid)
                 if book:
                     summary["shadow_metrics"] = book.get_metrics()
+                    summary["symbol_breakdown"] = book.get_metrics_by_symbol()
+                    summary["regime_breakdown"] = book.get_metrics_by_regime()
+                    summary["temporal_by_hour"] = book.get_metrics_by_hour()
+                    summary["temporal_by_day"] = book.get_metrics_by_day_of_week()
                 summaries[sid] = summary
             except Exception as e:
                 summaries[sid] = {"error": str(e)}
@@ -234,9 +232,17 @@ class ScenarioManager:
         final_summary = self.get_aggregate_summary()
         self._reporter.log_summary(final_summary.get("scenarios", {}))
 
+        # Flush breakdown CSVs (symbol, regime, temporal)
+        self._reporter.flush_breakdowns()
+
         # Shutdown workers
         for sid, worker in self._workers.items():
             try:
+                writer = self._score_writers.get(sid)
+                if writer:
+                    for provider_id, positions in worker.closed_positions.items():
+                        for pos in positions:
+                            writer.write_trade(pos)
                 worker.shutdown()
             except Exception as e:
                 LOG.warning(f"[{sid}] Shutdown error: {e}")

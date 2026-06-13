@@ -1,22 +1,3 @@
-<<<<<<< HEAD
-# Тестування домену Alpha Search
-
-## 1. Стратегія тестування
-Тестування розділене на перевірку математичної коректності окремих моделей та перевірку логіки ансамблювання.
-
-## 2. Ключові тестові набори
-- `tests/test_alpha_models.py`: Unit-тести для `Momentum`, `MeanReversion` та `Volatility`. Перевіряють реакцію на синтетичні дані.
-- `tests/test_ensemble.py`: Тестування зважування, ребалансування та нормалізації сигналів.
-- **Integration Tests**: Перевірка проходження сигналу від `feature_engineering` до `alpha_search`.
-
-## 3. Метрики якості
-- **Parity Check**: Порівняння результатів production-коду з результатами дослідницьких ноутбуків (Pandas/NumPy) з точністю до 4-го знаку.
-- **Fail-Closed Verification**: Тести на відсутність ознак (перевірка, що модель повертає 0, а не падає).
-
-## 4. Прогалини (Gaps)
-- Відсутні стрес-тести на великій кількості символів (100+ паралельно).
-- Немає автоматизованих тестів на дрейф продуктивності (performance drift) при ребалансуванні.
-=======
 # Alpha Search Testing
 
 ## 1. Test Strategy
@@ -153,4 +134,3 @@ The important rule is not to assume one slice covers the full domain. The curren
 The main verification risk is undersampling the domain.
 
 If a change touches embedded plugin flow, standalone runtime flow, or shutdown export boundaries, run the slice that matches that surface explicitly. alpha_search is now too broad for the old model-only test mental model.
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b

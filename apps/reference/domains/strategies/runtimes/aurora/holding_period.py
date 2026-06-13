@@ -12,6 +12,10 @@ from typing import Any, Dict
 
 from apps.reference.shared.decision_primitives.scoring_kernel import ScoringResult
 from apps.reference.domains.decision_making.observability.dashboard import TradeOutcome
+from apps.reference.domains.strategies.runtimes.aurora.policies import (
+    HoldingPeriodPolicy,
+    HoldingPeriodSnapshot,
+)
 
 
 class AuroraHoldingPeriodMixin:
@@ -116,19 +120,32 @@ class AuroraHoldingPeriodMixin:
         # 3. Compare elapsed monotonic time against the scaled min duration.
         now = float(self.monotonic_fn())
         min_duration = self._get_min_duration_sec(symbol)
+        emergency_threshold = self._get_emergency_threshold(symbol)
+        decision = HoldingPeriodPolicy().evaluate(
+            HoldingPeriodSnapshot(
+                enabled=bool(self.holding_period_enabled),
+                apply_to_flips=bool(self.holding_apply_to_flips),
+                is_flip=bool(is_flip),
+                entry_timestamp=entry_ts,
+                now_monotonic=now,
+                min_duration_sec=min_duration,
+                score=result.score,
+                emergency_threshold=emergency_threshold,
+            )
+        )
         time_in_position = now - entry_ts
 
-        if time_in_position >= min_duration:
+        if not decision.suppress and not decision.emergency_exit:
             # Holding period elapsed → allow exit
             return False
 
         # 4. Emergency override is score-driven and intentionally ignores the
         # remaining hold time.
-        if self._is_emergency_exit(result.score, symbol):
+        if decision.emergency_exit:
             self.logger.warning(
                 f"[{symbol}] EMERGENCY_OVERRIDE: Allowing exit despite holding period "
                 f"(score={float(result.score):.4f}, time_in_position={time_in_position:.1f}s, "
-                f"threshold={self._get_emergency_threshold(symbol)})"
+                f"threshold={emergency_threshold})"
             )
             return False
 

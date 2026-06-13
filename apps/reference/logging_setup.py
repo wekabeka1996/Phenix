@@ -1,6 +1,5 @@
 """
 Centralized Logging Setup (CFG-OBS-001)
-========================================
 
 This module provides YAML-driven logging configuration, replacing hardcoded values in main.py.
 All logging settings are read from config.observability (SSOT: observability.yaml).

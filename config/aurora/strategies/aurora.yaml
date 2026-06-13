@@ -194,14 +194,14 @@ aurora:
     retry_max_count: 3
     retry_backoff_factor: 1.5
     signal_weights:
-      obi: 0.42
-      tfi: 0.15
-      delta_price: 0.15
-      ema_bias: 0.15
-      volume_spike: 0.1
+      obi: -0.2
+      tfi: -0.25
+      delta_price: -0.1
+      ema_bias: -0.3
+      volume_spike: 0.45
       volatility_state: 0.1
       depth_imbalance: -0.15
-      macro_resid: 0.1
+      macro_resid: -0.15
       macro_sync: 0.0
       absorption: 0.0
     signals:
@@ -303,15 +303,15 @@ aurora:
       threshold: -2.0
     score_multiplier: 1.0
     decision_geometry:
-      # admission_mode=linear is intentional: admission uses |S| directly
-      # (no quadratic squaring) so that borderline entries are not suppressed by
-      # the ^2 transform. sizing_mode=quadratic retains non-linear position sizing.
-      # This split was calibrated on 2024-05-01 and is the authoritative runtime
-      # geometry — do NOT change without a matching calibration run and score-lineage audit.
+      # Phase 10.1: admission_mode=linear preserved (correct for borderline entries).
+      # sizing_mode changed from quadratic to soft_power(1.35) — quadratic (|x|²)
+      # was destroying 90% of moderate signals (|pillar_sum|=0.15-0.35 → sizing=0.02-0.12).
+      # soft_power(1.35) preserves noise suppression but keeps sizing viable:
+      # |0.25|^1.35 = 0.17 vs |0.25|^2 = 0.06 — a 3× improvement for typical signals.
       admission_mode: linear
       admission_power: null
-      sizing_mode: quadratic
-      sizing_power: null
+      sizing_mode: soft_power
+      sizing_power: 1.35
       admission_shield_floor: 0.75
     scoring_engine:
       exposure_cap: 1.0
@@ -322,9 +322,9 @@ aurora:
         regime_multipliers:
           TREND_UP: 1.0
           TREND_DOWN: 1.0
-          MEAN_REVERSION: 0.75
-          LOW_VOLATILITY: 0.85
-          HIGH_VOLATILITY: 0.3
+          MEAN_REVERSION: 0.85
+          LOW_VOLATILITY: 0.90
+          HIGH_VOLATILITY: 0.85
           UNCERTAIN: 0.55
         default_multiplier: 0.8
         no_regime_multiplier: 0.5
@@ -402,14 +402,14 @@ aurora:
     ETHUSDT:
       enabled: true
       weights:
-        ema_bias: -0.119873
-        volume_spike: 0.243661
-        macro_resid: -0.0689669
-        obi: 0.101274
-        tfi: 0.134215
+        ema_bias: -0.3
+        volume_spike: 0.45
+        macro_resid: -0.15
+        obi: -0.2
+        tfi: -0.25
         volatility_state: 0.00633937
         depth_imbalance: -0.0894987
-        delta_price: 0.181047
+        delta_price: -0.1
         absorption: 0.0551244
       side_bias:
         penalty_factor: 0.5
@@ -422,7 +422,11 @@ aurora:
         TREND_UP: 0.603259
         DEFAULT: 1.0
       regime_sizing:
+        HIGH_VOLATILITY: 0.7
+        LOW_VOLATILITY: 0.9
         TREND_UP: 1.3
+        TREND_DOWN: 1.3
+        MEAN_REVERSION: 0.7
       exit:
         sl_pct: 0.004
         max_hold_sec: null
@@ -430,12 +434,21 @@ aurora:
           enabled: true
           mode: pct_mult
           sl_mult:
+            DEFAULT: 1.0
+            LOW_VOLATILITY: 0.8
+            HIGH_VOLATILITY: 1.3
             TREND_UP: 1.0
-            DEFAULT: 1.84
+            TREND_DOWN: 1.0
+            MEAN_REVERSION: 0.95
+            UNCERTAIN: 1.2
           tp_mult:
-            LOW_VOLATILITY: 1.25
-            TREND_UP: 2.25
             DEFAULT: 0.5
+            LOW_VOLATILITY: 1.25
+            HIGH_VOLATILITY: 1.6
+            TREND_UP: 2.25
+            TREND_DOWN: 2.25
+            MEAN_REVERSION: 1.2
+            UNCERTAIN: 1.0
           sl_k_atr: null
           rr_by_regime: null
           min_sl_pct: 0.003
@@ -448,19 +461,22 @@ aurora:
         tp_high_ratio: 1.65
         partial_exit_pct: 0.5
       trailing_stop:
-        enabled: false
+        enabled: true
         activation_pct: 0.02
         trail_pct: 0.01
         trail_atr_mult: null
         min_update_interval_sec: 5
       signal_threshold:
         enabled: true
-        value: 0.001004
+        value: 0.14
       cooldown_sec: null
       allowed_regimes:
       - TREND_UP
       - TREND_DOWN
       - LOW_VOLATILITY
+      - HIGH_VOLATILITY
+      - MEAN_REVERSION
+      - UNCERTAIN
       scoring_version: null
       feature_neutrals: null
       essential_features: null
@@ -471,7 +487,7 @@ aurora:
         failsafe_qty_check: true
       holding_period:
         enabled: true
-        min_duration_sec: 20.0
+        min_duration_sec: 180.0
         emergency_exit_threshold: 0.7
         apply_to_flips: true
       reentry_cooldown_sec: 300
@@ -479,20 +495,25 @@ aurora:
       volatility_entry_logic:
         enabled: true
         regime_multipliers:
+          HIGH_VOLATILITY: 0.2
+          LOW_VOLATILITY: 0.08
           TREND_UP: 0.1
+          TREND_DOWN: 0.1
+          MEAN_REVERSION: 0.12
+          UNCERTAIN: 0.13
           DEFAULT: 0.12
       max_risk_score: null
     SOLUSDT:
-      enabled: true
+      enabled: false
       weights:
-        ema_bias: -0.176429
-        volume_spike: 0.238007
-        macro_resid: -0.0492056
-        obi: 0.135947
-        tfi: 0.263238
+        ema_bias: -0.3
+        volume_spike: 0.45
+        macro_resid: -0.15
+        obi: -0.2
+        tfi: -0.25
         volatility_state: 0.0119935
         depth_imbalance: 0.0148722
-        delta_price: 0.294059
+        delta_price: -0.1
         absorption: 0.0562502
       side_bias:
         penalty_factor: 0.0
@@ -506,10 +527,12 @@ aurora:
         LOW_VOLATILITY: 0.75
         MEAN_REVERSION: 1.0
         UNCERTAIN: 99.0
-        DEFAULT: 99.0
+        DEFAULT: 1.0
       regime_sizing:
         HIGH_VOLATILITY: 0.7
         LOW_VOLATILITY: 0.9
+        TREND_UP: 1.3
+        TREND_DOWN: 1.3
         MEAN_REVERSION: 1.0
       exit:
         sl_pct: 0.00675
@@ -555,14 +578,16 @@ aurora:
         trail_atr_mult: null
         min_update_interval_sec: 5
       signal_threshold:
-        enabled: false
-        value: 0.0232
+        enabled: true
+        value: 0.15
       cooldown_sec: null
       allowed_regimes:
       - TREND_UP
       - TREND_DOWN
       - LOW_VOLATILITY
       - HIGH_VOLATILITY
+      - MEAN_REVERSION
+      - UNCERTAIN
       scoring_version: null
       feature_neutrals: null
       essential_features: null
@@ -572,8 +597,8 @@ aurora:
         kappa_max: 1.0
         failsafe_qty_check: true
       holding_period:
-        enabled: false
-        min_duration_sec: 1800.0
+        enabled: true
+        min_duration_sec: 180.0
         emergency_exit_threshold: 0.9
         apply_to_flips: true
       reentry_cooldown_sec: 900
@@ -592,14 +617,14 @@ aurora:
     BTCUSDT:
       enabled: true
       weights:
-        ema_bias: -0.119873
-        volume_spike: 0.243661
-        macro_resid: -0.0689669
-        obi: 0.101274
-        tfi: 0.134215
+        ema_bias: -0.3
+        volume_spike: 0.45
+        macro_resid: -0.15
+        obi: -0.2
+        tfi: -0.25
         volatility_state: 0.00633937
         depth_imbalance: -0.0894987
-        delta_price: 0.181047
+        delta_price: -0.1
         absorption: 0.0551244
       side_bias:
         penalty_factor: 0.5
@@ -612,7 +637,7 @@ aurora:
         HIGH_VOLATILITY: 0.351595
         LOW_VOLATILITY: 0.894536
         TREND_UP: 0.544187
-        TREND_DOWN: 2.280437
+        TREND_DOWN: 1.0
         MEAN_REVERSION: 0.965366
         UNCERTAIN: 0.724744
         DEFAULT: 1.0
@@ -629,17 +654,21 @@ aurora:
           enabled: true
           mode: pct_mult
           sl_mult:
-            LOW_VOLATILITY: 1.27
-            HIGH_VOLATILITY: 1.65
+            DEFAULT: 1.0
+            LOW_VOLATILITY: 0.9
+            HIGH_VOLATILITY: 1.4
             TREND_UP: 1.0
             TREND_DOWN: 1.0
-            DEFAULT: 1.64
+            MEAN_REVERSION: 0.95
+            UNCERTAIN: 1.2
           tp_mult:
-            LOW_VOLATILITY: 1.25
-            HIGH_VOLATILITY: 0.53
+            DEFAULT: 0.5
+            LOW_VOLATILITY: 1.2
+            HIGH_VOLATILITY: 1.6
             TREND_UP: 1.9
             TREND_DOWN: 1.9
-            DEFAULT: 0.5
+            MEAN_REVERSION: 1.2
+            UNCERTAIN: 1.0
           sl_k_atr: null
           rr_by_regime: null
           min_sl_pct: 0.003
@@ -652,20 +681,22 @@ aurora:
         tp_high_ratio: 1.65
         partial_exit_pct: 0.5
       trailing_stop:
-        enabled: false
+        enabled: true
         activation_pct: 0.02
         trail_pct: 0.01
         trail_atr_mult: null
         min_update_interval_sec: 5
       signal_threshold:
         enabled: true
-        value: 0.00061
+        value: 0.14
       cooldown_sec: null
       allowed_regimes:
       - TREND_UP
       - TREND_DOWN
       - LOW_VOLATILITY
       - HIGH_VOLATILITY
+      - MEAN_REVERSION
+      - UNCERTAIN
       scoring_version: null
       feature_neutrals: null
       essential_features: null
@@ -676,7 +707,7 @@ aurora:
         failsafe_qty_check: true
       holding_period:
         enabled: true
-        min_duration_sec: 20.0
+        min_duration_sec: 180.0
         emergency_exit_threshold: 0.7
         apply_to_flips: true
       reentry_cooldown_sec: 300
@@ -695,14 +726,14 @@ aurora:
     BNBUSDT:
       enabled: true
       weights:
-        ema_bias: -0.119873
-        volume_spike: 0.243661
-        macro_resid: -0.0689669
-        obi: 0.101274
-        tfi: 0.134215
+        ema_bias: -0.3
+        volume_spike: 0.45
+        macro_resid: -0.15
+        obi: -0.2
+        tfi: -0.25
         volatility_state: 0.00633937
         depth_imbalance: -0.0894987
-        delta_price: 0.181047
+        delta_price: -0.1
         absorption: 0.0551244
       side_bias:
         penalty_factor: 0.5
@@ -718,7 +749,7 @@ aurora:
         TREND_DOWN: 0.1
         MEAN_REVERSION: 0.07
         UNCERTAIN: 99.0
-        DEFAULT: 99.0
+        DEFAULT: 1.0
       regime_sizing:
         HIGH_VOLATILITY: 0.7
         LOW_VOLATILITY: 0.7
@@ -732,17 +763,21 @@ aurora:
           enabled: true
           mode: pct_mult
           sl_mult:
-            LOW_VOLATILITY: 1.27
-            HIGH_VOLATILITY: 1.65
+            DEFAULT: 1.0
+            LOW_VOLATILITY: 0.9
+            HIGH_VOLATILITY: 1.4
             TREND_UP: 1.0
             TREND_DOWN: 1.0
-            DEFAULT: 1.64
+            MEAN_REVERSION: 0.95
+            UNCERTAIN: 1.2
           tp_mult:
-            LOW_VOLATILITY: 1.25
-            HIGH_VOLATILITY: 0.53
+            DEFAULT: 0.5
+            LOW_VOLATILITY: 1.2
+            HIGH_VOLATILITY: 1.6
             TREND_UP: 1.9
             TREND_DOWN: 1.9
-            DEFAULT: 0.5
+            MEAN_REVERSION: 1.2
+            UNCERTAIN: 1.0
           sl_k_atr: null
           rr_by_regime: null
           min_sl_pct: 0.003
@@ -755,19 +790,22 @@ aurora:
         tp_high_ratio: 1.65
         partial_exit_pct: 0.5
       trailing_stop:
-        enabled: false
+        enabled: true
         activation_pct: 0.02
         trail_pct: 0.01
         trail_atr_mult: null
         min_update_interval_sec: 5
       signal_threshold:
         enabled: true
-        value: 0.162
+        value: 0.15
       cooldown_sec: null
       allowed_regimes:
       - TREND_UP
       - TREND_DOWN
+      - LOW_VOLATILITY
       - HIGH_VOLATILITY
+      - MEAN_REVERSION
+      - UNCERTAIN
       scoring_version: null
       feature_neutrals: null
       essential_features: null
@@ -778,7 +816,7 @@ aurora:
         failsafe_qty_check: true
       holding_period:
         enabled: true
-        min_duration_sec: 20.0
+        min_duration_sec: 180.0
         emergency_exit_threshold: 0.7
         apply_to_flips: true
       reentry_cooldown_sec: 300
@@ -797,14 +835,14 @@ aurora:
     1000PEPEUSDT:
       enabled: true
       weights:
-        ema_bias: 0.2
-        volume_spike: 0.2
-        macro_resid: 0.25
-        obi: 0.25
-        tfi: 0.09
+        ema_bias: -0.3
+        volume_spike: 0.45
+        macro_resid: -0.15
+        obi: -0.2
+        tfi: -0.25
         volatility_state: 0.05
         depth_imbalance: -0.2
-        delta_price: 0.1
+        delta_price: -0.1
         absorption: 0.0
       side_bias:
         penalty_factor: 0.0
@@ -818,10 +856,12 @@ aurora:
         LOW_VOLATILITY: 0.8
         MEAN_REVERSION: 1.1
         UNCERTAIN: 99.0
-        DEFAULT: 99.0
+        DEFAULT: 1.0
       regime_sizing:
         HIGH_VOLATILITY: 0.5
         LOW_VOLATILITY: 1.0
+        TREND_UP: 1.3
+        TREND_DOWN: 1.3
         MEAN_REVERSION: 0.75
       exit:
         sl_pct: 0.01512
@@ -868,14 +908,15 @@ aurora:
         min_update_interval_sec: 5
       signal_threshold:
         enabled: true
-        value: 0.008
+        value: 0.12
       cooldown_sec: null
       allowed_regimes:
+      - TREND_UP
       - TREND_DOWN
       - LOW_VOLATILITY
-      - FLAT_NORMAL
+      - HIGH_VOLATILITY
       - MEAN_REVERSION
-      - TREND_UP
+      - UNCERTAIN
       scoring_version: null
       feature_neutrals: null
       essential_features: null
@@ -885,11 +926,11 @@ aurora:
         kappa_max: 1.0
         failsafe_qty_check: true
       holding_period:
-        enabled: false
-        min_duration_sec: 35.0
+        enabled: true
+        min_duration_sec: 180.0
         emergency_exit_threshold: 0.65
         apply_to_flips: true
-      reentry_cooldown_sec: 120
+      reentry_cooldown_sec: 420
       timeframe_sec: null
       volatility_entry_logic:
         enabled: true
@@ -903,16 +944,16 @@ aurora:
           DEFAULT: 0.2
       max_risk_score: null
     DOGEUSDT:
-      enabled: true
+      enabled: false
       weights:
-        ema_bias: -0.119873
-        volume_spike: 0.243661
-        macro_resid: -0.0689669
-        obi: 0.101274
-        tfi: 0.134215
+        ema_bias: -0.3
+        volume_spike: 0.45
+        macro_resid: -0.15
+        obi: -0.2
+        tfi: -0.25
         volatility_state: 0.00633937
         depth_imbalance: -0.0894987
-        delta_price: 0.181047
+        delta_price: -0.1
         absorption: 0.0551244
       side_bias:
         penalty_factor: 0.5
@@ -928,7 +969,7 @@ aurora:
         TREND_DOWN: 0.1
         MEAN_REVERSION: 0.07
         UNCERTAIN: 99.0
-        DEFAULT: 99.0
+        DEFAULT: 1.0
       regime_sizing:
         HIGH_VOLATILITY: 0.7
         LOW_VOLATILITY: 0.7
@@ -942,17 +983,21 @@ aurora:
           enabled: true
           mode: pct_mult
           sl_mult:
-            LOW_VOLATILITY: 1.27
-            HIGH_VOLATILITY: 1.65
+            DEFAULT: 1.0
+            LOW_VOLATILITY: 0.9
+            HIGH_VOLATILITY: 1.4
             TREND_UP: 1.0
             TREND_DOWN: 1.0
-            DEFAULT: 1.64
+            MEAN_REVERSION: 0.95
+            UNCERTAIN: 1.2
           tp_mult:
-            LOW_VOLATILITY: 1.25
-            HIGH_VOLATILITY: 0.53
+            DEFAULT: 0.5
+            LOW_VOLATILITY: 1.2
+            HIGH_VOLATILITY: 1.6
             TREND_UP: 1.9
             TREND_DOWN: 1.9
-            DEFAULT: 0.5
+            MEAN_REVERSION: 1.2
+            UNCERTAIN: 1.0
           sl_k_atr: null
           rr_by_regime: null
           min_sl_pct: 0.003
@@ -965,18 +1010,22 @@ aurora:
         tp_high_ratio: 1.65
         partial_exit_pct: 0.5
       trailing_stop:
-        enabled: false
+        enabled: true
         activation_pct: 0.02
         trail_pct: 0.01
         trail_atr_mult: null
         min_update_interval_sec: 5
       signal_threshold:
         enabled: true
-        value: 0.162
+        value: 0.15
       cooldown_sec: null
       allowed_regimes:
+      - TREND_UP
       - TREND_DOWN
+      - LOW_VOLATILITY
       - HIGH_VOLATILITY
+      - MEAN_REVERSION
+      - UNCERTAIN
       scoring_version: null
       feature_neutrals: null
       essential_features: null
@@ -987,7 +1036,7 @@ aurora:
         failsafe_qty_check: true
       holding_period:
         enabled: true
-        min_duration_sec: 20.0
+        min_duration_sec: 180.0
         emergency_exit_threshold: 0.7
         apply_to_flips: true
       reentry_cooldown_sec: 300
@@ -1006,14 +1055,14 @@ aurora:
     XRPUSDT:
       enabled: true
       weights:
-        ema_bias: -0.119873
-        volume_spike: 0.243661
-        macro_resid: -0.0689669
-        obi: 0.101274
-        tfi: 0.134215
+        ema_bias: -0.3
+        volume_spike: 0.45
+        macro_resid: -0.15
+        obi: -0.2
+        tfi: -0.25
         volatility_state: 0.00633937
         depth_imbalance: -0.0894987
-        delta_price: 0.181047
+        delta_price: -0.1
         absorption: 0.0551244
       side_bias:
         penalty_factor: 0.5
@@ -1029,7 +1078,7 @@ aurora:
         TREND_DOWN: 0.1
         MEAN_REVERSION: 0.07
         UNCERTAIN: 99.0
-        DEFAULT: 99.0
+        DEFAULT: 1.0
       regime_sizing:
         HIGH_VOLATILITY: 0.7
         LOW_VOLATILITY: 0.7
@@ -1043,17 +1092,21 @@ aurora:
           enabled: true
           mode: pct_mult
           sl_mult:
-            LOW_VOLATILITY: 1.27
-            HIGH_VOLATILITY: 1.65
+            DEFAULT: 1.0
+            LOW_VOLATILITY: 0.9
+            HIGH_VOLATILITY: 1.4
             TREND_UP: 1.0
             TREND_DOWN: 1.0
-            DEFAULT: 1.64
+            MEAN_REVERSION: 0.95
+            UNCERTAIN: 1.2
           tp_mult:
-            LOW_VOLATILITY: 1.25
-            HIGH_VOLATILITY: 0.53
+            DEFAULT: 0.5
+            LOW_VOLATILITY: 1.2
+            HIGH_VOLATILITY: 1.6
             TREND_UP: 1.9
             TREND_DOWN: 1.9
-            DEFAULT: 0.5
+            MEAN_REVERSION: 1.2
+            UNCERTAIN: 1.0
           sl_k_atr: null
           rr_by_regime: null
           min_sl_pct: 0.003
@@ -1066,21 +1119,22 @@ aurora:
         tp_high_ratio: 1.65
         partial_exit_pct: 0.5
       trailing_stop:
-        enabled: false
+        enabled: true
         activation_pct: 0.02
         trail_pct: 0.01
         trail_atr_mult: null
         min_update_interval_sec: 5
       signal_threshold:
         enabled: true
-        value: 0.162
+        value: 0.15
       cooldown_sec: null
       allowed_regimes:
       - TREND_UP
       - TREND_DOWN
+      - LOW_VOLATILITY
       - HIGH_VOLATILITY
       - MEAN_REVERSION
-      - LOW_VOLATILITY
+      - UNCERTAIN
       scoring_version: null
       feature_neutrals: null
       essential_features: null
@@ -1091,7 +1145,7 @@ aurora:
         failsafe_qty_check: true
       holding_period:
         enabled: true
-        min_duration_sec: 20.0
+        min_duration_sec: 180.0
         emergency_exit_threshold: 0.7
         apply_to_flips: true
       reentry_cooldown_sec: 300

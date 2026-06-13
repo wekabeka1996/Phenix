@@ -56,10 +56,10 @@ class TestDecisionGeometryPydanticParsing:
             f"got {decision.decision_geometry.admission_mode!r}"
         )
 
-    def test_sizing_mode_is_quadratic_in_pydantic_object(self):
+    def test_sizing_mode_is_soft_power_in_pydantic_object(self):
         config = _load_aurora_config()
         decision = config.strategies.aurora.decision
-        assert decision.decision_geometry.sizing_mode == "quadratic"
+        assert decision.decision_geometry.sizing_mode == "soft_power"
 
     def test_admission_shield_floor_is_set(self):
         config = _load_aurora_config()
@@ -82,11 +82,11 @@ class TestConfigLoaderReadsDecisionGeometry:
             "If 'quadratic': config_loader's getattr fallback is masking decision_geometry loss."
         )
 
-    def test_decision_sizing_mode_is_quadratic(self):
+    def test_decision_sizing_mode_is_soft_power(self):
         config = _load_aurora_config()
         handler = _DummyHandler(config)
         handler._load_config()
-        assert handler.decision_sizing_mode == "quadratic"
+        assert handler.decision_sizing_mode == "soft_power"
 
     def test_decision_admission_shield_floor_propagates(self):
         config = _load_aurora_config()

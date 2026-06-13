@@ -237,6 +237,11 @@
           "default": "'<required>'",
           "default_factory": null,
           "required": true
+        },
+        "trade_executed_cutover_active": {
+          "default": "False",
+          "default_factory": null,
+          "required": false
         }
       }
     },

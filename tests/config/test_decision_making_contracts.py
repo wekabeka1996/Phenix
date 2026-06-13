@@ -110,6 +110,7 @@ def test_current_aurora_config_loads_decision_making_contract() -> None:
     }
     assert dm_domain.directional_sanity.max_regime_confidence_by_regime == expected_max_regime_confidence_by_regime
     assert dm_domain.low_vol_cost_floor_gate.enabled is True
+    assert dm_domain.low_vol_cost_floor_gate.decision_chain_enabled is True
     assert dm_domain.low_vol_cost_floor_gate.enforce_in_modes == [
         "testnet",
         "hybrid_live_data_testnet_exec",
@@ -170,8 +171,8 @@ def test_current_aurora_config_loads_decision_making_contract() -> None:
     assert cfg.strategies.md_amr.safety_gates.regime_confidence is None
     assert cfg.strategies.mean_reversion.safety_gates.regime_confidence is None
     assert cfg.strategies.llm_microstructure.safety_gates.regime_confidence is None
-    assert dm_domain.directional_sanity.nrr026_enabled is False
-    assert aurora.assets["XRPUSDT"].enabled is False
+    assert dm_domain.directional_sanity.nrr026_enabled is True
+    assert aurora.assets["XRPUSDT"].enabled is True
 
     decision = aurora.decision
     assert decision.testnet is not None
@@ -183,13 +184,13 @@ def test_current_aurora_config_loads_decision_making_contract() -> None:
     assert decision.scoring_version == "quadratic"
     assert decision.decision_geometry is not None
     assert decision.decision_geometry.admission_mode == "linear"
-    assert decision.decision_geometry.sizing_mode == "quadratic"
+    assert decision.decision_geometry.sizing_mode == "soft_power"
     assert decision.scoring_engine is not None
     assert decision.scoring_engine.shield_enabled is True
     assert decision.scoring_engine.danger_zone_shield.vol_threshold == 0.98
     assert (
         decision.scoring_engine.context_shield.regime_multipliers["HIGH_VOLATILITY"]
-        == 0.30
+        == 0.85
     )
     assert decision.scoring_engine.memory_shield.unknown_threshold == 10
     assert decision.holding_period is not None
@@ -250,7 +251,7 @@ def test_variant_b2_pre_restart_hardening_and_size_rebalance_contract() -> None:
     sidecar = cfg.domains.execution_position.position_policy_sidecar
 
     assert sidecar.mode.value == "enable"
-    assert dm_domain.directional_sanity.nrr026_enabled is False
+    assert dm_domain.directional_sanity.nrr026_enabled is True
 
     assert decision.exit is not None
     assert decision.exit.signal_exit_enabled is False
@@ -269,9 +270,9 @@ def test_variant_b2_pre_restart_hardening_and_size_rebalance_contract() -> None:
     assert rule.sides == ["SELL"]
     assert rule.symbols is None
 
-    assert aurora.assets["BNBUSDT"].enabled is False
-    assert aurora.assets["XRPUSDT"].enabled is False
-    assert aurora.assets["SOLUSDT"].signal_threshold.enabled is False
+    assert aurora.assets["BNBUSDT"].enabled is True
+    assert aurora.assets["XRPUSDT"].enabled is True
+    assert aurora.assets["SOLUSDT"].signal_threshold.enabled is True
 
     eth_side_override = aurora.safety_gates.regime_confidence.max_by_symbol_regime_side[
         "ETHUSDT"]["TREND_DOWN"]
@@ -294,7 +295,7 @@ def test_variant_b2_pre_restart_hardening_and_size_rebalance_contract() -> None:
         for asset in enabled_assets.values()
     )
     assert all(
-        "MEAN_REVERSION" not in list(asset.allowed_regimes or [])
+        "MEAN_REVERSION" in list(asset.allowed_regimes or [])
         for asset in enabled_assets.values()
     )
 
@@ -640,6 +641,7 @@ def test_low_vol_cost_floor_gate_accepts_explicit_contract() -> None:
     )
 
     assert cfg.regimes == ["LOW_VOLATILITY"]
+    assert cfg.decision_chain_enabled is True
     assert cfg.thresholds.min_regime_confidence_by_regime["LOW_VOLATILITY"] == 0.39
     assert cfg.thresholds.min_direction_confidence_overrides_by_strategy_symbol == {
         "aurora": {

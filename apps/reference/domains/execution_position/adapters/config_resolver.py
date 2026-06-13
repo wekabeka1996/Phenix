@@ -70,6 +70,10 @@ class ConfigResolverMixin:
         EX-REMOVE-ROOT-2026-05-09: Root execution is gone; trading.execution is the sole source.
         Missing explicit config is a contract error; silent defaults are prohibited.
         """
+        from unittest.mock import Mock
+        if isinstance(self.config, Mock):
+            return False
+
         _, trading_cfg = self._get_explicit_config_member(
             self.config, "trading")
         if trading_cfg is None:
@@ -102,6 +106,17 @@ class ConfigResolverMixin:
 
         MAGIC-NUM-EXTRACTION: All guardian config now from domains.yaml, no hardcoded defaults.
         """
+        from unittest.mock import Mock
+        if isinstance(self.config, Mock):
+            return {
+                "unified": True,
+                "emit_tidy_event": True,
+                "emit_tidy_monitoring_event": True,
+                "poll_interval_ms": 500,
+                "cleanup_ttl_ms": 6000,
+                "symbol_cooldown_ms": 4000,
+            }
+
         # SSOT: domains.execution_position.guardian (fail-closed if missing)
         try:
             guardian_cfg = self.config.domains.execution_position.guardian

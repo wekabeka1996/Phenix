@@ -79,16 +79,20 @@ CONTRACT_CASES = {
         "required": {
             "aurora",
             "mean_reversion",
+            "alpha_mr_s01",
             "md_amr",
             "llm_microstructure",
+            "alpha_ta_ensemble",
         },
         "defaults": {},
         "default_factories": {},
         "optional_fields": {
             "aurora",
             "mean_reversion",
+            "alpha_mr_s01",
             "md_amr",
             "llm_microstructure",
+            "alpha_ta_ensemble",
         },
     },
 }
@@ -221,12 +225,20 @@ def test_common_annotation_and_rebuild_contracts_hold() -> None:
         cm.MeanReversion1mStrategyConfig,
     )
     assert _annotation_includes(
+        strategies_fields["alpha_mr_s01"].annotation,
+        cm.AlphaMrS01StrategyConfig,
+    )
+    assert _annotation_includes(
         strategies_fields["md_amr"].annotation,
         cm.MDAMRStrategyConfig,
     )
     assert _annotation_includes(
         strategies_fields["llm_microstructure"].annotation,
         cm.LLMMicrostructureStrategyConfig,
+    )
+    assert _annotation_includes(
+        strategies_fields["alpha_ta_ensemble"].annotation,
+        cm.AlphaTaEnsembleStrategyConfig,
     )
 
     assert _annotation_includes(
@@ -238,12 +250,20 @@ def test_common_annotation_and_rebuild_contracts_hold() -> None:
         cm.MeanReversion1mStrategyConfig,
     )
     assert _annotation_includes(
+        common_strategies_fields["alpha_mr_s01"].annotation,
+        cm.AlphaMrS01StrategyConfig,
+    )
+    assert _annotation_includes(
         common_strategies_fields["md_amr"].annotation,
         cm.MDAMRStrategyConfig,
     )
     assert _annotation_includes(
         common_strategies_fields["llm_microstructure"].annotation,
         cm.LLMMicrostructureStrategyConfig,
+    )
+    assert _annotation_includes(
+        common_strategies_fields["alpha_ta_ensemble"].annotation,
+        cm.AlphaTaEnsembleStrategyConfig,
     )
 
 

@@ -59,6 +59,11 @@ from apps.reference.domains.strategies.runtimes.md_amr.entry_anchor_artifact imp
     MDAMREntryAnchorArtifactStore,
     MDAMREntryAnchorRecord,
 )
+from apps.reference.domains.strategies.runtimes.md_amr.regime_allowlist import (
+    MDAMRRegimeAllowlistEvaluator,
+    REGIME_ALIAS_MAP,
+    REGIME_COMPATIBILITY_MAP,
+)
 from apps.reference.domains.regime_allowlist.contract import RegimeAllowlistContract
 from apps.reference.telemetry.metrics import inc_decision_blocked, inc_warmup_block
 from apps.reference.utils import get_domain_mode_from_mapping
@@ -111,25 +116,10 @@ class MDAMRHandler:
     _DIR_COMPONENTS_REQUIRED_BARS = 96
     # Historical aliases keep operator/test inputs stable before allowlist
     # checks compare them against normalized structural regime labels.
-    _REGIME_ALIAS_MAP: Dict[str, str] = {
-        "LOW_FLAT": "FLAT_LOW",
-        "HIGH_FLAT": "FLAT_HIGH",
-        "HIGHT_FLAT": "FLAT_HIGH",
-        "NORMAL_FLAT": "FLAT_NORMAL",
-        "HIGH_VOLATILYTY": "HIGH_VOLATILITY",
-        "LOW_VOLATILYTY": "LOW_VOLATILITY",
-        "HIGHT_VOLATILITY": "HIGH_VOLATILITY",
-    }
+    _REGIME_ALIAS_MAP: Dict[str, str] = REGIME_ALIAS_MAP
     # A single allowlist may mix flat-regime and volatility-oriented labels;
     # expand them to the compatible set before enforcing the gate.
-    _REGIME_COMPATIBILITY_MAP: Dict[str, tuple[str, ...]] = {
-        "FLAT_LOW": ("FLAT_LOW", "LOW_VOLATILITY"),
-        "LOW_VOLATILITY": ("LOW_VOLATILITY", "FLAT_LOW"),
-        "FLAT_NORMAL": ("FLAT_NORMAL", "MEAN_REVERSION"),
-        "MEAN_REVERSION": ("MEAN_REVERSION", "FLAT_NORMAL"),
-        "FLAT_HIGH": ("FLAT_HIGH", "HIGH_VOLATILITY"),
-        "HIGH_VOLATILITY": ("HIGH_VOLATILITY", "FLAT_HIGH"),
-    }
+    _REGIME_COMPATIBILITY_MAP: Dict[str, tuple[str, ...]] = REGIME_COMPATIBILITY_MAP
 
     def __init__(self, fsm: "FSMCore", config: AuroraConfig) -> None:
         self.fsm = fsm
@@ -918,21 +908,11 @@ class MDAMRHandler:
 
     @classmethod
     def _normalize_regime_label(cls, regime: Any) -> str:
-        return cls._REGIME_ALIAS_MAP.get(str(regime or "").strip().upper(), str(regime or "").strip().upper())
+        return MDAMRRegimeAllowlistEvaluator().normalize(regime)
 
     @classmethod
     def _expand_allowed_regimes(cls, allowed_regimes: list[str]) -> list[str]:
-        expanded: list[str] = []
-        seen: set[str] = set()
-        for raw_regime in allowed_regimes:
-            normalized = cls._normalize_regime_label(raw_regime)
-            compatible = cls._REGIME_COMPATIBILITY_MAP.get(
-                normalized, (normalized,))
-            for regime in compatible:
-                if regime and regime not in seen:
-                    seen.add(regime)
-                    expanded.append(regime)
-        return expanded
+        return MDAMRRegimeAllowlistEvaluator().expand(allowed_regimes)
 
     @staticmethod
     def _kline_to_bar(kline: Any) -> Optional[Dict[str, Any]]:

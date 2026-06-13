@@ -16,11 +16,8 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-<<<<<<< HEAD
 from apps.reference.config_models import ExitManagerConfig
-from apps.reference.domains.decision_making.exit_manager import ExitManager
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
+from apps.reference.shared.decision_primitives.exit_manager import ExitManager
 from apps.reference.domains.ta_features.contracts import (
     TA_WARMUP_KEY,
     extract_ta_feature_vector,
@@ -34,8 +31,6 @@ from .config_models import (
     load_alpha_search_config,
     get_default_config,
 )
-<<<<<<< HEAD
-=======
 from .judge.experts.expert_output_bridge import (
     alpha_score_to_expert_output,
     write_jsonl_chamber_log,
@@ -52,7 +47,6 @@ from .judge.shadow_entry_plan import (
     write_jsonl_shadow_entry_plan_log,
 )
 from .judge.verdict import synthesize_verdict
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
 LOG = logging.getLogger(__name__)
 
@@ -82,7 +76,6 @@ class VirtualPosition:
     signal_id: str
     model_signal_id: Optional[str] = None
     bars_held: int = 0
-<<<<<<< HEAD
     entry_regime: str = "UNKNOWN"
     stop_price: Optional[float] = None
     target_price: Optional[float] = None
@@ -90,8 +83,6 @@ class VirtualPosition:
     low_water_price: Optional[float] = None
     latest_score: Optional[float] = None
     policy_snapshot: Dict[str, Any] = field(default_factory=dict)
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
 
 @dataclass
@@ -186,13 +177,10 @@ class AlphaSearchBacktestPlugin:
         }
         self._signal_provider: Dict[str, str] = {}
         self._pending_objective_events: Dict[str, Dict[str, Any]] = {}
-<<<<<<< HEAD
         self._aurora_decision_exit_cfg: Dict[str, Any] = {}
         self._aurora_symbol_exit_configs: Dict[str, Dict[str, Any]] = {}
         self._aurora_symbol_trailing_stop_configs: Dict[str, Dict[str, Any]] = {}
         self._aurora_symbol_take_profit_configs: Dict[str, Dict[str, Any]] = {}
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
         # Signal counter for IDs
         self._signal_counter = 0
@@ -235,11 +223,8 @@ class AlphaSearchBacktestPlugin:
             return AuroraAlphaAdapter(
                 essential_features=cfg.adapter.essential_features,
                 scoring_version=cfg.adapter.scoring_version,
-<<<<<<< HEAD
                 signal_weights=dict(cfg.adapter.signal_weights),
                 feature_neutrals=dict(cfg.adapter.feature_neutrals),
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
                 direction_strength_cfg=direction_strength_cfg,
                 regime_thresholds=dict(cfg.adapter.regime_thresholds),
                 base_threshold=cfg.adapter.base_threshold,
@@ -261,7 +246,18 @@ class AlphaSearchBacktestPlugin:
 
             for model_name, model_cfg in cfg.ensemble.models.items():
                 if model_cfg.enabled and model_name in model_map:
-                    models[model_name] = model_map[model_name]()
+                    system_model_cfg = {}
+                    if self.system_config:
+                        cfg_dict = self.system_config
+                        if not isinstance(cfg_dict, dict):
+                            if hasattr(cfg_dict, "model_dump"):
+                                cfg_dict = cfg_dict.model_dump()
+                            elif hasattr(cfg_dict, "__dict__"):
+                                cfg_dict = cfg_dict.__dict__
+                        if isinstance(cfg_dict, dict):
+                            key = model_name.replace("_v1", "")
+                            system_model_cfg = cfg_dict.get(key, {})
+                    models[model_name] = model_map[model_name](config=system_model_cfg)
 
             if not models:
                 LOG.warning(f"No enabled models for ensemble '{name}'")
@@ -294,19 +290,39 @@ class AlphaSearchBacktestPlugin:
                     else None
                 ),
             )
-            return EnsembleModel(config=ensemble_cfg, models=models)
-<<<<<<< HEAD
-=======
+
+            # Collect initial weights from cfg.ensemble.models
+            initial_weights = {}
+            if cfg.ensemble and cfg.ensemble.models:
+                for m_name, m_cfg in cfg.ensemble.models.items():
+                    if m_cfg.weight is not None:
+                        initial_weights[m_name] = float(m_cfg.weight)
+
+            # Collect system config for ensemble model
+            ensemble_system_cfg = {}
+            if self.system_config:
+                cfg_dict = self.system_config
+                if not isinstance(cfg_dict, dict):
+                    if hasattr(cfg_dict, "model_dump"):
+                        cfg_dict = cfg_dict.model_dump()
+                    elif hasattr(cfg_dict, "__dict__"):
+                        cfg_dict = cfg_dict.__dict__
+                if isinstance(cfg_dict, dict):
+                    ensemble_system_cfg = cfg_dict.get("ensemble", {})
+
+            return EnsembleModel(
+                config=ensemble_cfg,
+                models=models,
+                initial_weights=initial_weights,
+                system_config=ensemble_system_cfg,
+            )
         elif cfg.judge_expert:
             # Judge expert (Phase 2 shadow expert)
             return self._create_judge_expert(name, cfg)
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
         else:
             LOG.warning(f"Provider '{name}' has no adapter or ensemble config")
             return None
 
-<<<<<<< HEAD
-=======
     def _create_judge_expert(self, name: str, cfg: ProviderConfig) -> Optional[AlphaModel]:
         """Create a judge expert model from judge config.
 
@@ -342,7 +358,6 @@ class AlphaSearchBacktestPlugin:
                 f"Unknown judge expert type '{expert_type}' for '{name}'")
             return None
 
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     def _register_listeners(self) -> None:
         """Register event listeners for two-phase bridge."""
         if hasattr(self.event_bus, "listen"):
@@ -644,9 +659,6 @@ class AlphaSearchBacktestPlugin:
 
         # Cache hit!
         self._cache_hits += 1
-<<<<<<< HEAD
-        features = cache_entry.features
-=======
         # Create a local copy to avoid contaminating the canonical feature cache
         features = dict(cache_entry.features) if cache_entry.features else {}
 
@@ -679,7 +691,6 @@ class AlphaSearchBacktestPlugin:
                     pcfg.judge_expert.expert_type)
                 if expert_id:
                     solicited_expert_ids.append(expert_id)
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
         # Run each enabled provider
         for provider_id, model in self.providers.items():
@@ -747,7 +758,6 @@ class AlphaSearchBacktestPlugin:
                         provider_id, symbol, tf_sec, bar_close_ts)
                 continue
 
-<<<<<<< HEAD
             # Get current price for virtual trader
             current_price = cache_entry.price or self._get_price_from_features(
                 normalized_features
@@ -765,15 +775,10 @@ class AlphaSearchBacktestPlugin:
                 warmup_readiness = payload.get("warmup_readiness")
                 if not isinstance(warmup_readiness, dict):
                     warmup_readiness = cache_entry.warmup_status
-=======
-            # Calculate score
-            try:
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
                 score = model.calculate_alpha(
                     symbol=symbol,
                     market_data={"close": current_price},
                     features=normalized_features,
-<<<<<<< HEAD
                     context={
                         "mode": "backtest",
                         "shadow": self.shadow_mode,
@@ -782,13 +787,7 @@ class AlphaSearchBacktestPlugin:
                     }
                 )
 
-                self._process_score(
-=======
-                    context={"mode": "backtest", "shadow": self.shadow_mode}
-                )
-
                 expert_output = self._process_score(
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
                     provider_id=provider_id,
                     symbol=symbol,
                     score=score,
@@ -797,15 +796,11 @@ class AlphaSearchBacktestPlugin:
                     current_ts=cache_entry.ts,
                     tf_sec=tf_sec,
                     bar_close_ts=bar_close_ts,
-<<<<<<< HEAD
                     regime=regime,
                     features=normalized_features,
                 )
-=======
-                )
                 if expert_output is not None:
                     judge_expert_outputs.append(expert_output)
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
             except Exception as e:
                 LOG.warning(f"[{symbol}] Provider {provider_id} error: {e}")
@@ -813,8 +808,6 @@ class AlphaSearchBacktestPlugin:
                     self._emit_fail_closed_score(
                         provider_id, symbol, tf_sec, bar_close_ts)
 
-<<<<<<< HEAD
-=======
         # Phase 3: Chamber aggregation after provider loop
         if solicited_expert_ids:
             self._run_chamber_aggregation(
@@ -827,7 +820,6 @@ class AlphaSearchBacktestPlugin:
                 current_price=current_price,
             )
 
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     def _normalize_features_for_provider(
         self,
         *,
@@ -975,7 +967,6 @@ class AlphaSearchBacktestPlugin:
             return True  # None means all symbols
         return symbol in cfg.symbols
 
-<<<<<<< HEAD
     def configure_aurora_virtual_policy(
         self,
         *,
@@ -999,8 +990,6 @@ class AlphaSearchBacktestPlugin:
             for symbol, config in (symbol_take_profit_configs or {}).items()
         }
 
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     def _extract_model_signal_id(self, score: AlphaScore) -> Optional[str]:
         """Extract underlying model signal_id from why-chain when available."""
         for reason in score.why:
@@ -1020,19 +1009,14 @@ class AlphaSearchBacktestPlugin:
         current_ts: int,
         tf_sec: int,
         bar_close_ts: int,
-<<<<<<< HEAD
-        regime: Optional[str] = None,
+        regime: str = "UNKNOWN",
         features: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Process calculated score: emit event, update virtual trader."""
-=======
     ) -> Optional["ExpertOutput"]:
         """Process calculated score: emit event, update virtual trader.
 
         Returns ExpertOutput for judge expert providers (Phase 3 chamber
         collection), None for all others.
         """
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
         stats = self.provider_stats[provider_id]
         stats.signals_generated += 1
 
@@ -1047,18 +1031,6 @@ class AlphaSearchBacktestPlugin:
         self._signal_provider[signal_id] = provider_id
         model_signal_id = self._extract_model_signal_id(score)
 
-<<<<<<< HEAD
-        # Emit event
-        self._emit_score_event(
-            provider_id=provider_id,
-            symbol=symbol,
-            score=score,
-            threshold=threshold,
-            tf_sec=tf_sec,
-            bar_close_ts=bar_close_ts,
-            signal_id=signal_id,
-        )
-=======
         # Emit event — judge experts use dedicated shadow path
         expert_output = None
         cfg = self.provider_configs[provider_id]
@@ -1080,7 +1052,6 @@ class AlphaSearchBacktestPlugin:
                 bar_close_ts=bar_close_ts,
                 signal_id=signal_id,
             )
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
         # Virtual trader logic
         if self.config.virtual_trader.enabled and current_price > 0:
@@ -1089,12 +1060,9 @@ class AlphaSearchBacktestPlugin:
                 symbol=symbol,
                 current_price=current_price,
                 current_ts=current_ts,
-<<<<<<< HEAD
                 current_score=float(score.score),
                 regime=regime,
                 features=features,
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
             )
 
             # Entry logic
@@ -1107,16 +1075,10 @@ class AlphaSearchBacktestPlugin:
                     current_ts=current_ts,
                     signal_id=signal_id,
                     model_signal_id=model_signal_id,
-<<<<<<< HEAD
-                    regime=regime,
-                )
-
-=======
                 )
 
         return expert_output
 
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     def _emit_score_event(
         self,
         provider_id: str,
@@ -1154,8 +1116,6 @@ class AlphaSearchBacktestPlugin:
             f"conf={score.confidence:.4f} thr={threshold}"
         )
 
-<<<<<<< HEAD
-=======
     def _process_judge_expert_score(
         self,
         provider_id: str,
@@ -1597,7 +1557,6 @@ class AlphaSearchBacktestPlugin:
                 exc_info=True,
             )
 
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     def _emit_fail_closed_score(
         self,
         provider_id: str,
@@ -1606,9 +1565,6 @@ class AlphaSearchBacktestPlugin:
         bar_close_ts: int,
         reason: str = "missing_features_for_bar",
     ) -> None:
-<<<<<<< HEAD
-        """Emit fail-closed score (score=0) when features unavailable."""
-=======
         """Emit fail-closed score (score=0) when features unavailable.
 
         Judge expert providers are silently suppressed — they must not leak
@@ -1622,7 +1578,6 @@ class AlphaSearchBacktestPlugin:
             )
             return
 
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
         payload = {
             "provider_id": provider_id,
             "model_name": f"{provider_id}_fail_closed",
@@ -1654,12 +1609,9 @@ class AlphaSearchBacktestPlugin:
         symbol: str,
         current_price: float,
         current_ts: int,
-<<<<<<< HEAD
         current_score: Optional[float] = None,
         regime: Optional[str] = None,
         features: Optional[Dict[str, Any]] = None,
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     ) -> None:
         """Check exits for open virtual positions."""
         positions = self.open_positions[provider_id]
@@ -1671,7 +1623,6 @@ class AlphaSearchBacktestPlugin:
                 continue
 
             pos.bars_held += 1
-<<<<<<< HEAD
             if current_score is not None:
                 pos.latest_score = current_score
             self._update_virtual_position_extrema(pos, current_price)
@@ -1743,10 +1694,6 @@ class AlphaSearchBacktestPlugin:
                     positions.pop(i)
                     continue
 
-=======
-            duration_sec = (current_ts - pos.entry_ts) / 1000.0
-
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
             drawdown_exit = getattr(exit_cfg, "max_drawdown_exit", None)
             drawdown_hit = False
             if drawdown_exit is not None and pos.entry_price > 0:
@@ -1784,10 +1731,7 @@ class AlphaSearchBacktestPlugin:
         current_ts: int,
         signal_id: str,
         model_signal_id: Optional[str],
-<<<<<<< HEAD
         regime: Optional[str] = None,
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     ) -> None:
         """Open virtual position if allowed."""
         positions = self.open_positions[provider_id]
@@ -1799,7 +1743,6 @@ class AlphaSearchBacktestPlugin:
             return
 
         side = "BUY" if score.score > 0 else "SELL"
-<<<<<<< HEAD
         policy_snapshot = self._resolve_aurora_policy_snapshot(symbol)
         stop_price, target_price = self._compute_aurora_price_levels(
             symbol=symbol,
@@ -1807,8 +1750,6 @@ class AlphaSearchBacktestPlugin:
             entry_price=current_price,
             regime=regime,
         )
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
         positions.append(VirtualPosition(
             provider_id=provider_id,
@@ -1818,7 +1759,6 @@ class AlphaSearchBacktestPlugin:
             entry_ts=current_ts,
             signal_id=signal_id,
             model_signal_id=model_signal_id,
-<<<<<<< HEAD
             entry_regime=str(regime or "UNKNOWN"),
             stop_price=stop_price,
             target_price=target_price,
@@ -1826,8 +1766,6 @@ class AlphaSearchBacktestPlugin:
             low_water_price=current_price,
             latest_score=float(score.score),
             policy_snapshot=policy_snapshot,
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
         ))
 
         LOG.debug(
@@ -1870,17 +1808,25 @@ class AlphaSearchBacktestPlugin:
             "pnl": notional_pnl,
             "signal_id": pos.signal_id,
             "model_signal_id": pos.model_signal_id,
-<<<<<<< HEAD
             "entry_regime": pos.entry_regime,
             "stop_price": pos.stop_price,
             "target_price": pos.target_price,
             "high_water_price": pos.high_water_price,
             "low_water_price": pos.low_water_price,
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
             "exit_reason": exit_reason,
         }
         self.closed_positions[provider_id].append(closed_record)
+        if self.shadow_book is not None:
+            self.shadow_book.record_trade(
+                symbol=pos.symbol,
+                side=pos.side,
+                entry_price=pos.entry_price,
+                exit_price=exit_price,
+                entry_ts=pos.entry_ts,
+                exit_ts=exit_ts,
+                bars_held=pos.bars_held,
+                provider_id=provider_id,
+            )
         pending_event = self._pending_objective_events.pop(pos.signal_id, None)
         if pending_event is not None:
             self._attach_objective_feedback(
@@ -1907,7 +1853,6 @@ class AlphaSearchBacktestPlugin:
             f"PnL={notional_pnl:.2f} (held {pos.bars_held} bars)"
         )
 
-<<<<<<< HEAD
     def _resolve_aurora_policy_snapshot(self, symbol: str) -> Dict[str, Any]:
         """Return the Aurora virtual-exit policy applicable to the symbol."""
         return {
@@ -2119,8 +2064,6 @@ class AlphaSearchBacktestPlugin:
             return None
         return self._coerce_optional_float(asset_exit.get("max_hold_sec"))
 
-=======
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
     def _find_closed_record(
         self,
         *,
@@ -2389,8 +2332,6 @@ class AlphaSearchBacktestPlugin:
             except Exception as e:
                 LOG.warning(f"Failed to generate diagnostics: {e}")
 
-<<<<<<< HEAD
-=======
         # PHASE5-5G: Simulator shutdown auto-export
         self._run_simulator_shutdown_export()
 
@@ -2452,7 +2393,6 @@ class AlphaSearchBacktestPlugin:
             f"summary={sim_config.summary_report_path}"
         )
 
->>>>>>> 099d495c4eee1837ba188384663f5ef7ba426a9b
 
 # Backwards compatibility: factory function
 def create_plugin_from_config(

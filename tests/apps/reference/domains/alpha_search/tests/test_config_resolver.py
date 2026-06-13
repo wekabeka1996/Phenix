@@ -433,12 +433,12 @@ class TestBuildHelpers:
 
     def test_extract_strategy_config_aurora(self):
         """Aurora strategy extracts and deep-copies aurora dict."""
-        raw = {"aurora": {"decision": {"threshold": 0.1}}}
+        raw = {"aurora": {"decision": {"signal_threshold": 0.1}}}
         result = _extract_strategy_config(raw, "aurora")
-        assert result["decision"]["threshold"] == 0.1
+        assert result["decision"]["signal_threshold"] == 0.1
         # Verify it's a deep copy
-        result["decision"]["threshold"] = 0.99
-        assert raw["aurora"]["decision"]["threshold"] == 0.1
+        result["decision"]["signal_threshold"] = 0.99
+        assert raw["aurora"]["decision"]["signal_threshold"] == 0.1
 
     def test_extract_strategy_config_mr(self):
         """Mean reversion strategy extracts correct dict."""

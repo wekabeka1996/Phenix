@@ -55,6 +55,13 @@ Examples:
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Log level (default: INFO)",
     )
+    parser.add_argument(
+        "--source-mode",
+        type=str,
+        default=None,
+        choices=["replay", "live_tail"],
+        help="Source mode override (replay or live_tail)",
+    )
 
     args = parser.parse_args()
 
@@ -62,6 +69,7 @@ Examples:
         asyncio.run(run(
             matrix_path=args.matrix,
             log_level=args.log_level,
+            source_mode=args.source_mode,
         ))
     except KeyboardInterrupt:
         print("\nAlpha Search Domain stopped.")

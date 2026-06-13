@@ -198,6 +198,19 @@ from apps.reference.config.strategies.aurora import (
     StrategyExecutionConfig,
     VolatilityEntryConfig,
 )
+from apps.reference.config.strategies.alpha_mr_s01 import (
+    AlphaMrS01AssetConfig,
+    AlphaMrS01BbWidthConfig,
+    AlphaMrS01RsiConfig,
+    AlphaMrS01SafetyConfig,
+    AlphaMrS01SmaConfig,
+    AlphaMrS01StochasticConfig,
+    AlphaMrS01StrategyConfig,
+    AlphaMrS01VolumeConfig,
+    AlphaMrS01WeightsConfig,
+)
+from apps.reference.config.strategies.alpha_ta_ensemble import AlphaTaEnsembleStrategyConfig
+
 from apps.reference.config.strategies.common import (
     StrategiesArbitrationConfig,
     StrategiesArbitrationLoggingConfig,
@@ -452,6 +465,25 @@ class SMARegimeModelConfig(BaseModel):
         ..., ge=0.0, le=1.0, description='Minimum confidence value')
     confidence_max: float = Field(
         ..., ge=0.0, le=1.0, description='Maximum confidence value')
+    min_trend_spread: float = Field(
+        default=0.0, ge=0.0, description='Minimum SMA spread to classify as trend')
+    adaptive_normalization: bool = Field(
+        default=False, description='If true, normalizes SMA spread by baseline ATR%')
+    normalized_confidence_multiplier: float = Field(
+        default=0.04, ge=0.0, description='Confidence scaling multiplier when normalized')
+
+
+class AdaptivePercentileConfig(BaseModel):
+    """Configuration for adaptive percentile vol thresholds."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(default=False)
+    window_bars: int = Field(default=500, ge=10)
+    min_data_bars: int = Field(default=200, ge=5)
+    high_vol_percentile: float = Field(default=0.90, ge=0.5, le=1.0)
+    low_vol_percentile: float = Field(default=0.10, ge=0.0, le=0.5)
+    high_vol_clamp: List[float] = Field(default_factory=lambda: [1.5, 3.0])
+    low_vol_clamp: List[float] = Field(default_factory=lambda: [0.3, 0.8])
 
 
 class VolatilityRegimeModelConfig(BaseModel):
@@ -476,6 +508,9 @@ class VolatilityRegimeModelConfig(BaseModel):
         ..., ge=1.0, description='Confidence scaling for high vol')
     low_vol_confidence_multiplier: float = Field(
         ..., ge=1.0, description='Confidence scaling for low vol')
+    adaptive_percentile: Optional[AdaptivePercentileConfig] = Field(
+        default=None, description="Adaptive percentile vol threshold configuration"
+    )
 
 
 class MeanReversionRegimeModelConfig(BaseModel):
@@ -489,6 +524,12 @@ class MeanReversionRegimeModelConfig(BaseModel):
         ..., ge=0.0, description='Max price deviation from SMAs for MR regime')
     confidence_multiplier: float = Field(
         ..., ge=1.0, description='Confidence scaling factor')
+    adaptive_atr_multiplier: Optional[float] = Field(
+        default=None, ge=0.0, description='If set, MR threshold = atr * adaptive_atr_multiplier')
+    min_threshold: Optional[float] = Field(
+        default=0.003, ge=0.0, description='Min MR threshold bound')
+    max_threshold: Optional[float] = Field(
+        default=0.015, ge=0.0, description='Max MR threshold bound')
 
 
 class RegimeModelsConfig(BaseModel):
@@ -874,9 +915,12 @@ StrategiesConfig.model_rebuild(
         "MeanReversion1mStrategyConfig": MeanReversion1mStrategyConfig,
         "MDAMRStrategyConfig": MDAMRStrategyConfig,
         "LLMMicrostructureStrategyConfig": LLMMicrostructureStrategyConfig,
+        "AlphaMrS01StrategyConfig": AlphaMrS01StrategyConfig,
+        "AlphaTaEnsembleStrategyConfig": AlphaTaEnsembleStrategyConfig,
         "StrategyObjectiveConfig": StrategyObjectiveConfig,
     }
 )
+
 
 
 # ==============================================================================

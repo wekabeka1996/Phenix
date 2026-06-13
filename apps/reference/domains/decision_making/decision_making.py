@@ -14,5 +14,6 @@ warnings.warn(
     stacklevel=2,
 )
 
-from apps.reference.domains.decision_making.core.facade import *  # noqa: F401,F403
-from apps.reference.domains.decision_making.core.facade import DecisionMaking  # noqa: F401
+from apps.reference.domains.decision_making.core.facade import DecisionMaking
+
+__all__ = ["DecisionMaking"]

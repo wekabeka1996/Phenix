@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import Awaitable, Callable, Literal, Optional
+from typing import Any, Awaitable, Callable, Literal, Optional
 
 import numpy as np
 
@@ -15,18 +15,14 @@ from apps.reference.domains.decision_making.schemas.control_decision import (
     ControlDecisionRequest,
     ControlDecisionResponse,
 )
+from apps.reference.domains.decision_making.authority_process_runner import (
+    BaselineAuthorityProcessRunner,
+    DEFAULT_BASELINE_MODEL_PATH,
+)
 from apps.reference.domains.neocortex.contracts.failure_taxonomy import (
     FailureOutcomeTaxonomy,
     record_failure_outcome,
 )
-from apps.reference.domains.neocortex.logic.brain.baseline_inference import (
-    BaselineArtifactError,
-    BaselineController,
-    BaselinePredictionError,
-    DEFAULT_BASELINE_MODEL_PATH,
-)
-
-
 class AuthorityBridgeFallbackError(RuntimeError):
     def __init__(self, reason_code: str):
         self.reason_code = str(reason_code).strip().upper() or "UNKNOWN"
@@ -47,11 +43,15 @@ class NeocortexAuthorityBridge:
                      Awaitable[ControlDecisionResponse]]
         ] = None,
         *,
-        baseline_controller: BaselineController | None = None,
+        baseline_controller: Any | None = None,
         model_path: str | Path = DEFAULT_BASELINE_MODEL_PATH,
         enforcement_mode: Literal["shadow", "enforce"] = "shadow",
         shadow_emit_fn: Optional[Callable[[str, dict, str], None]] = None,
         logger: logging.Logger | None = None,
+        process_runner: BaselineAuthorityProcessRunner | None = None,
+        process_timeout_ms: int | None = None,
+        max_queue_depth: int = 4,
+        max_inflight_per_symbol: int = 1,
     ) -> None:
         if enforcement_mode not in {"shadow", "enforce"}:
             raise ValueError(
@@ -61,18 +61,25 @@ class NeocortexAuthorityBridge:
         self._shadow_emit = shadow_emit_fn
         self.logger = logger or logging.getLogger(__name__)
         self._baseline_controller = baseline_controller
+        self._model_path = Path(model_path)
+        self._process_timeout_ms = (
+            int(process_timeout_ms) if process_timeout_ms is not None else None
+        )
         self._baseline_startup_error: Exception | None = None
-        if self._authority_fn is None and self._baseline_controller is None:
-            try:
-                self._baseline_controller = BaselineController(
-                    model_path=model_path)
-            except (OSError, RuntimeError, ValueError, TypeError) as error:
-                self._baseline_startup_error = error
-                self.logger.warning(
-                    "Neocortex baseline controller unavailable at startup path=%s",
-                    model_path,
-                    exc_info=error,
-                )
+        self._process_runner = process_runner
+        if self._authority_fn is None and self._process_runner is None:
+            self._process_runner = BaselineAuthorityProcessRunner(
+                model_path=self._model_path,
+                enforcement_mode=self._enforcement_mode,
+                baseline_controller=self._baseline_controller,
+                max_queue_depth=max_queue_depth,
+                max_inflight_per_symbol=max_inflight_per_symbol,
+            )
+
+    @property
+    def telemetry(self):
+        runner = self._process_runner
+        return getattr(runner, "telemetry", None)
 
     async def request_authority(
         self,
@@ -81,7 +88,7 @@ class NeocortexAuthorityBridge:
     ) -> ControlDecisionResponse:
         timeout_seconds = max(float(timeout_ms), 0.0) / 1000.0
         try:
-            authority_call = self._request_authority_inner(req)
+            authority_call = self._request_authority_inner(req, timeout_ms)
             response = await asyncio.wait_for(
                 authority_call,
                 timeout=timeout_seconds,
@@ -97,9 +104,10 @@ class NeocortexAuthorityBridge:
     async def _request_authority_inner(
         self,
         req: ControlDecisionRequest,
+        timeout_ms: int,
     ) -> ControlDecisionResponse:
         if self._authority_fn is None:
-            return await self._request_baseline(req)
+            return await self._request_baseline(req, timeout_ms=timeout_ms)
         try:
             return await self._authority_fn(req)
         except (RuntimeError, ValueError, TypeError, OSError) as error:
@@ -128,14 +136,49 @@ class NeocortexAuthorityBridge:
     async def _request_baseline(
         self,
         req: ControlDecisionRequest,
+        *,
+        timeout_ms: int,
     ) -> ControlDecisionResponse:
-        try:
-            return await asyncio.to_thread(self._predict_baseline_response, req)
-        except (BaselineControllerUnavailableError, BaselineArtifactError, BaselinePredictionError) as error:
-            raise AuthorityBridgeFallbackError(
-                "BASELINE_UNAVAILABLE") from error
+        runner = self._process_runner
+        if runner is None:
+            raise AuthorityBridgeFallbackError("BASELINE_UNAVAILABLE")
+        effective_timeout_ms = (
+            min(int(timeout_ms), self._process_timeout_ms)
+            if self._process_timeout_ms is not None
+            else int(timeout_ms)
+        )
+        result = await runner.submit(req, effective_timeout_ms)
+        if result.response is None:
+            raise AuthorityBridgeFallbackError(result.reason_code or "BASELINE_UNAVAILABLE")
+        if (
+            result.shadow_snapshot is not None
+            and result.model_action is not None
+            and result.returned_action is not None
+        ):
+            shadow_logged = self._emit_shadow_model_decision(
+                req=req,
+                snapshot=result.shadow_snapshot,
+                model_action=result.model_action,
+                returned_action=result.returned_action,
+            )
+            result.response.shadow_logged = shadow_logged
+        self.logger.info(
+            "Neocortex baseline process decision mode=%s decision_id=%s rid=%s symbol=%s model_action=%s returned_action=%s",
+            self._enforcement_mode,
+            req.decision_id,
+            req.rid,
+            req.symbol,
+            (result.model_action.value if result.model_action else None),
+            (result.returned_action.value if result.returned_action else None),
+        )
+        return result.response
 
     def _predict_baseline_response(self, req: ControlDecisionRequest) -> ControlDecisionResponse:
+        from apps.reference.domains.neocortex.logic.brain.baseline_inference import (
+            BaselineArtifactError,
+            BaselinePredictionError,
+        )
+
         if self._baseline_controller is None:
             raise BaselineControllerUnavailableError(
                 "BASELINE_CONTROLLER_UNAVAILABLE"

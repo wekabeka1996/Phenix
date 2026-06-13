@@ -68,16 +68,18 @@ class EnsembleModel(AlphaModel):
         self,
         config: EnsembleConfig,
         models: Dict[str, AlphaModel],
+        initial_weights: Optional[Dict[str, float]] = None,
+        system_config: Optional[Dict[str, Any]] = None,
         logger: Optional[logging.Logger] = None
     ):
         self._ensemble_config: EnsembleConfig = config
         self.models = models
-        super().__init__(cast(Dict[str, Any], {}))
+        super().__init__(system_config or {})
         self.weights = EnsembleWeights()
         self.logger = logger or logging.getLogger(__name__)
 
-        # Initialize equal weights
-        self._initialize_weights()
+        # Initialize weights with optional overrides
+        self._initialize_weights(initial_weights)
 
         # Performance tracking
         self.model_performance: Dict[str, List[float]] = {
@@ -128,16 +130,38 @@ class EnsembleModel(AlphaModel):
         # A1-FIX: Pass features to generate_signal
         return self.generate_signal(market_df, portfolio_state, symbol, features)
 
-    def _initialize_weights(self) -> None:
-        """Initialize equal weights for all models."""
+    def _initialize_weights(self, initial_weights: Optional[Dict[str, float]] = None) -> None:
+        """Initialize weights, using overrides if available, otherwise equal weights."""
         num_models = len(self.models)
         if num_models == 0:
             return
 
-        equal_weight = 1.0 / num_models
-        self.weights.model_weights = {
-            name: equal_weight for name in self.models.keys()
-        }
+        # Start with weights dict
+        weights = {}
+        for name in self.models.keys():
+            # Check parameter
+            if initial_weights and name in initial_weights:
+                weights[name] = float(initial_weights[name])
+            else:
+                # Check config
+                model_cfg = self.config.get(name)
+                if isinstance(model_cfg, dict) and "weight" in model_cfg and model_cfg["weight"] is not None:
+                    weights[name] = float(model_cfg["weight"])
+                elif hasattr(model_cfg, "weight") and getattr(model_cfg, "weight") is not None:
+                    weights[name] = float(getattr(model_cfg, "weight"))
+                else:
+                    # Default
+                    weights[name] = 0.0
+
+        total = sum(weights.values())
+        if total > 0:
+            self.weights.model_weights = {k: v / total for k, v in weights.items()}
+        else:
+            equal_weight = 1.0 / num_models
+            self.weights.model_weights = {
+                name: equal_weight for name in self.models.keys()
+            }
+
         self.weights.last_updated = _clock_datetime()
 
     def generate_signal(

@@ -30,7 +30,7 @@ _DIRECTION_CONFIDENCE_FAILURE_REASONS = frozenset(
 )
 _NRR062_TESTNET_SEGMENT_OVERRIDE_NAME = "LOW_VOL_SHORT_DIRECTION_ONLY_RAW_SIGNAL"
 _NRR062_TESTNET_SEGMENT_OVERRIDE_MODES = frozenset(
-    {"testnet", "hybrid_live_data_testnet_exec"}
+    {"testnet"}
 )
 
 
@@ -661,6 +661,10 @@ def _is_nrr062_testnet_short_direction_only_candidate(
     normalized_mode = str(trading_mode).strip()
     normalized_side = _normalize_side_scope(side)
 
+    # This is a diagnostics-only escape hatch for collecting pure testnet
+    # evidence. Hybrid live-data runtimes must not bypass the direction
+    # confidence floor: recent BNBUSDT forensics showed this weak-confidence
+    # segment can reach execution without a verified positive expectancy.
     if normalized_mode not in _NRR062_TESTNET_SEGMENT_OVERRIDE_MODES:
         return False
     if gate_mode != "enforced":
@@ -1452,7 +1456,10 @@ def evaluate_low_vol_cost_floor_gate(
         min_rr=float(gate_cfg.thresholds.min_rr),
         violations=violations,
     )
-    block = threshold_failed and gate_mode == "enforced" and not nrr062_segment_override_applied
+    decision_chain_enabled = bool(
+        getattr(gate_cfg, "decision_chain_enabled", True))
+    raw_block = threshold_failed and gate_mode == "enforced" and not nrr062_segment_override_applied
+    block = raw_block and decision_chain_enabled
     gate_reason = "LOW_VOL_COST_FLOOR_BLOCKED" if block else (
         "LOW_VOL_COST_FLOOR_OBSERVED" if gate_mode == "observe_only" else "LOW_VOL_COST_FLOOR_PASS"
     )
@@ -1542,6 +1549,8 @@ def evaluate_low_vol_cost_floor_gate(
             "strategy_id": str(strategy_id) if strategy_id is not None else None,
             "symbol": str(symbol).upper() if symbol is not None else None,
             "gate_mode": gate_mode,
+            "decision_chain_enabled": decision_chain_enabled,
+            "block_suppressed_by_config": raw_block and not decision_chain_enabled,
             "nrr062_segment_override_applied": nrr062_segment_override_applied,
             "nrr062_segment_override_name": _NRR062_TESTNET_SEGMENT_OVERRIDE_NAME
             if nrr062_segment_override_applied else None,
@@ -1553,9 +1562,16 @@ def evaluate_low_vol_cost_floor_gate(
             "selected_source": direction_confidence_source,
             "selected_scale": direction_confidence_scale,
             "threshold_family": threshold_family,
-            "would_block": threshold_failed and gate_mode == "observe_only",
-            "would_block_direction_confidence": gate_mode == "observe_only"
-            and direction_confidence_reason is not None,
+            "would_block": (
+                threshold_failed
+                and gate_mode in {"enforced", "observe_only"}
+                and not nrr062_segment_override_applied
+            ),
+            "would_block_direction_confidence": (
+                gate_mode in {"enforced", "observe_only"}
+                and direction_confidence_reason is not None
+                and not nrr062_segment_override_applied
+            ),
             "threshold_failed": threshold_failed,
             "violations": list(violations),
             "warnings": list(warnings),

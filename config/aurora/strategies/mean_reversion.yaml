@@ -141,7 +141,7 @@ mean_reversion:
       - FLAT_LOW
       liquidity_gate: null
     BTCUSDT:
-      enabled: false
+      enabled: true
       position_mode: STRICT
       leverage:
         target: 12
@@ -173,7 +173,7 @@ mean_reversion:
       - MEAN_REVERSION
       liquidity_gate: null
     XRPUSDT:
-      enabled: false
+      enabled: true
       position_mode: STRICT
       leverage:
         target: 10
@@ -205,7 +205,7 @@ mean_reversion:
       - MEAN_REVERSION
       liquidity_gate: null
     ETHUSDT:
-      enabled: false
+      enabled: true
       position_mode: STRICT
       strategy:
         bb_window: null
@@ -234,7 +234,7 @@ mean_reversion:
       leverage: null
       liquidity_gate: null
     SOLUSDT:
-      enabled: false
+      enabled: true
       position_mode: STRICT
       strategy:
         bb_window: 24
@@ -244,6 +244,64 @@ mean_reversion:
         tp_to_mid: true
         sl_atr_mult: 1.0
         cooldown_sec: 210
+        flat_low_short_min_bb_width: null
+        squeeze_expansion_veto: null
+        momentum_separation_veto: null
+        microstructure_veto: null
+        directional_bias: null
+        sl_buffer_pct: null
+        tp_buffer_pct: null
+        allowed_regimes: null
+        confidence_base: null
+        confidence_bb_slope: null
+        confidence_rsi_bonus: null
+      allowed_regimes:
+      - FLAT_LOW
+      - FLAT_NORMAL
+      - FLAT_HIGH
+      - MEAN_REVERSION
+      leverage: null
+      liquidity_gate: null
+    BNBUSDT:
+      enabled: true
+      position_mode: STRICT
+      strategy:
+        bb_window: 40
+        bb_num_std: 1.6
+        min_bb_width: 0.004
+        entry_threshold: 0.24
+        tp_to_mid: true
+        sl_atr_mult: 2.0
+        cooldown_sec: 300
+        flat_low_short_min_bb_width: null
+        squeeze_expansion_veto: null
+        momentum_separation_veto: null
+        microstructure_veto: null
+        directional_bias: null
+        sl_buffer_pct: null
+        tp_buffer_pct: null
+        allowed_regimes: null
+        confidence_base: null
+        confidence_bb_slope: null
+        confidence_rsi_bonus: null
+      allowed_regimes:
+      - FLAT_LOW
+      - FLAT_NORMAL
+      - FLAT_HIGH
+      - MEAN_REVERSION
+      leverage: null
+      liquidity_gate: null
+    1000PEPEUSDT:
+      enabled: true
+      position_mode: STRICT
+      strategy:
+        bb_window: 40
+        bb_num_std: 1.6
+        min_bb_width: 0.004
+        entry_threshold: 0.24
+        tp_to_mid: true
+        sl_atr_mult: 2.0
+        cooldown_sec: 420
         flat_low_short_min_bb_width: null
         squeeze_expansion_veto: null
         momentum_separation_veto: null

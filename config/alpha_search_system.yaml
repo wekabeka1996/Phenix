@@ -44,9 +44,9 @@ alpha_search_system:
   # ============================================================================
   mean_reversion:
     weights:
-      bb: 0.4          # Bollinger Band position weight
-      rsi: 0.3         # RSI divergence weight
-      sma: 0.2         # SMA deviation weight
+      bb: 0.25         # Bollinger Band position weight
+      rsi: 0.55        # RSI divergence weight
+      sma: 0.1         # SMA deviation weight
       stoch: 0.1       # Stochastic crossover weight
 
     rsi:

@@ -59,6 +59,40 @@ def _minimal_matrix_config(**input_overrides):
 class TestLoadMatrixConfig:
     """Tests for load_matrix_config."""
 
+    def test_shadow_registry_live_tail_uses_live_mirror_stream(self, tmp_path):
+        """Registry live_tail should point standalone ingest at the live mirror file."""
+        registry_path = tmp_path / "scenario_registry_v2.yaml"
+        registry_path.write_text(yaml.dump({"registry_id": "test_registry", "version": 1}), encoding="utf-8")
+
+        with patch(
+            "apps.reference.domains.alpha_search.shadow.registry_adapter.load_registry_as_matrix_config",
+            return_value=MagicMock(),
+        ) as load_registry:
+            load_matrix_config(registry_path, registry_source_mode="live_tail")
+
+        load_registry.assert_called_once_with(
+            str(registry_path),
+            source_mode="live_tail",
+            stream_path="logs/alpha_input/alpha_input_v1_live.jsonl",
+        )
+
+    def test_shadow_registry_replay_uses_recorder_built_stream(self, tmp_path):
+        """Registry replay should keep using the recorder-built alpha_input file."""
+        registry_path = tmp_path / "scenario_registry_v2.yaml"
+        registry_path.write_text(yaml.dump({"registry_id": "test_registry", "version": 1}), encoding="utf-8")
+
+        with patch(
+            "apps.reference.domains.alpha_search.shadow.registry_adapter.load_registry_as_matrix_config",
+            return_value=MagicMock(),
+        ) as load_registry:
+            load_matrix_config(registry_path, registry_source_mode="replay")
+
+        load_registry.assert_called_once_with(
+            str(registry_path),
+            source_mode="replay",
+            stream_path="logs/alpha_input/alpha_input_v1.jsonl",
+        )
+
     def test_valid_config(self):
         """Real scenario_matrix.yaml loads successfully."""
         project_root = Path(__file__).resolve().parents[4]
@@ -317,7 +351,7 @@ class TestMainReactor:
 
             assert os.environ["ALPHA_SEARCH_LOG_DIR"] == str(expected_session_dir / "aggregate")
 
-        load_cfg.assert_called_once_with(project_root / "config" / "custom_matrix.yaml")
+        load_cfg.assert_called_once_with(project_root / "config" / "custom_matrix.yaml", registry_source_mode="live_tail")
         setup_log.assert_called_once_with(expected_session_dir, log_level="DEBUG")
         main_reactor.assert_awaited_once_with(config, project_root, expected_session_dir, logger)
 

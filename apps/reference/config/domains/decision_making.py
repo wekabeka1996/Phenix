@@ -1999,6 +1999,13 @@ class LowVolCostFloorGateConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(...)
+    decision_chain_enabled: bool = Field(
+        default=True,
+        description=(
+            "If false, evaluate and persist LOW_VOL cost-floor telemetry but do "
+            "not emit NRR-062 as an active decision-chain block."
+        ),
+    )
     enforce_in_modes: List[Literal['testnet',
                                    'hybrid_live_data_testnet_exec', 'live', 'production']] = Field(...)
     observe_only_in_modes: List[Literal['testnet',
