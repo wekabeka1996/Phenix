@@ -116,6 +116,7 @@ def _cmd(features=None, regime="MEAN_REVERSION", ts_ms=1780000000000):
         warmup=WarmupState(full_ready=True, ticks_seen=100, ready={}, reasons=()),
         raw={"regime": regime, "ts_ms": ts_ms},
         price_motion=None,
+        structural_regime=regime,
     )
 
 
@@ -374,6 +375,7 @@ def test_score_calculation_across_profiles():
             warmup=WarmupState(full_ready=True, ticks_seen=100, ready={}, reasons=()),
             raw={"regime": "MEAN_REVERSION", "ts_ms": ts},
             price_motion=None,
+            structural_regime="MEAN_REVERSION",
         )
         handler.on_process_strategy(cmd_pld)
 
@@ -397,4 +399,3 @@ def test_no_regression_existing_strategies():
     # without any schema contamination or validation regression
     assert AuroraStrategyConfig is not None
     assert MeanReversion1mStrategyConfig is not None
-

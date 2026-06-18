@@ -23,6 +23,12 @@ from apps.reference.domains.strategies.plugins.md_amr import MDAMRPlugin
 from apps.reference.domains.strategies.plugins.mean_reversion import (
     MeanReversionPlugin,
 )
+from apps.reference.domains.strategies.plugins.alpha_mr_s01 import (
+    AlphaMrS01Plugin,
+)
+from apps.reference.domains.strategies.plugins.alpha_ta_ensemble import (
+    AlphaTaEnsemblePlugin,
+)
 from apps.reference.domains.strategies.registry import (
     StrategyPluginRegistry,
     StrategyRuntime,
@@ -86,6 +92,8 @@ def _build_started_handlers(config, bus: _Bus):
     plugins.register(AuroraBuiltinPlugin())
     plugins.register(MeanReversionPlugin())
     plugins.register(MDAMRPlugin())
+    plugins.register(AlphaMrS01Plugin())
+    plugins.register(AlphaTaEnsemblePlugin())
     return StrategyRuntime(fsm=bus, config=config, registry=plugins).start()
 
 
@@ -109,11 +117,11 @@ def test_live_config_hydration_plan_matches_runtime_contract() -> None:
 
     assert plan.plans["aurora:BTCUSDT"].requirement.basis_required_bars == 301
     assert plan.plans["aurora:ETHUSDT"].requirement.basis_required_bars == 301
-    assert plan.plans["aurora:SOLUSDT"].requirement.basis_required_bars == 301
+    assert "aurora:SOLUSDT" not in plan.plans
     assert plan.plans["aurora:BNBUSDT"].requirement.basis_required_bars == 301
     assert plan.plans["md_amr:XRPUSDT"].requirement.basis_required_bars == 96
     assert "aurora:DOGEUSDT" not in plan.plans
-    assert "mean_reversion:DOGEUSDT" not in plan.plans
+    assert "mean_reversion:DOGEUSDT" in plan.plans
     assert any(
         action.action == "SEED_HANDLER_BASIS_COUNTER"
         for action in plan.plans["aurora:BTCUSDT"].actions
@@ -128,7 +136,13 @@ def test_real_runtime_path_recovers_from_transient_startup_import_failures() -> 
     config = _load_live_config()
     bus = _Bus()
     started_handlers = _build_started_handlers(config, bus)
-    assert set(started_handlers) == {"aurora", "md_amr"}
+    assert set(started_handlers) == {
+        "aurora",
+        "mean_reversion",
+        "md_amr",
+        "alpha_mr_s01",
+        "alpha_ta_ensemble",
+    }
     report = build_startup_analytics_restore_report(
         config=config,
         snapshot_data={"timestamp_utc": "2026-03-15T09:09:15+00:00"},
@@ -164,7 +178,7 @@ def test_real_runtime_path_recovers_from_transient_startup_import_failures() -> 
 
     assert aurora_handler._bars_seen_since_restart["BTCUSDT"] >= 301
     assert aurora_handler._bars_seen_since_restart["ETHUSDT"] >= 301
-    assert aurora_handler._bars_seen_since_restart["SOLUSDT"] >= 301
+    assert aurora_handler._bars_seen_since_restart["SOLUSDT"] == 0
     assert aurora_handler._bars_seen_since_restart["BNBUSDT"] >= 301
     assert md_amr_handler._bars_seen_since_restart["XRPUSDT"] >= 96
     assert summary["imports"]["BTCUSDT:300"] >= 301

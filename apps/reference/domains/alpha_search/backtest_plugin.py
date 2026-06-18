@@ -92,8 +92,13 @@ class ProviderStats:
     signals_long: int = 0
     signals_short: int = 0
     total_pnl: float = 0.0
+    cumulative_fee_cost: float = 0.0
+    cumulative_slippage_cost: float = 0.0
+    cumulative_total_cost: float = 0.0
+    net_total_pnl_after_cost: float = 0.0
     trades_closed: int = 0
     wins: int = 0
+    net_wins_after_cost: int = 0
     objective_feedback_events: int = 0
     objective_feedback_total: float = 0.0
 
@@ -1786,14 +1791,23 @@ class AlphaSearchBacktestPlugin:
         else:
             pnl_pct = (pos.entry_price - exit_price) / pos.entry_price
 
-        notional_pnl = pnl_pct * self.config.virtual_trader.notional_size
+        notional_size = float(self.config.virtual_trader.notional_size)
+        notional_pnl = pnl_pct * notional_size
+        cost_breakdown = self._calculate_runtime_trade_costs(notional_size)
+        net_pnl_after_cost = notional_pnl - cost_breakdown["total_cost"]
 
         # Update stats
         stats = self.provider_stats[provider_id]
         stats.total_pnl += notional_pnl
+        stats.cumulative_fee_cost += cost_breakdown["fee_cost"]
+        stats.cumulative_slippage_cost += cost_breakdown["slippage_cost"]
+        stats.cumulative_total_cost += cost_breakdown["total_cost"]
+        stats.net_total_pnl_after_cost += net_pnl_after_cost
         stats.trades_closed += 1
         if notional_pnl > 0:
             stats.wins += 1
+        if net_pnl_after_cost > 0:
+            stats.net_wins_after_cost += 1
 
         # Record closed position
         closed_record = {
@@ -1806,6 +1820,16 @@ class AlphaSearchBacktestPlugin:
             "exit_ts": exit_ts,
             "bars_held": pos.bars_held,
             "pnl": notional_pnl,
+            "raw_pnl": notional_pnl,
+            "fees": cost_breakdown["fee_cost"],
+            "slippage": cost_breakdown["slippage_cost"],
+            "fee_cost": cost_breakdown["fee_cost"],
+            "slippage_cost": cost_breakdown["slippage_cost"],
+            "total_cost": cost_breakdown["total_cost"],
+            "net_pnl_after_cost": net_pnl_after_cost,
+            "cost_model_id": cost_breakdown["cost_model_id"],
+            "cost_model_source": cost_breakdown["cost_model_source"],
+            "notional_size": notional_size,
             "signal_id": pos.signal_id,
             "model_signal_id": pos.model_signal_id,
             "entry_regime": pos.entry_regime,
@@ -1826,6 +1850,14 @@ class AlphaSearchBacktestPlugin:
                 exit_ts=exit_ts,
                 bars_held=pos.bars_held,
                 provider_id=provider_id,
+                raw_pnl=notional_pnl,
+                fee_cost=cost_breakdown["fee_cost"],
+                slippage_cost=cost_breakdown["slippage_cost"],
+                total_cost=cost_breakdown["total_cost"],
+                net_pnl_after_cost=net_pnl_after_cost,
+                cost_model_id=cost_breakdown["cost_model_id"],
+                cost_model_source=cost_breakdown["cost_model_source"],
+                notional_size=notional_size,
             )
         pending_event = self._pending_objective_events.pop(pos.signal_id, None)
         if pending_event is not None:
@@ -1844,6 +1876,9 @@ class AlphaSearchBacktestPlugin:
                     exit_ts=exit_ts,
                     exit_reason=exit_reason,
                     realized_pnl=notional_pnl,
+                    cost_breakdown=cost_breakdown,
+                    net_pnl_after_cost=net_pnl_after_cost,
+                    notional_size=notional_size,
                 ),
                 why="alpha_search_virtual_objective_realized",
             )
@@ -1852,6 +1887,27 @@ class AlphaSearchBacktestPlugin:
             f"[{pos.symbol}] {provider_id} CLOSE VIRTUAL {pos.side} "
             f"PnL={notional_pnl:.2f} (held {pos.bars_held} bars)"
         )
+
+    def _calculate_runtime_trade_costs(self, notional_size: float) -> Dict[str, Any]:
+        """Return configured fee/slippage costs for one closed trade cycle."""
+        cost_cfg = self.config.virtual_trader.runtime_cost
+        if not bool(cost_cfg.enabled):
+            fee_bps_per_side = 0.0
+            slippage_bps_per_side = 0.0
+        else:
+            fee_bps_per_side = float(cost_cfg.fee_bps_per_side)
+            slippage_bps_per_side = float(cost_cfg.slippage_bps_per_side)
+
+        fee_cost = float(notional_size) * (fee_bps_per_side * 2.0) / 10000.0
+        slippage_cost = float(notional_size) * (slippage_bps_per_side * 2.0) / 10000.0
+        total_cost = fee_cost + slippage_cost
+        return {
+            "fee_cost": fee_cost,
+            "slippage_cost": slippage_cost,
+            "total_cost": total_cost,
+            "cost_model_id": str(cost_cfg.cost_model_id),
+            "cost_model_source": str(cost_cfg.cost_model_source),
+        }
 
     def _resolve_aurora_policy_snapshot(self, symbol: str) -> Dict[str, Any]:
         """Return the Aurora virtual-exit policy applicable to the symbol."""
@@ -2087,6 +2143,9 @@ class AlphaSearchBacktestPlugin:
         exit_ts: int,
         exit_reason: str,
         realized_pnl: float,
+        cost_breakdown: Optional[Dict[str, Any]] = None,
+        net_pnl_after_cost: Optional[float] = None,
+        notional_size: Optional[float] = None,
     ) -> Dict[str, Any]:
         duration_sec = max(0.0, (exit_ts - position.entry_ts) / 1000.0)
         pnl_scale = float(self.config.virtual_trader.notional_size)
@@ -2095,6 +2154,15 @@ class AlphaSearchBacktestPlugin:
         duration_efficiency = self._clip_unit(
             1.0 - (duration_sec / max_hold_sec))
         realized_quality_score = (pnl_efficiency + duration_efficiency) / 2.0
+        costs = cost_breakdown or self._calculate_runtime_trade_costs(pnl_scale)
+        fee_cost = float(costs.get("fee_cost", 0.0))
+        slippage_cost = float(costs.get("slippage_cost", 0.0))
+        total_cost = float(costs.get("total_cost", fee_cost + slippage_cost))
+        net_pnl = (
+            float(net_pnl_after_cost)
+            if net_pnl_after_cost is not None
+            else float(realized_pnl) - total_cost
+        )
         return {
             "strategy_id": "alpha_search_virtual",
             "symbol": position.symbol,
@@ -2109,13 +2177,30 @@ class AlphaSearchBacktestPlugin:
             },
             "realized_quality_score": realized_quality_score,
             "realized_pnl": realized_pnl,
-            "fees": 0.0,
+            "raw_pnl": realized_pnl,
+            "fees": fee_cost,
+            "slippage": slippage_cost,
+            "fee_cost": fee_cost,
+            "slippage_cost": slippage_cost,
+            "total_cost": total_cost,
+            "net_pnl_after_cost": net_pnl,
+            "cost_model_id": str(costs.get("cost_model_id", "")),
+            "cost_model_source": str(costs.get("cost_model_source", "")),
+            "notional_size": float(notional_size if notional_size is not None else pnl_scale),
             "duration_sec": duration_sec,
             "mae": 0.0,
             "mfe": 0.0,
             "close_reason": exit_reason,
             "signal_id": position.signal_id,
         }
+
+    @staticmethod
+    def _profit_factor(pnls: List[float]) -> float:
+        gross_profit = sum(p for p in pnls if p > 0)
+        gross_loss = abs(sum(p for p in pnls if p < 0))
+        if gross_loss <= 0.0:
+            return round(gross_profit, 4) if gross_profit > 0 else 0.0
+        return round(gross_profit / gross_loss, 4)
 
     def _compute_objective_feedback_score(self, payload: Dict[str, Any]) -> float:
         cfg = self.config.objective_feedback
@@ -2273,6 +2358,9 @@ class AlphaSearchBacktestPlugin:
 
         for name, stats in self.provider_stats.items():
             win_rate = stats.wins / stats.trades_closed if stats.trades_closed > 0 else 0.0
+            closed = self.closed_positions.get(name, [])
+            raw_pnls = [float(row.get("raw_pnl", row.get("pnl", 0.0)) or 0.0) for row in closed]
+            net_pnls = [float(row.get("net_pnl_after_cost", row.get("pnl", 0.0)) or 0.0) for row in closed]
             provider_summaries[name] = {
                 "signals_generated": stats.signals_generated,
                 "signals_long": stats.signals_long,
@@ -2286,8 +2374,20 @@ class AlphaSearchBacktestPlugin:
                 },
                 "virtual_trader": {
                     "total_pnl": round(stats.total_pnl, 2),
+                    "raw_cumulative_pnl": round(stats.total_pnl, 2),
+                    "cumulative_fee_cost": round(stats.cumulative_fee_cost, 2),
+                    "cumulative_slippage_cost": round(stats.cumulative_slippage_cost, 2),
+                    "cumulative_total_cost": round(stats.cumulative_total_cost, 2),
+                    "net_cumulative_pnl_after_cost": round(stats.net_total_pnl_after_cost, 2),
+                    "raw_profit_factor": self._profit_factor(raw_pnls),
+                    "net_profit_factor_after_cost": self._profit_factor(net_pnls),
+                    "cost_model_id": self.config.virtual_trader.runtime_cost.cost_model_id,
+                    "cost_model_source": self.config.virtual_trader.runtime_cost.cost_model_source,
                     "trades_closed": stats.trades_closed,
                     "win_rate": round(win_rate, 4),
+                    "net_win_rate_after_cost": round(
+                        stats.net_wins_after_cost / stats.trades_closed, 4
+                    ) if stats.trades_closed > 0 else 0.0,
                     "open_positions": len(self.open_positions.get(name, [])),
                 },
             }

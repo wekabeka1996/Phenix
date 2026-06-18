@@ -20,6 +20,7 @@ CONFIG_DIR = Path("config/aurora")
 CONTRACT_CASES = {
     "LLMMicrostructureStrategyConfig": {
         "required": {
+            "mode",
             "enabled",
             "type",
             "description",
@@ -28,9 +29,13 @@ CONTRACT_CASES = {
             "execution",
             "safety_gates",
         },
-        "defaults": {},
-        "default_factories": {},
-        "optional_fields": {"pending_entry_ttl_ms"},
+        "defaults": {
+            "allowed_sides": ["BUY", "SELL"],
+            "decision": None,
+            "objective": None,
+        },
+        "default_factories": {"allowed_regimes": list},
+        "optional_fields": {"pending_entry_ttl_ms", "decision", "objective"},
     },
 }
 
@@ -132,6 +137,7 @@ def test_llm_microstructure_extraction_preserves_cross_model_annotations() -> No
 
 def test_llm_microstructure_rebuild_seam_accepts_execution_block() -> None:
     cfg = cm.LLMMicrostructureStrategyConfig(
+        mode="shadow",
         enabled=True,
         type="external_intent",
         description="contract test",

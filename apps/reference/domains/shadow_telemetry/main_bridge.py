@@ -28,6 +28,10 @@ from apps.reference.telemetry.metrics import (
     inc_shadow_tap_delivery_failure,
     inc_shadow_tap_delivery_log_suppressed,
 )
+from apps.reference.domains.decision_making.intent.truth_artifacts import (
+    write_strategy_decision_blocked,
+)
+from apps.reference.domains.strategies.authority import FINANCIAL_MODES, resolve_strategy_mode
 
 
 @dataclass(frozen=True)
@@ -639,6 +643,46 @@ class LLMIntentIngressBridge:
                           reject_payload, "llm_intent_schema_invalid")
             _append_wal_event("LLM_INTENT_REJECTED_V1", rid,
                               reject_payload, "llm_intent_schema_invalid")
+            return
+
+        llm_strategy_cfg = getattr(
+            getattr(self.config, "strategies", None), "llm_microstructure", None)
+        authority_mode = resolve_strategy_mode(llm_strategy_cfg)
+        if authority_mode not in FINANCIAL_MODES:
+            now_ms = int(time.time() * 1000)
+            blocked_payload = write_strategy_decision_blocked(
+                strategy_id="llm_microstructure",
+                symbol=cmd.symbol,
+                side=cmd.side,
+                regime="UNCERTAIN",
+                reason_code="AUTHORITY_MODE_SHADOW" if authority_mode == "shadow" else "AUTHORITY_MODE_DISABLED",
+                reason="LLM strategy has no authority to open new risk",
+                context="llm_intent_ingress:authority_mode",
+                src="shadow_telemetry_ingress",
+                ts_ms=now_ms,
+                rid=cmd.intent_id,
+                details={"mode": authority_mode, "terminal_outcome": "shadowed"},
+                tf_sec=int(getattr(llm_strategy_cfg, "timeframe_sec", 60)),
+            )
+            self.fsm.emit(
+                "EVT:STRATEGY_DECISION_BLOCKED",
+                blocked_payload,
+                "llm_strategy_authority_blocked",
+            )
+            self._emit_bridge_reject(
+                event_name="EVT:LLM_INTENT_REJECTED_V1",
+                rid=cmd.intent_id,
+                payload={
+                    "intent_id": cmd.intent_id,
+                    "request_id": request_id,
+                    "ts_ms": now_ms,
+                    "reason_code": blocked_payload["reason_code"],
+                    "reason": blocked_payload["reason"],
+                    "symbol": cmd.symbol,
+                    "idempotency_key": cmd.idempotency_key,
+                },
+                why="llm_strategy_authority_blocked",
+            )
             return
 
         if not is_eze_open and self._reject_runtime_symbol(

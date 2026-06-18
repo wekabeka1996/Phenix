@@ -57,6 +57,10 @@ class Bar:
     # P2-1 FIX: Gap detection fields
     gap_bars_skipped: int = 0
     is_gap_bar: bool = False
+    trade_flow_state: Optional[str] = None
+    trade_flow_age_ms: Optional[int] = None
+    trade_flow_last_trade_ts_ms: Optional[int] = None
+    trade_flow_window_sec: Optional[int] = None
 
     @property
     def mid(self) -> Decimal:

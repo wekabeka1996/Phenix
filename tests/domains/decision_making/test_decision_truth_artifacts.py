@@ -52,6 +52,56 @@ def test_write_strategy_decision_blocked_uses_blocked_wal_verb(monkeypatch) -> N
     assert rows[0]["pld"]["why"] == "Cold-start bars missing"
 
 
+def test_write_strategy_decision_blocked_preserves_shadow_terminal_outcome(
+    monkeypatch,
+) -> None:
+    order_rows: list[dict] = []
+    monkeypatch.setattr(
+        "apps.reference.domains.decision_making.intent.truth_artifacts.wal.append",
+        lambda _row: "ok",
+    )
+    monkeypatch.setattr(
+        "apps.reference.telemetry.order_logger.order_logger.write",
+        lambda row: order_rows.append(dict(row)),
+    )
+
+    write_strategy_decision_blocked(
+        strategy_id="mean_reversion",
+        symbol="ETHUSDT",
+        side="BUY",
+        regime="MEAN_REVERSION",
+        reason_code="AUTHORITY_MODE_SHADOW",
+        reason="strategy has no financial intent authority",
+        context="test:shadow",
+        src="test",
+        ts_ms=1_700_000_000_000,
+        rid="rid-shadow",
+        details={"terminal_outcome": "shadowed"},
+    )
+
+    assert order_rows[0]["metadata"]["terminal_outcome"] == "shadowed"
+
+
+def test_truth_wal_exception_does_not_break_blocked_path(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "apps.reference.domains.decision_making.intent.truth_artifacts.wal.append",
+        MagicMock(side_effect=RuntimeError("wal unavailable")),
+    )
+
+    payload = write_strategy_decision_blocked(
+        strategy_id="aurora",
+        symbol="BTCUSDT",
+        reason_code="READINESS_BLOCKED",
+        reason="READINESS",
+        context="test:wal_failure",
+        src="test",
+        ts_ms=1_700_000_000_000,
+        rid="rid-wal-failure",
+    )
+
+    assert payload["reason_code"] == "READINESS_BLOCKED"
+
+
 def test_intent_emitter_writes_intent_deferred_truth(monkeypatch) -> None:
     rows: list[dict] = []
     monkeypatch.setattr(

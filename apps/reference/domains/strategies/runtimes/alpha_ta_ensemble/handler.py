@@ -174,7 +174,7 @@ class AlphaTaEnsembleHandler:
             return
 
         # 3. Check regime safety constraints
-        regime = self._resolve_regime(cmd)
+        regime = cmd.structural_regime
         if self.cfg.safety.forbid_uncertain and regime == "UNCERTAIN":
             self._emit_trace_log(
                 symbol=symbol,
@@ -673,20 +673,6 @@ class AlphaTaEnsembleHandler:
             normalized["volume_volatility_ratio"] = fallback_volume_ratio
 
         return normalized
-
-    def _resolve_regime(self, cmd: ProcessStrategyCmd) -> str:
-        raw = cmd.raw
-        candidates = [
-            raw.get("regime") if isinstance(raw, Mapping) else None,
-            raw.get("structural_regime") if isinstance(raw, Mapping) else None,
-        ]
-        regime_ctx = raw.get("regime_ctx") if isinstance(raw, Mapping) else None
-        if isinstance(regime_ctx, Mapping):
-            candidates.extend([regime_ctx.get("regime"), regime_ctx.get("flat_regime")])
-        for candidate in candidates:
-            if candidate:
-                return str(candidate).strip().upper()
-        return "UNCERTAIN"
 
     def _cmd_ts_ms(self, cmd: ProcessStrategyCmd) -> int:
         if cmd.bar_close_ts is not None:

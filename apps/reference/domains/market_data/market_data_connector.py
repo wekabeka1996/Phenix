@@ -132,8 +132,18 @@ class MarketDataConnector:
         )
 
         # Initialize WebSocket aggregator for real-time data collection.
+        system_md = getattr(getattr(self.config, "system", None), "market_data", None)
+        trade_silence_reconnect_sec = (
+            getattr(system_md, "trade_silence_reconnect_sec", None)
+            if system_md is not None
+            else None
+        )
         self.aggregator = WebSocketAggregator(
-            self.symbols, window_seconds=60, anchors=self.anchors)
+            self.symbols,
+            window_seconds=60,
+            anchors=self.anchors,
+            trade_silence_reconnect_sec=trade_silence_reconnect_sec,
+        )
 
         LOG.info(f"✅ MarketDataConnector initialized: symbols={self.symbols}, "
                  f"anchors={self.anchors}, mode={self.data_source_tag}")
@@ -473,6 +483,10 @@ class MarketDataConnector:
                 "trades_dropped_out_of_order": tick["trades_dropped_out_of_order"]
                 if "trades_dropped_out_of_order" in tick
                 else None,
+                "trade_flow_state": tick.get("trade_flow_state"),
+                "trade_flow_age_ms": tick.get("trade_flow_age_ms"),
+                "trade_flow_last_trade_ts_ms": tick.get("trade_flow_last_trade_ts_ms"),
+                "trade_flow_window_sec": tick.get("trade_flow_window_sec"),
                 "data_type": "market_tick_aggregated",
                 "data_source": tick["data_source"],
                 "debug_info": (

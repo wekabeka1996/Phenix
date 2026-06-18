@@ -28,6 +28,7 @@ def check(ctx: GateContext) -> GateResult:
             gate_name=GATE_NAME,
             reason_code="WARMUP_NOT_READY",
             context="strategy_signal_gateway:warmup_gate",
+            context_update={"_terminal_or_defer_emitted": True},
         )
 
     return GateResult.passed(GATE_NAME)

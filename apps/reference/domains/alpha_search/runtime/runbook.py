@@ -91,7 +91,7 @@ def compare_scenarios(session_dir: Path) -> Dict[str, Any]:
     """
     Cross-scenario performance comparison.
 
-    Returns dict with best/worst by PnL, Sharpe, win_rate across all scenarios.
+    Returns dict with best/worst by cost-aware net PnL when trades are available.
     """
     results: Dict[str, Dict[str, Any]] = {}
 
@@ -103,13 +103,11 @@ def compare_scenarios(session_dir: Path) -> Dict[str, Any]:
     for sdir in scenario_dirs:
         sid = sdir.name
         scores_path = sdir / "scores.jsonl"
-        if not scores_path.exists():
-            continue
+        trades_path = sdir / "trades.jsonl"
 
-        # Aggregate scores
         total_score = 0.0
         count = 0
-        try:
+        if scores_path.exists():
             with open(scores_path, "r") as f:
                 for line in f:
                     try:
@@ -118,28 +116,92 @@ def compare_scenarios(session_dir: Path) -> Dict[str, Any]:
                         count += 1
                     except json.JSONDecodeError:
                         continue
-        except Exception:
-            continue
 
-        if count > 0:
+        trades = _read_jsonl(trades_path)
+        economics = [_trade_economics(t) for t in trades]
+        raw_pnl = sum(e["raw_pnl"] for e in economics)
+        net_pnl_after_cost = sum(e["net_pnl_after_cost"] for e in economics)
+        total_cost = sum(e["total_cost"] for e in economics)
+        cost_status = (
+            "COST_AWARE" if economics and all(e["cost_status"] == "COST_AWARE" for e in economics)
+            else "LEGACY_RAW_ONLY" if economics
+            else "NO_TRADES"
+        )
+
+        if count > 0 or trades:
             results[sid] = {
                 "total_scores": count,
-                "avg_score": round(total_score / count, 6),
+                "avg_score": round(total_score / count, 6) if count > 0 else 0.0,
                 "strategy_type": _read_strategy_type(sdir),
+                "total_trades": len(trades),
+                "raw_pnl_diagnostic": round(raw_pnl, 4),
+                "total_cost": round(total_cost, 4),
+                "net_pnl_after_cost": round(net_pnl_after_cost, 4),
+                "cost_status": cost_status,
             }
 
     if not results:
         return {"message": "No scenario data found"}
 
-    # Find best/worst
-    best_sid = max(results, key=lambda k: results[k]["avg_score"])
-    worst_sid = min(results, key=lambda k: results[k]["avg_score"])
+    ranked = {
+        sid: row for sid, row in results.items()
+        if row.get("cost_status") == "COST_AWARE"
+    }
+    if ranked:
+        best_sid = max(ranked, key=lambda k: ranked[k]["net_pnl_after_cost"])
+        worst_sid = min(ranked, key=lambda k: ranked[k]["net_pnl_after_cost"])
+        ranking_metric = "net_pnl_after_cost"
+    else:
+        best_sid = None
+        worst_sid = None
+        ranking_metric = "NO_COST_AWARE_TRADES"
 
     return {
         "scenarios": results,
-        "best": {"scenario_id": best_sid, **results[best_sid]},
-        "worst": {"scenario_id": worst_sid, **results[worst_sid]},
+        "ranking_metric": ranking_metric,
+        "best": {"scenario_id": best_sid, **results[best_sid]} if best_sid else None,
+        "worst": {"scenario_id": worst_sid, **results[worst_sid]} if worst_sid else None,
     }
+
+
+def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: List[Dict[str, Any]] = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return rows
+
+
+def _trade_economics(trade: Dict[str, Any]) -> Dict[str, Any]:
+    raw_pnl = _safe_float(trade.get("raw_pnl", trade.get("pnl", 0.0)))
+    if "net_pnl_after_cost" not in trade:
+        return {
+            "raw_pnl": raw_pnl,
+            "total_cost": 0.0,
+            "net_pnl_after_cost": raw_pnl,
+            "cost_status": "LEGACY_RAW_ONLY",
+        }
+    fee_cost = _safe_float(trade.get("fee_cost", trade.get("fees", 0.0)))
+    slippage_cost = _safe_float(trade.get("slippage_cost", trade.get("slippage", 0.0)))
+    total_cost = _safe_float(trade.get("total_cost", fee_cost + slippage_cost))
+    return {
+        "raw_pnl": raw_pnl,
+        "total_cost": total_cost,
+        "net_pnl_after_cost": _safe_float(trade.get("net_pnl_after_cost")),
+        "cost_status": "COST_AWARE",
+    }
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _read_strategy_type(scenario_dir: Path) -> str:

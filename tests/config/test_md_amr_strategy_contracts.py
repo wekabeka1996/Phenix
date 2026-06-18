@@ -117,6 +117,7 @@ CONTRACT_CASES = {
     },
     "MDAMRStrategyConfig": {
         "required": {
+            "mode",
             "enabled",
             "type",
             "description",
@@ -157,9 +158,12 @@ CONTRACT_CASES = {
             "assets",
             "objective",
         },
-        "defaults": {},
+        "defaults": {
+            "allowed_sides": ["BUY", "SELL"],
+            "decision": None,
+        },
         "default_factories": {},
-        "optional_fields": {"objective"},
+        "optional_fields": {"objective", "decision"},
     },
 }
 

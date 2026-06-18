@@ -57,6 +57,11 @@ class OrderLogEntry:
     quantity: Optional[float] = None
     price: Optional[float] = None
     lifecycle_id: Optional[str] = None
+    entry_rid: Optional[str] = None
+    strategy_id: Optional[str] = None
+    decision_id: Optional[str] = None
+    intent_id: Optional[str] = None
+    regime: Optional[str] = None
     trade_id: Optional[str] = None
     order_id: Optional[str] = None
     client_order_id: Optional[str] = None
@@ -188,6 +193,11 @@ def parse_order_log_line(line: str) -> Optional[OrderLogEntry]:
             quantity=data.get("quantity"),
             price=data.get("price"),
             lifecycle_id=_optional_str(data.get("lifecycle_id")),
+            entry_rid=_optional_str(data.get("entry_rid")),
+            strategy_id=_optional_str(data.get("strategy_id")),
+            decision_id=_optional_str(data.get("decision_id")),
+            intent_id=_optional_str(data.get("intent_id")),
+            regime=_optional_str(data.get("regime")),
             trade_id=(
                 _optional_str(data.get("trade_id"))
                 or _optional_str(metadata.get("fill_trade_id"))

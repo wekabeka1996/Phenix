@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -129,6 +129,18 @@ class PositionSizingConfig(BaseModel):
     liquidity_based_cap_usd: float = Field(...)
 
 
+class KellyCohortOverrideConfig(BaseModel):
+    """Calibrated Kelly parameters for one symbol/regime/side cohort."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    base_probability: float = Field(..., gt=0.0, lt=1.0)
+    payoff_ratio_r: float = Field(..., gt=0.0)
+    kelly_cap: float = Field(..., ge=0.0, le=1.0)
+    p_min: float | None = Field(default=None, gt=0.0, lt=1.0)
+    p_max: float | None = Field(default=None, gt=0.0, lt=1.0)
+
+
 class KellyConfig(BaseModel):
     """Kelly criterion configuration."""
 
@@ -136,13 +148,57 @@ class KellyConfig(BaseModel):
 
     base_probability: float = Field(...)
     kelly_cap: float = Field(...)
-    kelly_alpha: float = Field(...)
+    kelly_alpha: float | None = Field(
+        default=None,
+        description="Deprecated; ignored until a calibrated score-to-probability model exists.",
+    )
     payoff_ratio_r: float = Field(...)
     p_min: float = Field(..., description="Minimum probability clamp")
     p_max: float = Field(..., description="Maximum probability clamp")
-    uplift_factor: float = Field(
-        ..., description="Score-to-probability uplift multiplier",
+    uplift_factor: float | None = Field(
+        default=None,
+        description="Deprecated; ignored until a calibrated score-to-probability model exists.",
     )
+    overrides: Dict[str, Dict[str, Dict[str, KellyCohortOverrideConfig]]] = Field(
+        default_factory=dict,
+        description="Optional calibrated overrides keyed by symbol -> regime -> side.",
+    )
+
+    @model_validator(mode="after")
+    def _validate_kelly_contract(self) -> "KellyConfig":
+        if not (0.0 < self.base_probability < 1.0):
+            raise ValueError("kelly.base_probability must be in (0, 1)")
+        if self.payoff_ratio_r <= 0.0:
+            raise ValueError("kelly.payoff_ratio_r must be positive")
+        if not (0.0 <= self.kelly_cap <= 1.0):
+            raise ValueError("kelly.kelly_cap must be in [0, 1]")
+        if not (0.0 < self.p_min <= self.p_max < 1.0):
+            raise ValueError("kelly probability clamps must satisfy 0 < p_min <= p_max < 1")
+        for symbol, by_regime in self.overrides.items():
+            if symbol != str(symbol).strip().upper():
+                raise ValueError(f"kelly override symbol must be canonical uppercase: {symbol!r}")
+            for regime, by_side in by_regime.items():
+                if regime != str(regime).strip().upper():
+                    raise ValueError(f"kelly override regime must be canonical uppercase: {regime!r}")
+                for side, override in by_side.items():
+                    if side not in {"BUY", "SELL"}:
+                        raise ValueError(f"kelly override side must be BUY or SELL: {side!r}")
+                    p_min = self.p_min if override.p_min is None else override.p_min
+                    p_max = self.p_max if override.p_max is None else override.p_max
+                    if p_min > p_max:
+                        raise ValueError(
+                            f"kelly override clamps must satisfy p_min <= p_max for "
+                            f"{symbol}/{regime}/{side}"
+                        )
+        return self
+
+
+class StrategyIntentDecisionConfig(BaseModel):
+    """Minimum decision contract required for a strategy to create intents."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kelly: KellyConfig = Field(...)
 
 
 class QosConfig(BaseModel):
@@ -188,6 +244,7 @@ __all__ = [
     "BarGatingConfig",
     "BehaviorFsmConfig",
     "DirectionStrengthScoringConfig",
+    "KellyCohortOverrideConfig",
     "KellyConfig",
     "LiquidityGateConfig",
     "PositionSizingConfig",
@@ -196,4 +253,5 @@ __all__ = [
     "ROIExitConfig",
     "SignalWeights",
     "SignalsConfig",
+    "StrategyIntentDecisionConfig",
 ]

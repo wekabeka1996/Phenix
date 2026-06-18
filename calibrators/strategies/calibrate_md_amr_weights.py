@@ -512,12 +512,9 @@ def _extract_asset_configs(md_amr_cfg: dict[str, Any], symbols: Iterable[str]) -
                 f"md_amr.assets.{symbol} missing or invalid for requested calibration scope",
                 details={"symbol": symbol},
             )
-        if not bool(asset_cfg.get("enabled", True)):
-            raise CalibrationError(
-                "CONFIG_INVALID",
-                f"md_amr.assets.{symbol}.enabled must be true for calibration scope",
-                details={"symbol": symbol},
-            )
+        # Runtime authority and offline research are separate contracts. A
+        # disabled asset must remain calibratable so evidence can be gathered
+        # before any live/testnet activation is considered.
         exit_cfg = asset_cfg.get("exit")
         if not isinstance(exit_cfg, dict):
             raise CalibrationError(

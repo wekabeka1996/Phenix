@@ -56,7 +56,59 @@ assignments:
   DOGEUSDT:
     - alpha_ta_ensemble
     - mean_reversion
+# New entries only. Existing-position SL/TP/CLOSE paths remain authorized.
+entry_quarantine:
+  XRPUSDT:
+    - SELL
 
+counterfactual_overlays:
+  - experiment_id: btc_md_amr_nrr063
+    enabled: true
+    strategy_id: md_amr
+    symbol: BTCUSDT
+    regime: TREND_DOWN
+    sides: [BUY, SELL]
+    nrr_codes: [NRR-063]
+    holding_horizons_min: [15, 30, 60, 120]
+    minimum_independent_episodes: 30
+    minimum_market_days: 3
+  - experiment_id: btc_md_amr_nrr030
+    enabled: true
+    strategy_id: md_amr
+    symbol: BTCUSDT
+    regime: TREND_DOWN
+    sides: [BUY, SELL]
+    nrr_codes: [NRR-030]
+    holding_horizons_min: [15, 30, 60, 120]
+    minimum_independent_episodes: 30
+    minimum_market_days: 3
+
+# New-risk churn guard. Existing-position management bypasses this budget.
+turnover_budgets:
+  aurora:
+    "*":
+      max_entry_intents_per_hour: 6
+      min_entry_spacing_sec: 60
+  mean_reversion:
+    "*":
+      max_entry_intents_per_hour: 4
+      min_entry_spacing_sec: 180
+  md_amr:
+    "*":
+      max_entry_intents_per_hour: 4
+      min_entry_spacing_sec: 180
+  alpha_mr_s01:
+    "*":
+      max_entry_intents_per_hour: 3
+      min_entry_spacing_sec: 300
+  alpha_ta_ensemble:
+    "*":
+      max_entry_intents_per_hour: 3
+      min_entry_spacing_sec: 300
+  llm_microstructure:
+    "*":
+      max_entry_intents_per_hour: 2
+      min_entry_spacing_sec: 300
 
 
 # ==============================================================================

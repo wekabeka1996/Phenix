@@ -42,7 +42,11 @@ CONTRACT_CASES = {
     "StrategiesRegistryConfig": {
         "required": {"version", "assignments", "arbitration"},
         "defaults": {},
-        "default_factories": {},
+        "default_factories": {
+            "entry_quarantine": dict,
+            "counterfactual_overlays": list,
+            "turnover_budgets": dict,
+        },
         "optional_fields": set(),
     },
     "StrategyObjectiveMultiplierConfig": {

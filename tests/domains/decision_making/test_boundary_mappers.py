@@ -164,6 +164,46 @@ class TestMapProcessStrategyBoundaryToCmd:
         mutable["new_key"] = 99  # must not raise
         assert "new_key" not in cmd.features  # original unchanged
 
+    def test_mapping_regime_is_normalized_without_stringification(self):
+        raw = {
+            "symbol": "SOLUSDT",
+            "regime": {
+                "regime": "bull_trend",
+                "overall_regime": "HIGH_VOLATILITY",
+                "confidence": 0.81,
+            },
+        }
+        cmd = map_process_strategy_boundary_to_cmd(
+            self._make_boundary(raw), raw=raw
+        )
+        assert cmd.structural_regime == "TREND_UP"
+        assert dict(cmd.regime_snapshot or {})["confidence"] == pytest.approx(0.81)
+        assert not cmd.structural_regime.startswith("{")
+
+    def test_process_regime_precedence_and_invalid_mapping_fallback(self):
+        raw = {
+            "symbol": "BTCUSDT",
+            "structural_regime": "TREND_DOWN",
+            "regime": {"regime": "TREND_UP", "overall_regime": "HIGH_VOLATILITY"},
+            "regime_ctx": {"regime": "MEAN_REVERSION"},
+        }
+        cmd = map_process_strategy_boundary_to_cmd(
+            self._make_boundary(raw), raw=raw
+        )
+        assert cmd.structural_regime == "TREND_DOWN"
+
+        invalid = {"symbol": "BTCUSDT", "regime": {"confidence": 0.3}}
+        invalid_cmd = map_process_strategy_boundary_to_cmd(
+            self._make_boundary(invalid), raw=invalid
+        )
+        assert invalid_cmd.structural_regime == "UNCERTAIN"
+
+        unknown = {"symbol": "BTCUSDT", "structural_regime": "NOT_A_REGIME"}
+        unknown_cmd = map_process_strategy_boundary_to_cmd(
+            self._make_boundary(unknown), raw=unknown
+        )
+        assert unknown_cmd.structural_regime == "UNCERTAIN"
+
 
 # ──────────────────────────────────────────────────────────────
 # map_regime_boundary_to_event
@@ -194,8 +234,14 @@ class TestMapRegimeBoundaryToEvent:
         evt = map_regime_boundary_to_event(boundary, raw=raw)
         assert evt.regime == "TREND_DOWN"
 
-    def test_unknown_regime_passes_through(self):
+    def test_uncertain_regime_is_preserved(self):
         raw = {"symbol": "BTCUSDT", "regime": "UNCERTAIN"}
+        boundary = self._make_boundary(raw)
+        evt = map_regime_boundary_to_event(boundary, raw=raw)
+        assert evt.regime == "UNCERTAIN"
+
+    def test_unknown_regime_fails_closed(self):
+        raw = {"symbol": "BTCUSDT", "regime": "NOT_A_REGIME"}
         boundary = self._make_boundary(raw)
         evt = map_regime_boundary_to_event(boundary, raw=raw)
         assert evt.regime == "UNCERTAIN"

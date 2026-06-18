@@ -40,6 +40,7 @@ def _assign_mr_to_btc(config_dir: Path) -> None:
     strategies_path = config_dir / "strategies.yaml"
     payload = _yaml_load(strategies_path)
     payload["assignments"] = {"BTCUSDT": ["aurora", "mean_reversion"]}
+    payload["entry_quarantine"] = {}
     payload["arbitration"] = {
         "mode": "priority",
         "window_ms": 1000,

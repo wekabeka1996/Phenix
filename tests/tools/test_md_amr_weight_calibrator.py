@@ -325,6 +325,7 @@ def test_md_amr_overlay_serializes_selected_base_param_mutation() -> None:
     )
     base_params = calibrator._extract_base_params(md_amr_cfg)
     asset_cfgs = calibrator._extract_asset_configs(md_amr_cfg, ["SOLUSDT"])
+    assert asset_cfgs["SOLUSDT"]["enabled"] is False
     mutation_surface = calibrator._build_mutation_surface_cfg(
         base_params=base_params,
         asset_cfgs=asset_cfgs,

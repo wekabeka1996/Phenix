@@ -75,6 +75,7 @@ class WebSocketAggregator:
         window_seconds: int = 60,
         anchors: Optional[list[str]] = None,
         out_of_order_tolerance_ms: int = 0,
+        trade_silence_reconnect_sec: Optional[float] = None,
     ):
         """
         Initialize the aggregator.
@@ -89,6 +90,11 @@ class WebSocketAggregator:
         self.anchors = anchors or []
         self.window_ms = int(window_seconds) * 1000
         self.out_of_order_tolerance_ms = max(0, int(out_of_order_tolerance_ms))
+        self.trade_silence_reconnect_ms = (
+            int(float(trade_silence_reconnect_sec) * 1000)
+            if trade_silence_reconnect_sec is not None
+            else None
+        )
 
         # All symbols we track (trading + anchors)
         all_tracked = set(symbols + self.anchors)
@@ -364,6 +370,31 @@ class WebSocketAggregator:
             float(state["sell_notional"]), field_name="sell_notional", symbol=symbol
         )
 
+    def _trade_flow_metadata(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        now_ms = max(int(state["last_book_ts_ms"] or 0), int(state["last_trade_ts_ms"] or 0))
+        last_trade_ts_ms = int(state["last_trade_ts_ms"] or 0)
+        if last_trade_ts_ms <= 0 or now_ms <= 0:
+            return {
+                "trade_flow_state": "unknown",
+                "trade_flow_age_ms": None,
+                "trade_flow_last_trade_ts_ms": None,
+                "trade_flow_window_sec": int(self.window_seconds),
+            }
+
+        age_ms = max(0, int(now_ms - last_trade_ts_ms))
+        if self.trade_silence_reconnect_ms is not None and age_ms > self.trade_silence_reconnect_ms:
+            flow_state = "stale"
+        elif age_ms > self.window_ms:
+            flow_state = "degraded"
+        else:
+            flow_state = "fresh"
+        return {
+            "trade_flow_state": flow_state,
+            "trade_flow_age_ms": age_ms,
+            "trade_flow_last_trade_ts_ms": last_trade_ts_ms,
+            "trade_flow_window_sec": int(self.window_seconds),
+        }
+
     def get_market_tick(self, symbol: str) -> Optional[Dict[str, Any]]:
         """
         Get current market tick with calculated features.
@@ -449,6 +480,7 @@ class WebSocketAggregator:
             "data_source": "websocket_live",
             "bid_ask_count": f"{int(bid_size)}/{int(ask_size)}",
             "trade_count": f"BUY:{buy_trades} SELL:{sell_trades}",
+            **self._trade_flow_metadata(state),
         }
 
     async def periodic_emit(self, interval_seconds: float = 1.0) -> None:

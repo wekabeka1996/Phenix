@@ -27,6 +27,13 @@ POLICY_RECORD_KIND = "position_policy_sidecar"
 ACTION_PACKAGE_VERSION = "phase2_action_package_v1"
 CLOSE_REQUEST_EVENT_TYPE = "POSITION_POLICY_SIDECAR_CLOSE_REQUESTED"
 CLOSE_REQUEST_COMMAND_TOPIC = "CMD:POSITION_POLICY_SIDECAR_CLOSE_REQUEST"
+IDLE_SUPPRESSION_HEARTBEAT_MS = 120_000
+IDLE_SUPPRESSION_REASONS = frozenset(
+    {
+        "no_manage_flow_for_symbol",
+        "manage_flow_has_no_active_lifecycle",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -112,6 +119,9 @@ class _SymbolState:
     last_reconcile_ts_ms: int = 0
     last_evaluation_ts_ms: int = 0
     last_suppression_reason: str = ""
+    last_idle_suppression_signature: Optional[tuple] = None
+    last_idle_suppression_emit_ts_ms: int = 0
+    idle_suppression_dedup_count: int = 0
     last_recommendation_signature: Optional[tuple] = None
     last_recommendation_ts_ms: int = 0
     recommendation_dedup_suppressed_count: int = 0
@@ -586,9 +596,16 @@ class PositionPolicySidecar:
             payload["incumbent_owner"] = suppression.get("incumbent_owner")
             payload["score_snapshot"] = suppression.get("score_snapshot", {})
             state.last_suppression_reason = suppression["suppression_reason"]
+            if not self._should_publish_idle_suppression(
+                state=state,
+                now_ms=now_ms,
+                payload=payload,
+            ):
+                return
             self._publish("EVT:POSITION_POLICY_SIDECAR_SUPPRESSED", payload)
             return
 
+        self._reset_idle_suppression_dedup(state)
         score_snapshot = self._compute_scores(
             state=state, manage_flow=manage_flow)
         state.last_evaluation_ts_ms = now_ms
@@ -1052,6 +1069,57 @@ class PositionPolicySidecar:
             str(position_snapshot.get("portfolio_position_amt")),
             fill_correlation.get("canonical_fill_trace_id"),
         )
+
+    @staticmethod
+    def _reset_idle_suppression_dedup(state: _SymbolState) -> None:
+        state.last_idle_suppression_signature = None
+        state.last_idle_suppression_emit_ts_ms = 0
+        state.idle_suppression_dedup_count = 0
+
+    def _should_publish_idle_suppression(
+        self,
+        *,
+        state: _SymbolState,
+        now_ms: int,
+        payload: Dict[str, Any],
+    ) -> bool:
+        """Rate-limit unchanged no-position telemetry while preserving transitions."""
+        reason = str(payload.get("suppression_reason") or "")
+        if reason not in IDLE_SUPPRESSION_REASONS:
+            self._reset_idle_suppression_dedup(state)
+            return True
+
+        position = payload.get("position_snapshot") or {}
+        fill = payload.get("fill_correlation") or {}
+        signature = (
+            reason,
+            position.get("manage_state"),
+            position.get("side"),
+            str(position.get("position_qty") or ""),
+            str(position.get("portfolio_position_amt")),
+            position.get("portfolio_snapshot_status"),
+            position.get("portfolio_symbol_present"),
+            fill.get("canonical_fill_trace_id"),
+        )
+        elapsed_ms = now_ms - state.last_idle_suppression_emit_ts_ms
+        if (
+            signature == state.last_idle_suppression_signature
+            and state.last_idle_suppression_emit_ts_ms > 0
+            and elapsed_ms < IDLE_SUPPRESSION_HEARTBEAT_MS
+        ):
+            state.idle_suppression_dedup_count += 1
+            return False
+
+        if state.idle_suppression_dedup_count > 0:
+            payload["dedup_detail"] = {
+                "suppressed_count": state.idle_suppression_dedup_count,
+                "heartbeat_ms": IDLE_SUPPRESSION_HEARTBEAT_MS,
+                "last_emit_ts_ms": state.last_idle_suppression_emit_ts_ms,
+            }
+        state.last_idle_suppression_signature = signature
+        state.last_idle_suppression_emit_ts_ms = now_ms
+        state.idle_suppression_dedup_count = 0
+        return True
 
     def _base_payload(
         self,

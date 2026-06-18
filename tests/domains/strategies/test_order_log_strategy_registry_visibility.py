@@ -97,7 +97,9 @@ def test_runtime_snapshot_lists_configured_strategies_without_fake_trades() -> N
     assert len(writes) == 1
     snapshot = writes[0]
     assert {item["strategy_id"] for item in snapshot["strategies"]} == STRATEGY_IDS
-    assert all(item["status"] == "active_live" for item in snapshot["strategies"])
+    assert all(item["observed_in_current_runtime"] is True for item in snapshot["strategies"])
+    assert all(item["financially_reachable"] is False for item in snapshot["strategies"])
+    assert all(item["financial_blockers"] for item in snapshot["strategies"])
     assert not any(snapshot["event_type"] == event for event in FINANCIAL_EVENT_TYPES)
 
 

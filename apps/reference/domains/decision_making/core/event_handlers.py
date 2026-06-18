@@ -20,8 +20,8 @@ from apps.reference.telemetry.metrics import (
 )
 from apps.reference.contracts.reject_reasons import normalize_config_error
 from apps.reference.contracts.runtime_regime_layers import (
+    canonical_structural_regime_label,
     is_structural_regime_payload,
-    normalize_structural_regime_label,
     structural_regime_ref,
 )
 from vfoundation.core.protocol import Message
@@ -484,7 +484,7 @@ class DMEventHandlers:
             symbol = event.pld.get("symbol")
 
             if symbol:
-                regime_val = normalize_structural_regime_label(
+                regime_val = canonical_structural_regime_label(
                     event.pld.get("regime") or event.pld.get("overall_regime")
                 )
                 detector_ts_ms = _optional_int(

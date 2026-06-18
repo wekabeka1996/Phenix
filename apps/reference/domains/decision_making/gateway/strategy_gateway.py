@@ -5,6 +5,7 @@ import decimal
 import json
 import math
 import uuid
+from collections import defaultdict, deque
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
@@ -21,13 +22,22 @@ from apps.reference.telemetry.metrics import (
     inc_neocortex_authority_request,
     inc_neocortex_journal_write_failed,
 )
+from apps.reference.telemetry.order_logger import order_logger
 from apps.reference.contracts.reject_reasons import normalize_config_error
 from vfoundation.core.protocol import Message
 
 from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
 from apps.reference.domains.decision_making.contracts.schemas_decision_blocked import DecisionBlockedPayload
 from apps.reference.domains.decision_making.core.context import create_decision_context
-from apps.reference.domains.decision_making.intent.truth_artifacts import write_decision_blocked
+from apps.reference.domains.decision_making.intent.truth_artifacts import (
+    write_decision_blocked,
+    write_strategy_decision_blocked,
+)
+from apps.reference.domains.strategies.authority import (
+    FINANCIAL_MODES,
+    canonical_signal_regime,
+    resolve_strategy_mode,
+)
 from apps.reference.domains.alpha_search.judge.central_brain.runtime_capture import (
     RuntimeShadowCaptureDisabled,
     capture_runtime_shadow,
@@ -97,12 +107,25 @@ def _has_finite_numeric_values(values: list[Any]) -> bool:
     return False
 
 
+def _coerce_event_timestamp_ms(value: Any) -> int | None:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(numeric) or numeric <= 0:
+        return None
+    if numeric < 100_000_000_000:
+        numeric *= 1000.0
+    return int(numeric)
+
+
 class StrategyGateway:
     """Gate chain for strategy signals -> TRADE_INTENT_PROPOSED."""
 
     def __init__(self, dm: "DecisionMaking") -> None:
         self._dm = dm
         self.logger = dm.logger
+        self._entry_intent_history: dict[tuple[str, str], deque[int]] = defaultdict(deque)
 
     @property
     def _clock(self):
@@ -127,6 +150,54 @@ class StrategyGateway:
                 f"domains.decision_making.risk_skew.{key} required (SSOT)")
         return v
 
+    def _turnover_budget_blocker(
+        self,
+        *,
+        strategy_id: str,
+        symbol: str,
+        now_ms: int,
+    ) -> tuple[str, dict[str, Any]] | None:
+        budgets = getattr(
+            getattr(self.config, "strategies_registry", None),
+            "turnover_budgets",
+            {},
+        ) or {}
+        strategy_budgets = budgets.get(strategy_id, {}) \
+            if isinstance(budgets, dict) else {}
+        if not isinstance(strategy_budgets, dict):
+            return None
+        budget = strategy_budgets.get(symbol) or strategy_budgets.get("*")
+        if budget is None:
+            return None
+
+        history = self._entry_intent_history[(strategy_id, symbol)]
+        cutoff_ms = now_ms - 3_600_000
+        while history and history[0] <= cutoff_ms:
+            history.popleft()
+        min_spacing_ms = int(getattr(budget, "min_entry_spacing_sec", 0)) * 1000
+        if history and now_ms - history[-1] < min_spacing_ms:
+            return "TURNOVER_MIN_SPACING", {
+                "last_entry_intent_ts": history[-1],
+                "min_entry_spacing_sec": min_spacing_ms // 1000,
+                "entry_intents_last_hour": len(history),
+            }
+        maximum = int(getattr(budget, "max_entry_intents_per_hour", 0))
+        if maximum > 0 and len(history) >= maximum:
+            return "TURNOVER_HOURLY_BUDGET_EXCEEDED", {
+                "max_entry_intents_per_hour": maximum,
+                "entry_intents_last_hour": len(history),
+            }
+        return None
+
+    def _record_entry_intent_attempt(
+        self,
+        *,
+        strategy_id: str,
+        symbol: str,
+        now_ms: int,
+    ) -> None:
+        self._entry_intent_history[(strategy_id, symbol)].append(now_ms)
+
     def _reject(self, *, symbol, strategy_id, side, rid,
                 reason_code, reason, context, why_chain, details=None,
                 signal_payload: dict[str, Any] | None = None):
@@ -137,6 +208,14 @@ class StrategyGateway:
                 scoring, dict) else None
             if isinstance(anti_peak, dict) and "anti_peak_observability" not in enriched_details:
                 enriched_details["anti_peak_observability"] = dict(anti_peak)
+        self._capture_nrr_counterfactual(
+            symbol=str(symbol),
+            strategy_id=str(strategy_id),
+            side=str(side),
+            rid=str(rid),
+            reason_code=str(reason_code),
+            signal_payload=signal_payload,
+        )
         self._dm._emit_trade_intent_rejected(
             symbol=symbol, strategy_id=str(strategy_id), side=str(side),
             rid=str(rid), reason_code=reason_code, reason=reason,
@@ -144,6 +223,67 @@ class StrategyGateway:
             why_chain=why_chain if isinstance(why_chain, list) else [],
             details=(enriched_details or details))
         self._dm._record_blocked_intent(symbol)
+
+    def _capture_nrr_counterfactual(
+        self,
+        *,
+        symbol: str,
+        strategy_id: str,
+        side: str,
+        rid: str,
+        reason_code: str,
+        signal_payload: dict[str, Any] | None,
+    ) -> None:
+        config = getattr(self._dm, "config", None)
+        overlays = getattr(
+            getattr(config, "strategies_registry", None),
+            "counterfactual_overlays",
+            [],
+        ) or []
+        payload = signal_payload if isinstance(signal_payload, dict) else {}
+        regime = canonical_signal_regime(payload)
+        for overlay in overlays:
+            if not bool(getattr(overlay, "enabled", False)):
+                continue
+            nrr_codes = [str(item) for item in (getattr(overlay, "nrr_codes", []) or [])]
+            if nrr_codes != [reason_code]:
+                continue
+            if str(getattr(overlay, "strategy_id", "")) != strategy_id:
+                continue
+            if str(getattr(overlay, "symbol", "")).upper() != symbol.upper():
+                continue
+            if str(getattr(overlay, "regime", "")).upper() != regime:
+                continue
+            sides = {str(item).upper() for item in (getattr(overlay, "sides", []) or [])}
+            if side.upper() not in sides:
+                continue
+            order_logger.write({
+                "rid": rid,
+                "event_type": "NRR_COUNTERFACTUAL_CAPTURED",
+                "symbol": symbol.upper(),
+                "side": side.upper(),
+                "strategy_id": strategy_id,
+                "stage": "NRR_SHADOW_OVERLAY",
+                "reason_code": reason_code,
+                "regime": regime,
+                "tf_sec": payload.get("tf_sec"),
+                "bar_close_ts": _coerce_event_timestamp_ms(
+                    payload.get("bar_close_ts") or payload.get("ts_ms")
+                ),
+                "source_fsm": "DecisionMaking",
+                "metadata": {
+                    "non_financial": True,
+                    "trading_authorized": False,
+                    "experiment_id": str(getattr(overlay, "experiment_id", "")),
+                    "single_gate": reason_code,
+                    "holding_horizons_min": list(
+                        getattr(overlay, "holding_horizons_min", []) or []),
+                    "minimum_independent_episodes": int(
+                        getattr(overlay, "minimum_independent_episodes", 30)),
+                    "minimum_market_days": int(
+                        getattr(overlay, "minimum_market_days", 3)),
+                },
+            })
 
     def _defer(self, *, symbol, reason, retry_key, next_ts, pld,
                why_chain, context, attempt=1, max_attempts=None):
@@ -1377,6 +1517,14 @@ class StrategyGateway:
 
     def process_signal(self, event: Message) -> None:  # noqa: C901
         """Gate chain: EVT:STRATEGY_SIGNAL_PRODUCED -> TRADE_INTENT_PROPOSED."""
+        pld: dict[str, Any] = {}
+        strategy_id = None
+        symbol = None
+        side = None
+        rid = None
+        why_chain: list[Any] = []
+        signal_recorded = False
+        handoff_started = False
         try:
             pld = event.pld
             if not isinstance(pld, dict):
@@ -1395,15 +1543,116 @@ class StrategyGateway:
                     tf_sec = int(tf_sec)
                 except (ValueError, TypeError):
                     tf_sec = None
+            signal_bar_close_ts = _coerce_event_timestamp_ms(
+                pld.get("bar_close_ts") or pld.get("ts_ms")
+            )
             if not strategy_id or not symbol or not side:
                 self.logger.warning(
                     "STRATEGY_SIGNAL_PRODUCED: missing strategy_id/symbol/side")
                 return
             side = str(side).upper()
             strategy_id_s = str(strategy_id)
+            signal_price_ctx = pld.get("price_ctx") \
+                if isinstance(pld.get("price_ctx"), dict) else {}
+            order_logger.write({
+                "rid": str(rid),
+                "event_type": "STRATEGY_SIGNAL_PRODUCED",
+                "symbol": str(symbol),
+                "side": side if side in {"BUY", "SELL"} else "NONE",
+                "strategy_id": strategy_id_s,
+                "stage": "STRATEGY",
+                "reason_code": "SIGNAL_PRODUCED",
+                "regime": canonical_signal_regime(pld),
+                "tf_sec": tf_sec,
+                "bar_close_ts": signal_bar_close_ts,
+                "source_fsm": "DecisionMaking",
+                "metadata": {
+                    "non_financial": True,
+                    "terminal_outcome": None,
+                    "entry_price": pld.get("entry_price")
+                    or signal_price_ctx.get("entry_price"),
+                    "stop_price": pld.get("stop_price")
+                    or signal_price_ctx.get("stop_price"),
+                    "target_price": pld.get("target_price")
+                    or signal_price_ctx.get("target_price"),
+                },
+            })
+            signal_recorded = True
             intent_kind = str(pld.get("intent_kind") or "ENTRY").upper()
             is_reduce_path = strategy_id_s == "md_amr" and intent_kind in (
                 "FULL_CLOSE", "PARTIAL_CLOSE")
+
+            strategy_cfg = getattr(
+                getattr(self.config, "strategies", None), strategy_id_s, None)
+            authority_mode = resolve_strategy_mode(strategy_cfg)
+            if authority_mode not in FINANCIAL_MODES and not is_reduce_path:
+                now_ms = int(self._clock.now_ms())
+                reason_code = (
+                    "AUTHORITY_MODE_SHADOW"
+                    if authority_mode == "shadow"
+                    else "AUTHORITY_MODE_DISABLED"
+                )
+                blocked_payload = write_strategy_decision_blocked(
+                    strategy_id=strategy_id_s,
+                    symbol=str(symbol),
+                    side=side,
+                    regime=canonical_signal_regime(pld),
+                    reason_code=reason_code,
+                    reason="strategy has no financial intent authority",
+                    context="strategy_signal_gateway:authority_mode",
+                    src="DecisionMaking",
+                    ts_ms=now_ms,
+                    rid=str(rid),
+                    why_chain=why_chain if isinstance(why_chain, list) else [],
+                    details={"mode": authority_mode, "terminal_outcome": "shadowed"},
+                    tf_sec=tf_sec,
+                    bar_close_ts=signal_bar_close_ts,
+                )
+                self._dm.fsm.emit(
+                    "EVT:STRATEGY_DECISION_BLOCKED",
+                    blocked_payload,
+                    why=f"strategy_authority:{authority_mode}",
+                    data_ref=[],
+                )
+                self._block(str(symbol))
+                return
+
+            entry_quarantine = getattr(
+                getattr(self.config, "strategies_registry", None),
+                "entry_quarantine",
+                {},
+            ) or {}
+            quarantined_sides = entry_quarantine.get(str(symbol).upper(), []) \
+                if isinstance(entry_quarantine, dict) else []
+            if not is_reduce_path and side in {str(item).upper() for item in quarantined_sides}:
+                now_ms = int(self._clock.now_ms())
+                blocked_payload = write_strategy_decision_blocked(
+                    strategy_id=strategy_id_s,
+                    symbol=str(symbol),
+                    side=side,
+                    regime=canonical_signal_regime(pld),
+                    reason_code="ENTRY_SIDE_QUARANTINED",
+                    reason="new entries for this symbol and side are quarantined",
+                    context="strategy_signal_gateway:entry_quarantine",
+                    src="DecisionMaking",
+                    ts_ms=now_ms,
+                    rid=str(rid),
+                    why_chain=why_chain if isinstance(why_chain, list) else [],
+                    details={
+                        "terminal_outcome": "blocked",
+                        "quarantine_source": "strategies_registry.entry_quarantine",
+                    },
+                    tf_sec=tf_sec,
+                    bar_close_ts=signal_bar_close_ts,
+                )
+                self._dm.fsm.emit(
+                    "EVT:STRATEGY_DECISION_BLOCKED",
+                    blocked_payload,
+                    why="strategy_entry_side_quarantined",
+                    data_ref=[],
+                )
+                self._block(str(symbol))
+                return
 
             # === CANONICAL TIME NORMALIZATION (DM-TTL-NORMALIZATION-PACK-R1) ===
             raw_ts = pld.get("ts_ms")
@@ -1980,7 +2229,48 @@ class StrategyGateway:
                 strategy_trace_payload = {
                     "pyramiding_add_info": dict(pyramiding_add_info)}
 
+            # Apply the strategy/symbol turnover budget only after the signal
+            # has passed the decision gates and is ready to reach the builder.
+            turnover_now_ms = int(self._clock.now_ms())
+            turnover_block = self._turnover_budget_blocker(
+                strategy_id=strategy_id_s,
+                symbol=str(symbol).upper(),
+                now_ms=turnover_now_ms,
+            )
+            if turnover_block is not None:
+                reason_code, turnover_details = turnover_block
+                blocked_payload = write_strategy_decision_blocked(
+                    strategy_id=strategy_id_s,
+                    symbol=str(symbol),
+                    side=side,
+                    regime=canonical_signal_regime(pld),
+                    reason_code=reason_code,
+                    reason="strategy/symbol entry turnover budget blocked intent",
+                    context="strategy_signal_gateway:turnover_budget",
+                    src="DecisionMaking",
+                    ts_ms=turnover_now_ms,
+                    rid=str(rid),
+                    why_chain=why_chain if isinstance(why_chain, list) else [],
+                    details={**turnover_details, "terminal_outcome": "blocked"},
+                    tf_sec=tf_sec,
+                    bar_close_ts=signal_bar_close_ts,
+                )
+                self._dm.fsm.emit(
+                    "EVT:STRATEGY_DECISION_BLOCKED",
+                    blocked_payload,
+                    why="strategy_turnover_budget_blocked",
+                    data_ref=[],
+                )
+                self._block(str(symbol))
+                return
+
             # Dispatch through facade (safety gates already ran in chain)
+            self._record_entry_intent_attempt(
+                strategy_id=strategy_id_s,
+                symbol=str(symbol).upper(),
+                now_ms=turnover_now_ms,
+            )
+            handoff_started = True
             dm._propose_trade_intent(
                 symbol=symbol, side=side,
                 qty=decimal.Decimal(str(qty_dec)), price=entry_price_dec,
@@ -2023,6 +2313,24 @@ class StrategyGateway:
         except Exception as e:
             self.logger.error(
                 f"STRATEGY_SIGNAL_GATEWAY error: {e}", exc_info=True)
+            if signal_recorded and not handoff_started and strategy_id and symbol and side and rid:
+                try:
+                    self._reject(
+                        symbol=str(symbol), strategy_id=str(strategy_id),
+                        side=str(side), rid=str(rid),
+                        reason_code="STRATEGY_GATEWAY_INTERNAL_ERROR",
+                        reason="DECISION",
+                        context="strategy_signal_gateway:internal_error",
+                        why_chain=why_chain if isinstance(why_chain, list) else [],
+                        details={"error_type": type(e).__name__},
+                        signal_payload=pld,
+                    )
+                except Exception:
+                    self.logger.critical(
+                        "Failed to emit terminal gateway rejection rid=%s",
+                        rid,
+                        exc_info=True,
+                    )
 
     def _dispatch_gate_result(
         self, chain_result, gate_ctx, pld, why_chain, *,
@@ -2039,7 +2347,18 @@ class StrategyGateway:
             why_chain, list) else []) + list(result.why_extra)
 
         if result.outcome == GateOutcome.BLOCK:
-            self._block(symbol)
+            if (result.context_update or {}).get("_terminal_or_defer_emitted"):
+                self._block(symbol)
+                return
+            self._reject(
+                symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
+                reason_code=result.reason_code,
+                reason=result.reason or "DECISION",
+                context=result.context,
+                why_chain=effective_why,
+                details=result.details,
+                signal_payload=pld,
+            )
             return
 
         if result.outcome == GateOutcome.REJECT:

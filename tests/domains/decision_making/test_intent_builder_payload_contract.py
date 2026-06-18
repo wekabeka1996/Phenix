@@ -311,11 +311,20 @@ def _expected_kelly_provenance() -> dict:
     expected_fraction = _expected_kelly_fraction()
     return {
         "source_path": "config.strategies.aurora.decision.kelly",
+        "cohort": {
+            "strategy_id": "aurora",
+            "symbol": "BTCUSDT",
+            "regime": "TREND_UP",
+            "side": "BUY",
+            "override_applied": False,
+        },
         "p": {
             "source": "config.strategies.aurora.decision.kelly.base_probability",
             "raw": "0.5",
             "p_min": "0.45",
+            "p_min_source": "config.strategies.aurora.decision.kelly.p_min",
             "p_max": "0.65",
+            "p_max_source": "config.strategies.aurora.decision.kelly.p_max",
             "value": "0.5",
         },
         "payoff_ratio_r": {
@@ -326,16 +335,17 @@ def _expected_kelly_provenance() -> dict:
             "formula": "p - (1 - p) / payoff_ratio_r",
             "full_kelly": expected_fraction,
             "kelly_cap": "0.25",
+            "kelly_cap_source": "config.strategies.aurora.decision.kelly.kelly_cap",
             "value": expected_fraction,
         },
         "unapplied_config_fields": {
             "kelly_alpha": {
                 "value": "0.8",
-                "reason": "boundary_semantics_not_proven",
+                "reason": "deprecated_without_calibrated_score_probability_model",
             },
             "uplift_factor": {
                 "value": "0.2",
-                "reason": "no_score01_probability_producer_on_hot_path",
+                "reason": "deprecated_without_calibrated_score_probability_model",
             },
         },
     }
@@ -449,6 +459,94 @@ def test_build_and_emit_persists_order_intent_admission_threshold_metadata() -> 
     assert metadata["threshold_verdict"] == "PASS"
     assert metadata["threshold_reason"] == "regime_confidence=0.82 within band min=0.45 min_source=scalar_legacy max=None max_source=None"
     assert metadata["regime_confidence_gate_verdict"] == "ALLOW"
+
+
+def test_missing_kelly_emits_terminal_intent_build_rejection() -> None:
+    builder = _make_builder()
+    builder.config.strategies.aurora.decision = None
+
+    with (
+        patch("apps.reference.domains.decision_making.intent.builder.wal.append", return_value="wal-ok"),
+        patch("apps.reference.domains.decision_making.intent.builder.order_logger.write") as mock_order_logger,
+        patch("apps.reference.domains.decision_making.intent.builder.print"),
+        patch("apps.reference.domains.decision_making.intent.builder.emit_regime_decision_audit"),
+        patch("apps.reference.domains.decision_making.intent.builder._trade_lifecycle", None),
+    ):
+        builder.build_and_emit(**_build_kwargs())
+
+    rows = [call.args[0] for call in mock_order_logger.call_args_list]
+    rejected = next(row for row in rows if row["event_type"] == "INTENT_BUILD_REJECTED")
+    assert rejected["reason_code"] == "KELLY_CONFIG_MISSING_OR_INVALID"
+    emitted = [call.args[0] for call in builder._fsm.emit.call_args_list]
+    assert "EVT:INTENT_BUILD_REJECTED" in emitted
+    assert "EVT:TRADE_INTENT_PROPOSED" not in emitted
+
+
+def test_wal_failure_still_writes_terminal_intent_build_rejection() -> None:
+    builder = _make_builder()
+
+    with (
+        patch("apps.reference.domains.decision_making.intent.builder.wal.append",
+              side_effect=RuntimeError("wal unavailable")),
+        patch("apps.reference.domains.decision_making.intent.builder.order_logger.write") as mock_order_logger,
+        patch("apps.reference.domains.decision_making.intent.builder.print"),
+        patch("apps.reference.domains.decision_making.intent.builder.emit_regime_decision_audit"),
+        patch("apps.reference.domains.decision_making.intent.builder._trade_lifecycle", None),
+    ):
+        builder.build_and_emit(**_build_kwargs())
+
+    rows = [call.args[0] for call in mock_order_logger.call_args_list]
+    rejected = next(row for row in rows if row["event_type"] == "INTENT_BUILD_REJECTED")
+    assert rejected["reason_code"] == "INTENT_WAL_WRITE_FAILED"
+    assert rejected["strategy_id"] == "aurora"
+    assert builder._record_accepted.call_count == 0
+
+
+def test_arbitration_rejection_writes_terminal_intent_build_rejection() -> None:
+    builder = _make_builder()
+    builder._check_strategy_arbitration.return_value = {
+        "allowed": False,
+        "reason": "higher_priority_strategy_active",
+    }
+
+    with (
+        patch("apps.reference.domains.decision_making.intent.builder.wal.append", return_value="wal-ok"),
+        patch("apps.reference.domains.decision_making.intent.builder.order_logger.write") as mock_order_logger,
+        patch("apps.reference.domains.decision_making.intent.builder.print"),
+        patch("apps.reference.domains.decision_making.intent.builder.emit_regime_decision_audit"),
+        patch("apps.reference.domains.decision_making.intent.builder._trade_lifecycle", None),
+    ):
+        builder.build_and_emit(**_build_kwargs())
+
+    rows = [call.args[0] for call in mock_order_logger.call_args_list]
+    rejected = next(row for row in rows if row["event_type"] == "INTENT_BUILD_REJECTED")
+    assert rejected["reason_code"] == "STRATEGY_ARBITRATION_REJECTED"
+    assert builder._record_accepted.call_count == 0
+
+
+def test_unexpected_builder_failure_is_terminal_and_releases_reservation() -> None:
+    builder = _make_builder()
+    order_index = MagicMock()
+    order_index.try_reserve_entry.return_value = True
+    builder._fsm.order_index = order_index
+
+    with (
+        patch(
+            "apps.reference.domains.decision_making.intent.builder.build_trade_intent_payload",
+            side_effect=RuntimeError("payload assembly failed"),
+        ),
+        patch("apps.reference.domains.decision_making.intent.builder.order_logger.write") as mock_order_logger,
+    ):
+        builder.build_and_emit(**_build_kwargs())
+
+    order_index.cancel_reservation.assert_called_with("rid-payload-001")
+    rejected = [
+        call.args[0]
+        for call in mock_order_logger.call_args_list
+        if call.args and call.args[0].get("event_type") == "INTENT_BUILD_REJECTED"
+    ]
+    assert len(rejected) == 1
+    assert rejected[0]["reason_code"] == "INTENT_BUILDER_INTERNAL_ERROR"
 
 
 def test_build_and_emit_preserves_decision_trace_payload_contract() -> None:

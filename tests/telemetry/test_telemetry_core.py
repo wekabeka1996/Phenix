@@ -103,3 +103,29 @@ def test_order_logger_init_preserves_existing_records(tmp_path):
     ]
     assert lines[0]["rid"] == "existing-rid"
     assert lines[2]["rid"] == "follow-up-rid"
+
+
+def test_order_logger_rotates_and_retains_at_least_thirty_days(tmp_path, monkeypatch):
+    from apps.reference.telemetry.order_logger import OrderLoggerV1, iter_order_log_files
+
+    monkeypatch.setenv("ORDER_LOG_ROTATE_BYTES", "1")
+    monkeypatch.setenv("ORDER_LOG_RETENTION_DAYS", "7")
+    log_file = tmp_path / "order_log_v1.jsonl"
+    logger = OrderLoggerV1(log_file=log_file)
+
+    logger.write({
+        "rid": "rotated-event",
+        "event_type": "ORDER_PLACED",
+        "symbol": "BTCUSDT",
+        "side": "BUY",
+        "source_fsm": "test",
+    })
+
+    files = iter_order_log_files(log_file)
+    assert logger.retention_days == 30
+    assert files[-1] == log_file
+    assert len(files) == 2
+    assert json.loads(files[0].read_text(encoding="utf-8").splitlines()[0])[
+        "event_type"] == "BOOT"
+    assert json.loads(log_file.read_text(encoding="utf-8").splitlines()[0])[
+        "rid"] == "rotated-event"

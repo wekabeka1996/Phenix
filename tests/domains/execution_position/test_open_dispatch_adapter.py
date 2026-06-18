@@ -175,6 +175,9 @@ def test_typed_open_dispatch_payload_builds_bounded_dec_open_surface() -> None:
         target_price="10200",
         sl_pct="0.02",
         idempotent_key="KEY-UNIT-1",
+        strategy_id="aurora",
+        decision_id="DECISION-UNIT-1",
+        intent_id="KEY-UNIT-1",
         regime="TREND_UP",
         regime_confidence=0.87,
         resolved_min_regime_confidence=0.45,
@@ -192,6 +195,9 @@ def test_typed_open_dispatch_payload_builds_bounded_dec_open_surface() -> None:
     assert payload.price == "10000.01"
     dec_open_payload = payload.to_dec_open_payload()
     assert dec_open_payload["order_type"] == "LIMIT"
+    assert dec_open_payload["strategy"] == "aurora"
+    assert dec_open_payload["decision_id"] == "DECISION-UNIT-1"
+    assert dec_open_payload["intent_id"] == "KEY-UNIT-1"
     assert dec_open_payload["resolved_min_regime_confidence"] == 0.45
     assert dec_open_payload["threshold_applied"] is True
     assert dec_open_payload["threshold_verdict"] == "PASS"

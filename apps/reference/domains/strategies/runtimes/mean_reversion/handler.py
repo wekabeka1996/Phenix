@@ -40,8 +40,8 @@ from apps.reference.contracts.runtime_gap_policy import (
 )
 from apps.reference.contracts.runtime_regime_layers import (
     build_regime_provenance_fields,
+    canonical_structural_regime_label,
     is_structural_regime_payload,
-    normalize_structural_regime_label,
 )
 from apps.reference.contracts.runtime_readiness import (
     RuntimeReadinessScope,
@@ -264,6 +264,7 @@ class MeanReversionHandler:
         # Block reason throttling (avoid per-tick spam)
         self._last_block_reason: Dict[str, str] = {}
         self._last_block_ts_ms: Dict[str, int] = {}
+        self._neutral_reason_counts: Dict[str, Dict[str, int]] = {}
 
         # Vector 1: Microstructure Veto state
         # Per-symbol TFI EMA buffer (smoothed trade flow imbalance)
@@ -859,6 +860,11 @@ class MeanReversionHandler:
         context: str,
         details: dict | None = None,
         why_chain: list[str] | None = None,
+        side: str | None = None,
+        regime: str | None = None,
+        tf_sec: int | None = None,
+        bar_close_ts: int | None = None,
+        rid: str | None = None,
         throttle_ms: int = 10_000,
     ) -> None:
         """Emit a throttled EVT:STRATEGY_DECISION_BLOCKED artifact for ``symbol``.
@@ -886,6 +892,11 @@ class MeanReversionHandler:
             why=context,
             why_chain=why_chain,
             details=details,
+            side=side,
+            regime=regime,
+            tf_sec=tf_sec,
+            bar_close_ts=bar_close_ts,
+            rid=rid,
         )
         self.fsm.emit("EVT:STRATEGY_DECISION_BLOCKED",
                       payload, why=f"mr_blocked:{reason_code}")
@@ -1073,6 +1084,21 @@ class MeanReversionHandler:
             except (TypeError, ValueError):
                 resolved_regime_ts_ms = 0
             resolved_regime_confidence = regime_ctx.get("confidence")
+        blocked_bar_close_ts = (
+            int(bar_identity.bar_end_ts_ms)
+            if bar_identity is not None
+            else int(signal.bar.end_ts_ms if signal.bar else signal.timestamp_ms)
+        )
+        blocked_regime = resolved_regime_name or (
+            signal.flat_regime.name if signal.flat_regime else "UNCERTAIN"
+        )
+        blocked_context = {
+            "side": str(side),
+            "regime": blocked_regime,
+            "tf_sec": int(self.timeframe_sec),
+            "bar_close_ts": blocked_bar_close_ts,
+            "rid": rid,
+        }
         domain_cfg = getattr(
             getattr(self.config, "domains", None), "objective_engine", None)
         mr_cfg = getattr(getattr(self.config, "strategies",
@@ -1133,6 +1159,7 @@ class MeanReversionHandler:
                         why_chain=["OBJECTIVE_ENGINE",
                                    "FAIL_CLOSED",
                                    "OBJECTIVE_REGIME_CONFIDENCE_MISSING"],
+                        **blocked_context,
                     )
                     return
             else:
@@ -1208,6 +1235,7 @@ class MeanReversionHandler:
                         },
                         why_chain=["OBJECTIVE_ENGINE", str(
                             obj_score.block_reason or "GATE_BLOCKED")],
+                        **blocked_context,
                     )
                     return
                 elif obj_gate_result.status == ObjectiveGateStatus.PRECONDITION_FAILED:
@@ -1223,6 +1251,7 @@ class MeanReversionHandler:
                                 "error": obj_gate_result.precondition_code},
                             why_chain=["OBJECTIVE_ENGINE",
                                        "FAIL_CLOSED", str(obj_gate_result.precondition_code)],
+                            **blocked_context,
                         )
                         return
                 elif obj_gate_result.status == ObjectiveGateStatus.EVALUATION_ERROR:
@@ -1237,6 +1266,7 @@ class MeanReversionHandler:
                             details={"error": obj_gate_result.error},
                             why_chain=["OBJECTIVE_ENGINE",
                                        "FAIL_CLOSED", str(obj_gate_result.error)],
+                            **blocked_context,
                         )
                         return
                 # DISABLED status from evaluator: no-op (shouldn't happen since we checked enabled above)
@@ -1359,11 +1389,11 @@ class MeanReversionHandler:
                 return
             if isinstance(pld, dict):
                 symbol = str(pld.get("symbol") or "")
-                regime = normalize_structural_regime_label(
+                regime = canonical_structural_regime_label(
                     pld.get("regime") or pld.get("overall_regime") or "")
             else:
                 symbol = str(getattr(pld, "symbol", "") or "")
-                regime = normalize_structural_regime_label(
+                regime = canonical_structural_regime_label(
                     aget(pld, "regime", "") or aget(pld, "overall_regime", "") or "")
 
             if not symbol or symbol not in self._enabled_symbols:
@@ -1868,20 +1898,24 @@ class MeanReversionHandler:
             if not strategy:
                 return
 
-            # Set regime from CMD payload or cache
+            # The canonical label is the only regime authority on this path.
+            # The raw snapshot remains available solely for confidence and
+            # detector provenance.
             regime_data = pld.get("regime") if isinstance(
                 pld, dict) else getattr(pld, "regime", None)
             resolved_regime_ctx: Dict[str, Any] = {}
-            resolved_regime_name = None
+            structural_regime = pld.get("structural_regime") if isinstance(
+                pld, dict) else getattr(pld, "structural_regime", None)
+            resolved_regime_name = canonical_structural_regime_label(
+                structural_regime if isinstance(structural_regime, str) else "UNCERTAIN"
+            )
             resolved_regime_confidence = None
             resolved_regime_event_ts_ms = 0
             if isinstance(regime_data, dict):
-                resolved_regime_name = normalize_structural_regime_label(
-                    regime_data.get("regime") or regime_data.get(
-                        "overall_regime")
-                )
+                provenance_snapshot = dict(regime_data)
+                provenance_snapshot["regime"] = resolved_regime_name
                 provenance = build_regime_provenance_fields(
-                    regime_data,
+                    provenance_snapshot,
                     bar_close_ts_ms=int(
                         bar_close_ts) if bar_close_ts else None,
                 )
@@ -1894,39 +1928,30 @@ class MeanReversionHandler:
                 resolved_regime_event_ts_ms = int(
                     provenance.get("regime_event_ts_ms") or 0
                 )
-                if resolved_regime_name:
-                    resolved_regime_ctx = {
-                        "regime": resolved_regime_name,
-                        "confidence": resolved_regime_confidence,
-                        "regime_ts_ms": resolved_regime_event_ts_ms or None,
-                        **provenance,
-                    }
             else:
-                regime = self._per_symbol_regime.get(symbol)
-                if regime:
-                    resolved_regime_name = regime
-                    resolved_regime_confidence = self._regime_confidence.get(
-                        symbol)
-                    provenance = build_regime_provenance_fields(
-                        {
-                            "regime": regime,
-                            "regime_event_ts_ms": self._regime_event_ts_ms.get(symbol) or self._regime_ts_ms.get(symbol),
-                        },
-                        bar_close_ts_ms=int(
-                            bar_close_ts) if bar_close_ts else None,
-                    )
-                    resolved_regime_event_ts_ms = int(
-                        provenance.get("regime_event_ts_ms") or 0
-                    )
-                    resolved_regime_ctx = {
+                resolved_regime_confidence = self._regime_confidence.get(symbol)
+                regime_event_ts_map = getattr(self, "_regime_event_ts_ms", {})
+                regime_ts_map = getattr(self, "_regime_ts_ms", {})
+                provenance = build_regime_provenance_fields(
+                    {
                         "regime": resolved_regime_name,
-                        "confidence": resolved_regime_confidence,
-                        "regime_ts_ms": resolved_regime_event_ts_ms or None,
-                        **provenance,
-                    }
+                        "regime_event_ts_ms": regime_event_ts_map.get(symbol)
+                        or regime_ts_map.get(symbol),
+                    },
+                    bar_close_ts_ms=int(bar_close_ts) if bar_close_ts else None,
+                    missing_heartbeat=resolved_regime_name == "UNCERTAIN",
+                )
+                resolved_regime_event_ts_ms = int(
+                    provenance.get("regime_event_ts_ms") or 0
+                )
 
-            if resolved_regime_name:
-                strategy.set_regime(symbol, resolved_regime_name)
+            resolved_regime_ctx = {
+                "regime": resolved_regime_name,
+                "confidence": resolved_regime_confidence,
+                "regime_ts_ms": resolved_regime_event_ts_ms or None,
+                **provenance,
+            }
+            strategy.set_regime(symbol, resolved_regime_name)
 
             # Vector 2: Directional Bias — compute effective thresholds from funding
             self._apply_directional_bias(symbol, strategy)
@@ -1949,60 +1974,78 @@ class MeanReversionHandler:
             if signal is None:
                 return
 
-            # Log bar
             if signal.bar:
                 self._log_bar(signal)
 
-                if signal.is_signal:
-                    # Vector 1: Microstructure Veto (handler overlay)
-                    # Executes after actionable signal, before liquidity gate
-                    signal_side = "LONG" if signal.signal_type == MRSignalType.LONG else "SHORT"
-                    veto_allowed, veto_reason = self._check_microstructure_veto(
-                        symbol, signal_side, bar)
-                    if not veto_allowed:
-                        self.logger.info(
-                            f"[{symbol}] MR Signal BLOCKED by Microstructure Veto: {veto_reason}")
-                        self._emit_strategy_blocked(
-                            symbol=symbol,
-                            reason_code=veto_reason,
-                            reason="MICROSTRUCTURE",
-                            context="mean_reversion_handler:_on_process_strategy",
-                            details={
-                                "tfi_ema": str(round(self._tfi_ema.get(symbol, 0.0), 6)),
-                                "signal_side": signal_side,
-                            },
-                            why_chain=["MICROSTRUCTURE_VETO", veto_reason],
-                        )
-                    elif self._check_liquidity_gate(symbol):
-                        self._emit_signal(
-                            signal,
-                            bar_identity=bar_identity,
-                            replay_identity=replay_identity,
-                            gap_status=gap_status,
-                            warmup_readiness=(
-                                pld.get("warmup") if isinstance(pld, dict) else None),
-                            regime_ctx=resolved_regime_ctx if resolved_regime_ctx else None,
-                        )
-                    else:
-                        self.logger.info(
-                            f"[{symbol}] MR Signal BLOCKED by Liquidity Gate")
-                        self._emit_strategy_blocked(
-                            symbol=symbol,
-                            reason_code="LIQUIDITY_GATE",
-                            reason="LIQUIDITY",
-                            context="mean_reversion_handler:_on_process_strategy",
-                            details={"kappa": str(
-                                self._liquidity_kappa_map.get(symbol, "MISSING"))},
-                            why_chain=["LIQUIDITY_GATE"],
-                        )
+            if signal.is_signal:
+                signal_side = "LONG" if signal.signal_type == MRSignalType.LONG else "SHORT"
+                veto_allowed, veto_reason = self._check_microstructure_veto(
+                    symbol, signal_side, bar)
+                if not veto_allowed:
+                    self.logger.info(
+                        f"[{symbol}] MR Signal BLOCKED by Microstructure Veto: {veto_reason}")
+                    self._emit_strategy_blocked(
+                        symbol=symbol,
+                        reason_code=veto_reason,
+                        reason="MICROSTRUCTURE",
+                        context="mean_reversion_handler:_on_process_strategy",
+                        details={
+                            "tfi_ema": str(round(self._tfi_ema.get(symbol, 0.0), 6)),
+                            "signal_side": signal_side,
+                            "regime": resolved_regime_name or "UNCERTAIN",
+                        },
+                        why_chain=["MICROSTRUCTURE_VETO", veto_reason],
+                        side=signal_side,
+                        regime=resolved_regime_name,
+                        tf_sec=int(tf_sec),
+                        bar_close_ts=int(bar_close_ts),
+                        rid=str(pld.get("rid") or "") or None,
+                    )
+                elif self._check_liquidity_gate(symbol):
+                    self._emit_signal(
+                        signal,
+                        bar_identity=bar_identity,
+                        replay_identity=replay_identity,
+                        gap_status=gap_status,
+                        warmup_readiness=(
+                            pld.get("warmup") if isinstance(pld, dict) else None),
+                        regime_ctx=resolved_regime_ctx if resolved_regime_ctx else None,
+                    )
+                else:
+                    self.logger.info(
+                        f"[{symbol}] MR Signal BLOCKED by Liquidity Gate")
+                    self._emit_strategy_blocked(
+                        symbol=symbol,
+                        reason_code="LIQUIDITY_GATE",
+                        reason="LIQUIDITY",
+                        context="mean_reversion_handler:_on_process_strategy",
+                        details={
+                            "kappa": str(self._liquidity_kappa_map.get(symbol, "MISSING")),
+                            "regime": resolved_regime_name or "UNCERTAIN",
+                        },
+                        why_chain=["LIQUIDITY_GATE"],
+                        side=signal_side,
+                        regime=resolved_regime_name,
+                        tf_sec=int(tf_sec),
+                        bar_close_ts=int(bar_close_ts),
+                        rid=str(pld.get("rid") or "") or None,
+                    )
             else:
                 self._stats["neutral_bars"] += 1
                 why = str(getattr(signal, "why", "") or "")
                 why_norm = why[len("neutral:"):] if why.startswith(
                     "neutral:") else why
+                reason_family = why_norm.split(":", 1)[0] or "unknown"
+                symbol_reasons = self._neutral_reason_counts.setdefault(symbol, {})
+                symbol_reasons[reason_family] = symbol_reasons.get(reason_family, 0) + 1
                 reason_code = None
                 if why_norm.startswith("regime_not_flat:"):
-                    reason_code = "REGIME_MAPPING_NONE"
+                    blocked_regime = why_norm.split(":", 1)[1].strip().upper()
+                    reason_code = (
+                        "REGIME_UNCERTAIN"
+                        if blocked_regime in {"", "UNCERTAIN", "NONE"}
+                        else "REGIME_NOT_FLAT"
+                    )
                 elif why_norm.startswith("regime_not_allowed:"):
                     reason_code = "REGIME_NOT_ALLOWED"
                 elif why_norm.startswith("flat_low_short_bb_width_too_narrow:"):
@@ -2019,12 +2062,20 @@ class MeanReversionHandler:
                         reason="REGIME" if reason_code.startswith(
                             "REGIME") else "SIGNAL",
                         context="mean_reversion_handler:_on_process_strategy",
-                        details={"why": why_norm},
+                        details={
+                            "why": why_norm,
+                            "regime": resolved_regime_name or "UNCERTAIN",
+                            "neutral_reason_count": symbol_reasons[reason_family],
+                        },
                         why_chain=[
                             "REGIME" if reason_code.startswith(
                                 "REGIME") else "SIGNAL",
                             why_norm,
                         ],
+                        regime=resolved_regime_name,
+                        tf_sec=int(tf_sec),
+                        bar_close_ts=int(bar_close_ts),
+                        rid=str(pld.get("rid") or "") or None,
                     )
         except Exception as e:
             self.logger.error(f"Error in _on_process_strategy: {e}")
@@ -2056,6 +2107,11 @@ class MeanReversionHandler:
             "last_signal_times": {
                 k: time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(v))
                 for k, v in self._last_signal_time.items()
+            },
+            "counters": dict(self._stats),
+            "neutral_reason_counts": {
+                symbol: dict(reasons)
+                for symbol, reasons in self._neutral_reason_counts.items()
             },
         }
 

@@ -8,7 +8,8 @@ Detects abnormal system behavior:
 """
 from __future__ import annotations
 import time
-from typing import Dict, List, Tuple, Optional
+from collections.abc import Iterable
+from typing import Dict, Tuple
 from collections import defaultdict, deque
 from vfoundation.core.protocol import Message
 
@@ -23,12 +24,23 @@ class EntropyMonitor:
     3. Loop patterns - same event repeated excessively
     """
     
+    DEFAULT_LOOP_EXEMPT_PATTERNS = frozenset(
+        {
+            "EVT:MARKET_TICK_RECEIVED",
+            "EVT:PORTFOLIO_STATE_UPDATED",
+            "EVT:ACCOUNT_UPDATE_RECEIVED",
+            "EVT:BALANCE_UPDATE_RECEIVED",
+            "EVT:EXPOSURE_SUMMARY_UPDATED",
+        }
+    )
+
     def __init__(
         self, 
         window_sec: int = 60,
         volume_threshold: int = 100,
         error_rate_threshold: float = 0.5,
-        loop_threshold: int = 10
+        loop_threshold: int = 10,
+        loop_exempt_patterns: Iterable[str] | None = None,
     ):
         """
         Args:
@@ -36,11 +48,18 @@ class EntropyMonitor:
             volume_threshold: Max events per window before spike
             error_rate_threshold: Max ERR rate (0.0-1.0) before spike
             loop_threshold: Max identical events before loop detection
+            loop_exempt_patterns: Expected periodic patterns excluded from loop
+                detection. They still contribute to volume and error metrics.
         """
         self.window_sec = window_sec
         self.volume_threshold = volume_threshold
         self.error_rate_threshold = error_rate_threshold
         self.loop_threshold = loop_threshold
+        self.loop_exempt_patterns = frozenset(
+            self.DEFAULT_LOOP_EXEMPT_PATTERNS
+            if loop_exempt_patterns is None
+            else loop_exempt_patterns
+        )
         
         # Event tracking (timestamp, op, verb, rid)
         self.events: deque[Tuple[float, str, str, str]] = deque()
@@ -87,6 +106,8 @@ class EntropyMonitor:
         
         # Check 3: Loop detection
         for pattern, count in self.pattern_counts.items():
+            if pattern in self.loop_exempt_patterns:
+                continue
             if count > self.loop_threshold:
                 return (True, f"LOOP_DETECTED: {pattern} repeated {count} times (threshold: {self.loop_threshold})")
         
@@ -116,7 +137,8 @@ class EntropyMonitor:
             "volume_threshold": self.volume_threshold,
             "error_rate_threshold": self.error_rate_threshold,
             "top_patterns": dict(top_patterns),
-            "unique_patterns": len(self.pattern_counts)
+            "unique_patterns": len(self.pattern_counts),
+            "loop_exempt_patterns": sorted(self.loop_exempt_patterns),
         }
     
     def reset(self) -> None:

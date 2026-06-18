@@ -25,11 +25,13 @@ class TestStrategyGatewayTimeContract:
         from types import SimpleNamespace
         dm_mock.config.strategies = SimpleNamespace(
             aurora=SimpleNamespace(
+                mode="runtime",
                 decision=SimpleNamespace(
                     retry_max_count=5, retry_backoff_factor=2.0),
                 safety_gates=SimpleNamespace(system_stress_policy="off"),
             ),
             test_strat=SimpleNamespace(
+                mode="runtime",
                 decision=SimpleNamespace(
                     retry_max_count=5, retry_backoff_factor=2.0),
                 safety_gates=SimpleNamespace(system_stress_policy="off"),
@@ -144,6 +146,137 @@ class TestStrategyGatewayTimeContract:
             gw._reject.assert_called_once()
             assert gw._reject.call_args.kwargs["reason_code"] == "INVALID_TS_MS"
             dm._propose_trade_intent.assert_not_called()
+
+    @patch("apps.reference.domains.decision_making.gateway.strategy_gateway.write_strategy_decision_blocked")
+    def test_shadow_strategy_is_terminally_blocked_before_intent_builder(self, write_blocked, gateway):
+        gw, dm = gateway
+        dm.config.strategies.test_strat.mode = "shadow"
+        write_blocked.return_value = {
+            "strategy_id": "test_strat",
+            "symbol": "BTCUSDT",
+            "side": "BUY",
+            "stage": "STRATEGY",
+            "reason_code": "AUTHORITY_MODE_SHADOW",
+        }
+
+        gw.process_signal(self._make_msg(1700000000000))
+
+        write_blocked.assert_called_once()
+        dm.fsm.emit.assert_called_once()
+        assert dm.fsm.emit.call_args.args[0] == "EVT:STRATEGY_DECISION_BLOCKED"
+        dm._propose_trade_intent.assert_not_called()
+
+    @patch("apps.reference.domains.decision_making.gateway.strategy_gateway.write_strategy_decision_blocked")
+    def test_entry_quarantine_blocks_xrp_sell_but_not_position_management(self, write_blocked, gateway):
+        from types import SimpleNamespace
+
+        gw, dm = gateway
+        dm.config.strategies_registry = SimpleNamespace(
+            entry_quarantine={"XRPUSDT": ["SELL"]})
+        write_blocked.return_value = {
+            "strategy_id": "test_strat",
+            "symbol": "XRPUSDT",
+            "side": "SELL",
+            "stage": "STRATEGY",
+            "reason_code": "ENTRY_SIDE_QUARANTINED",
+        }
+        msg = self._make_msg(1700000000000)
+        msg.pld["symbol"] = "XRPUSDT"
+        msg.pld["side"] = "SELL"
+
+        gw.process_signal(msg)
+
+        assert write_blocked.call_args.kwargs["reason_code"] == "ENTRY_SIDE_QUARANTINED"
+        dm._propose_trade_intent.assert_not_called()
+
+        write_blocked.reset_mock()
+        dm._emit_reduce_only_close.return_value = True
+        close_msg = self._make_msg(
+            1700000000000, intent_kind="FULL_CLOSE", strategy_id="md_amr")
+        close_msg.pld["symbol"] = "XRPUSDT"
+        close_msg.pld["side"] = "SELL"
+        gw.process_signal(close_msg)
+
+        write_blocked.assert_not_called()
+        dm._emit_reduce_only_close.assert_called_once()
+
+    @patch("apps.reference.domains.decision_making.gateway.strategy_gateway.write_strategy_decision_blocked")
+    @patch("apps.reference.domains.decision_making.gateway.strategy_gateway.resolve_strategy_entry_prices")
+    def test_turnover_budget_blocks_repeated_entry_intent_attempt(
+        self, mock_resolve, write_blocked, gateway
+    ):
+        from types import SimpleNamespace
+
+        gw, dm = gateway
+        mock_resolve.return_value = (None, None, None)
+        dm.config.strategies_registry = SimpleNamespace(
+            entry_quarantine={},
+            turnover_budgets={
+                "test_strat": {
+                    "BTCUSDT": SimpleNamespace(
+                        max_entry_intents_per_hour=6,
+                        min_entry_spacing_sec=60,
+                    )
+                }
+            },
+        )
+        write_blocked.return_value = {
+            "strategy_id": "test_strat",
+            "symbol": "BTCUSDT",
+            "side": "BUY",
+            "stage": "STRATEGY",
+            "reason_code": "TURNOVER_MIN_SPACING",
+        }
+
+        gw.process_signal(self._make_msg(1700000000000))
+        dm._propose_trade_intent.assert_called_once()
+
+        dm._propose_trade_intent.reset_mock()
+        gw.process_signal(self._make_msg(1700000000000))
+
+        dm._propose_trade_intent.assert_not_called()
+        assert write_blocked.call_args.kwargs["reason_code"] == "TURNOVER_MIN_SPACING"
+
+    @patch("apps.reference.domains.decision_making.gateway.strategy_gateway.order_logger.write")
+    def test_nrr_overlay_is_capture_only_and_matches_exact_cohort(self, order_write, gateway):
+        from types import SimpleNamespace
+
+        gw, dm = gateway
+        dm.config.strategies_registry = SimpleNamespace(
+            counterfactual_overlays=[
+                SimpleNamespace(
+                    experiment_id="btc_md_amr_nrr063",
+                    enabled=True,
+                    strategy_id="md_amr",
+                    symbol="BTCUSDT",
+                    regime="TREND_DOWN",
+                    sides=["BUY"],
+                    nrr_codes=["NRR-063"],
+                    holding_horizons_min=[15, 30, 60, 120],
+                    minimum_independent_episodes=30,
+                    minimum_market_days=3,
+                )
+            ]
+        )
+
+        gw._capture_nrr_counterfactual(
+            symbol="BTCUSDT",
+            strategy_id="md_amr",
+            side="BUY",
+            rid="nrr-overlay-1",
+            reason_code="NRR-063",
+            signal_payload={
+                "structural_regime": "TREND_DOWN",
+                "tf_sec": 300,
+                "bar_close_ts": 1700000000,
+            },
+        )
+
+        row = order_write.call_args.args[0]
+        assert row["event_type"] == "NRR_COUNTERFACTUAL_CAPTURED"
+        assert row["bar_close_ts"] == 1700000000000
+        assert row["metadata"]["trading_authorized"] is False
+        dm._propose_trade_intent.assert_not_called()
 
     def test_reduce_only_exits_exempt_from_ts_ms_missing(self, gateway):
         """Test md_amr FULL_CLOSE / PARTIAL_CLOSE are exempt from strict MISSING_TS_MS rejection."""

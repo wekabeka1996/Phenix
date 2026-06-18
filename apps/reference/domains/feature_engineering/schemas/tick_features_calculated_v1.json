@@ -183,6 +183,26 @@
       "description": "Optional FE internal diagnostics snapshot.",
       "additionalProperties": true
     },
+    "trade_flow_state": {
+      "type": ["string", "null"],
+      "enum": ["unknown", "fresh", "degraded", "stale", null],
+      "description": "Trade-flow freshness state propagated from market_data"
+    },
+    "trade_flow_age_ms": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Age of the latest observed trade in milliseconds"
+    },
+    "trade_flow_last_trade_ts_ms": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Exchange timestamp of the latest observed trade"
+    },
+    "trade_flow_window_sec": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "description": "Trade-flow aggregation window in seconds"
+    },
     "data_quality": {
       "type": "object",
       "description": "Optional data-quality annotations, used by bad_dt and similar tick drops.",

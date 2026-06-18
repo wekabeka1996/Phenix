@@ -590,12 +590,94 @@ class OpenExecutor:
             return
         entry_id = submission.client_order_id
 
-        entry_resp, submission_data_ref = await self._submit_open_entry(
+        # Publish attribution before crossing the adapter boundary. A fast fill
+        # websocket can arrive before the REST placement call returns.
+        owner_context = self._fsm._resolve_strategy_owner_from_decision(
+            symbol=symbol,
             decision=decision,
-            submission=submission,
-            wal=wal,
         )
+        strategy_id = str(owner_context.get("strategy_id") or "").strip()
+        decision_payload = decision.pld or {}
+        trace_payload = decision_payload.get("trace") \
+            if isinstance(decision_payload.get("trace"), dict) else {}
+        provisional_attribution = {
+            "strategy_id": strategy_id or decision_payload.get("strategy"),
+            "entry_rid": str(decision.rid) if decision.rid not in (None, "") else None,
+            "decision_id": decision_payload.get("decision_id")
+            or trace_payload.get("decision_id"),
+            "intent_id": decision_payload.get("intent_id")
+            or trace_payload.get("intent_id")
+            or decision_payload.get("idempotent_key")
+            or str(idem_key),
+            "lifecycle_id": str(idem_key),
+            "regime": decision_payload.get("regime"),
+            "regime_confidence": decision_payload.get("regime_confidence"),
+            "regime_provenance": decision_payload.get("regime_provenance"),
+        }
+        attribution_by_symbol = getattr(
+            self._fsm, "_open_attribution_by_symbol", None)
+        if attribution_by_symbol is None:
+            attribution_by_symbol = {}
+            self._fsm._open_attribution_by_symbol = attribution_by_symbol
+        strategy_by_symbol = getattr(self._fsm, "_open_strategy_by_symbol", None)
+        if strategy_by_symbol is None:
+            strategy_by_symbol = {}
+            self._fsm._open_strategy_by_symbol = strategy_by_symbol
+        lifecycle_by_symbol = getattr(
+            self._fsm, "_last_lifecycle_ikey_by_symbol", None)
+        if lifecycle_by_symbol is None:
+            lifecycle_by_symbol = {}
+            self._fsm._last_lifecycle_ikey_by_symbol = lifecycle_by_symbol
+        rid_by_symbol = getattr(
+            self._fsm, "_last_lifecycle_rid_by_symbol", None)
+        if rid_by_symbol is None:
+            rid_by_symbol = {}
+            self._fsm._last_lifecycle_rid_by_symbol = rid_by_symbol
+
+        previous_attribution = attribution_by_symbol.get(symbol)
+        previous_strategy = strategy_by_symbol.get(symbol)
+        previous_lifecycle = lifecycle_by_symbol.get(symbol)
+        previous_rid = rid_by_symbol.get(symbol)
+        attribution_by_symbol[symbol] = provisional_attribution
+        if strategy_id:
+            strategy_by_symbol[symbol] = strategy_id
+        lifecycle_by_symbol[symbol] = str(idem_key)
+        if decision.rid not in (None, ""):
+            rid_by_symbol[symbol] = str(decision.rid)
+
+        def _restore_provisional_attribution() -> None:
+            if attribution_by_symbol.get(symbol) == provisional_attribution:
+                if previous_attribution is None:
+                    attribution_by_symbol.pop(symbol, None)
+                else:
+                    attribution_by_symbol[symbol] = previous_attribution
+            if strategy_id and strategy_by_symbol.get(symbol) == strategy_id:
+                if previous_strategy is None:
+                    strategy_by_symbol.pop(symbol, None)
+                else:
+                    strategy_by_symbol[symbol] = previous_strategy
+            if lifecycle_by_symbol.get(symbol) == str(idem_key):
+                if previous_lifecycle is None:
+                    lifecycle_by_symbol.pop(symbol, None)
+                else:
+                    lifecycle_by_symbol[symbol] = previous_lifecycle
+            if decision.rid not in (None, "") and rid_by_symbol.get(symbol) == str(decision.rid):
+                if previous_rid is None:
+                    rid_by_symbol.pop(symbol, None)
+                else:
+                    rid_by_symbol[symbol] = previous_rid
+
+        try:
+            entry_resp, submission_data_ref = await self._submit_open_entry(
+                decision=decision,
+                submission=submission,
+                wal=wal,
+            )
+        except Exception:
+            _restore_provisional_attribution()
+            raise
         if entry_resp is None:
+            _restore_provisional_attribution()
             return
             LOG.info(f"✅ MARKET entry placed: {entry_resp}")
 
@@ -613,6 +695,7 @@ class OpenExecutor:
             order_type,
             mark,
             data_ref=submission_data_ref,
+            owner_context=owner_context,
         )
 
         # LIMIT deferred brackets path
@@ -1028,7 +1111,8 @@ class OpenExecutor:
             self._mark_submit_finished(decision=decision)
 
     def _post_entry_registration(self, decision, symbol, side, qty, raw_qty, entry_id, entry_resp,
-                                 idem_key, norm_result, order_type, mark, data_ref=None):
+                                 idem_key, norm_result, order_type, mark, data_ref=None,
+                                 owner_context=None):
         """Register entry with ORDER_INDEX, guardian, watchdog, and logging."""
         from vfoundation.dr import wal
         from vfoundation.core.fsm_emit_compat import Message
@@ -1051,15 +1135,32 @@ class OpenExecutor:
             symbol=symbol, order_id=str(entry_resp["orderId"]),
             client_order_id=entry_id, side=side, qty=qty,
             corr_id=decision.corr_id, rid=decision.rid)
-        owner_context = self._fsm._resolve_strategy_owner_from_decision(
+        owner_context = dict(owner_context or self._fsm._resolve_strategy_owner_from_decision(
             symbol=symbol,
             decision=decision,
-        )
+        ))
         strategy_id = str(owner_context.get("strategy_id") or "").strip()
         if strategy_id:
             self._fsm._open_strategy_by_symbol[symbol] = strategy_id
         else:
             self._fsm._open_strategy_by_symbol.pop(symbol, None)
+        _decision_payload = decision.pld or {}
+        _trace_payload = _decision_payload.get("trace") \
+            if isinstance(_decision_payload.get("trace"), dict) else {}
+        self._fsm._open_attribution_by_symbol[symbol] = {
+            "strategy_id": strategy_id or _decision_payload.get("strategy"),
+            "entry_rid": str(decision.rid) if decision.rid not in (None, "") else None,
+            "decision_id": _decision_payload.get("decision_id")
+            or _trace_payload.get("decision_id"),
+            "intent_id": _decision_payload.get("intent_id")
+            or _trace_payload.get("intent_id")
+            or _decision_payload.get("idempotent_key")
+            or str(idem_key),
+            "lifecycle_id": str(idem_key),
+            "regime": _decision_payload.get("regime"),
+            "regime_confidence": _decision_payload.get("regime_confidence"),
+            "regime_provenance": _decision_payload.get("regime_provenance"),
+        }
         self._fsm._remember_bracket_owner(
             symbol=symbol,
             strategy_id=owner_context.get("strategy_id"),
@@ -1113,8 +1214,14 @@ class OpenExecutor:
         )
         _open_regime_provenance = (decision.pld or {}).get("regime_provenance")
         _open_regime_epoch_ref = (decision.pld or {}).get("regime_epoch_ref")
+        _open_attribution = self._fsm._open_attribution_by_symbol.get(symbol, {})
         order_logger.write({
             "rid": decision.rid, "event_type": "ORDER_PLACED", "symbol": symbol,
+            "entry_rid": _open_attribution.get("entry_rid"),
+            "lifecycle_id": _open_attribution.get("lifecycle_id"),
+            "strategy_id": _open_attribution.get("strategy_id"),
+            "decision_id": _open_attribution.get("decision_id"),
+            "intent_id": _open_attribution.get("intent_id"),
             "side": side, "quantity": float(qty), "qty_raw": float(raw_qty) if raw_qty else None,
             "client_order_id": entry_id, "order_id": str(entry_resp["orderId"]),
             "source_fsm": "ExecPosFSM", "reservation_id": decision.corr_id,

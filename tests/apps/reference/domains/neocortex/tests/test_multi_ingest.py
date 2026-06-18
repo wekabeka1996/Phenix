@@ -36,7 +36,7 @@ class TestFeatureParser:
         assert entry.symbol == "BTCUSDT"
         assert entry.features["obi"] == -0.68
         assert entry.features["rsi"] == 45.5
-        assert entry.event_ts_ms == 1767956322585
+        assert entry.event_ts_ms == 1767952722585
         assert entry.timestamp == pytest.approx(entry.event_ts_ms / 1000.0)
     
     def test_parse_invalid_line(self):
@@ -91,7 +91,7 @@ class TestCoreParser:
         assert entry.event_type == CoreEventType.POSITION_CLOSED
         assert entry.symbol == "BTCUSDT"
         assert entry.reason == "neutral"
-        assert entry.event_ts_ms == 1767953971887
+        assert entry.event_ts_ms == 1767950371887
     
     def test_parse_equity_update(self):
         line = "2026-01-09 12:19:29,044 - apps.reference.domains.account_balance.account_connector - INFO - Emitted positions update: 2 open positions, totalWalletBalance=293.27235042, totalUnrealizedProfit=0E-8"
@@ -227,6 +227,169 @@ class TestMultiTailer:
         run_async(run_test())
         
         assert tailer.stats["orders_processed"] >= 1
+
+    def test_tailer_drains_rotated_order_log_then_reads_new_active(self, tmp_path):
+        features_dir = tmp_path / "features"
+        features_dir.mkdir()
+        orders_file = tmp_path / "order_log_v1.jsonl"
+        core_log = tmp_path / "aurora_core.log"
+        core_log.write_text("", encoding="utf-8")
+
+        def order_row(order_id: str, timestamp: int) -> str:
+            return json.dumps({
+                "event_type": "ORDER_PLACED",
+                "symbol": "BTCUSDT",
+                "side": "BUY",
+                "quantity": 0.001,
+                "order_id": order_id,
+                "timestamp": timestamp,
+                "metadata": {"order_type": "LIMIT_ENTRY"},
+            })
+
+        orders_file.write_text(
+            order_row("old-1", 1_700_000_000_000) + "\n"
+            + order_row("old-2", 1_700_000_001_000) + "\n",
+            encoding="utf-8",
+        )
+        tailer = MultiTailer(
+            config=MultiSourceConfig(
+                enabled=True,
+                features_dir=features_dir,
+                orders_file=orders_file,
+                core_log=core_log,
+                symbols=["BTCUSDT"],
+                max_order_lines_per_cycle=1,
+            ),
+            feature_handler=AsyncMock(),
+            state_path=tmp_path / "state.json",
+        )
+
+        async def run_test():
+            await tailer._process_orders()
+            rotated = tmp_path / "order_log_v1.20260613T100000Z.000.jsonl"
+            orders_file.replace(rotated)
+            orders_file.write_text(
+                order_row("new-1", 1_700_000_002_000) + "\n",
+                encoding="utf-8",
+            )
+            await tailer._process_orders()
+            await tailer._process_orders()
+
+        run_async(run_test())
+
+        assert tailer.stats["orders_processed"] == 3
+
+    def test_tailer_restores_rotation_identity_across_restart(self, tmp_path):
+        features_dir = tmp_path / "features"
+        features_dir.mkdir()
+        orders_file = tmp_path / "order_log_v1.jsonl"
+        core_log = tmp_path / "aurora_core.log"
+        core_log.write_text("", encoding="utf-8")
+        state_path = tmp_path / "state.json"
+
+        def order_row(order_id: str, timestamp: int) -> str:
+            return json.dumps({
+                "event_type": "ORDER_PLACED",
+                "symbol": "BTCUSDT",
+                "side": "BUY",
+                "quantity": 0.001,
+                "order_id": order_id,
+                "timestamp": timestamp,
+                "metadata": {"order_type": "LIMIT_ENTRY"},
+            })
+
+        orders_file.write_text(
+            order_row("old-1", 1_700_000_000_000) + "\n"
+            + order_row("old-2", 1_700_000_001_000) + "\n",
+            encoding="utf-8",
+        )
+        config = MultiSourceConfig(
+            enabled=True,
+            features_dir=features_dir,
+            orders_file=orders_file,
+            core_log=core_log,
+            symbols=["BTCUSDT"],
+            max_order_lines_per_cycle=1,
+        )
+
+        first = MultiTailer(
+            config=config, feature_handler=AsyncMock(), state_path=state_path)
+
+        async def first_run():
+            await first._process_orders()
+            await first.save_state()
+
+        run_async(first_run())
+        rotated = tmp_path / "order_log_v1.20260614T100000Z.000.jsonl"
+        orders_file.replace(rotated)
+        orders_file.write_text(
+            order_row("new-1", 1_700_000_002_000) + "\n", encoding="utf-8")
+
+        second = MultiTailer(
+            config=config, feature_handler=AsyncMock(), state_path=state_path)
+
+        async def second_run():
+            assert await second.load_state() is True
+            await second._process_orders()
+            await second._process_orders()
+
+        run_async(second_run())
+
+        assert second.stats["orders_processed"] == 2
+
+    def test_tailer_drains_all_pending_rotations_before_active_log(self, tmp_path):
+        features_dir = tmp_path / "features"
+        features_dir.mkdir()
+        orders_file = tmp_path / "order_log_v1.jsonl"
+        core_log = tmp_path / "aurora_core.log"
+        core_log.write_text("", encoding="utf-8")
+
+        def order_row(order_id: str, timestamp: int) -> str:
+            return json.dumps({
+                "event_type": "ORDER_PLACED",
+                "symbol": "BTCUSDT",
+                "side": "BUY",
+                "quantity": 0.001,
+                "order_id": order_id,
+                "timestamp": timestamp,
+                "metadata": {"order_type": "LIMIT_ENTRY"},
+            }) + "\n"
+
+        first_rotation = tmp_path / "order_log_v1.20260614T100000Z.000.jsonl"
+        second_rotation = tmp_path / "order_log_v1.20260614T110000Z.000.jsonl"
+        first_rotation.write_text(order_row("old-1", 1_700_000_000_000), encoding="utf-8")
+        second_rotation.write_text(order_row("old-2", 1_700_000_001_000), encoding="utf-8")
+        orders_file.write_text(order_row("new-1", 1_700_000_002_000), encoding="utf-8")
+
+        tailer = MultiTailer(
+            config=MultiSourceConfig(
+                enabled=True,
+                features_dir=features_dir,
+                orders_file=orders_file,
+                core_log=core_log,
+                symbols=["BTCUSDT"],
+                max_order_lines_per_cycle=2,
+            ),
+            feature_handler=AsyncMock(),
+            state_path=tmp_path / "state.json",
+        )
+        tailer._order_file_identity = (
+            int(orders_file.stat().st_dev), int(orders_file.stat().st_ino))
+        tailer._pending_order_rotations = [first_rotation, second_rotation]
+        observed: list[str] = []
+
+        async def capture(order):
+            observed.append(str(order.order_id))
+
+        tailer._handle_order_event = capture
+
+        async def run_test():
+            await tailer._process_orders()
+            assert observed == ["old-1", "old-2"]
+            await tailer._process_orders()
+
+        run_async(run_test())
+        assert observed == ["old-1", "old-2", "new-1"]
 
     def test_fair_ingestion_processes_orders_before_large_feature_backlog(self, tmp_path):
         """Round-robin quotas should avoid order starvation under heavy feature backlog."""
@@ -434,4 +597,3 @@ class TestEpisodeCorrelation:
         assert episode.features["obi"] == 0.5
         assert episode.side == "BUY"
         assert episode.reward == 0.0  # Default
-

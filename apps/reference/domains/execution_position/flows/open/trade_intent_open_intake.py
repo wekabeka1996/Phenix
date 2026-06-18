@@ -156,6 +156,8 @@ class TradeIntentOpenIntake(BaseModel):
     symbol: str = Field(..., min_length=1)
     side: str
     strategy_id: Optional[str] = None
+    decision_id: Optional[str] = None
+    intent_id: Optional[str] = None
     order: TradeIntentOpenOrder
     valid_for_ms: Optional[int] = Field(default=None, ge=1000)
     idempotent_key: Optional[str] = None
@@ -214,6 +216,8 @@ class TradeIntentOpenIntake(BaseModel):
             "idempotent_key": self.idempotent_key,
             "price_ref": self.order.price_ref,
             "strategy": self.strategy_id,
+            "decision_id": self.decision_id,
+            "intent_id": self.intent_id or self.idempotent_key,
             "regime_epoch_ref": self.regime_epoch_ref,
             "regime": self.regime,
             "regime_confidence": self.regime_confidence,
@@ -259,6 +263,7 @@ def parse_trade_intent_open_intake(
 
     strategy_id = _stringify_optional(
         raw.get("strategy")) or _stringify_optional(raw.get("strategy_id"))
+    trace = raw.get("trace") if isinstance(raw.get("trace"), Mapping) else {}
     order_block = raw.get("order")
     if not isinstance(order_block, Mapping):
         raise TradeIntentOpenIntakeError(
@@ -296,6 +301,11 @@ def parse_trade_intent_open_intake(
                 "symbol": symbol,
                 "side": raw.get("side"),
                 "strategy_id": strategy_id,
+                "decision_id": _stringify_optional(raw.get("decision_id"))
+                or _stringify_optional(trace.get("decision_id")),
+                "intent_id": _stringify_optional(raw.get("intent_id"))
+                or _stringify_optional(trace.get("intent_id"))
+                or _stringify_optional(raw.get("idempotent_key")),
                 "order": dict(order_block),
                 "valid_for_ms": raw.get("valid_for_ms"),
                 "idempotent_key": _stringify_optional(raw.get("idempotent_key")),

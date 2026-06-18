@@ -1,8 +1,20 @@
 md_amr:
   enabled: true
+  mode: runtime
+  decision:
+    kelly:
+      base_probability: 0.51
+      kelly_cap: 0.02
+      kelly_alpha: null
+      payoff_ratio_r: 1.2
+      p_min: 0.45
+      p_max: 0.58
+      uplift_factor: null
+      overrides: {}
   type: md_amr_v1_2
   description: Multi-Dimensional Asymmetric Mean Reversion V1.2 (15m SSOT)
   timeframe_sec: 900
+  allowed_sides: [BUY, SELL]
   defer_ttl_sec: 60
   channel_window_bars: 12
   channel_robust_pct: 0.05

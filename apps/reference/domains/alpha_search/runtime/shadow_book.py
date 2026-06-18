@@ -32,11 +32,19 @@ class ShadowTrade:
     entry_price: float
     exit_price: float
     pnl: float
+    raw_pnl: float
     entry_ts: int
     exit_ts: int
     bars_held: int
     provider_id: str
     regime: str = "DEFAULT"
+    fee_cost: float = 0.0
+    slippage_cost: float = 0.0
+    total_cost: float = 0.0
+    net_pnl_after_cost: Optional[float] = None
+    cost_model_id: str = "zero_cost_v1"
+    cost_model_source: str = ""
+    notional_size: Optional[float] = None
 
 
 class ShadowBook:
@@ -77,6 +85,14 @@ class ShadowBook:
         bars_held: int,
         provider_id: str,
         regime: str = "DEFAULT",
+        raw_pnl: Optional[float] = None,
+        fee_cost: float = 0.0,
+        slippage_cost: float = 0.0,
+        total_cost: Optional[float] = None,
+        net_pnl_after_cost: Optional[float] = None,
+        cost_model_id: str = "zero_cost_v1",
+        cost_model_source: str = "",
+        notional_size: Optional[float] = None,
     ) -> ShadowTrade:
         """Record a completed virtual trade and update metrics."""
         if side == "BUY":
@@ -85,6 +101,15 @@ class ShadowBook:
         else:
             pnl = (entry_price - exit_price) / \
                 entry_price * self._notional_size
+        raw_pnl_value = float(raw_pnl if raw_pnl is not None else pnl)
+        total_cost_value = float(
+            total_cost if total_cost is not None else fee_cost + slippage_cost
+        )
+        net_pnl_value = (
+            float(net_pnl_after_cost)
+            if net_pnl_after_cost is not None
+            else raw_pnl_value - total_cost_value
+        )
 
         trade = ShadowTrade(
             scenario_id=self._scenario_id,
@@ -93,6 +118,14 @@ class ShadowBook:
             entry_price=entry_price,
             exit_price=exit_price,
             pnl=pnl,
+            raw_pnl=raw_pnl_value,
+            fee_cost=float(fee_cost),
+            slippage_cost=float(slippage_cost),
+            total_cost=total_cost_value,
+            net_pnl_after_cost=net_pnl_value,
+            cost_model_id=str(cost_model_id),
+            cost_model_source=str(cost_model_source),
+            notional_size=float(notional_size if notional_size is not None else self._notional_size),
             entry_ts=entry_ts,
             exit_ts=exit_ts,
             bars_held=bars_held,

@@ -13,7 +13,6 @@ import re
 import logging
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, List
-from datetime import datetime
 from enum import Enum
 import math
 
@@ -30,6 +29,7 @@ from apps.reference.domains.neocortex.logic.datasets.time_provenance import (
     coerce_causal_time_provenance,
     is_causal_time_provenance,
 )
+from .wallclock import parse_log_wallclock_ms
 
 logger = logging.getLogger(__name__)
 
@@ -129,11 +129,7 @@ def parse_timestamp(ts_str: str) -> float:
 
 def parse_timestamp_ms(ts_str: str) -> Optional[int]:
     """Parse timestamp string to canonical epoch milliseconds."""
-    try:
-        dt = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S,%f")
-        return int(round(dt.timestamp() * 1000.0))
-    except ValueError:
-        return None
+    return parse_log_wallclock_ms(ts_str)
 
 
 def _normalize_epoch_to_ms(value: Any) -> Optional[int]:

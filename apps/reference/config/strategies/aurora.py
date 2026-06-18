@@ -370,6 +370,10 @@ class AuroraStrategyConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = Field(..., description="Enable Aurora strategy globally")
+    mode: Literal["disabled", "shadow", "testnet_candidate", "runtime"] = Field(
+        ...,
+        description="Financial authority mode for the strategy.",
+    )
     type: str = Field(...,
                       description="Strategy type identifier (informational)")
     description: str = Field(
@@ -380,6 +384,8 @@ class AuroraStrategyConfig(BaseModel):
         le=3600,
         description="Bar timeframe in seconds",
     )
+    allowed_sides: List[Literal["BUY", "SELL"]] = Field(
+        default=["BUY", "SELL"], min_length=1)
     execution: StrategyExecutionConfig = Field(
         ..., description="Execution policy (SSOT)")
     safety_gates: SafetyGatesConfig = Field(

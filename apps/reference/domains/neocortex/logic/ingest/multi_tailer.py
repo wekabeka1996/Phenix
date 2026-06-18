@@ -249,6 +249,8 @@ class MultiTailer:
         # State
         self._running = False
         self._offsets: Dict[str, int] = {}  # file -> byte offset
+        self._order_file_identity: tuple[int, int] | None = None
+        self._pending_order_rotations: list[Path] = []
 
         # Market state per symbol
         self._market_state: Dict[str, Dict[str, float]] = defaultdict(dict)
@@ -313,6 +315,14 @@ class MultiTailer:
                 async with _aio_open(self.state_path, "r") as f:
                     data = json.loads(await f.read())
                 self._offsets = data.get("offsets", {})
+                identity = data.get("order_file_identity")
+                if isinstance(identity, list) and len(identity) == 2:
+                    self._order_file_identity = (int(identity[0]), int(identity[1]))
+                pending = data.get("pending_order_rotations", [])
+                if isinstance(pending, list):
+                    self._pending_order_rotations = [
+                        Path(item) for item in pending if isinstance(item, str) and item
+                    ]
                 logger.info(
                     f"Loaded multi-tailer state: {len(self._offsets)} offsets")
                 return True
@@ -325,7 +335,14 @@ class MultiTailer:
         try:
             self.state_path.parent.mkdir(parents=True, exist_ok=True)
             async with _aio_open(self.state_path, "w") as f:
-                await f.write(json.dumps({"offsets": self._offsets}, indent=2))
+                await f.write(json.dumps({
+                    "offsets": self._offsets,
+                    "order_file_identity": list(self._order_file_identity)
+                    if self._order_file_identity is not None else None,
+                    "pending_order_rotations": [
+                        str(path) for path in self._pending_order_rotations
+                    ],
+                }, indent=2))
             return True
         except Exception as e:
             logger.error(f"Failed to save state: {e}")
@@ -539,22 +556,71 @@ class MultiTailer:
         return lines_processed
 
     async def _process_orders(self):
-        """Process order log file."""
+        """Process retained rotations and the active order log without offset stalls."""
         orders_file = self.config.orders_file
 
         if not orders_file.exists():
             return
 
-        offset = self._offsets.get(str(orders_file), 0)
-        file_size = orders_file.stat().st_size
+        stat = orders_file.stat()
+        current_identity = (int(stat.st_dev), int(stat.st_ino))
+        active_key = str(orders_file)
+        active_offset = self._offsets.get(active_key, 0)
+        if self._order_file_identity is not None and current_identity != self._order_file_identity:
+            pattern = f"{orders_file.stem}.*{orders_file.suffix}"
+            for rotated in reversed(sorted(orders_file.parent.glob(pattern))):
+                rotated_stat = rotated.stat()
+                rotated_identity = (int(rotated_stat.st_dev), int(rotated_stat.st_ino))
+                if rotated_identity == self._order_file_identity:
+                    rotated_key = str(rotated)
+                    self._offsets[rotated_key] = active_offset
+                    if rotated not in self._pending_order_rotations:
+                        self._pending_order_rotations.append(rotated)
+                    break
+            self._offsets[active_key] = 0
+        self._order_file_identity = current_identity
 
-        if offset >= file_size:
+        max_lines = max(1, int(self.config.max_order_lines_per_cycle))
+        remaining_lines = max_lines
+        while self._pending_order_rotations and remaining_lines > 0:
+            rotated = self._pending_order_rotations[0]
+            if not rotated.exists():
+                self._pending_order_rotations.pop(0)
+                continue
+            else:
+                processed, at_eof = await self._consume_order_file(
+                    rotated, max_lines=remaining_lines)
+                remaining_lines -= processed
+                if at_eof:
+                    self._pending_order_rotations.pop(0)
+                    continue
+                if processed == 0 or remaining_lines <= 0:
+                    return
+
+        if self._pending_order_rotations or remaining_lines <= 0:
             return
 
+        offset = self._offsets.get(active_key, 0)
+        file_size = orders_file.stat().st_size
+        if offset > file_size:
+            offset = 0
+            self._offsets[active_key] = 0
+        if offset == file_size:
+            return
+
+        await self._consume_order_file(orders_file, max_lines=remaining_lines)
+
+    async def _consume_order_file(self, path: Path, *, max_lines: int) -> tuple[int, bool]:
+        offset = self._offsets.get(str(path), 0)
+        file_size = path.stat().st_size
+        if offset > file_size:
+            offset = 0
+        if offset == file_size:
+            return 0, True
+
         try:
-            async with _aio_open(orders_file, "r") as f:
+            async with _aio_open(path, "r") as f:
                 await f.seek(offset)
-                max_lines = max(1, int(self.config.max_order_lines_per_cycle))
                 lines_processed = 0
 
                 while lines_processed < max_lines:
@@ -569,10 +635,13 @@ class MultiTailer:
                         await self._handle_order_event(entry)
                         self._orders_processed += 1
 
-                    self._offsets[str(orders_file)] = await f.tell()
+                    self._offsets[str(path)] = await f.tell()
+
+                return lines_processed, self._offsets.get(str(path), 0) >= path.stat().st_size
 
         except Exception as e:
-            logger.error(f"Error processing orders: {e}")
+            logger.error(f"Error processing orders from {path}: {e}")
+            return 0, False
 
     def _mark_unresolved(self, reason: str, details: Optional[Dict[str, Any]] = None) -> None:
         self._unresolved_lifecycle_events += 1

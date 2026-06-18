@@ -1,8 +1,26 @@
 llm_microstructure:
   enabled: true
+  mode: shadow
+  decision:
+    kelly:
+      base_probability: 0.51
+      kelly_cap: 0.02
+      kelly_alpha: null
+      payoff_ratio_r: 1.2
+      p_min: 0.45
+      p_max: 0.58
+      uplift_factor: null
+      overrides: {}
   type: external_intent
   description: External LLM intent strategy (contract-first ingress, fail-closed gates)
   timeframe_sec: 60
+  allowed_regimes:
+    - TREND_UP
+    - TREND_DOWN
+    - LOW_VOLATILITY
+    - MEAN_REVERSION
+    - HIGH_VOLATILITY
+  allowed_sides: [BUY, SELL]
   pending_entry_ttl_ms: 120000
   execution:
     entry_order_type: LIMIT
@@ -12,6 +30,29 @@ llm_microstructure:
     exit_limit_ttl_ms: null
     gtx_retry_max: 0
     gtx_retry_offset_bps: 2.0
+  objective:
+    enabled: true
+    regimes:
+      TREND_UP:
+        weights: {cost: 1.0, risk: 1.0, edge: 1.2, execution: 1.0, information: 1.2, behavior: 0.9}
+        multiplier: {m_min: 0.1, m_max: 1.0, lambda_scale: 1.0, penalty_center: -5.0, penalty_scale: 2.5}
+        gate: {min_objective_score: 0.1, enforcement_mode: GATE}
+      TREND_DOWN:
+        weights: {cost: 1.0, risk: 1.0, edge: 1.2, execution: 1.0, information: 1.2, behavior: 0.9}
+        multiplier: {m_min: 0.1, m_max: 1.0, lambda_scale: 1.0, penalty_center: -5.0, penalty_scale: 2.5}
+        gate: {min_objective_score: 0.1, enforcement_mode: GATE}
+      LOW_VOLATILITY:
+        weights: {cost: 1.1, risk: 0.8, edge: 1.0, execution: 1.0, information: 1.2, behavior: 0.8}
+        multiplier: {m_min: 0.1, m_max: 1.0, lambda_scale: 1.0, penalty_center: -5.0, penalty_scale: 2.5}
+        gate: {min_objective_score: 0.08, enforcement_mode: GATE}
+      MEAN_REVERSION:
+        weights: {cost: 1.3, risk: 1.0, edge: 1.0, execution: 1.1, information: 1.2, behavior: 0.9}
+        multiplier: {m_min: 0.1, m_max: 1.0, lambda_scale: 1.0, penalty_center: -5.0, penalty_scale: 2.5}
+        gate: {min_objective_score: 0.08, enforcement_mode: GATE}
+      HIGH_VOLATILITY:
+        weights: {cost: 1.3, risk: 1.5, edge: 1.0, execution: 0.8, information: 1.2, behavior: 1.2}
+        multiplier: {m_min: 0.1, m_max: 1.0, lambda_scale: 1.0, penalty_center: -5.0, penalty_scale: 2.5}
+        gate: {min_objective_score: 0.12, enforcement_mode: GATE}
   safety_gates:
     enabled: false
     system_stress_policy: 'off'

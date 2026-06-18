@@ -2,7 +2,7 @@ binance_api:
   live:
     api_key: ${BINANCE_FUTURES_API_KEY_LIVE}
     api_secret: ${BINANCE_FUTURES_API_SECRET_LIVE}
-    rest_url: ${BINANCE_FUTURES_BASE_URL_LIVE}
+    rest_url: https://fapi.binance.com
   testnet:
     api_key: ${BINANCE_TESTNET_API_KEY}
     api_secret: ${BINANCE_TESTNET_API_SECRET}

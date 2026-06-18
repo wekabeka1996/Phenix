@@ -162,6 +162,10 @@ class CmdOpenPayload(BaseModel):
         default=None, description="Request ID for correlation")
     strategy: Optional[str] = Field(
         default=None, description="Strategy ID (e.g., 'aurora', 'mean_reversion')")
+    decision_id: Optional[str] = Field(
+        default=None, description="Canonical upstream decision identifier")
+    intent_id: Optional[str] = Field(
+        default=None, description="Canonical upstream financial intent identifier")
     regime_epoch_ref: Optional[str] = Field(
         default=None,
         description="Decision-making-owned stable regime epoch propagated additively to execution.",
@@ -644,6 +648,9 @@ class OpenFlowFSM:
                         target_price=validated_pld.target_price,
                         sl_pct=validated_pld.sl_pct,
                         idempotent_key=validated_pld.idempotent_key,
+                        strategy_id=validated_pld.strategy,
+                        decision_id=validated_pld.decision_id,
+                        intent_id=validated_pld.intent_id,
                         regime_epoch_ref=validated_pld.regime_epoch_ref,
                         regime=validated_pld.regime,
                         regime_confidence=validated_pld.regime_confidence,

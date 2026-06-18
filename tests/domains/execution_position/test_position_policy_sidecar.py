@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from apps.reference.config_models import PositionPolicySidecarConfig
-from apps.reference.core.time import get_clock
+from apps.reference.core.time import MockClock, get_clock
 from apps.reference.domains.execution_position.flows.close.fsm_close import CloseState
 from apps.reference.domains.execution_position.flows.manage.fsm_manage import ManageState
 from apps.reference.domains.execution_position.sidecar.position_policy_sidecar import (
@@ -160,6 +160,46 @@ def _topics(bus: RecordingBus) -> list[str]:
 
 def _payloads(bus: RecordingBus, topic: str) -> list[dict]:
     return [payload for recorded_topic, payload, _ in bus.events if recorded_topic == topic]
+
+
+def test_idle_suppression_is_rate_limited_with_heartbeat(tmp_path: Path) -> None:
+    bus = RecordingBus()
+    clock = MockClock(start_ms=1_000_000)
+    module_path = (
+        "apps.reference.domains.execution_position.sidecar."
+        "position_policy_sidecar.get_clock"
+    )
+
+    with patch(module_path, return_value=clock):
+        sidecar = PositionPolicySidecar(
+            config=_sidecar_config(tmp_path, mode="shadow"),
+            bus=bus,
+            manage_flow_getter=lambda symbol: None,
+            known_symbols_getter=lambda: {"BTCUSDT"},
+        )
+        event = _event(positions_last_ts_ms=clock.now_ms(), positions=[])
+        sidecar.on_portfolio_state_updated(event)
+        sidecar.on_portfolio_state_updated(event)
+
+        suppressed = [
+            payload
+            for payload in _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_SUPPRESSED")
+            if payload.get("suppression_reason") == "no_manage_flow_for_symbol"
+        ]
+        assert len(suppressed) == 1
+
+        clock.advance_ms(120_000)
+        sidecar.on_portfolio_state_updated(
+            _event(positions_last_ts_ms=clock.now_ms(), positions=[])
+        )
+
+    suppressed = [
+        payload
+        for payload in _payloads(bus, "EVT:POSITION_POLICY_SIDECAR_SUPPRESSED")
+        if payload.get("suppression_reason") == "no_manage_flow_for_symbol"
+    ]
+    assert len(suppressed) == 2
+    assert suppressed[-1]["dedup_detail"]["suppressed_count"] == 1
 
 
 def test_position_policy_sidecar_recommends_and_emits_bounded_close_request_in_enable_mode(tmp_path: Path) -> None:

@@ -39,6 +39,7 @@ def _make_dm(*, symbol="BTCUSDT", risk_score=0.3, risk_allowed=True,
             position_tracking=SimpleNamespace(positions_stale_ttl_sec=30),
         ),
         strategies=SimpleNamespace(aurora=SimpleNamespace(
+            mode="runtime",
             decision=SimpleNamespace(
                 retry_max_count=5, retry_backoff_factor=2.0),
             safety_gates=SimpleNamespace(system_stress_policy="off"),

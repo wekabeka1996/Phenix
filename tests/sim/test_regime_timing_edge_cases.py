@@ -74,6 +74,11 @@ class RegimeInjectionBridge:
                 "tfi": "0.10",
             },
             "warmup": {"full_ready": True, "ready": {}},
+            "structural_regime": (
+                str(regime_snapshot.get("regime") or "UNCERTAIN")
+                if isinstance(regime_snapshot, dict)
+                else "UNCERTAIN"
+            ),
             "regime": regime_snapshot,
         }
 

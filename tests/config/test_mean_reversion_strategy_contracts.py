@@ -163,6 +163,7 @@ CONTRACT_CASES = {
     },
     "MeanReversion1mStrategyConfig": {
         "required": {
+            "mode",
             "enabled",
             "timeframe_sec",
             "strategy",
@@ -177,12 +178,16 @@ CONTRACT_CASES = {
             "microstructure_veto",
             "directional_bias",
         },
-        "defaults": {},
+        "defaults": {
+            "allowed_sides": ["BUY", "SELL"],
+            "decision": None,
+        },
         "optional_fields": {
             "liquidity_gate",
             "objective",
             "microstructure_veto",
             "directional_bias",
+            "decision",
         },
     },
 }
@@ -340,6 +345,7 @@ def test_mean_reversion_extraction_preserves_cross_model_annotations() -> None:
 
 def test_mean_reversion_rebuild_seam_accepts_execution_and_objective_blocks() -> None:
     cfg = cm.MeanReversion1mStrategyConfig(
+        mode="shadow",
         enabled=True,
         timeframe_sec=300,
         strategy={

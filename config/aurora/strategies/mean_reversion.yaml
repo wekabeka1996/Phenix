@@ -1,11 +1,23 @@
 mean_reversion:
   enabled: true
+  mode: runtime
+  decision:
+    kelly:
+      base_probability: 0.51
+      kelly_cap: 0.02
+      kelly_alpha: null
+      payoff_ratio_r: 1.2
+      p_min: 0.45
+      p_max: 0.58
+      uplift_factor: null
+      overrides: {}
   timeframe_sec: 300
   allowed_regimes:
   - FLAT_LOW
   - FLAT_NORMAL
   - FLAT_HIGH
   - MEAN_REVERSION
+  allowed_sides: [BUY, SELL]
   execution:
     entry_order_type: MARKET
     entry_tif: null

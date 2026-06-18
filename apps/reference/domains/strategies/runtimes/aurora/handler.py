@@ -504,12 +504,23 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
         why: str | None = None,
         details: dict | None = None,
         why_chain: list[str] | None = None,
+        side: str | None = None,
+        regime: str | None = None,
         tf_sec: int | None = None,
         bar_close_ts: int | None = None,
         span_id: str | None = None,
     ) -> None:
         """Emit EVT:STRATEGY_DECISION_BLOCKED and mirror it into objective counters."""
         ts_ms = int(self.wall_time_fn() * 1000)
+        decision_context = getattr(self, "_strategy_decision_context", {}).get(symbol, {})
+        rid = rid or decision_context.get("rid")
+        regime = regime or decision_context.get("regime")
+        tf_sec = tf_sec if tf_sec is not None else decision_context.get("tf_sec")
+        bar_close_ts = (
+            bar_close_ts
+            if bar_close_ts is not None
+            else decision_context.get("bar_close_ts")
+        )
         payload = write_strategy_decision_blocked(
             strategy_id=self.strategy_id,
             symbol=symbol,
@@ -522,6 +533,8 @@ class AuroraHandler(AuroraTpslMixin, AuroraScoringHelpersMixin, AuroraDecisionMi
             why=why,
             why_chain=why_chain,
             details=details,
+            side=side,
+            regime=regime,
             tf_sec=tf_sec,
             bar_close_ts=bar_close_ts,
             span_id=span_id,

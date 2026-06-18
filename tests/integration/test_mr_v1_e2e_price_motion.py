@@ -193,6 +193,11 @@ def _make_cmd_event(
         "bar": bar_data,
         "features": features,
         "warmup": {"full_ready": True},
+        "structural_regime": (
+            str(regime.get("regime") or "UNCERTAIN")
+            if isinstance(regime, dict)
+            else "UNCERTAIN"
+        ),
         "regime": regime,
     }
     if price_motion is not None:

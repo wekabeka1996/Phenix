@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 
 import pytest
+from pydantic import BaseModel
 
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.domains.strategies.registry import StrategyPluginRegistry, StrategyRuntime
@@ -66,3 +67,61 @@ def test_task32_registry_fails_closed_on_missing_plugin() -> None:
 
     assert "missing allowlisted plugins" in exc.value.why
 
+
+class _TypedFinancialProfile(BaseModel):
+    enabled: bool = True
+    mode: str = "runtime"
+    execution: object | None = None
+    decision: object | None = None
+    objective: object | None = None
+    allowed_sides: list[str] = ["BUY", "SELL"]
+
+
+def test_runtime_fails_before_handlers_for_incomplete_active_financial_contract() -> None:
+    fsm = _FSM()
+    registry = StrategyPluginRegistry()
+    registered: list[str] = []
+    registry.register(_Plugin(strategy_id="s1", registered=registered))
+    cfg = SimpleNamespace(
+        strategies_registry=SimpleNamespace(assignments={"BTCUSDT": ["s1"]}),
+        strategies=SimpleNamespace(s1=_TypedFinancialProfile()),
+    )
+
+    with pytest.raises(ConfigContractError) as exc:
+        StrategyRuntime(fsm=fsm, config=cfg, registry=registry).start()  # type: ignore[arg-type]
+
+    assert "DECISION_KELLY_MISSING" in exc.value.why
+    assert "EXECUTION_POLICY_MISSING" in exc.value.why
+    assert registered == []
+
+
+def test_shadow_profile_can_start_without_financial_contract() -> None:
+    fsm = _FSM()
+    registry = StrategyPluginRegistry()
+    registered: list[str] = []
+    registry.register(_Plugin(strategy_id="s1", registered=registered))
+    cfg = SimpleNamespace(
+        strategies_registry=SimpleNamespace(assignments={"BTCUSDT": ["s1"]}),
+        strategies=SimpleNamespace(s1=_TypedFinancialProfile(mode="shadow")),
+    )
+
+    StrategyRuntime(fsm=fsm, config=cfg, registry=registry).start()  # type: ignore[arg-type]
+
+    assert registered == ["s1"]
+
+
+def test_runtime_fails_when_active_financial_profile_has_no_assignment() -> None:
+    fsm = _FSM()
+    registry = StrategyPluginRegistry()
+    registered: list[str] = []
+    registry.register(_Plugin(strategy_id="s1", registered=registered))
+    cfg = SimpleNamespace(
+        strategies_registry=SimpleNamespace(assignments={"BTCUSDT": []}),
+        strategies=SimpleNamespace(s1=_TypedFinancialProfile()),
+    )
+
+    with pytest.raises(ConfigContractError) as exc:
+        StrategyRuntime(fsm=fsm, config=cfg, registry=registry).start()  # type: ignore[arg-type]
+
+    assert "not assigned" in exc.value.why
+    assert registered == []

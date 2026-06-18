@@ -243,6 +243,42 @@ class VirtualTraderExitConfig(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class RuntimeCostConfig(BaseModel):
+    """Runtime virtual-trade cost model for alpha_search backtests.
+
+    Costs are applied once per closed trade cycle using virtual_trader.notional_size
+    as the USD notional basis. Fee and slippage fields are per-side bps, so a
+    complete entry+exit cycle multiplies each by 2.
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="If False, runtime virtual trades remain zero-cost."
+    )
+    cost_model_id: str = Field(
+        default="zero_cost_v1",
+        min_length=1,
+        description="Stable identifier written to trade and summary outputs."
+    )
+    fee_bps_per_side: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Fee in basis points per side; round-trip uses 2x."
+    )
+    slippage_bps_per_side: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Slippage in basis points per side; round-trip uses 2x."
+    )
+    cost_model_source: str = Field(
+        default="config/alpha_search.yaml#alpha_search.virtual_trader.runtime_cost",
+        min_length=1,
+        description="Human-readable SSOT pointer for this cost model."
+    )
+
+    model_config = {"extra": "forbid"}
+
+
 class VirtualTraderConfig(BaseModel):
     """Configuration for virtual trader (shadow PnL tracking)."""
 
@@ -254,11 +290,16 @@ class VirtualTraderConfig(BaseModel):
     max_positions_per_symbol: int = Field(default=1, ge=1)
     notional_size: float = Field(
         default=1000.0,
+        gt=0.0,
         description="Notional size for virtual trades (for PnL calc)"
     )
     flip_on_reversal: bool = False
     exit: VirtualTraderExitConfig = Field(
         default_factory=VirtualTraderExitConfig)
+    runtime_cost: RuntimeCostConfig = Field(
+        default_factory=RuntimeCostConfig,
+        description="Canonical alpha_search runtime fee/slippage model."
+    )
 
     model_config = {"extra": "forbid"}
 

@@ -39,6 +39,32 @@ class StrategiesArbitrationConfig(BaseModel):
     logging: StrategiesArbitrationLoggingConfig = Field(...)
 
 
+class StrategyCounterfactualOverlayConfig(BaseModel):
+    """Capture-only one-gate experiment; never grants trading authority."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    experiment_id: str = Field(..., min_length=1)
+    enabled: bool = Field(...)
+    strategy_id: str = Field(..., min_length=1)
+    symbol: str = Field(..., min_length=1)
+    regime: str = Field(..., min_length=1)
+    sides: List[Literal['BUY', 'SELL']] = Field(..., min_length=1)
+    nrr_codes: List[str] = Field(..., min_length=1, max_length=1)
+    holding_horizons_min: List[int] = Field(..., min_length=1)
+    minimum_independent_episodes: int = Field(default=30, ge=30)
+    minimum_market_days: int = Field(default=3, ge=3)
+
+
+class StrategyTurnoverBudgetConfig(BaseModel):
+    """Per-strategy/symbol guard against excessive entry intent churn."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    max_entry_intents_per_hour: int = Field(..., ge=1)
+    min_entry_spacing_sec: int = Field(..., ge=0)
+
+
 class StrategiesRegistryConfig(BaseModel):
     """
     Strategies Registry SSOT (config/aurora/strategies.yaml).
@@ -54,6 +80,18 @@ class StrategiesRegistryConfig(BaseModel):
     version: str = Field(..., description='Strategies registry config version')
     assignments: Dict[str, List[str]] = Field(
         ..., description='Per-symbol strategy assignments (symbol → list[strategy_id])')
+    entry_quarantine: Dict[str, List[Literal['BUY', 'SELL']]] = Field(
+        default_factory=dict,
+        description='New-risk entry sides blocked per symbol; position management remains allowed.',
+    )
+    counterfactual_overlays: List[StrategyCounterfactualOverlayConfig] = Field(
+        default_factory=list,
+        description='Capture-only NRR experiments evaluated one gate at a time.',
+    )
+    turnover_budgets: Dict[str, Dict[str, StrategyTurnoverBudgetConfig]] = Field(
+        default_factory=dict,
+        description='Entry-intent churn limits keyed by strategy and symbol or wildcard.',
+    )
     arbitration: StrategiesArbitrationConfig = Field(
         ..., description='Arbitration policy for strategy conflicts')
 
@@ -70,6 +108,14 @@ class StrategiesRegistryConfig(BaseModel):
                                 f"❌ ARBITRATION:missing_priority for '{strategy_id}' in hybrid "
                                 f"symbol {symbol}. All strategies must have priorities defined."
                             )
+        return self
+
+    @model_validator(mode='after')
+    def validate_entry_quarantine_symbols(self) -> 'StrategiesRegistryConfig':
+        unknown = sorted(set(self.entry_quarantine) - set(self.assignments))
+        if unknown:
+            raise ValueError(
+                f"entry_quarantine contains symbols absent from assignments: {unknown}")
         return self
 
 
@@ -152,4 +198,3 @@ class StrategiesConfig(BaseModel):
     alpha_ta_ensemble: Optional["AlphaTaEnsembleStrategyConfig"] = Field(
         ..., description="Alpha TA Ensemble strategy config (from strategies/alpha_ta_ensemble.yaml)",
     )
-

@@ -84,6 +84,47 @@ def test_loop_detection():
     assert "CMD:OPEN" in reason
 
 
+@pytest.mark.parametrize(
+    "verb",
+    [
+        "MARKET_TICK_RECEIVED",
+        "PORTFOLIO_STATE_UPDATED",
+        "ACCOUNT_UPDATE_RECEIVED",
+        "BALANCE_UPDATE_RECEIVED",
+        "EXPOSURE_SUMMARY_UPDATED",
+    ],
+)
+def test_expected_periodic_events_do_not_trigger_loop_detection(verb):
+    monitor = EntropyMonitor(
+        window_sec=60,
+        volume_threshold=1000,
+        loop_threshold=10,
+    )
+
+    for _ in range(15):
+        monitor.track_event(Message(op="EVT", verb=verb, src="test", dst="any"))
+
+    spike, reason = monitor.detect_spike()
+    assert spike is False, reason
+
+
+def test_loop_exemption_does_not_disable_volume_detection():
+    monitor = EntropyMonitor(
+        window_sec=60,
+        volume_threshold=12,
+        loop_threshold=10,
+    )
+
+    for _ in range(15):
+        monitor.track_event(
+            Message(op="EVT", verb="MARKET_TICK_RECEIVED", src="test", dst="any")
+        )
+
+    spike, reason = monitor.detect_spike()
+    assert spike is True
+    assert "VOLUME_SPIKE" in reason
+
+
 def test_window_sliding():
     """Events should expire after window duration"""
     monitor = EntropyMonitor(window_sec=1)  # 1 second window

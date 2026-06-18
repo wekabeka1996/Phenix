@@ -745,6 +745,16 @@ class AuroraDecisionMixin:
         # Extract features and readiness from CMD payload
         features = dict(cmd.features)
         warmup_readiness = dict(cmd.warmup.ready)
+        decision_contexts = getattr(self, "_strategy_decision_context", None)
+        if decision_contexts is None:
+            decision_contexts = {}
+            self._strategy_decision_context = decision_contexts
+        decision_contexts[symbol] = {
+            "rid": cmd.rid,
+            "regime": cmd.structural_regime,
+            "tf_sec": int(cmd.tf_sec),
+            "bar_close_ts": cmd.bar_close_ts,
+        }
 
         # Warmup ownership lives upstream. The handler only mirrors the flag so
         # emitted diagnostics can explain which readiness evidence was present.
@@ -1462,6 +1472,7 @@ class AuroraDecisionMixin:
                         reason_code="REENTRY_COOLDOWN",
                         reason="COOLDOWN",
                         context="aurora_handler:reentry_cooldown",
+                        side=effective_side,
                         details={"time_since_exit": time_since_exit,
                                  "cooldown": reentry_cooldown},
                         why_chain=[
@@ -2134,6 +2145,22 @@ class AuroraDecisionMixin:
             consumer_stage="aurora.strategy_signal_payload",
             include_objective_override=True,
         )
+        active_threshold = float(
+            result.thr_buy if side.upper() == "BUY" else result.thr_sell)
+        decision_score = float(getattr(result, "decision_score", result.score))
+        shield_breakdown = getattr(result, "shield_breakdown", {}) or {}
+        shield_reasons = (
+            list(shield_breakdown.get("reasons") or [])
+            if isinstance(shield_breakdown, dict)
+            else []
+        )
+        psi_vector = result.psi_vector or {}
+        context_shield = psi_vector.get("context_shield")
+        regime_multiplier = (
+            context_shield.get("regime_multiplier")
+            if isinstance(context_shield, dict)
+            else psi_vector.get("regime_multiplier")
+        )
         payload = {
             "strategy_id": self.strategy_id,
             "symbol": symbol,
@@ -2184,6 +2211,17 @@ class AuroraDecisionMixin:
                     price_motion_provenance=price_motion_provenance,
                     consumed_by_gate=price_motion_consumed_by_vol_gate,
                 ),
+                "decomposition": {
+                    "raw_score": float(getattr(result, "raw_score", 0.0)),
+                    "decision_score": decision_score,
+                    "active_threshold": active_threshold,
+                    "threshold_margin": abs(decision_score) - active_threshold,
+                    "feature_readiness": runtime_snapshot.to_payload(),
+                    "regime_multiplier": regime_multiplier,
+                    "shield_multiplier": admission_shield_multiplier,
+                    "shield_reasons": shield_reasons,
+                    "specific_veto": shield_reasons[0] if shield_reasons else None,
+                },
             },
             "sizing": {
                 "margin_pct_mult": float(micro_fraction),

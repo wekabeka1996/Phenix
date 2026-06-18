@@ -40,6 +40,9 @@ class OpenDispatchPayload(BaseModel):
         default=None, pattern=r"^[0-9]+(\.[0-9]+)?$")
     sl_pct: Optional[str] = Field(default=None, pattern=r"^[0-9]+(\.[0-9]+)?$")
     idempotent_key: Optional[str] = Field(default=None)
+    strategy_id: Optional[str] = Field(default=None)
+    decision_id: Optional[str] = Field(default=None)
+    intent_id: Optional[str] = Field(default=None)
     regime_epoch_ref: Optional[str] = Field(default=None)
     regime: Optional[str] = Field(default=None)
     regime_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
@@ -92,6 +95,9 @@ class OpenDispatchPayload(BaseModel):
         threshold_reason: Optional[str],
         regime_confidence_gate_verdict: Optional[str],
         regime_provenance: Optional[Dict[str, Any]],
+        strategy_id: Optional[str] = None,
+        decision_id: Optional[str] = None,
+        intent_id: Optional[str] = None,
     ) -> "OpenDispatchPayload":
         try:
             return cls(
@@ -107,6 +113,9 @@ class OpenDispatchPayload(BaseModel):
                 target_price=target_price,
                 sl_pct=sl_pct,
                 idempotent_key=idempotent_key,
+                strategy_id=strategy_id,
+                decision_id=decision_id,
+                intent_id=intent_id or idempotent_key,
                 regime_epoch_ref=regime_epoch_ref,
                 regime=regime,
                 regime_confidence=regime_confidence,
@@ -136,6 +145,12 @@ class OpenDispatchPayload(BaseModel):
             "regime_confidence_gate_verdict": self.regime_confidence_gate_verdict,
             "regime_provenance": self.regime_provenance,
         }
+        if self.strategy_id is not None:
+            payload["strategy"] = self.strategy_id
+        if self.decision_id is not None:
+            payload["decision_id"] = self.decision_id
+        if self.intent_id is not None:
+            payload["intent_id"] = self.intent_id
         if self.tif is not None:
             payload["tif"] = self.tif
         if self.price is not None:

@@ -295,7 +295,8 @@ class MarketDataWorker:
         self._aggregator = WebSocketAggregator(
             symbols=self._symbols,
             window_seconds=60,
-            anchors=self._anchors
+            anchors=self._anchors,
+            trade_silence_reconnect_sec=self._trade_silence_reconnect_sec,
         )
 
         # WebSocket state

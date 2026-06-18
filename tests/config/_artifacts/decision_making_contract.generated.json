@@ -802,6 +802,11 @@
         "default_factory": null,
         "required": true
       },
+      "decision_chain_enabled": {
+        "default": "True",
+        "default_factory": null,
+        "required": false
+      },
       "enforce_in_modes": {
         "default": "'<required>'",
         "default_factory": null,

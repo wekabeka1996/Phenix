@@ -27,6 +27,10 @@
         "ORDER_TIMEOUT",
         "ORDER_REJECTED",
         "DECISION_INTENT_REJECTED",
+        "STRATEGY_SIGNAL_PRODUCED",
+        "STRATEGY_DECISION_BLOCKED",
+        "INTENT_BUILD_REJECTED",
+        "NRR_COUNTERFACTUAL_CAPTURED",
         "ORDER_STATE_CHANGED",
         "POSITION_CLOSED",
         "QTY_NORMALIZE_REJECTED"
@@ -113,6 +117,22 @@
       "type": "string",
       "description": "Cancellation or rejection reason string"
     },
+    "reason_code": {
+      "type": "string",
+      "description": "Canonical strategy or intent-stage terminal reason code"
+    },
+    "stage": {
+      "type": "string",
+      "description": "Lifecycle stage that produced the terminal outcome"
+    },
+    "tf_sec": {
+      "type": ["integer", "null"],
+      "minimum": 1
+    },
+    "bar_close_ts": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
     "bracket_type": {
       "type": "string",
       "description": "Bracket order type: SL or TP"
@@ -142,6 +162,14 @@
       "type": ["string", "null"],
       "description": "Stable decision identifier when available."
     },
+    "entry_rid": {
+      "type": ["string", "null"],
+      "description": "RID of the originating entry decision"
+    },
+    "lifecycle_id": {
+      "type": ["string", "null"],
+      "description": "Stable lifecycle identifier propagated from intent to close"
+    },
     "intent_id": {
       "type": ["string", "null"],
       "description": "Stable intent identifier when available."
@@ -170,6 +198,9 @@
           "plugin_file",
           "runtime_handler",
           "can_emit_order_intent",
+          "mode",
+          "financially_reachable",
+          "financial_blockers",
           "configured_enabled",
           "observed_in_current_runtime",
           "notes"
@@ -191,6 +222,12 @@
           "plugin_file": {"type": "string"},
           "runtime_handler": {"type": "string"},
           "can_emit_order_intent": {"type": "boolean"},
+          "mode": {"type": "string"},
+          "financially_reachable": {"type": "boolean"},
+          "financial_blockers": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
           "configured_enabled": {"type": "boolean"},
           "observed_in_current_runtime": {"type": "boolean"},
           "notes": {"type": "string"}

@@ -13,10 +13,12 @@ recomputing them here.
 
 import asyncio
 import decimal
+import inspect
 import json
 import logging
 import threading
 import uuid
+from functools import wraps
 from typing import Any, Callable, Optional, TYPE_CHECKING
 
 from vfoundation.core.protocol import Message
@@ -60,6 +62,54 @@ if TYPE_CHECKING:
     from apps.reference.config_models import AuroraConfig
     from apps.reference.core.time.clock import Clock
     from apps.reference.domains.decision_making.gates.safety_gates import SafetyGateResult
+
+
+def _terminalize_builder_failures(func: Callable) -> Callable:
+    """Convert unexpected pre-emit failures into a terminal rejection."""
+    method_signature = inspect.signature(func)
+
+    @wraps(func)
+    def wrapped(self, *args, **kwargs):
+        bound = method_signature.bind(self, *args, **kwargs)
+        bound.apply_defaults()
+        try:
+            return func(*bound.args, **bound.kwargs)
+        except Exception as exc:
+            values = bound.arguments
+            symbol = str(values.get("symbol") or "unknown")
+            rid = str(values.get("rid") or "unknown")
+            self.logger.critical(
+                "[%s] Unexpected IntentBuilder failure rid=%s error=%s",
+                symbol,
+                rid,
+                type(exc).__name__,
+                exc_info=True,
+            )
+            if not bool(values.get("reduce_only", False)):
+                self._cancel_entry_reservation(self._runtime_order_index(), rid)
+            try:
+                self._reject_build(
+                    symbol=symbol,
+                    strategy_id=str(values.get("strategy_id") or "unknown"),
+                    side=str(values.get("side") or "NONE"),
+                    rid=rid,
+                    reason_code="INTENT_BUILDER_INTERNAL_ERROR",
+                    reason="unexpected intent builder failure",
+                    why_chain=values.get("why_chain") or [],
+                    tf_sec=values.get("tf_sec"),
+                    sg=values["sg"],
+                    details={"error_type": type(exc).__name__},
+                )
+            except Exception:
+                self.logger.critical(
+                    "[%s] Failed to persist terminal IntentBuilder failure rid=%s",
+                    symbol,
+                    rid,
+                    exc_info=True,
+                )
+            return None
+
+    return wrapped
 
 
 class IntentBuilder:
@@ -142,6 +192,95 @@ class IntentBuilder:
             why_chain=(why_chain if isinstance(why_chain, list) else []),
         )
         self._record_blocked(symbol)
+
+    def _reject_build(
+        self,
+        *,
+        symbol: str,
+        strategy_id: str,
+        side: str,
+        rid: str,
+        reason_code: str,
+        reason: str,
+        why_chain: list,
+        tf_sec: Optional[int],
+        sg: "SafetyGateResult",
+        details: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """Persist a terminal builder-local rejection instead of logging only."""
+        ts_ms = int(self._clock.now_ms())
+        regime = str(getattr(sg, "regime", "UNCERTAIN") or "UNCERTAIN")
+        bar_close_ts = getattr(sg, "bar_close_ts", None) \
+            or getattr(sg, "trace_ts_ms", None)
+        payload = {
+            "schema_version": 1,
+            "symbol": str(symbol),
+            "stage": "INTENT_BUILDER",
+            "ts_ms": ts_ms,
+            "reason_code": str(reason_code),
+            "reason": str(reason),
+            "path": "decision_making.intent.builder",
+            "why": str(reason_code).lower(),
+            "why_chain": why_chain if isinstance(why_chain, list) else [],
+            "rid": str(rid),
+            "strategy_id": str(strategy_id),
+            "side": str(side).upper(),
+            "regime": regime,
+            "tf_sec": int(tf_sec) if tf_sec is not None else None,
+            "bar_close_ts": bar_close_ts,
+            "terminal_outcome": "rejected",
+        }
+        if details:
+            payload["details"] = details
+        try:
+            payload = write_decision_blocked(
+                symbol=symbol, reason_code=reason_code, reason=reason,
+                path="decision_making.intent.builder",
+                why=reason_code.lower(), stage="INTENT_BUILDER",
+                src="decision_making", ts_ms=ts_ms, rid=str(rid),
+                why_chain=why_chain if isinstance(why_chain, list) else [],
+                details=details, strategy_id=str(strategy_id), side=str(side),
+                regime=regime, tf_sec=tf_sec, bar_close_ts=bar_close_ts,
+                terminal_outcome="rejected",
+            )
+        except Exception:
+            self.logger.critical(
+                "[%s] Failed to mirror INTENT_BUILD_REJECTED to truth WAL rid=%s",
+                symbol, rid, exc_info=True)
+        try:
+            self._fsm.emit(
+                "EVT:INTENT_BUILD_REJECTED", payload=payload,
+                why=f"intent_build_rejected:{reason_code}",
+                data_ref=why_chain if isinstance(why_chain, list) else [],
+            )
+        except Exception:
+            self.logger.critical(
+                "[%s] Failed to emit INTENT_BUILD_REJECTED rid=%s",
+                symbol, rid, exc_info=True)
+        try:
+            order_logger.write({
+                "rid": str(rid), "event_type": "INTENT_BUILD_REJECTED",
+                "symbol": str(symbol), "side": str(side).upper(),
+                "strategy_id": str(strategy_id), "stage": "INTENT_BUILDER",
+                "reason_code": str(reason_code), "reason": str(reason),
+                "regime": regime,
+                "tf_sec": int(tf_sec) if tf_sec is not None else None,
+                "bar_close_ts": bar_close_ts, "source_fsm": "DecisionMaking",
+                "metadata": {
+                    "non_financial": True, "terminal_outcome": "rejected",
+                    "details": details or {},
+                },
+            })
+        except Exception:
+            self.logger.critical(
+                "[%s] Failed to write terminal builder rejection rid=%s",
+                symbol, rid, exc_info=True)
+        try:
+            self._record_blocked(symbol)
+        except Exception:
+            self.logger.warning(
+                "[%s] Failed to record blocked intent metric rid=%s",
+                symbol, rid, exc_info=True)
 
     def _runtime_order_index(self) -> Any:
         """Return the current OrderIndex handle when the FSM exposes one."""
@@ -489,6 +628,10 @@ class IntentBuilder:
         proposed_action: str,
         decision_basis_ts: int,
         response: ControlDecisionResponse,
+        strategy_id: str,
+        side: str,
+        tf_sec: Optional[int],
+        sg: "SafetyGateResult",
     ) -> None:
         reason_code = "NEOCORTEX_VETO"
         ts_ms = self._clock.now_ms()
@@ -539,6 +682,35 @@ class IntentBuilder:
                 exc_info=True,
             )
         finally:
+            try:
+                order_logger.write({
+                    "rid": str(rid),
+                    "event_type": "INTENT_BUILD_REJECTED",
+                    "symbol": str(symbol),
+                    "side": str(side).upper(),
+                    "strategy_id": str(strategy_id),
+                    "stage": "INTENT_BUILDER",
+                    "reason_code": reason_code,
+                    "reason": "Neocortex vetoed the proposed trade",
+                    "regime": str(
+                        getattr(sg, "regime", "UNCERTAIN") or "UNCERTAIN"),
+                    "tf_sec": int(tf_sec) if tf_sec is not None else None,
+                    "bar_close_ts": getattr(sg, "bar_close_ts", None)
+                    or getattr(sg, "trace_ts_ms", None),
+                    "source_fsm": "DecisionMaking",
+                    "metadata": {
+                        "non_financial": True,
+                        "terminal_outcome": "rejected",
+                        "decision_id": response.decision_id,
+                    },
+                })
+            except Exception:
+                self.logger.critical(
+                    "[%s] Failed to write Neocortex veto terminal row rid=%s",
+                    symbol,
+                    rid,
+                    exc_info=True,
+                )
             self._record_blocked(symbol)
 
     def _cancel_entry_reservation(self, order_index: Any, rid: str) -> None:
@@ -556,6 +728,7 @@ class IntentBuilder:
 
     # -- main entry point ------------------------------------------------------
 
+    @_terminalize_builder_failures
     def build_and_emit(
         self,
         *,
@@ -664,7 +837,12 @@ class IntentBuilder:
         except Exception as _e:
             self.logger.error(
                 f"[{symbol}] Invalid qty/price: qty={qty!r} price={price!r}: {_e}")
-            self._record_blocked(symbol)
+            self._reject_build(
+                symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
+                reason_code="INTENT_INPUT_INVALID", reason="invalid qty or price",
+                why_chain=why_chain, tf_sec=tf_sec, sg=sg,
+                details={"error": str(_e)},
+            )
             _release_entry_reservation()
             return
 
@@ -678,6 +856,11 @@ class IntentBuilder:
             )
         except ValueError as e:
             self.logger.error(f"TCA Config Block: {e}")
+            self._reject_build(
+                symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
+                reason_code="TCA_CONFIG_MISSING_OR_INVALID", reason=str(e),
+                why_chain=why_chain, tf_sec=tf_sec, sg=sg,
+            )
             _release_entry_reservation()
             return
 
@@ -689,6 +872,11 @@ class IntentBuilder:
             )
         except ValueError as e:
             self.logger.error(f"RiskBudget Config Block: {e}")
+            self._reject_build(
+                symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
+                reason_code="RISK_BUDGET_CONFIG_MISSING_OR_INVALID", reason=str(e),
+                why_chain=why_chain, tf_sec=tf_sec, sg=sg,
+            )
             _release_entry_reservation()
             return
 
@@ -713,10 +901,17 @@ class IntentBuilder:
             kelly_metadata = resolve_kelly_metadata(
                 config=self.config,
                 strategy_id=str(strategy_id),
+                symbol=str(symbol),
+                regime=str(getattr(sg, "regime", "UNCERTAIN") or "UNCERTAIN"),
+                side=str(side),
             )
         except ValueError as e:
             self.logger.error(f"[{symbol}] Kelly metadata config block: {e}")
-            self._record_blocked(symbol)
+            self._reject_build(
+                symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
+                reason_code="KELLY_CONFIG_MISSING_OR_INVALID", reason=str(e),
+                why_chain=why_chain, tf_sec=tf_sec, sg=sg,
+            )
             _release_entry_reservation()
             return
 
@@ -772,7 +967,13 @@ class IntentBuilder:
         if not commit["allowed"]:
             self.logger.info(
                 f"[{symbol}] TRADE_INTENT_BLOCKED: Arbitration rejected: {commit['reason']}")
-            self._record_blocked(symbol)
+            self._reject_build(
+                symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
+                reason_code="STRATEGY_ARBITRATION_REJECTED",
+                reason=str(commit["reason"]), why_chain=why_chain,
+                tf_sec=tf_sec, sg=sg,
+                details={"arbitration_reason": commit["reason"]},
+            )
             _release_entry_reservation()
             return
 
@@ -829,6 +1030,10 @@ class IntentBuilder:
                     proposed_action=proposed_action,
                     decision_basis_ts=decision_basis_ts_value,
                     response=authority_response,
+                    strategy_id=str(strategy_id),
+                    side=str(side),
+                    tf_sec=tf_sec,
+                    sg=sg,
                 )
                 _release_entry_reservation()
                 return
@@ -900,12 +1105,6 @@ class IntentBuilder:
             )
 
         # ── Record accepted ────────────────────────────────────
-        try:
-            self._record_accepted(symbol)
-        except Exception as e:
-            self.logger.warning(
-                f"Failed to record accepted intent metrics: {e}")
-
         # ── WAL + FSM emit ─────────────────────────────────────
         # Arbitration is committed only after both durability and boundary emit
         # succeeded, so a failed append/emit must leave the arbitration window
@@ -924,11 +1123,23 @@ class IntentBuilder:
                 self.logger.error(
                     f"[{symbol}] CRITICAL: WAL WRITE FAILED (LOCK TIMEOUT). RID={rid}")
                 _release_entry_reservation()
+                self._reject_build(
+                    symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
+                    reason_code="INTENT_WAL_WRITE_FAILED",
+                    reason="trade intent WAL append returned no result",
+                    why_chain=why_chain, tf_sec=tf_sec, sg=sg,
+                )
                 return
         except Exception as wal_e:
             self.logger.warning(
                 f"Failed to write TRADE_INTENT_PROPOSED to WAL: {wal_e}")
             _release_entry_reservation()
+            self._reject_build(
+                symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
+                reason_code="INTENT_WAL_WRITE_FAILED", reason=str(wal_e),
+                why_chain=why_chain, tf_sec=tf_sec, sg=sg,
+                details={"error_type": type(wal_e).__name__},
+            )
             return
 
         try:
@@ -939,12 +1150,32 @@ class IntentBuilder:
                 f"[{symbol}] CRITICAL: FSM EMIT FAILED for EVT:TRADE_INTENT_PROPOSED. "
                 f"RID={rid}. reason={emit_e}")
             _release_entry_reservation()
+            self._reject_build(
+                symbol=symbol, strategy_id=strategy_id, side=side, rid=rid,
+                reason_code="INTENT_EVENT_EMIT_FAILED", reason=str(emit_e),
+                why_chain=why_chain, tf_sec=tf_sec, sg=sg,
+                details={"error_type": type(emit_e).__name__},
+            )
             return
 
         # ── Arbitration final commit ───────────────────────────
         reservation_active = False
-        self._check_strategy_arbitration(
-            symbol, strategy_id, ts_ms=decision_ts_ms, commit=True)
+        try:
+            self._check_strategy_arbitration(
+                symbol, strategy_id, ts_ms=decision_ts_ms, commit=True)
+        except Exception:
+            self.logger.critical(
+                "[%s] Arbitration commit failed after intent emission rid=%s",
+                symbol,
+                rid,
+                exc_info=True,
+            )
+
+        try:
+            self._record_accepted(symbol)
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to record accepted intent metrics: {e}")
 
         # ── Lifecycle logger ───────────────────────────────────
         if _trade_lifecycle is not None:
@@ -971,8 +1202,16 @@ class IntentBuilder:
             "seq": self.seq_counter, "source": "dm_intent_emitted",
             "why": "intent_proposed",
         }
-        print(json.dumps(log_entry), flush=True)
-        self.seq_counter += 1
+        try:
+            print(json.dumps(log_entry), flush=True)
+            self.seq_counter += 1
+        except Exception:
+            self.logger.warning(
+                "[%s] Intent tap log failed after emission rid=%s",
+                symbol,
+                rid,
+                exc_info=True,
+            )
 
         # ── Side-bias bookkeeping ──────────────────────────────
         try:
@@ -998,26 +1237,34 @@ class IntentBuilder:
         # lifecycle_id mirrors idempotent_key at the top level so downstream
         # execution/order forensics can correlate the proposal without digging
         # through metadata.
-        order_logger.write(
-            build_order_intent_log_entry(
-                rid=rid,
-                lifecycle_id=trade_intent["idempotent_key"],
-                symbol=symbol,
-                strategy_id=str(strategy_id),
-                side=side,
-                qty=qty,
-                price=price,
-                sg=sg,
-                regime_provenance=regime_provenance,
-                normalize_mode=normalize_mode,
-                decision_id=(
-                    str(resolved_strategy_trace.get("decision_id"))
-                    if resolved_strategy_trace.get("decision_id") not in (None, "")
-                    else None
-                ),
-                intent_id=str(trade_intent["idempotent_key"]),
+        try:
+            order_logger.write(
+                build_order_intent_log_entry(
+                    rid=rid,
+                    lifecycle_id=trade_intent["idempotent_key"],
+                    symbol=symbol,
+                    strategy_id=str(strategy_id),
+                    side=side,
+                    qty=qty,
+                    price=price,
+                    sg=sg,
+                    regime_provenance=regime_provenance,
+                    normalize_mode=normalize_mode,
+                    decision_id=(
+                        str(resolved_strategy_trace.get("decision_id"))
+                        if resolved_strategy_trace.get("decision_id") not in (None, "")
+                        else None
+                    ),
+                    intent_id=str(trade_intent["idempotent_key"]),
+                )
             )
-        )
+        except Exception:
+            self.logger.critical(
+                "[%s] ORDER_INTENT log failed after intent emission rid=%s",
+                symbol,
+                rid,
+                exc_info=True,
+            )
 
     # -- Order policy resolution -----------------------------------------------
 

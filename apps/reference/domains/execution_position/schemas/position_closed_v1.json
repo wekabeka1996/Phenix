@@ -48,6 +48,21 @@
     "lifecycle_id": {
       "type": ["string", "null"]
     },
+    "entry_rid": {
+      "type": ["string", "null"]
+    },
+    "strategy_id": {
+      "type": ["string", "null"]
+    },
+    "decision_id": {
+      "type": ["string", "null"]
+    },
+    "intent_id": {
+      "type": ["string", "null"]
+    },
+    "regime": {
+      "type": ["string", "null"]
+    },
     "realized_pnl": {
       "type": ["number", "null"]
     },

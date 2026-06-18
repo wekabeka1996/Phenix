@@ -31,6 +31,7 @@ class _DummyFsm:
 def _mk_mr_cfg(*, symbol: str, enabled: bool, asset_enabled: bool = True) -> MeanReversion1mStrategyConfig:
     return MeanReversion1mStrategyConfig(
         enabled=enabled,
+        mode="shadow",
         timeframe_sec=60,
         strategy=MRStrategyParamsConfig(
             bb_window=3,

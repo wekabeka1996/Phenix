@@ -38,6 +38,7 @@ class AlphaMrS01Handler:
             raise ValueError("strategies.alpha_mr_s01 config is required")
         self.cfg: AlphaMrS01StrategyConfig = cfg
         self.scorer = WeightedMeanReversionScorer(_scorer_config_from_strategy(cfg))
+        self._ta_cache: dict[tuple[str, int, int], tuple[dict[str, Any], int]] = {}
         self._last_signal_ts_ms: dict[str, int] = {}
         self._last_signal_monotonic_ms: dict[str, int] = {}
         self._intent_hour: dict[str, tuple[int, int]] = {}
@@ -46,7 +47,38 @@ class AlphaMrS01Handler:
         if self.cfg.mode == "disabled" or not self.cfg.enabled:
             LOG.warning("alpha_mr_s01 disabled: no event listeners registered")
             return
+        self.fsm.listen("EVT:TA_FEATURES_CALCULATED", self.on_ta_features)
         self.fsm.listen("CMD:PROCESS_STRATEGY", self.on_process_strategy)
+
+    def on_ta_features(self, event: Any) -> None:
+        payload = event.pld if hasattr(event, "pld") else event
+        if not isinstance(payload, dict):
+            return
+
+        symbol = payload.get("symbol")
+        tf_sec = payload.get("tf_sec")
+        bar_close_ts = payload.get("bar_close_ts") or payload.get("ts")
+        if symbol is None or tf_sec is None or bar_close_ts is None:
+            return
+        try:
+            key = (str(symbol), int(tf_sec), int(bar_close_ts))
+        except (TypeError, ValueError):
+            return
+
+        from apps.reference.domains.ta_features.contracts import extract_ta_feature_vector
+
+        ta_features = extract_ta_feature_vector(payload)
+        if not ta_features:
+            return
+        ta_features["is_warm"] = bool(
+            payload.get("is_warm", payload.get("warmup", {}).get("full_ready", False))
+        )
+        self._ta_cache[key] = (ta_features, int(get_clock().now_ms()))
+
+        symbol_keys = [cached_key for cached_key in self._ta_cache if cached_key[:2] == key[:2]]
+        if len(symbol_keys) > 20:
+            for old_key in sorted(symbol_keys)[:-20]:
+                self._ta_cache.pop(old_key, None)
 
     def on_process_strategy(self, event: Any) -> None:
         cmd = event
@@ -95,7 +127,7 @@ class AlphaMrS01Handler:
             )
             return
 
-        regime = self._resolve_regime(cmd)
+        regime = cmd.structural_regime
         if self.cfg.safety.forbid_uncertain and regime == "UNCERTAIN":
             self._emit_shadow_trace(
                 symbol=symbol,
@@ -139,7 +171,8 @@ class AlphaMrS01Handler:
             )
             return
 
-        result = self.scorer.score(cmd.features)
+        scoring_features = self._features_for_score(cmd)
+        result = self.scorer.score(scoring_features)
         if not result.allowed:
             self._emit_shadow_trace(
                 symbol=symbol,
@@ -281,20 +314,6 @@ class AlphaMrS01Handler:
             "multipliers": {k: float(v) for k, v in result.multipliers.items()},
         }
 
-    def _resolve_regime(self, cmd: ProcessStrategyCmd) -> str:
-        raw = cmd.raw
-        candidates = [
-            raw.get("regime") if isinstance(raw, Mapping) else None,
-            raw.get("structural_regime") if isinstance(raw, Mapping) else None,
-        ]
-        regime_ctx = raw.get("regime_ctx") if isinstance(raw, Mapping) else None
-        if isinstance(regime_ctx, Mapping):
-            candidates.extend([regime_ctx.get("regime"), regime_ctx.get("flat_regime")])
-        for candidate in candidates:
-            if candidate:
-                return str(candidate).strip().upper()
-        return "UNCERTAIN"
-
     def _cmd_ts_ms(self, cmd: ProcessStrategyCmd) -> int:
         if cmd.bar_close_ts is not None:
             return int(cmd.bar_close_ts)
@@ -331,6 +350,18 @@ class AlphaMrS01Handler:
         if entry_price <= 0:
             return None
         return entry_price
+
+    def _features_for_score(self, cmd: ProcessStrategyCmd) -> dict[str, Any]:
+        merged = dict(cmd.features)
+        required = self.scorer.REQUIRED_FEATURES
+        if all(merged.get(key) is not None for key in required):
+            return merged
+
+        bar_close_ts = int(cmd.bar_close_ts or self._cmd_ts_ms(cmd))
+        cache_entry = self._ta_cache.get((str(cmd.symbol), int(cmd.tf_sec), bar_close_ts))
+        if cache_entry is not None:
+            merged.update(cache_entry[0])
+        return merged
 
     @staticmethod
     def _monotonic_ms() -> int:

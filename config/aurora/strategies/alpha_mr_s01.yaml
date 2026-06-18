@@ -5,6 +5,48 @@ alpha_mr_s01:
   strategy_version: "1.0.0"
   timeframe_sec: 300
   threshold: 0.08
+  allowed_sides: [BUY, SELL]
+  execution:
+    entry_order_type: LIMIT
+    entry_tif: GTX
+    exit_order_type: MARKET
+    exit_tif: null
+    exit_limit_ttl_ms: null
+    gtx_retry_max: 1
+    gtx_retry_offset_bps: 2.0
+  decision:
+    kelly:
+      base_probability: 0.51
+      kelly_cap: 0.02
+      kelly_alpha: null
+      payoff_ratio_r: 1.2
+      p_min: 0.45
+      p_max: 0.58
+      uplift_factor: null
+      overrides: {}
+  objective:
+    enabled: true
+    regimes:
+      FLAT_LOW:
+        weights: {cost: 1.2, risk: 1.0, edge: 1.2, execution: 1.0, information: 1.0, behavior: 0.9}
+        multiplier: {m_min: 0.1, m_max: 1.0, lambda_scale: 1.0, penalty_center: -5.0, penalty_scale: 2.5}
+        gate: {min_objective_score: 0.08, enforcement_mode: GATE}
+      FLAT_NORMAL:
+        weights: {cost: 1.1, risk: 1.0, edge: 1.2, execution: 1.0, information: 1.0, behavior: 0.9}
+        multiplier: {m_min: 0.1, m_max: 1.0, lambda_scale: 1.0, penalty_center: -5.0, penalty_scale: 2.5}
+        gate: {min_objective_score: 0.08, enforcement_mode: GATE}
+      FLAT_HIGH:
+        weights: {cost: 1.3, risk: 1.3, edge: 1.0, execution: 1.1, information: 1.0, behavior: 1.0}
+        multiplier: {m_min: 0.1, m_max: 1.0, lambda_scale: 1.0, penalty_center: -5.0, penalty_scale: 2.5}
+        gate: {min_objective_score: 0.1, enforcement_mode: GATE}
+      MEAN_REVERSION:
+        weights: {cost: 1.3, risk: 1.0, edge: 1.2, execution: 1.1, information: 1.0, behavior: 0.9}
+        multiplier: {m_min: 0.1, m_max: 1.1, lambda_scale: 1.0, penalty_center: -5.0, penalty_scale: 2.5}
+        gate: {min_objective_score: 0.08, enforcement_mode: GATE}
+      LOW_VOLATILITY:
+        weights: {cost: 1.1, risk: 0.8, edge: 1.1, execution: 1.0, information: 1.0, behavior: 0.8}
+        multiplier: {m_min: 0.1, m_max: 1.0, lambda_scale: 1.0, penalty_center: -5.0, penalty_scale: 2.5}
+        gate: {min_objective_score: 0.08, enforcement_mode: GATE}
   weights:
     bb: 0.25
     rsi: 0.55
@@ -61,4 +103,3 @@ alpha_mr_s01:
       enabled: false
     1000PEPEUSDT:
       enabled: true
-

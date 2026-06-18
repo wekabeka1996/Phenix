@@ -47,3 +47,13 @@ def test_hybrid_mode_config_contract_mapping_and_credentials_present(tmp_path: P
     assert testnet.api_key and "${" not in testnet.api_key
     assert testnet.api_secret and "${" not in testnet.api_secret
     assert testnet.rest_url and "${" not in testnet.rest_url
+
+
+def test_hybrid_live_market_data_has_absolute_rest_url_without_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("BINANCE_FUTURES_BASE_URL_LIVE", raising=False)
+
+    cfg = ConfigLoader(config_dir=Path("config/aurora")).load_config()
+
+    assert cfg.binance_api.live.rest_url == "https://fapi.binance.com"

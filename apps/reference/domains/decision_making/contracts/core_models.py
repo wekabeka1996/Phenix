@@ -90,6 +90,13 @@ class ProcessStrategyCmd:
     # This stays shallow-read-only like the other mapped blobs.
     price_motion: Mapping[str, Any] | None = None
 
+    # Canonical business label resolved at the transport boundary. Strategy
+    # handlers must use this field rather than stringify the raw snapshot.
+    structural_regime: str = "UNCERTAIN"
+
+    # Shallow read-only copy of the detector snapshot when one was supplied.
+    regime_snapshot: Mapping[str, Any] | None = None
+
 
 @dataclass(frozen=True, slots=True)
 class RegimeEvent:

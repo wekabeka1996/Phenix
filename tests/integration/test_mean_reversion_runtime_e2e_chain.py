@@ -49,6 +49,7 @@ def _dm_cfg():
     behavior_fsm = SimpleNamespace(enable=False, high_vol_multiplier=2.0, low_vol_multiplier=0.5)
     return SimpleNamespace(
         qos=qos,
+        neocortex_enforcement_mode="monitor",
         position_sizing=position_sizing,
         arming=arming,
         features=features,
@@ -106,6 +107,16 @@ def test_mean_reversion_e2e_tick_to_intent_chain() -> None:
     from apps.reference.config_models import SafetyGatesConfig
     mr_cfg = MeanReversion1mStrategyConfig(
         enabled=True,
+        mode="runtime",
+        decision={
+            "kelly": {
+                "base_probability": 0.55,
+                "payoff_ratio_r": 1.5,
+                "kelly_cap": 0.02,
+                "p_min": 0.50,
+                "p_max": 0.60,
+            }
+        },
         timeframe_sec=180,
         safety_gates=SafetyGatesConfig(
             enabled=True,
@@ -153,7 +164,26 @@ def test_mean_reversion_e2e_tick_to_intent_chain() -> None:
             gtx_retry_max=0,
             gtx_retry_offset_bps=0.0,
         ),
-        objective=None,
+        objective={
+            "enabled": True,
+            "regimes": {
+                regime: {
+                    "weights": {"edge": 1.0},
+                    "multiplier": {
+                        "m_min": 0.2,
+                        "m_max": 1.2,
+                        "lambda_scale": 1.0,
+                        "penalty_center": -4.0,
+                        "penalty_scale": 2.0,
+                    },
+                    "gate": {
+                        "min_objective_score": 0.0,
+                        "enforcement_mode": "OBSERVE",
+                    },
+                }
+                for regime in ("FLAT_LOW", "FLAT_NORMAL", "FLAT_HIGH")
+            },
+        },
         microstructure_veto=None,
         directional_bias=None,
         liquidity_gate=None,

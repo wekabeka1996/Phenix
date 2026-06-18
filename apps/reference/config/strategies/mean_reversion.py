@@ -5,7 +5,7 @@ from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from apps.reference.config.domains.decision_making import SafetyGatesConfig
-from apps.reference.config.shared.atoms import LiquidityGateConfig
+from apps.reference.config.shared.atoms import LiquidityGateConfig, StrategyIntentDecisionConfig
 from apps.reference.config.shared.instruments import LeverageConfig
 
 
@@ -362,6 +362,8 @@ class MeanReversion1mStrategyConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(..., description='Enable MR 1m strategy')
+    mode: Literal['disabled', 'shadow', 'testnet_candidate', 'runtime'] = Field(
+        ..., description='Financial authority mode for the strategy')
     timeframe_sec: int = Field(
         ..., ge=60, le=3600, description='Bar timeframe in seconds')
     strategy: MRStrategyParamsConfig = Field(...)
@@ -370,10 +372,13 @@ class MeanReversion1mStrategyConfig(BaseModel):
     regime_sizing: Dict[str, MRRegimeSizingConfig] = Field(...)
     allowed_regimes: List[str] = Field(
         ..., description='Whitelist of Flat regimes to trade in (global default)')
+    allowed_sides: List[Literal['BUY', 'SELL']] = Field(
+        default=['BUY', 'SELL'], min_length=1)
     liquidity_gate: Optional[LiquidityGateConfig] = Field(
         ..., description='Global liquidity gate for MR')
     execution: "StrategyExecutionConfig" = Field(
         ..., description='Execution policy (SSOT)')
+    decision: Optional[StrategyIntentDecisionConfig] = Field(default=None)
     safety_gates: SafetyGatesConfig = Field(
         ..., description='Safety gates control (directional/price motion gates)'
     )

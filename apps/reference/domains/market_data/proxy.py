@@ -241,6 +241,10 @@ class MarketDataProxy:
                 "buy_notional": data.get("buy_notional"),
                 "sell_notional": data.get("sell_notional"),
                 "trades_dropped_out_of_order": data.get("trades_dropped_out_of_order"),
+                "trade_flow_state": data.get("trade_flow_state"),
+                "trade_flow_age_ms": data.get("trade_flow_age_ms"),
+                "trade_flow_last_trade_ts_ms": data.get("trade_flow_last_trade_ts_ms"),
+                "trade_flow_window_sec": data.get("trade_flow_window_sec"),
                 "data_type": "market_tick_aggregated",
                 "data_source": data.get("data_source") if data.get("data_source") is not None else "multiprocess_worker",
             }

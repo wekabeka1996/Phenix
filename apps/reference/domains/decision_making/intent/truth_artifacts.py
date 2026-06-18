@@ -9,14 +9,28 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Mapping
 from typing import Any, Optional
 
 from vfoundation.core.protocol import Message, truncate_why
 from vfoundation.dr import wal
 
 from apps.reference.domains.decision_making.contracts.normalized_reject_reasons import NormalizedRejectReasons
+from apps.reference.domains.strategies.authority import canonical_signal_regime
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_timestamp_ms(value: Any) -> Optional[int]:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if numeric <= 0:
+        return None
+    if numeric < 100_000_000_000:
+        numeric *= 1000.0
+    return int(numeric)
 
 
 # Public deferred reason surface after canonicalization. Callers may pass raw
@@ -129,7 +143,17 @@ def _append_truth_event(
         why=truncate_why(str(why)) or verb.lower(),
         pld=payload,
     )
-    res = wal.append(msg.model_dump())
+    try:
+        res = wal.append(msg.model_dump())
+    except Exception:
+        logger.error(
+            "[%s] CRITICAL: WAL WRITE RAISED verb=%s rid=%s",
+            payload.get("symbol", "unknown"),
+            verb,
+            rid,
+            exc_info=True,
+        )
+        return
     if res is None:
         logger.error(
             "[%s] CRITICAL: WAL WRITE FAILED (LOCK TIMEOUT) verb=%s rid=%s",
@@ -210,6 +234,8 @@ def write_strategy_decision_blocked(
     why: Optional[str] = None,
     why_chain: Optional[list[str]] = None,
     details: Optional[dict[str, Any]] = None,
+    side: Optional[str] = None,
+    regime: Optional[Any] = None,
     tf_sec: Optional[int] = None,
     bar_close_ts: Optional[int] = None,
     span_id: Optional[str] = None,
@@ -233,14 +259,65 @@ def write_strategy_decision_blocked(
     }
     if details:
         payload["details"] = details
+    if side not in (None, ""):
+        payload["side"] = str(side).upper()
+    resolved_regime = canonical_signal_regime({
+        "structural_regime": (
+            regime if isinstance(regime, str)
+            else (details or {}).get("structural_regime")
+        ),
+        "regime": (
+            regime if isinstance(regime, Mapping)
+            else (details or {}).get("regime")
+        ),
+        "regime_ctx": (details or {}).get("regime_ctx"),
+    })
+    payload["regime"] = resolved_regime
     if rid not in (None, ""):
         payload["rid"] = str(rid)
     if tf_sec is not None:
         payload["tf_sec"] = int(tf_sec)
-    if bar_close_ts is not None:
-        payload["bar_close_ts"] = int(bar_close_ts)
+    resolved_bar_close_ts = _coerce_timestamp_ms(bar_close_ts)
+    if resolved_bar_close_ts is not None:
+        payload["bar_close_ts"] = resolved_bar_close_ts
     if span_id not in (None, ""):
         payload["span_id"] = str(span_id)
+
+    try:
+        from apps.reference.telemetry.order_logger import order_logger
+
+        resolved_side = str(side or (details or {}).get("side") or "NONE").upper()
+        if resolved_side not in {"BUY", "SELL"}:
+            resolved_side = "NONE"
+        terminal_outcome = str(
+            (details or {}).get("terminal_outcome") or "blocked"
+        ).lower()
+        if terminal_outcome not in {"blocked", "shadowed"}:
+            terminal_outcome = "blocked"
+        order_logger.write({
+            "rid": str(rid or f"strategy-blocked:{strategy_id}:{symbol}:{ts_ms}"),
+            "event_type": "STRATEGY_DECISION_BLOCKED",
+            "symbol": str(symbol),
+            "side": resolved_side,
+            "strategy_id": str(strategy_id),
+            "stage": "STRATEGY",
+            "reason_code": str(reason_code),
+            "reason": str(reason),
+            "regime": resolved_regime,
+            "tf_sec": int(tf_sec) if tf_sec is not None else None,
+            "bar_close_ts": resolved_bar_close_ts,
+            "source_fsm": str(src),
+            "metadata": {
+                "non_financial": True,
+                "terminal_outcome": terminal_outcome,
+                "context": str(context),
+            },
+        })
+    except Exception:
+        logger.warning(
+            "Failed to write STRATEGY_DECISION_BLOCKED to order_log_v1",
+            exc_info=True,
+        )
 
     _append_truth_event(
         verb="STRATEGY_DECISION_BLOCKED",
@@ -267,6 +344,12 @@ def write_decision_blocked(
     why_chain: Optional[list[str]] = None,
     details: Optional[dict[str, Any]] = None,
     span_id: Optional[str] = None,
+    strategy_id: Optional[str] = None,
+    side: Optional[str] = None,
+    regime: Optional[str] = None,
+    tf_sec: Optional[int] = None,
+    bar_close_ts: Optional[int] = None,
+    terminal_outcome: Optional[str] = None,
 ) -> dict[str, Any]:
     """Build and WAL-mirror the truth payload for fail-closed decision blocks.
 
@@ -291,6 +374,18 @@ def write_decision_blocked(
         payload["details"] = details
     if span_id not in (None, ""):
         payload["span_id"] = str(span_id)
+    if strategy_id not in (None, ""):
+        payload["strategy_id"] = str(strategy_id)
+    if side not in (None, ""):
+        payload["side"] = str(side).upper()
+    if regime not in (None, ""):
+        payload["regime"] = str(regime)
+    if tf_sec is not None:
+        payload["tf_sec"] = int(tf_sec)
+    if bar_close_ts is not None:
+        payload["bar_close_ts"] = int(bar_close_ts)
+    if terminal_outcome not in (None, ""):
+        payload["terminal_outcome"] = str(terminal_outcome)
 
     _append_truth_event(
         verb="DECISION_BLOCKED",

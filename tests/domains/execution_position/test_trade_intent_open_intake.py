@@ -44,6 +44,10 @@ def _make_intent_payload(**overrides) -> dict:
         },
         "valid_for_ms": 15000,
         "idempotent_key": "KEY-TYPED-OPEN-1",
+        "trace": {
+            "decision_id": "DECISION-TYPED-OPEN-1",
+            "intent_id": "KEY-TYPED-OPEN-1",
+        },
         "stop_price": "49000",
         "target_price": "51000",
         "regime_epoch_ref": "stable_epoch:BTCUSDT:1700000000000",
@@ -126,6 +130,9 @@ def test_valid_trade_intent_passes_through_typed_open_intake_and_builds_cmd_open
     assert cmd_open.pld["price"] == "50000"
     assert cmd_open.pld["tif"] == "GTC"
     assert cmd_open.pld["valid_for_ms"] == 15000
+    assert cmd_open.pld["strategy"] == "aurora"
+    assert cmd_open.pld["decision_id"] == "DECISION-TYPED-OPEN-1"
+    assert cmd_open.pld["intent_id"] == "KEY-TYPED-OPEN-1"
     assert cmd_open.pld["regime_epoch_ref"] == "stable_epoch:BTCUSDT:1700000000000"
     assert cmd_open.pld["metadata"]["execution_intake_contract"] == INTENT_OPEN_INTAKE_CONTRACT
     assert cmd_open.pld["metadata"]["execution_intake_path"] == "EVT:TRADE_INTENT_PROPOSED->CMD:OPEN"

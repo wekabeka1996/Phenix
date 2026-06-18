@@ -8,6 +8,20 @@ REGIME_SOURCE_SAME_BAR_DETECTOR = "same_bar_detector"
 REGIME_SOURCE_CACHED_PREVIOUS_BAR = "cached_previous_bar"
 REGIME_SOURCE_MISSING_DETECTOR_HEARTBEAT = "missing_detector_heartbeat"
 
+CANONICAL_STRUCTURAL_REGIMES = frozenset(
+    {
+        "TREND_UP",
+        "TREND_DOWN",
+        "HIGH_VOLATILITY",
+        "LOW_VOLATILITY",
+        "MEAN_REVERSION",
+        "UNCERTAIN",
+        "FLAT_LOW",
+        "FLAT_NORMAL",
+        "FLAT_HIGH",
+    }
+)
+
 
 def _coerce_positive_int(value: Any) -> int | None:
     if value in (None, "", "None"):
@@ -42,6 +56,12 @@ def normalize_structural_regime_label(label: Any) -> str:
     if normalized == "BEAR_TREND":
         return "TREND_DOWN"
     return normalized
+
+
+def canonical_structural_regime_label(label: Any) -> str:
+    """Return a known structural label, failing closed to ``UNCERTAIN``."""
+    normalized = normalize_structural_regime_label(label)
+    return normalized if normalized in CANONICAL_STRUCTURAL_REGIMES else "UNCERTAIN"
 
 
 def regime_layer_of(

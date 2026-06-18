@@ -20,7 +20,9 @@ class _DMStub:
                     risk_skew=SimpleNamespace(until_refresh_retry_sec=1)
                 )
             ),
-            strategies=SimpleNamespace(),
+            strategies=SimpleNamespace(
+                md_amr=SimpleNamespace(mode="runtime"),
+            ),
         )
         self.symbol_states = {"BTCUSDT": {"risk_skew_guard": {}, "risk": {"risk_parameters": {}}}}
         self.rejections = []

@@ -7,6 +7,12 @@ from typing import Any, Callable, Dict, Optional, Protocol, TYPE_CHECKING, runti
 
 from apps.reference.config_contract import ConfigContractError
 from apps.reference.config_models import AuroraConfig
+from apps.reference.domains.strategies.authority import (
+    FINANCIAL_MODES,
+    assigned_symbols_by_strategy,
+    financial_contract_blockers,
+    resolve_strategy_mode,
+)
 
 if TYPE_CHECKING:
     from vfoundation.core import FSMCore
@@ -90,6 +96,8 @@ def build_strategy_registry_snapshot(
     strategies_cfg = getattr(config, "strategies", None)
     strategies: list[dict[str, Any]] = []
     registered_plugins = dict(registry.items())
+    assignments = getattr(getattr(config, "strategies_registry", None), "assignments", None)
+    assigned_symbols = assigned_symbols_by_strategy(assignments)
     discovered_ids = sorted(
         set(registered_plugins) | _configured_strategy_ids(strategies_cfg)
     )
@@ -97,7 +105,14 @@ def build_strategy_registry_snapshot(
         plugin = registered_plugins.get(strategy_id)
         strategy_cfg = getattr(strategies_cfg, strategy_id, None)
         configured_enabled = bool(getattr(strategy_cfg, "enabled", False))
-        mode = str(getattr(strategy_cfg, "mode", "") or "").strip().lower()
+        mode = resolve_strategy_mode(strategy_cfg)
+        blockers = financial_contract_blockers(
+            strategy_id=strategy_id,
+            strategy_cfg=strategy_cfg,
+            assigned_symbols=assigned_symbols.get(strategy_id, set()),
+            plugin_registered=plugin is not None,
+        )
+        financially_reachable = mode in FINANCIAL_MODES and not blockers
         observed = strategy_id in started_handlers
         if strategy_cfg is None:
             status = "unknown"
@@ -109,7 +124,7 @@ def build_strategy_registry_snapshot(
             status = "shadow_only"
         elif mode in {"observe", "observe_only"}:
             status = "observe_only"
-        elif observed:
+        elif observed and financially_reachable:
             status = "active_live"
         else:
             status = "configured_enabled"
@@ -129,6 +144,9 @@ def build_strategy_registry_snapshot(
             "can_emit_order_intent": bool(
                 plugin is not None and getattr(plugin, "can_emit_order_intent", True)
             ),
+            "mode": mode,
+            "financially_reachable": financially_reachable,
+            "financial_blockers": blockers,
             "configured_enabled": configured_enabled,
             "observed_in_current_runtime": observed,
             "notes": "; ".join(notes),
@@ -178,14 +196,34 @@ class StrategyRuntime:
             LOG.warning("StrategyRuntime: failed to write strategy registry snapshot", exc_info=True)
 
     def start(self) -> Dict[str, StrategyHandler]:
+        strategies_cfg = getattr(self.config, "strategies", None)
+        active_financial_ids = {
+            strategy_id
+            for strategy_id in _configured_strategy_ids(strategies_cfg)
+            if bool(getattr(getattr(strategies_cfg, strategy_id, None), "enabled", False))
+            and resolve_strategy_mode(getattr(strategies_cfg, strategy_id, None))
+            in FINANCIAL_MODES
+        }
         sr = getattr(self.config, "strategies_registry", None)
         if sr is None:
+            if active_financial_ids:
+                raise ConfigContractError(
+                    path="strategies_registry",
+                    why=("Financially active strategies require registry assignments: "
+                         f"{sorted(active_financial_ids)}"),
+                )
             LOG.warning("StrategyRuntime: config.strategies_registry missing; no plugins started")
             self._write_registry_snapshot(started_handlers={}, assigned_ids=set())
             return {}
 
         assignments = getattr(sr, "assignments", None)
         if not isinstance(assignments, dict) or not assignments:
+            if active_financial_ids:
+                raise ConfigContractError(
+                    path="strategies_registry.assignments",
+                    why=("Financially active strategies require non-empty assignments: "
+                         f"{sorted(active_financial_ids)}"),
+                )
             LOG.warning("StrategyRuntime: strategies_registry.assignments missing/empty; no plugins started")
             self._write_registry_snapshot(started_handlers={}, assigned_ids=set())
             return {}
@@ -199,15 +237,62 @@ class StrategyRuntime:
                     assigned_ids.add(strategy_id)
 
         if not assigned_ids:
+            if active_financial_ids:
+                raise ConfigContractError(
+                    path="strategies_registry.assignments",
+                    why=("Financially active strategies are not assigned: "
+                         f"{sorted(active_financial_ids)}"),
+                )
             LOG.warning("StrategyRuntime: no assigned strategy_ids; no plugins started")
             self._write_registry_snapshot(started_handlers={}, assigned_ids=set())
             return {}
 
-        missing = sorted([sid for sid in assigned_ids if self.registry.get(sid) is None])
-        if missing:
+        unassigned_financial_ids = sorted(active_financial_ids - assigned_ids)
+        if unassigned_financial_ids:
             raise ConfigContractError(
                 path="strategies_registry.assignments",
-                why=f"Assigned strategy_ids missing allowlisted plugins: {missing}",
+                why=f"Financially active strategies are not assigned: {unassigned_financial_ids}",
+            )
+        missing = sorted([sid for sid in assigned_ids if self.registry.get(sid) is None])
+        missing_required = []
+        for strategy_id in missing:
+            strategy_cfg = getattr(strategies_cfg, strategy_id, None) \
+                if strategies_cfg is not None else None
+            # Legacy/untyped assignments remain fail-closed. Typed shadow and
+            # disabled profiles stay visible in the startup snapshot without
+            # forcing a financial handler to be installed.
+            if strategy_cfg is None or not callable(getattr(strategy_cfg, "model_dump", None)):
+                missing_required.append(strategy_id)
+                continue
+            if resolve_strategy_mode(strategy_cfg) in FINANCIAL_MODES:
+                missing_required.append(strategy_id)
+        if missing_required:
+            raise ConfigContractError(
+                path="strategies_registry.assignments",
+                why=f"Assigned strategy_ids missing allowlisted plugins: {missing_required}",
+            )
+
+        assigned_symbols = assigned_symbols_by_strategy(assignments)
+        contract_failures: dict[str, list[str]] = {}
+        if strategies_cfg is not None:
+            for strategy_id in sorted(assigned_ids):
+                strategy_cfg = getattr(strategies_cfg, strategy_id, None)
+                if strategy_cfg is None or not callable(getattr(strategy_cfg, "model_dump", None)):
+                    continue
+                if resolve_strategy_mode(strategy_cfg) not in FINANCIAL_MODES:
+                    continue
+                blockers = financial_contract_blockers(
+                    strategy_id=strategy_id,
+                    strategy_cfg=strategy_cfg,
+                    assigned_symbols=assigned_symbols.get(strategy_id, set()),
+                    plugin_registered=self.registry.get(strategy_id) is not None,
+                )
+                if blockers:
+                    contract_failures[strategy_id] = blockers
+        if contract_failures:
+            raise ConfigContractError(
+                path="strategies",
+                why=f"Financially active strategy contract blockers: {contract_failures}",
             )
 
         started_handlers: Dict[str, StrategyHandler] = {}

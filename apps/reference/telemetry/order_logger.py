@@ -1,5 +1,6 @@
 import json
 import os
+import threading
 import time
 from dataclasses import asdict, is_dataclass
 from decimal import Decimal
@@ -70,6 +71,12 @@ class OrderLoggerV1:
     def __init__(self, log_file: Union[str, Path] = DEFAULT_ORDER_LOG_FILE):
         self.log_file = _resolve_log_file(log_file)
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
+        self._write_lock = threading.RLock()
+        self.rotation_max_bytes = max(
+            1, int(os.getenv("ORDER_LOG_ROTATE_BYTES", str(50 * 1024 * 1024))))
+        self.retention_days = max(
+            30, int(os.getenv("ORDER_LOG_RETENTION_DAYS", "30")))
+        self._active_day = self._file_utc_day(self.log_file)
 
         # Load schema
         with open(_schema_path(), 'r', encoding='utf-8') as f:
@@ -77,6 +84,53 @@ class OrderLoggerV1:
 
         # Write boot record to mark session start (observability marker)
         self._write_boot_record()
+
+    @staticmethod
+    def _file_utc_day(path: Path) -> str:
+        if not path.exists():
+            return time.strftime("%Y%m%d", time.gmtime())
+        return time.strftime("%Y%m%d", time.gmtime(path.stat().st_mtime))
+
+    def _rotated_files(self) -> list[Path]:
+        return sorted(self.log_file.parent.glob(
+            f"{self.log_file.stem}.*{self.log_file.suffix}"))
+
+    def _purge_expired_rotations(self, now_s: float) -> None:
+        cutoff = now_s - (self.retention_days * 86400)
+        for path in self._rotated_files():
+            try:
+                if path.stat().st_mtime < cutoff:
+                    path.unlink()
+            except FileNotFoundError:
+                continue
+
+    def _rotate_if_needed(self, now_ms: int) -> None:
+        if not self.log_file.exists() or self.log_file.stat().st_size == 0:
+            self._active_day = time.strftime(
+                "%Y%m%d", time.gmtime(now_ms / 1000.0))
+            return
+        current_day = time.strftime("%Y%m%d", time.gmtime(now_ms / 1000.0))
+        size_exceeded = self.log_file.stat().st_size >= self.rotation_max_bytes
+        if not size_exceeded and current_day == self._active_day:
+            return
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(now_ms / 1000.0))
+        sequence = 0
+        while True:
+            rotated = self.log_file.with_name(
+                f"{self.log_file.stem}.{stamp}.{sequence:03d}{self.log_file.suffix}")
+            if not rotated.exists():
+                break
+            sequence += 1
+        os.replace(self.log_file, rotated)
+        self._active_day = current_day
+        self._purge_expired_rotations(now_ms / 1000.0)
+
+    def _append(self, entry: Dict[str, Any]) -> None:
+        with self._write_lock:
+            self._rotate_if_needed(int(time.time() * 1000))
+            with open(self.log_file, 'a', encoding='utf-8') as f:
+                json.dump(entry, f, ensure_ascii=False)
+                f.write('\n')
 
     def _write_boot_record(self) -> None:
         """Write a BOOT record to mark session start.
@@ -94,9 +148,7 @@ class OrderLoggerV1:
             "why": "order_logger session start marker",
         }
         # Write directly without schema validation (BOOT is a system event)
-        with open(self.log_file, 'a', encoding='utf-8') as f:
-            json.dump(boot_record, f, ensure_ascii=False)
-            f.write('\n')
+        self._append(boot_record)
 
     def write(self, entry: Dict[str, Any]) -> None:
         """Write order log entry with optional schema validation."""
@@ -118,9 +170,14 @@ class OrderLoggerV1:
                 raise ValueError(f"Schema validation failed: {e}") from e
 
         # Write to JSONL file
-        with open(self.log_file, 'a', encoding='utf-8') as f:
-            json.dump(entry, f, ensure_ascii=False)
-            f.write('\n')
+        self._append(entry)
+
+
+def iter_order_log_files(log_file: Optional[Union[str, Path]] = None) -> list[Path]:
+    """Return retained rotations followed by the active order log."""
+    active = _resolve_log_file(log_file)
+    rotated = sorted(active.parent.glob(f"{active.stem}.*{active.suffix}"))
+    return [*rotated, active]
 
 
 # Global instance
@@ -136,7 +193,12 @@ def get_order_logger(log_file: Optional[Union[str, Path]] = None) -> OrderLogger
                 log_file) if log_file is not None else DEFAULT_ORDER_LOG_FILE
         )
     elif log_file is not None:
-        _order_logger_instance.log_file = _resolve_log_file(log_file)
+        resolved = _resolve_log_file(log_file)
+        if resolved != _order_logger_instance.log_file:
+            _order_logger_instance.log_file = resolved
+            resolved.parent.mkdir(parents=True, exist_ok=True)
+            _order_logger_instance._active_day = \
+                _order_logger_instance._file_utc_day(resolved)
     return _order_logger_instance
 
 

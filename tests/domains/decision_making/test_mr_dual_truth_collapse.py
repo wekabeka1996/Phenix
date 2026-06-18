@@ -98,6 +98,12 @@ def _cmd_payload() -> dict:
         "symbol": "BTCUSDT",
         "tf_sec": 300,
         "bar_close_ts": 1_700_000_000_000,
+        "structural_regime": "LOW_VOLATILITY",
+        "regime": {
+            "regime": "TREND_DOWN",
+            "confidence": 0.81,
+            "ts_ms": 1_700_000_000_000,
+        },
         "bar": {
             "open": "100.0",
             "high": "101.0",
@@ -108,6 +114,32 @@ def _cmd_payload() -> dict:
             "trade_count": 1,
         },
     }
+
+
+def test_mr_process_strategy_uses_only_canonical_structural_regime() -> None:
+    handler, _, _ = _handler()
+    observed: list[str] = []
+    handler._strategies["BTCUSDT"].set_regime = (
+        lambda _symbol, regime: observed.append(regime)
+    )
+    handler._strategies["BTCUSDT"].on_bar = lambda *_args, **_kwargs: None
+
+    with patch.object(
+        mr_handler_module,
+        "extract_canonical_bar_identity",
+        return_value=None,
+    ), patch.object(
+        mr_handler_module,
+        "extract_canonical_replay_identity",
+        return_value=None,
+    ), patch.object(
+        mr_handler_module,
+        "extract_gap_status",
+        return_value=None,
+    ):
+        handler._on_process_strategy(SimpleNamespace(pld=_cmd_payload()))
+
+    assert observed == ["LOW_VOLATILITY"]
 
 
 def _assert_single_blocked_truth(

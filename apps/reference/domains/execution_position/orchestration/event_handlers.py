@@ -326,6 +326,8 @@ class EPEventHandlers:
             )
             _close_price = self._optional_float(close_truth.get("close_price"))
             _lifecycle_id = lifecycle_id
+            _attribution = dict(
+                self._fsm._open_attribution_by_symbol.get(sym, {}) or {})
             self._finalize_lifecycle_stats(
                 symbol=sym,
                 close_ts_ms=close_ts_ms,
@@ -340,7 +342,14 @@ class EPEventHandlers:
                 "rid": rid_for_sym,
                 "event_type": "POSITION_CLOSED",
                 "lifecycle_id": _lifecycle_id,
+                "entry_rid": _attribution.get("entry_rid"),
                 "symbol": sym,
+                "strategy_id": _attribution.get("strategy_id"),
+                "decision_id": _attribution.get("decision_id"),
+                "intent_id": _attribution.get("intent_id"),
+                "regime": _attribution.get("regime") or (open_regime or {}).get("regime"),
+                "regime_confidence": _attribution.get("regime_confidence"),
+                "regime_provenance": _attribution.get("regime_provenance"),
                 "side": _entry_side,
                 "trade_id": _trade_id,
                 "fees": _pos_fees,
@@ -374,6 +383,11 @@ class EPEventHandlers:
                         "entry_regime_epoch_ref": _entry_regime_epoch_ref,
                         "side": _entry_side,
                         "lifecycle_id": _lifecycle_id,
+                        "entry_rid": _attribution.get("entry_rid"),
+                        "strategy_id": _attribution.get("strategy_id"),
+                        "decision_id": _attribution.get("decision_id"),
+                        "intent_id": _attribution.get("intent_id"),
+                        "regime": _attribution.get("regime") or (open_regime or {}).get("regime"),
                         "realized_pnl": _realized_pnl,
                         "close_price": _close_price,
                         "pnl_status": _pnl_status,
@@ -394,6 +408,7 @@ class EPEventHandlers:
             self._fsm._last_trade_id_by_symbol.pop(sym, None)
             self._fsm._last_entry_side_by_symbol.pop(sym, None)
             self._fsm._accumulated_fees_by_symbol.pop(sym, None)
+            self._fsm._open_attribution_by_symbol.pop(sym, None)
             self._close_accounting_cache().pop(sym, None)
         except Exception:
             pass
@@ -1031,11 +1046,21 @@ class EPEventHandlers:
                     # still expected in ORDER_FILLED writes.
                     res_id = None
 
+                _fill_attribution = dict(
+                    self._fsm._open_attribution_by_symbol.get(symbol, {}) or {})
+
                 _get_order_logger().write({
                     "rid": str(payload.get("clientOrderId") or payload.get("orderId") or "unknown_fill"),
                     "event_type": "ORDER_FILLED",
                     "lifecycle_id": _lifecycle_id_for_write,  # PHASE 1
+                    "entry_rid": _fill_attribution.get("entry_rid"),
                     "symbol": symbol,
+                    "strategy_id": _fill_attribution.get("strategy_id"),
+                    "decision_id": _fill_attribution.get("decision_id"),
+                    "intent_id": _fill_attribution.get("intent_id"),
+                    "regime": _fill_attribution.get("regime"),
+                    "regime_confidence": _fill_attribution.get("regime_confidence"),
+                    "regime_provenance": _fill_attribution.get("regime_provenance"),
                     "side": payload.get("side", ""),
                     "quantity": float(filled_qty) if filled_qty else None,
                     "price": float(payload.get("price", 0)) if payload.get("price") else None,

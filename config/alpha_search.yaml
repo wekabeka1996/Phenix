@@ -148,6 +148,15 @@ alpha_search:
     max_positions_per_symbol: 1
     notional_size: 5000        # increased from 1000 (v6: higher notional per trade)
     flip_on_reversal: false    # If true: close current pos + immediately open opposite on reversal signal
+    runtime_cost:
+      enabled: true
+      cost_model_id: "alpha_search_runtime_judge_equivalent_v1"
+      # Per-side bps. A closed trade cycle applies entry + exit.
+      # fee: 12.5 bps per side -> 25.0 bps round trip on notional_size.
+      fee_bps_per_side: 12.5
+      # slippage: 5.0 bps per side -> 10.0 bps round trip on notional_size.
+      slippage_bps_per_side: 5.0
+      cost_model_source: "config/alpha_search.yaml#alpha_search.virtual_trader.runtime_cost"
     exit:
       max_bars: 12
       max_hold_sec: 1800

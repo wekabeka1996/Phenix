@@ -175,6 +175,7 @@ CONTRACT_CASES = {
     },
     "AuroraStrategyConfig": {
         "required": {
+            "mode",
             "enabled",
             "type",
             "description",
@@ -186,7 +187,7 @@ CONTRACT_CASES = {
             "decision",
             "assets",
         },
-        "defaults": {},
+        "defaults": {"allowed_sides": ["BUY", "SELL"]},
         "default_factory_values": {},
         "optional_fields": {"objective"},
     },
@@ -435,6 +436,7 @@ def test_aurora_low_vol_rr_contract_clears_low_vol_cost_floor_for_active_symbols
 
 def test_prior_strategy_rebuild_seams_survive_strategy_execution_and_regime_tpsl_move() -> None:
     llm = cm.LLMMicrostructureStrategyConfig(
+        mode="shadow",
         enabled=True,
         type="external_intent",
         description="contract test",
@@ -458,6 +460,7 @@ def test_prior_strategy_rebuild_seams_survive_strategy_execution_and_regime_tpsl
     assert type(llm.execution) is cm.StrategyExecutionConfig
 
     mr = cm.MeanReversion1mStrategyConfig(
+        mode="shadow",
         enabled=True,
         timeframe_sec=300,
         strategy={
@@ -542,6 +545,7 @@ def test_prior_strategy_rebuild_seams_survive_strategy_execution_and_regime_tpsl
     assert type(mr.objective) is cm.StrategyObjectiveConfig
 
     md_amr = cm.MDAMRStrategyConfig(
+        mode="shadow",
         enabled=True,
         type="md_amr_v1_2",
         description="contract test",

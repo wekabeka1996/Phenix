@@ -116,6 +116,7 @@ def _cmd(features=None, regime="LOW_VOLATILITY"):
         warmup=WarmupState(full_ready=True, ticks_seen=100, ready={}, reasons=()),
         raw={"regime": regime, "ts_ms": 1_780_000_000_000},
         price_motion=None,
+        structural_regime=regime,
     )
 
 
@@ -223,6 +224,47 @@ def test_shadow_mode_does_not_emit_strategy_signal():
     handler = AlphaMrS01Handler(fsm=bus, config=config)
     handler.on_process_strategy(_cmd())
     assert not [event for event in bus.emitted if event[0] == "EVT:STRATEGY_SIGNAL_PRODUCED"]
+
+
+def test_active_mode_registers_ta_features_and_process_strategy_listeners():
+    bus = _Bus()
+    config = SimpleNamespace(
+        strategies=SimpleNamespace(alpha_mr_s01=_strategy_config(enabled=True, mode="shadow")),
+        trading_mode="testnet",
+    )
+
+    AlphaMrS01Handler(fsm=bus, config=config).register()
+
+    assert [name for name, _handler in bus.listeners] == [
+        "EVT:TA_FEATURES_CALCULATED",
+        "CMD:PROCESS_STRATEGY",
+    ]
+
+
+def test_handler_merges_same_bar_ta_features_before_scoring():
+    bus = _Bus()
+    config = SimpleNamespace(
+        strategies=SimpleNamespace(alpha_mr_s01=_strategy_config(enabled=True, mode="testnet_candidate")),
+        trading_mode="testnet",
+    )
+    handler = AlphaMrS01Handler(fsm=bus, config=config)
+    handler.on_ta_features(
+        SimpleNamespace(
+            pld={
+                "symbol": "BNBUSDT",
+                "tf_sec": 300,
+                "bar_close_ts": 1_780_000_000_000,
+                "is_warm": True,
+                **_features(),
+            }
+        )
+    )
+
+    handler.on_process_strategy(_cmd(features={"price": 594.77}))
+
+    signals = [payload for event, payload, _ in bus.emitted if event == "EVT:STRATEGY_SIGNAL_PRODUCED"]
+    assert len(signals) == 1
+    assert signals[0]["side"] == "BUY"
 
 
 def test_testnet_candidate_emits_standard_strategy_signal():

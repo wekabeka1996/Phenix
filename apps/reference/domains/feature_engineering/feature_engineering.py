@@ -44,6 +44,7 @@ from apps.reference.contracts.runtime_gap_policy import (
 )
 from apps.reference.contracts.runtime_regime_layers import (
     attach_regime_provenance,
+    canonical_structural_regime_label,
     is_structural_regime_payload,
 )
 
@@ -74,6 +75,13 @@ from apps.reference.shared.data_primitives.ohlc_validator import (
     GAP_RESET_STATES,
     compute_true_range,
     validate_ohlc,
+)
+
+TRADE_FLOW_METADATA_FIELDS = (
+    "trade_flow_state",
+    "trade_flow_age_ms",
+    "trade_flow_last_trade_ts_ms",
+    "trade_flow_window_sec",
 )
 
 if TYPE_CHECKING:
@@ -450,6 +458,16 @@ class FeatureEngineering:
         if not isinstance(ready_map, dict):
             return []
         return [str(k) for k, v in ready_map.items() if not bool(v)]
+
+    @staticmethod
+    def _extract_trade_flow_metadata(payload: Optional[dict]) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            return {}
+        return {
+            key: payload.get(key)
+            for key in TRADE_FLOW_METADATA_FIELDS
+            if payload.get(key) is not None
+        }
 
     def _update_fe_warmup_diag(self, symbol: str, tf_sec: int, warmup: Optional[dict]) -> None:
         diag = self._fe_diag(symbol, tf_sec)
@@ -983,6 +1001,10 @@ class FeatureEngineering:
             "bid": str(bar_get("bid", seed_tick.get("bid", close_price))),
             "ask": str(bar_get("ask", seed_tick.get("ask", close_price))),
         }
+        bar_tick.update(
+            self._extract_trade_flow_metadata(bar_data if isinstance(bar_data, dict) else {})
+            or self._extract_trade_flow_metadata(seed_tick)
+        )
 
         # ALPHA-SEARCH SUPPORT: pass through augmented keys from bar payload (or last seed as fallback)
         aug_keys = [
@@ -1524,6 +1546,9 @@ class FeatureEngineering:
                     ),
                     "data_quality": {"drops": ["bad_dt"], "notes": []},
                 }
+                payload_bad_dt.update(
+                    self._extract_trade_flow_metadata(current_tick)
+                )
                 if emit_events:
                     self._emit_features_event(
                         tf_sec=tf_sec,
@@ -2152,6 +2177,10 @@ class FeatureEngineering:
                 "bar": bar_data,
                 "source_mode": source_mode,
             }
+            trade_flow_metadata = self._extract_trade_flow_metadata(current_tick)
+            if not trade_flow_metadata:
+                trade_flow_metadata = self._extract_trade_flow_metadata(bar_data)
+            features_payload.update(trade_flow_metadata)
             if bar_identity is not None:
                 features_payload["bar_identity"] = bar_identity.to_payload()
                 features_payload["close_boundary_ts_ms"] = int(
@@ -2411,6 +2440,16 @@ class FeatureEngineering:
                             regime_snapshot,
                             bar_close_ts_ms=int(bar_close_ts),
                         )
+                    structural_regime = "UNCERTAIN"
+                    if isinstance(regime_snapshot, dict):
+                        structural_regime = canonical_structural_regime_label(
+                            regime_snapshot.get("regime")
+                            or regime_snapshot.get("overall_regime")
+                        )
+                    elif isinstance(regime_snapshot, str):
+                        structural_regime = canonical_structural_regime_label(
+                            regime_snapshot
+                        )
 
                     cmd_payload = {
                         "symbol": symbol,
@@ -2422,10 +2461,12 @@ class FeatureEngineering:
                         "warmup": warmup,                        # T2B-03: Readiness snapshot
                         # REG-FIX-01: Injected regime
                         "regime": regime_snapshot,
+                        "structural_regime": structural_regime,
                         "source_mode": source_mode,
                         # MR-V1-WIRING: price_motion for microstructure veto price-reaction logic
                         "price_motion": pm_block,
                     }
+                    cmd_payload.update(trade_flow_metadata)
                     if bar_identity is not None:
                         cmd_payload["bar_identity"] = bar_identity.to_payload()
                         cmd_payload["close_boundary_ts_ms"] = int(

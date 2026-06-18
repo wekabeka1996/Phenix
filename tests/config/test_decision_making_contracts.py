@@ -110,7 +110,7 @@ def test_current_aurora_config_loads_decision_making_contract() -> None:
     }
     assert dm_domain.directional_sanity.max_regime_confidence_by_regime == expected_max_regime_confidence_by_regime
     assert dm_domain.low_vol_cost_floor_gate.enabled is True
-    assert dm_domain.low_vol_cost_floor_gate.decision_chain_enabled is True
+    assert dm_domain.low_vol_cost_floor_gate.decision_chain_enabled is False
     assert dm_domain.low_vol_cost_floor_gate.enforce_in_modes == [
         "testnet",
         "hybrid_live_data_testnet_exec",
@@ -140,6 +140,7 @@ def test_current_aurora_config_loads_decision_making_contract() -> None:
         "aurora",
         "mean_reversion",
         "md_amr",
+        "alpha_ta_ensemble",
     }
 
     fe = cfg.domains.feature_engineering

@@ -34,6 +34,7 @@ def test_mr_handler_wires_asset_allowed_regimes_and_overrides() -> None:
 
     mr_cfg = MeanReversion1mStrategyConfig(
         enabled=True,
+        mode="shadow",
         timeframe_sec=180,
         strategy=MRStrategyParamsConfig(
             bb_window=20,
@@ -176,6 +177,7 @@ def test_mr_handler_uses_asset_allowed_regimes_when_no_strategy_override() -> No
 
     mr_cfg = MeanReversion1mStrategyConfig(
         enabled=True,
+        mode="shadow",
         timeframe_sec=180,
         strategy=MRStrategyParamsConfig(
             bb_window=20,

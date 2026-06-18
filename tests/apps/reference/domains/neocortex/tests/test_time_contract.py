@@ -43,6 +43,13 @@ from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
 def _full_config(tmp_path: Path) -> NeocortexConfig:
     return NeocortexConfig(
         trust_enabled=True,
+        evidence_capture={
+            "mode": "disabled",
+            "collect_observation": False,
+            "collect_authority_request": False,
+            "collect_authority_response": False,
+            "emit_shadow_decision_logged": False,
+        },
         authority={
             "mode": "shadow",
             "deadline_ms": 50,
@@ -134,6 +141,12 @@ def _full_config(tmp_path: Path) -> NeocortexConfig:
                     "val_ratio": 0.15,
                     "test_ratio": 0.15,
                 },
+                "cutover": {
+                    "min_real_executed_rows": 1,
+                    "allow_synthetic_fallback": False,
+                    "max_non_causal_rows": 0,
+                    "require_reward_methodology": True,
+                },
             },
             evaluation={
                 "report_version": 1,
@@ -192,7 +205,7 @@ def test_feature_log_full_line_normalizes_to_event_ts_ms_int():
 
     assert entry is not None
     assert isinstance(entry.event_ts_ms, int)
-    assert entry.event_ts_ms == 1767956322585
+    assert entry.event_ts_ms == 1767952722585
     assert entry.timestamp == pytest.approx(entry.event_ts_ms / 1000.0)
     assert entry.time_is_causal is False
     assert entry.time_provenance == CausalTimeProvenance.CAPTURED_WALLCLOCK
@@ -258,7 +271,7 @@ def test_core_log_timestamp_normalized_to_ms_int():
     entry = parse_core_log_line(line)
 
     assert entry is not None
-    assert entry.event_ts_ms == 1768015004365
+    assert entry.event_ts_ms == 1768011404365
     assert entry.timestamp == pytest.approx(entry.event_ts_ms / 1000.0)
 
 

@@ -121,6 +121,25 @@ class TickFeaturesCalculatedPayloadV1(BaseModel):
         default=None,
         description="Optional FE diagnostics snapshot for normal tick emission.",
     )
+    trade_flow_state: Optional[Literal["unknown", "fresh", "degraded", "stale"]] = Field(
+        default=None,
+        description="Additive trade-flow freshness state propagated from market_data.",
+    )
+    trade_flow_age_ms: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Age of the latest observed trade in milliseconds.",
+    )
+    trade_flow_last_trade_ts_ms: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Exchange timestamp of the latest observed trade.",
+    )
+    trade_flow_window_sec: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Trade-flow aggregation window in seconds.",
+    )
     data_quality: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Optional data-quality annotations (bad_dt path).",
@@ -166,6 +185,25 @@ class BarFeaturesCalculatedPayloadV1(BaseModel):
     diagnostics: Dict[str, Any] = Field(
         ...,
         description="FE emission diagnostics snapshot.",
+    )
+    trade_flow_state: Optional[Literal["unknown", "fresh", "degraded", "stale"]] = Field(
+        default=None,
+        description="Additive trade-flow freshness state propagated from market_data.",
+    )
+    trade_flow_age_ms: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Age of the latest observed trade in milliseconds.",
+    )
+    trade_flow_last_trade_ts_ms: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Exchange timestamp of the latest observed trade.",
+    )
+    trade_flow_window_sec: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Trade-flow aggregation window in seconds.",
     )
     bar_identity: Optional[Dict[str, Any]] = Field(
         default=None,

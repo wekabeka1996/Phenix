@@ -36,8 +36,8 @@ from apps.reference.contracts.runtime_gap_policy import (
     extract_gap_status,
 )
 from apps.reference.contracts.runtime_regime_layers import (
+    canonical_structural_regime_label,
     is_structural_regime_payload,
-    normalize_structural_regime_label,
 )
 from apps.reference.contracts.runtime_readiness import (
     RuntimeReadinessScope,
@@ -247,8 +247,10 @@ class MDAMRHandler:
         trace = trace if isinstance(trace, dict) else {}
         result_status = str(result.get("status") or "NOOP")
 
-        regime = self._normalize_regime_label(self._regime.get(symbol))
-        regime_confidence = self._regime_confidence.get(symbol)
+        regime = self._normalize_regime_label(
+            getattr(self, "_regime", {}).get(symbol)
+        )
+        regime_confidence = getattr(self, "_regime_confidence", {}).get(symbol)
 
         allowed_regime: bool | None = None
         context_ctx = self._build_context_validity_position_ctx(symbol)
@@ -1239,8 +1241,13 @@ class MDAMRHandler:
         why: str,
         why_chain: list[str],
         details: Dict[str, Any] | None = None,
+        side: str | None = None,
+        bar_close_ts: int | None = None,
     ) -> None:
         tf_sec = getattr(self, "timeframe_sec", None)
+        regime = self._normalize_regime_label(
+            getattr(self, "_regime", {}).get(symbol)
+        ) or "UNCERTAIN"
         payload = write_strategy_decision_blocked(
             strategy_id="md_amr",
             symbol=symbol,
@@ -1253,7 +1260,10 @@ class MDAMRHandler:
             why=str(why),
             why_chain=list(why_chain),
             details=dict(details) if details else None,
+            side=side,
+            regime=regime,
             tf_sec=int(tf_sec) if tf_sec is not None else None,
+            bar_close_ts=bar_close_ts,
         )
         self.fsm.emit(
             "EVT:STRATEGY_DECISION_BLOCKED",
@@ -1269,6 +1279,7 @@ class MDAMRHandler:
         side: str,
         rid: str,
         ts_ms: int,
+        bar_close_ts: int | None = None,
     ) -> None:
         self._emit_strategy_blocked(
             symbol=symbol,
@@ -1281,6 +1292,8 @@ class MDAMRHandler:
             why_chain=["mandatory_live_warmup"],
             details={"mandatory_warmup_until_ms": int(
                 self.mandatory_warmup_until)},
+            side=side,
+            bar_close_ts=bar_close_ts,
         )
 
     def _emit_trade_intent_rejected_gate(
@@ -1295,6 +1308,7 @@ class MDAMRHandler:
         why: str,
         why_chain: list[str],
         details: Dict[str, Any],
+        bar_close_ts: int | None = None,
     ) -> None:
         # Legacy helper name retained so existing local tests can still stub the
         # MD_AMR branch seam while runtime semantics stay canonical.
@@ -1308,6 +1322,8 @@ class MDAMRHandler:
             why=str(why),
             why_chain=list(why_chain),
             details=details,
+            side=side,
+            bar_close_ts=bar_close_ts,
         )
 
     def _entry_regime_allowed(
@@ -1470,7 +1486,7 @@ class MDAMRHandler:
         symbol = str(pld.get("symbol") or "")
         if symbol not in self._enabled_symbols:
             return
-        regime = normalize_structural_regime_label(
+        regime = canonical_structural_regime_label(
             pld.get("regime") or pld.get("overall_regime"))
         if regime:
             self._regime[symbol] = str(regime)
@@ -1957,6 +1973,7 @@ class MDAMRHandler:
                         side=signal.side,
                         rid=rid,
                         ts_ms=now_ms,
+                        bar_close_ts=bar_close_ts,
                     )
                     inc_warmup_block(domain="decision_making",
                                      reason="md_amr_mandatory_live_warmup")
@@ -1976,6 +1993,7 @@ class MDAMRHandler:
                 side="BUY",
                 rid=rid,
                 ts_ms=now_ms,
+                bar_close_ts=bar_close_ts,
                 reason_code="READINESS_WARMUP_NOT_OK",
                 stage="READINESS",
                 why="md_amr_handler:warmup_not_ready",
@@ -2025,6 +2043,7 @@ class MDAMRHandler:
                 side="BUY",
                 rid=rid,
                 ts_ms=now_ms,
+                bar_close_ts=bar_close_ts,
                 reason_code="READINESS_CONTRACT_UNRESOLVED",
                 stage="READINESS",
                 why="md_amr_handler:readiness_contract_unresolved",
@@ -2044,6 +2063,7 @@ class MDAMRHandler:
                 side="BUY",
                 rid=rid,
                 ts_ms=now_ms,
+                bar_close_ts=bar_close_ts,
                 reason_code="BARS_REQUIRED_COLD_START",
                 stage="STRATEGY",
                 why=f"Cold-start: {_bars_seen}/{_basis_required} bars seen",
@@ -2099,6 +2119,7 @@ class MDAMRHandler:
                     side=signal.side,
                     rid=rid,
                     ts_ms=now_ms,
+                    bar_close_ts=bar_close_ts,
                     reason_code="CONFIG_ASSET_MISSING",
                     stage="STRATEGY",
                     why="md_amr_handler:asset_config_missing",
@@ -2121,6 +2142,7 @@ class MDAMRHandler:
                     side=signal.side,
                     rid=rid,
                     ts_ms=now_ms,
+                    bar_close_ts=bar_close_ts,
                     reason_code=str(regime_info.get(
                         "reason_code") or "REGIME_GATE_BLOCKED"),
                     stage="STRATEGY",
@@ -2214,6 +2236,7 @@ class MDAMRHandler:
                                 side=signal.side,
                                 rid=rid,
                                 ts_ms=now_ms,
+                                bar_close_ts=bar_close_ts,
                                 reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED",
                                 stage="STRATEGY",
                                 why="OBJECTIVE_REGIME_CONFIDENCE_MISSING",
@@ -2231,6 +2254,7 @@ class MDAMRHandler:
                                 side=signal.side,
                                 rid=rid,
                                 ts_ms=now_ms,
+                                bar_close_ts=bar_close_ts,
                                 reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED",
                                 stage="STRATEGY",
                                 why="OBJECTIVE_TPSL_MISSING",
@@ -2313,6 +2337,7 @@ class MDAMRHandler:
                             side=signal.side,
                             rid=rid,
                             ts_ms=now_ms,
+                            bar_close_ts=bar_close_ts,
                             reason_code="OBJECTIVE_GATE_BLOCKED",
                             stage="STRATEGY",
                             why=str(
@@ -2333,6 +2358,7 @@ class MDAMRHandler:
                                 side=signal.side,
                                 rid=rid,
                                 ts_ms=now_ms,
+                                bar_close_ts=bar_close_ts,
                                 reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED",
                                 stage="STRATEGY",
                                 why=str(obj_gate_result.precondition_code),
@@ -2351,6 +2377,7 @@ class MDAMRHandler:
                                 side=signal.side,
                                 rid=rid,
                                 ts_ms=now_ms,
+                                bar_close_ts=bar_close_ts,
                                 reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED",
                                 stage="STRATEGY",
                                 why=str(obj_gate_result.error),
@@ -2368,6 +2395,7 @@ class MDAMRHandler:
                             side=signal.side,
                             rid=rid,
                             ts_ms=now_ms,
+                            bar_close_ts=bar_close_ts,
                             reason_code="OBJECTIVE_ENGINE_FAIL_CLOSED",
                             stage="STRATEGY",
                             why=str(e),

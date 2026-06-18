@@ -3,6 +3,9 @@ from __future__ import annotations
 from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from apps.reference.config.shared.atoms import StrategyIntentDecisionConfig
+from apps.reference.config.strategies.aurora import StrategyExecutionConfig
+
 
 # ==============================================================================
 # Momentum Model Config
@@ -287,7 +290,7 @@ class AlphaTaEnsembleStrategyConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = Field(...)
-    mode: Literal["disabled", "shadow", "testnet_candidate"] = Field(...)
+    mode: Literal["disabled", "shadow", "testnet_candidate", "runtime"] = Field(...)
     strategy_version: str = Field(..., min_length=1)
     timeframe_sec: int = Field(..., ge=60, le=3600)
     threshold: float = Field(..., ge=0.0, le=1.0)
@@ -299,6 +302,9 @@ class AlphaTaEnsembleStrategyConfig(BaseModel):
 
     profiles: Dict[str, AlphaTaEnsembleProfileConfig] = Field(..., min_length=1)
     safety: AlphaTaEnsembleSafetyConfig = Field(...)
+    execution: StrategyExecutionConfig | None = Field(default=None)
+    decision: StrategyIntentDecisionConfig | None = Field(default=None)
+    objective: Optional["StrategyObjectiveConfig"] = Field(default=None)
     assets: Dict[str, AlphaTaEnsembleAssetConfig] = Field(default_factory=dict)
 
     @model_validator(mode="after")

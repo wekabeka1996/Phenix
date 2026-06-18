@@ -190,6 +190,7 @@ def test_fsm_emit_validates_cmd_process_strategy_valid() -> None:
         "features": {},
         "warmup": {"full_ready": True, "ticks_seen": 500},
         "regime": None,
+        "structural_regime": "TREND_UP",
     }
     # Should not raise
     fsm.emit("CMD:PROCESS_STRATEGY", payload=valid_payload, why="test")
@@ -214,9 +215,47 @@ def test_fsm_emit_rejects_cmd_process_strategy_invalid_tf_sec() -> None:
         "features": {},
         "warmup": {"full_ready": True, "ticks_seen": 500},
         "regime": None,
+        "structural_regime": "TREND_UP",
     }
     with pytest.raises(InvalidMessagePayloadError):
         fsm.emit("CMD:PROCESS_STRATEGY", payload=invalid_payload, why="test")
+
+
+def test_fsm_emit_accepts_position_closed_attribution_fields() -> None:
+    """Execution close truth must preserve strategy attribution additively."""
+    init_global_registry(project_root=".")
+    fsm = FSMCore()
+    observed: list[dict] = []
+    fsm.listen("EVT:POSITION_CLOSED", lambda msg: observed.append(msg.pld))
+
+    payload = {
+        "event_type": "POSITION_CLOSED",
+        "symbol": "BTCUSDT",
+        "trade_id": "trade-1",
+        "close_reason": "TP",
+        "close_ts_ms": 1700000000000,
+        "realized_pnl_net": 12.5,
+        "fees": 0.5,
+        "entry_regime_epoch_ref": "epoch:BTCUSDT:1",
+        "side": "BUY",
+        "lifecycle_id": "life-1",
+        "entry_rid": "entry-rid-1",
+        "strategy_id": "aurora",
+        "decision_id": "decision-1",
+        "intent_id": "intent-1",
+        "regime": "TREND_UP",
+        "realized_pnl": 13.0,
+        "close_price": 51000.0,
+        "pnl_status": "resolved",
+        "pnl_source": "close_fill",
+        "economic_close_detected": True,
+        "economic_close_kind": "explicit_close_fill",
+        "accounting_unresolved_reason": None,
+    }
+
+    fsm.emit("EVT:POSITION_CLOSED", payload=payload, why="test")
+
+    assert observed == [payload]
 
 
 def test_fsm_emit_graceful_without_registry() -> None:

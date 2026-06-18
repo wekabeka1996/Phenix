@@ -3,7 +3,7 @@
 These are pure functions with no side effects. They own:
 - type coercion (confidence → float, timestamps → int)
 - structural normalization (warmup dict → WarmupState dataclass)
-- regime label normalization (delegated to normalize_structural_regime_label)
+- regime label normalization (delegated to canonical_structural_regime_label)
 - read-only wrapping (MappingProxyType for top-level safety)
 
 They do NOT own:
@@ -16,9 +16,8 @@ is deferred to Package 2. Callers that need a mutable dict must convert
 via dict(cmd.features).
 
 Behavioral preservation notes:
-- normalize_structural_regime_label maps BULL_TREND→TREND_UP,
-  BEAR_TREND→TREND_DOWN, and leaves unknown labels as-is (e.g. UNCERTAIN).
-  This is the same normalization the handler applied before this package.
+- canonical_structural_regime_label maps BULL_TREND→TREND_UP,
+  BEAR_TREND→TREND_DOWN, and fails unknown labels closed to UNCERTAIN.
 - confidence and raw_confidence are float-resolved; None on failure.
   This matches the previous float(confidence_raw) coercion in the handler.
 - regime_raw_confidence is preserved from the raw transport dict (as string)
@@ -30,7 +29,7 @@ from types import MappingProxyType
 from typing import Any
 
 from apps.reference.contracts.runtime_regime_layers import (
-    normalize_structural_regime_label,
+    canonical_structural_regime_label,
 )
 from apps.reference.domains.decision_making.contracts.boundary_models import (
     ProcessStrategyBoundary,
@@ -72,6 +71,36 @@ def _resolve_confidence(value: Any) -> float | None:
         return None
 
 
+def _canonical_process_strategy_regime(
+    boundary: ProcessStrategyBoundary,
+) -> tuple[str, MappingProxyType[str, Any] | None]:
+    """Resolve the canonical structural regime without stringifying mappings."""
+    snapshot: dict[str, Any] | None = None
+    if isinstance(boundary.regime, dict):
+        snapshot = dict(boundary.regime)
+
+    candidates: list[Any] = [boundary.structural_regime]
+    if snapshot is not None:
+        candidates.extend([snapshot.get("regime"), snapshot.get("overall_regime")])
+    elif isinstance(boundary.regime, str):
+        # Backward compatibility for older producers that sent a plain label.
+        candidates.append(boundary.regime)
+
+    if isinstance(boundary.regime_ctx, dict):
+        candidates.append(boundary.regime_ctx.get("regime"))
+
+    for candidate in candidates:
+        if not isinstance(candidate, str):
+            continue
+        normalized = canonical_structural_regime_label(candidate)
+        if normalized != "UNCERTAIN" or candidate.strip().upper() == "UNCERTAIN":
+            return normalized, (
+                MappingProxyType(snapshot) if snapshot is not None else None
+            )
+
+    return "UNCERTAIN", (
+        MappingProxyType(snapshot) if snapshot is not None else None
+    )
 def map_process_strategy_boundary_to_cmd(
     boundary: ProcessStrategyBoundary,
     raw: dict[str, Any],
@@ -98,6 +127,9 @@ def map_process_strategy_boundary_to_cmd(
         if boundary.price_motion is not None
         else None
     )
+    structural_regime, regime_snapshot = _canonical_process_strategy_regime(
+        boundary
+    )
     return ProcessStrategyCmd(
         symbol=boundary.symbol,
         tf_sec=boundary.tf_sec,
@@ -107,6 +139,8 @@ def map_process_strategy_boundary_to_cmd(
         warmup=warmup,
         raw=MappingProxyType(raw),
         price_motion=price_motion,
+        structural_regime=structural_regime,
+        regime_snapshot=regime_snapshot,
     )
 
 
@@ -116,14 +150,9 @@ def map_regime_boundary_to_event(
 ) -> RegimeEvent:
     """Map RegimeDetectedBoundary and original payload to RegimeEvent.
 
-    Regime normalization is applied here via normalize_structural_regime_label
-    so that downstream logic always receives a canonical label. Unknown labels
-    (those not in the canonical set) pass through unchanged — preserving the
-    existing runtime behavior where the handler cached unrecognized labels.
-
-    BEHAVIORAL PRESERVATION: The previous handler called
-    normalize_structural_regime_label(event.get("regime")) inline. This mapper
-    replicates that behavior exactly.
+    Regime normalization is applied here via canonical_structural_regime_label
+    so downstream logic always receives a known label. Unknown labels fail
+    closed to UNCERTAIN.
 
     Args:
         boundary: Pydantic-validated boundary model.
@@ -134,8 +163,7 @@ def map_regime_boundary_to_event(
     Returns:
         Immutable RegimeEvent with normalized regime label.
     """
-    # Normalize regime label. Unknown labels pass through unchanged.
-    regime_normalized = normalize_structural_regime_label(
+    regime_normalized = canonical_structural_regime_label(
         str(boundary.regime or "")
     )
 

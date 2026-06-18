@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from apps.reference.config.domains.decision_making import SafetyGatesConfig
+from apps.reference.config.shared.atoms import StrategyIntentDecisionConfig
 
 
 class MDAMRWeightsConfig(BaseModel):
@@ -369,9 +370,13 @@ class MDAMRStrategyConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     enabled: bool = Field(..., description='Enable md_amr strategy')
+    mode: Literal['disabled', 'shadow', 'testnet_candidate', 'runtime'] = Field(
+        ..., description='Financial authority mode for the strategy')
     type: str = Field(..., description='Strategy type identifier')
     description: str = Field(..., description='Human-readable profile description')
     timeframe_sec: int = Field(..., ge=60, le=86400)
+    allowed_sides: List[Literal['BUY', 'SELL']] = Field(
+        default=['BUY', 'SELL'], min_length=1)
     defer_ttl_sec: int = Field(..., ge=1, le=300)
     channel_window_bars: int = Field(..., ge=3, le=256)
     channel_robust_pct: float = Field(..., ge=0.0, le=0.25)
@@ -423,6 +428,7 @@ class MDAMRStrategyConfig(BaseModel):
     weights: MDAMRWeightsConfig = Field(...)
     execution: "StrategyExecutionConfig" = Field(
         ..., description="Execution policy (SSOT)")
+    decision: Optional[StrategyIntentDecisionConfig] = Field(default=None)
     safety_gates: SafetyGatesConfig = Field(..., description="Safety gates control")
     llm_gate: MDAMRLLMGateConfig = Field(...)
     reconciliation: MDAMRReconciliationConfig = Field(

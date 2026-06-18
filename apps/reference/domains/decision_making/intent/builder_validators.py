@@ -1,6 +1,7 @@
 """Validation and normalization helpers for IntentBuilder."""
 
 import decimal
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
@@ -168,37 +169,81 @@ def _resolve_kelly_config(*, config: Any, strategy_id: str) -> Any:
     return kelly_cfg
 
 
-def resolve_kelly_metadata(*, config: Any, strategy_id: str) -> ResolvedKellyMetadata:
+def _mapping_get(value: Any, key: str) -> Any:
+    if isinstance(value, Mapping):
+        return value.get(key)
+    return getattr(value, key, None)
+
+
+def resolve_kelly_metadata(
+    *,
+    config: Any,
+    strategy_id: str,
+    symbol: str,
+    regime: str,
+    side: str,
+) -> ResolvedKellyMetadata:
     """Resolve truthful Kelly metadata from the typed strategy config only."""
     kelly_cfg = _resolve_kelly_config(config=config, strategy_id=strategy_id)
 
+    symbol_key = str(symbol).strip().upper()
+    regime_key = str(regime).strip().upper()
+    side_key = str(side).strip().upper()
+    override = None
+    overrides = getattr(kelly_cfg, "overrides", None)
+    by_symbol = _mapping_get(overrides, symbol_key)
+    by_regime = _mapping_get(by_symbol, regime_key)
+    if side_key in {"BUY", "SELL"}:
+        override = _mapping_get(by_regime, side_key)
+
+    decision_path = f"config.strategies.{strategy_id}.decision.kelly"
+    parameter_path = decision_path
+    if override is not None:
+        parameter_path = (
+            f"{decision_path}.overrides.{symbol_key}.{regime_key}.{side_key}"
+        )
+
+    def _parameter(name: str) -> tuple[Any, str]:
+        override_value = _mapping_get(override, name)
+        if override_value is not None:
+            return override_value, f"{parameter_path}.{name}"
+        return getattr(kelly_cfg, name, None), f"{decision_path}.{name}"
+
+    base_probability_raw, base_probability_source = _parameter("base_probability")
+    p_min_raw, p_min_source = _parameter("p_min")
+    p_max_raw, p_max_source = _parameter("p_max")
+    payoff_ratio_raw, payoff_ratio_source = _parameter("payoff_ratio_r")
+    kelly_cap_raw, kelly_cap_source = _parameter("kelly_cap")
+
     base_probability = _coerce_decimal_field(
         "decision.kelly.base_probability",
-        getattr(kelly_cfg, "base_probability", None),
+        base_probability_raw,
     )
     p_min = _coerce_decimal_field(
         "decision.kelly.p_min",
-        getattr(kelly_cfg, "p_min", None),
+        p_min_raw,
     )
     p_max = _coerce_decimal_field(
         "decision.kelly.p_max",
-        getattr(kelly_cfg, "p_max", None),
+        p_max_raw,
     )
     payoff_ratio_r = _coerce_decimal_field(
         "decision.kelly.payoff_ratio_r",
-        getattr(kelly_cfg, "payoff_ratio_r", None),
+        payoff_ratio_raw,
     )
     kelly_cap = _coerce_decimal_field(
         "decision.kelly.kelly_cap",
-        getattr(kelly_cfg, "kelly_cap", None),
+        kelly_cap_raw,
     )
-    kelly_alpha = _coerce_decimal_field(
-        "decision.kelly.kelly_alpha",
-        getattr(kelly_cfg, "kelly_alpha", None),
+    kelly_alpha_raw = getattr(kelly_cfg, "kelly_alpha", None)
+    kelly_alpha = (
+        _coerce_decimal_field("decision.kelly.kelly_alpha", kelly_alpha_raw)
+        if kelly_alpha_raw is not None else None
     )
-    uplift_factor = _coerce_decimal_field(
-        "decision.kelly.uplift_factor",
-        getattr(kelly_cfg, "uplift_factor", None),
+    uplift_factor_raw = getattr(kelly_cfg, "uplift_factor", None)
+    uplift_factor = (
+        _coerce_decimal_field("decision.kelly.uplift_factor", uplift_factor_raw)
+        if uplift_factor_raw is not None else None
     )
 
     if payoff_ratio_r <= decimal.Decimal("0"):
@@ -221,38 +266,47 @@ def resolve_kelly_metadata(*, config: Any, strategy_id: str) -> ResolvedKellyMet
             "Configured Kelly inputs produce a negative kelly_fraction")
 
     kelly_fraction = min(full_kelly_fraction, kelly_cap)
-    decision_path = f"config.strategies.{strategy_id}.decision.kelly"
     return ResolvedKellyMetadata(
         p=str(probability),
         payoff_ratio_r=str(payoff_ratio_r),
         kelly_fraction=str(kelly_fraction),
         provenance={
-            "source_path": decision_path,
+            "source_path": parameter_path,
+            "cohort": {
+                "strategy_id": str(strategy_id),
+                "symbol": symbol_key,
+                "regime": regime_key,
+                "side": side_key,
+                "override_applied": override is not None,
+            },
             "p": {
-                "source": f"{decision_path}.base_probability",
+                "source": base_probability_source,
                 "raw": str(base_probability),
                 "p_min": str(p_min),
+                "p_min_source": p_min_source,
                 "p_max": str(p_max),
+                "p_max_source": p_max_source,
                 "value": str(probability),
             },
             "payoff_ratio_r": {
-                "source": f"{decision_path}.payoff_ratio_r",
+                "source": payoff_ratio_source,
                 "value": str(payoff_ratio_r),
             },
             "kelly_fraction": {
                 "formula": "p - (1 - p) / payoff_ratio_r",
                 "full_kelly": str(full_kelly_fraction),
                 "kelly_cap": str(kelly_cap),
+                "kelly_cap_source": kelly_cap_source,
                 "value": str(kelly_fraction),
             },
             "unapplied_config_fields": {
                 "kelly_alpha": {
-                    "value": str(kelly_alpha),
-                    "reason": "boundary_semantics_not_proven",
+                    "value": None if kelly_alpha is None else str(kelly_alpha),
+                    "reason": "deprecated_without_calibrated_score_probability_model",
                 },
                 "uplift_factor": {
-                    "value": str(uplift_factor),
-                    "reason": "no_score01_probability_producer_on_hot_path",
+                    "value": None if uplift_factor is None else str(uplift_factor),
+                    "reason": "deprecated_without_calibrated_score_probability_model",
                 },
             },
         },

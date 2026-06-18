@@ -225,6 +225,7 @@ class AuroraScoringHelpersMixin:
                 reason_code="GATE_ANTI_FLAT_SIGMA",
                 reason="VOL_GATE",
                 context="aurora_handler:anti_flat",
+                side=side,
                 details={
                     "motion_norm_sigma": motion_norm_sigma,
                     "threshold": self.anti_flat_sigma,
@@ -260,6 +261,7 @@ class AuroraScoringHelpersMixin:
                 reason_code="GATE_ANTI_FOMO_SIGMA",
                 reason="VOL_GATE",
                 context="aurora_handler:anti_fomo",
+                side=side,
                 details={
                     "motion_norm_sigma": motion_norm_sigma,
                     "threshold": self.anti_fomo_sigma,

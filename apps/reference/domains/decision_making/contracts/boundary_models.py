@@ -75,6 +75,13 @@ class ProcessStrategyBoundary(BaseModel):
     warmup: dict[str, Any] | None = None
     price_motion: dict[str, Any] | None = None
 
+    # Structural regime transport is intentionally typed here because live
+    # FeatureEngineering sends the full detector snapshot in ``regime`` while
+    # older producers may still send a plain label.
+    regime: str | dict[str, Any] | None = None
+    structural_regime: str | None = None
+    regime_ctx: dict[str, Any] | None = None
+
 
 class RegimeDetectedBoundary(BaseModel):
     """Boundary model for EVT:REGIME_DETECTED transport payload.

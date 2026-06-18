@@ -263,6 +263,26 @@
           "type": "boolean",
           "default": false,
           "description": "True if this bar was preceded by a gap"
+        },
+        "trade_flow_state": {
+          "type": ["string", "null"],
+          "enum": ["unknown", "fresh", "degraded", "stale", null],
+          "description": "Worst observed trade-flow state in the bar interval"
+        },
+        "trade_flow_age_ms": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Maximum observed trade-flow age in the bar interval"
+        },
+        "trade_flow_last_trade_ts_ms": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Latest known trade timestamp observed in the bar interval"
+        },
+        "trade_flow_window_sec": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Trade-flow aggregation window in seconds"
         }
       }
     },

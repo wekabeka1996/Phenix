@@ -15,7 +15,6 @@ import json
 import logging
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
-from datetime import datetime
 import math
 
 from apps.reference.domains.neocortex.contracts.causal_time import (
@@ -31,6 +30,7 @@ from apps.reference.domains.neocortex.logic.datasets.time_provenance import (
     coerce_causal_time_provenance,
     is_causal_time_provenance,
 )
+from .wallclock import parse_log_wallclock_ms
 
 logger = logging.getLogger(__name__)
 
@@ -280,8 +280,9 @@ def parse_feature_log_line(
 
         try:
             # Parse timestamp
-            dt = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S,%f")
-            event_ts_ms = int(round(dt.timestamp() * 1000.0))
+            event_ts_ms = parse_log_wallclock_ms(timestamp_str)
+            if event_ts_ms is None:
+                raise ValueError("invalid log timestamp or AURORA_LOG_TIMEZONE")
             timestamp = event_ts_ms / 1000.0
 
             # Parse JSON features

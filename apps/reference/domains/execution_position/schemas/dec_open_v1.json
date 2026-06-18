@@ -48,6 +48,18 @@
       ]
     },
     "idempotent_key": { "type": ["string", "null"] },
+    "strategy": {
+      "type": ["string", "null"],
+      "description": "Canonical strategy attribution propagated from the accepted trade intent."
+    },
+    "decision_id": {
+      "type": ["string", "null"],
+      "description": "Decision identifier used for lifecycle attribution."
+    },
+    "intent_id": {
+      "type": ["string", "null"],
+      "description": "Intent identifier used for lifecycle attribution."
+    },
     "regime_epoch_ref": {
       "type": ["string", "null"],
       "description": "Decision-making-owned stable regime epoch propagated additively to execution."
@@ -197,4 +209,3 @@
     }
   ]
 }
-

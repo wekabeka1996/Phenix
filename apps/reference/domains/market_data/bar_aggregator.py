@@ -52,6 +52,32 @@ if TYPE_CHECKING:
 
 LOG = logging.getLogger(__name__)
 
+_TRADE_FLOW_SEVERITY = {
+    "fresh": 0,
+    "degraded": 1,
+    "stale": 2,
+    "unknown": 3,
+}
+
+
+def _worst_trade_flow_state(left: Optional[str], right: Optional[str]) -> Optional[str]:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    left_s = str(left)
+    right_s = str(right)
+    return (
+        left_s
+        if _TRADE_FLOW_SEVERITY.get(left_s, 3) >= _TRADE_FLOW_SEVERITY.get(right_s, 3)
+        else right_s
+    )
+
+
+def _max_optional_int(left: Optional[int], right: Optional[int]) -> Optional[int]:
+    values = [int(v) for v in (left, right) if v is not None]
+    return max(values) if values else None
+
 
 class BarAggregator:
     """
@@ -122,6 +148,7 @@ class BarAggregator:
         price: Decimal,
         volume: Decimal = Decimal("0"),
         ts_ms: Optional[int] = None,
+        trade_flow_metadata: Optional[dict] = None,
     ) -> List[Bar]:
         """
         Process a tick for all configured timeframes.
@@ -142,7 +169,7 @@ class BarAggregator:
 
         for tf_sec in self.timeframes_sec:
             bar = self._process_tick_for_tf(
-                symbol, tf_sec, price, volume, ts_ms)
+                symbol, tf_sec, price, volume, ts_ms, trade_flow_metadata)
             if bar is not None:
                 completed.append(bar)
 
@@ -155,6 +182,7 @@ class BarAggregator:
         price: Decimal,
         volume: Decimal,
         ts_ms: int,
+        trade_flow_metadata: Optional[dict] = None,
     ) -> Optional[Bar]:
         """
         Process tick for a specific timeframe.
@@ -183,6 +211,26 @@ class BarAggregator:
 
             self._last_ts[key] = ts_ms
             tf_ms = tf_sec * 1000
+            trade_flow_state = (
+                str(trade_flow_metadata.get("trade_flow_state"))
+                if isinstance(trade_flow_metadata, dict) and trade_flow_metadata.get("trade_flow_state") is not None
+                else None
+            )
+            trade_flow_age_ms = (
+                int(trade_flow_metadata["trade_flow_age_ms"])
+                if isinstance(trade_flow_metadata, dict) and trade_flow_metadata.get("trade_flow_age_ms") is not None
+                else None
+            )
+            trade_flow_last_trade_ts_ms = (
+                int(trade_flow_metadata["trade_flow_last_trade_ts_ms"])
+                if isinstance(trade_flow_metadata, dict) and trade_flow_metadata.get("trade_flow_last_trade_ts_ms") is not None
+                else None
+            )
+            trade_flow_window_sec = (
+                int(trade_flow_metadata["trade_flow_window_sec"])
+                if isinstance(trade_flow_metadata, dict) and trade_flow_metadata.get("trade_flow_window_sec") is not None
+                else None
+            )
 
             current = self._current_bars.get(key)
 
@@ -200,6 +248,10 @@ class BarAggregator:
                     trade_count=1,
                     start_ts_ms=bar_start,
                     end_ts_ms=ts_ms,
+                    trade_flow_state=trade_flow_state,
+                    trade_flow_age_ms=trade_flow_age_ms,
+                    trade_flow_last_trade_ts_ms=trade_flow_last_trade_ts_ms,
+                    trade_flow_window_sec=trade_flow_window_sec,
                 )
                 return None
 
@@ -242,6 +294,10 @@ class BarAggregator:
                     end_ts_ms=ts_ms,
                     gap_bars_skipped=int(gap_bars),
                     is_gap_bar=is_gap,
+                    trade_flow_state=trade_flow_state,
+                    trade_flow_age_ms=trade_flow_age_ms,
+                    trade_flow_last_trade_ts_ms=trade_flow_last_trade_ts_ms,
+                    trade_flow_window_sec=trade_flow_window_sec,
                 )
 
                 return closed_bar
@@ -253,6 +309,17 @@ class BarAggregator:
             current.volume += volume
             current.trade_count += 1
             current.end_ts_ms = ts_ms
+            current.trade_flow_state = _worst_trade_flow_state(
+                current.trade_flow_state, trade_flow_state
+            )
+            current.trade_flow_age_ms = _max_optional_int(
+                current.trade_flow_age_ms, trade_flow_age_ms
+            )
+            current.trade_flow_last_trade_ts_ms = _max_optional_int(
+                current.trade_flow_last_trade_ts_ms, trade_flow_last_trade_ts_ms
+            )
+            if trade_flow_window_sec is not None:
+                current.trade_flow_window_sec = trade_flow_window_sec
 
             return None
 
@@ -292,6 +359,16 @@ class BarAggregator:
             "gap_bars_skipped": bar.gap_bars_skipped,
             "is_gap_bar": bar.is_gap_bar,
         }
+        if bar.trade_flow_state is not None:
+            bar_dict["trade_flow_state"] = bar.trade_flow_state
+        if bar.trade_flow_age_ms is not None:
+            bar_dict["trade_flow_age_ms"] = int(bar.trade_flow_age_ms)
+        if bar.trade_flow_last_trade_ts_ms is not None:
+            bar_dict["trade_flow_last_trade_ts_ms"] = int(
+                bar.trade_flow_last_trade_ts_ms
+            )
+        if bar.trade_flow_window_sec is not None:
+            bar_dict["trade_flow_window_sec"] = int(bar.trade_flow_window_sec)
 
         # OBS-03-INT: WAL-SSOT for bars
         # Contract: ts_ms, symbol, tf_sec, bar_close_ts, bar{open,high,low,close,volume}, bar_meta(optional)
@@ -500,8 +577,18 @@ class BarAggregator:
 
             price = Decimal(str(price_raw))
             volume = Decimal(str(pld.get('volume', 0) or 0))
+            trade_flow_metadata = {
+                key: pld.get(key)
+                for key in (
+                    "trade_flow_state",
+                    "trade_flow_age_ms",
+                    "trade_flow_last_trade_ts_ms",
+                    "trade_flow_window_sec",
+                )
+                if pld.get(key) is not None
+            }
 
-            self.on_tick(symbol, price, volume, int(ts_ms))
+            self.on_tick(symbol, price, volume, int(ts_ms), trade_flow_metadata)
 
         except Exception as e:
             LOG.warning(

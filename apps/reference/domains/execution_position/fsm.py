@@ -445,6 +445,7 @@ class ExecPosFSM(
         self._last_features_cache: Dict[str, Dict[str, Any]] = {}
         self._pending_entry_meta: Dict[str, PendingEntryMeta] = {}
         self._open_strategy_by_symbol: Dict[str, str] = {}
+        self._open_attribution_by_symbol: Dict[str, Dict[str, Any]] = {}
         self._last_regime_by_symbol: Dict[str, str] = {}
         self._bracket_health_started: bool = False
 

@@ -1,8 +1,10 @@
 aurora:
   enabled: true
+  mode: runtime
   type: bar_driven
   description: Bar-driven multi-signal alpha strategy (5m basis) with regime awareness
   timeframe_sec: 300
+  allowed_sides: [BUY, SELL]
   execution:
     entry_order_type: LIMIT
     entry_tif: GTX

@@ -16,6 +16,7 @@ from apps.reference.config.shared.atoms import (
     BarGatingConfig,
     BehaviorFsmConfig,
     DirectionStrengthScoringConfig,
+    KellyCohortOverrideConfig,
     KellyConfig,
     LiquidityGateConfig,
     PositionSizingConfig,
@@ -24,6 +25,7 @@ from apps.reference.config.shared.atoms import (
     ROIExitConfig,
     SignalWeights,
     SignalsConfig,
+    StrategyIntentDecisionConfig,
 )
 from apps.reference.config.shared.decimal_utils import _coerce_positive_decimal
 from apps.reference.config.shared.enums import (
@@ -216,6 +218,8 @@ from apps.reference.config.strategies.common import (
     StrategiesArbitrationLoggingConfig,
     StrategiesConfig,
     StrategiesRegistryConfig,
+    StrategyCounterfactualOverlayConfig,
+    StrategyTurnoverBudgetConfig,
     StrategyObjectiveConfig,
     StrategyObjectiveGateConfig,
     StrategyObjectiveMultiplierConfig,
@@ -888,7 +892,24 @@ MeanReversion1mStrategyConfig.model_rebuild(
 )
 
 LLMMicrostructureStrategyConfig.model_rebuild(
-    _types_namespace={"StrategyExecutionConfig": StrategyExecutionConfig}
+    _types_namespace={
+        "StrategyExecutionConfig": StrategyExecutionConfig,
+        "StrategyObjectiveConfig": StrategyObjectiveConfig,
+    }
+)
+
+AlphaMrS01StrategyConfig.model_rebuild(
+    _types_namespace={
+        "StrategyExecutionConfig": StrategyExecutionConfig,
+        "StrategyObjectiveConfig": StrategyObjectiveConfig,
+    }
+)
+
+AlphaTaEnsembleStrategyConfig.model_rebuild(
+    _types_namespace={
+        "StrategyExecutionConfig": StrategyExecutionConfig,
+        "StrategyObjectiveConfig": StrategyObjectiveConfig,
+    }
 )
 
 MDAMRExitConfig.model_rebuild(
