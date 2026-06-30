@@ -231,10 +231,11 @@ def test_cohorts_remain_separated_and_outputs_are_created(tmp_path: Path) -> Non
 
 
 def test_run_calibration_does_not_modify_production_yaml(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
     target_files = [
-        Path("c:/Users/user/Music/Phenix/config/aurora/domains.yaml"),
-        Path("c:/Users/user/Music/Phenix/config/aurora/trading.yaml"),
-        Path("c:/Users/user/Music/Phenix/config/aurora/strategies/md_amr.yaml"),
+        repo_root / "config" / "aurora" / "domains.yaml",
+        repo_root / "config" / "aurora" / "trading.yaml",
+        repo_root / "config" / "aurora" / "strategies" / "md_amr.yaml",
     ]
     before = {path: path.read_text(encoding="utf-8") for path in target_files}
 

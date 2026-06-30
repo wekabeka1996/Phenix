@@ -70,6 +70,7 @@ INVENTORY: dict[str, str] = {
     "logic/ingest/parsers/core_parser.py": "hot_path",
     "logic/ingest/parsers/feature_parser.py": "hot_path",
     "logic/ingest/parsers/order_parser.py": "hot_path",
+    "logic/ingest/parsers/wallclock.py": "hot_path",
     "transport/__init__.py": "hot_path",
     "transport/authority_bridge.py": "hot_path",
     "logic/evaluation/__init__.py": "offline_research",

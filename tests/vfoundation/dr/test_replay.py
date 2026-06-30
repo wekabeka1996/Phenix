@@ -62,6 +62,33 @@ def _valid_order_state_changed_record() -> Dict[str, Any]:
 
 # ─── replay_for_rid ──────────────────────────────────────────────────
 
+def _valid_order_rejected_record() -> Dict[str, Any]:
+    return {
+        "op": "EVT",
+        "verb": "ORDER_REJECTED",
+        "ts": 4000,
+        "src": "execution_position",
+        "dst": "observability",
+        "rid": "reject-rid-1",
+        "pld": {
+            "symbol": "BTCUSDT",
+            "side": "SELL",
+            "event_ts_ms": 4000,
+            "reason_code": "ADAPTER_ERROR",
+            "reason_text": "adapter rejected before durable order id",
+            "origin_class": "execution_adapter",
+            "identity_quality": "order_identity_weak",
+            "canonical_identity_key": (
+                "evt:order_rejected:symbol=BTCUSDT:rid=reject-rid-1:"
+                "terminal_state=REJECTED:reject_reason=ADAPTER_ERROR"
+            ),
+            "terminal_non_fill": True,
+            "terminal_state_kind": "REJECTED",
+            "compatibility_aliases_retained": True,
+        },
+    }
+
+
 class TestReplayForRid:
     def test_returns_events_for_matching_rid(self, tmp_wal: pathlib.Path) -> None:
         records = [
@@ -341,6 +368,239 @@ class TestReplayW5BoundedStartupSubset:
         assert summary.authoritative_mutation_attempted is False
         assert summary.symbol_records[0].unresolved_reasons == [
             expected_reason]
+
+    @pytest.mark.parametrize(
+        ("identity_field", "identity_value"),
+        [
+            ("order_id", "oid-reject-1"),
+            ("orderId", "oid-reject-1"),
+            ("exchange_order_id", "ex-reject-1"),
+            ("exchangeOrderId", "ex-reject-1"),
+            ("client_order_id", "cid-reject-1"),
+            ("clientOrderId", "cid-reject-1"),
+            ("corr_id", "corr-reject-1"),
+            ("corrId", "corr-reject-1"),
+        ],
+    )
+    def test_accepts_order_rejected_with_strong_identity(
+        self,
+        tmp_wal: pathlib.Path,
+        identity_field: str,
+        identity_value: str,
+    ) -> None:
+        record = _valid_order_rejected_record()
+        record["pld"][identity_field] = identity_value
+
+        _write_chained_records(tmp_wal, [record])
+
+        summary = replay.replay_w5_bounded_startup_subset(
+            symbols_considered=["BTCUSDT"],
+        )
+
+        assert summary.records_seen == 1
+        assert summary.records_accepted == 1
+        assert summary.records_duplicate == 0
+        assert summary.records_unresolved == 0
+        assert summary.event_counts == {"EVT:ORDER_REJECTED": 1}
+        assert summary.restore_boundary_separation == "report_only"
+        assert summary.authoritative_mutation_attempted is False
+        assert summary.symbol_records[0].identity_keys == [
+            f"EVT:ORDER_REJECTED|BTCUSDT|reject-rid-1|{identity_field}|{identity_value}"
+        ]
+
+    def test_accepts_order_rejected_with_weak_canonical_identity(self, tmp_wal: pathlib.Path) -> None:
+        record = _valid_order_rejected_record()
+
+        _write_chained_records(tmp_wal, [record])
+
+        summary = replay.replay_w5_bounded_startup_subset(
+            symbols_considered=["BTCUSDT"],
+        )
+
+        assert summary.records_seen == 1
+        assert summary.records_accepted == 1
+        assert summary.records_duplicate == 0
+        assert summary.records_unresolved == 0
+        assert summary.event_counts == {"EVT:ORDER_REJECTED": 1}
+        assert summary.restore_boundary_separation == "report_only"
+        assert summary.authoritative_mutation_attempted is False
+        assert summary.symbol_records[0].identity_keys == [
+            record["pld"]["canonical_identity_key"]
+        ]
+
+    def test_order_rejected_weak_canonical_identity_dedupes(self, tmp_wal: pathlib.Path) -> None:
+        first = _valid_order_rejected_record()
+        second = _valid_order_rejected_record()
+        second["rid"] = "reject-rid-2"
+        second["pld"]["rid"] = "reject-rid-2"
+
+        _write_chained_records(tmp_wal, [first, second])
+
+        summary = replay.replay_w5_bounded_startup_subset(
+            symbols_considered=["BTCUSDT"],
+        )
+
+        assert summary.records_seen == 2
+        assert summary.records_accepted == 1
+        assert summary.records_duplicate == 1
+        assert summary.records_unresolved == 0
+        assert summary.event_counts == {"EVT:ORDER_REJECTED": 1}
+        assert summary.symbol_records[0].identity_keys == [
+            first["pld"]["canonical_identity_key"]
+        ]
+
+    @pytest.mark.parametrize(
+        ("failure_case", "expected_reason"),
+        [
+            (
+                "missing_canonical_identity_key",
+                "EVT:ORDER_REJECTED:missing_identity:canonical_identity_key",
+            ),
+            (
+                "empty_canonical_identity_key",
+                "EVT:ORDER_REJECTED:missing_identity:canonical_identity_key",
+            ),
+            ("missing_rid", "EVT:ORDER_REJECTED:missing_identity:rid"),
+            (
+                "missing_terminal_non_fill",
+                "EVT:ORDER_REJECTED:missing_identity:terminal_non_fill",
+            ),
+            (
+                "false_terminal_non_fill",
+                "EVT:ORDER_REJECTED:missing_identity:terminal_non_fill",
+            ),
+            (
+                "missing_terminal_state_kind",
+                "EVT:ORDER_REJECTED:missing_identity:terminal_state_kind",
+            ),
+            (
+                "wrong_terminal_state_kind",
+                "EVT:ORDER_REJECTED:missing_identity:terminal_state_kind",
+            ),
+            ("missing_event_ts_ms", "EVT:ORDER_REJECTED:missing_identity:event_ts_ms"),
+            (
+                "missing_identity_quality",
+                "EVT:ORDER_REJECTED:missing_identity:identity_quality",
+            ),
+            (
+                "invalid_identity_quality",
+                "EVT:ORDER_REJECTED:missing_identity:identity_quality",
+            ),
+            (
+                "missing_origin_class",
+                "EVT:ORDER_REJECTED:missing_identity:origin_class",
+            ),
+            (
+                "missing_compatibility_aliases_retained",
+                "EVT:ORDER_REJECTED:missing_identity:compatibility_aliases_retained",
+            ),
+            (
+                "false_compatibility_aliases_retained",
+                "EVT:ORDER_REJECTED:missing_identity:compatibility_aliases_retained",
+            ),
+        ],
+    )
+    def test_order_rejected_weak_identity_fails_closed_when_guardrails_are_missing(
+        self,
+        tmp_wal: pathlib.Path,
+        failure_case: str,
+        expected_reason: str,
+    ) -> None:
+        record = _valid_order_rejected_record()
+        payload = record["pld"]
+
+        if failure_case == "missing_canonical_identity_key":
+            payload.pop("canonical_identity_key")
+        elif failure_case == "empty_canonical_identity_key":
+            payload["canonical_identity_key"] = "   "
+        elif failure_case == "missing_rid":
+            record.pop("rid", None)
+            payload.pop("rid", None)
+        elif failure_case == "missing_terminal_non_fill":
+            payload.pop("terminal_non_fill")
+        elif failure_case == "false_terminal_non_fill":
+            payload["terminal_non_fill"] = False
+        elif failure_case == "missing_terminal_state_kind":
+            payload.pop("terminal_state_kind")
+        elif failure_case == "wrong_terminal_state_kind":
+            payload["terminal_state_kind"] = "CANCELED"
+        elif failure_case == "missing_event_ts_ms":
+            payload.pop("event_ts_ms")
+            payload.pop("ts_ms", None)
+            record.pop("ts", None)
+        elif failure_case == "missing_identity_quality":
+            payload.pop("identity_quality")
+        elif failure_case == "invalid_identity_quality":
+            payload["identity_quality"] = "not_valid"
+        elif failure_case == "missing_origin_class":
+            payload.pop("origin_class")
+        elif failure_case == "missing_compatibility_aliases_retained":
+            payload.pop("compatibility_aliases_retained")
+        elif failure_case == "false_compatibility_aliases_retained":
+            payload["compatibility_aliases_retained"] = False
+        else:
+            raise AssertionError(f"Unexpected failure_case: {failure_case}")
+
+        _write_chained_records(tmp_wal, [record])
+
+        summary = replay.replay_w5_bounded_startup_subset(
+            symbols_considered=["BTCUSDT"],
+        )
+
+        assert summary.records_seen == 1
+        assert summary.records_accepted == 0
+        assert summary.records_duplicate == 0
+        assert summary.records_unresolved == 1
+        assert summary.event_counts == {}
+        assert summary.unresolved_reasons == [expected_reason]
+        assert summary.restore_boundary_separation == "report_only"
+        assert summary.authoritative_mutation_attempted is False
+        assert summary.symbol_records[0].unresolved_reasons == [
+            expected_reason]
+
+    def test_order_rejected_has_no_timestamp_only_or_rid_only_fallback(self, tmp_wal: pathlib.Path) -> None:
+        timestamp_only = {
+            "op": "EVT",
+            "verb": "ORDER_REJECTED",
+            "ts": 4000,
+            "pld": {
+                "symbol": "BTCUSDT",
+                "event_ts_ms": 4000,
+            },
+        }
+        rid_only = {
+            "op": "EVT",
+            "verb": "ORDER_REJECTED",
+            "ts": 5000,
+            "rid": "reject-rid-only",
+            "pld": {
+                "symbol": "BTCUSDT",
+                "event_ts_ms": 5000,
+                "rid": "reject-rid-only",
+            },
+        }
+
+        _write_chained_records(tmp_wal, [timestamp_only, rid_only])
+
+        summary = replay.replay_w5_bounded_startup_subset(
+            symbols_considered=["BTCUSDT"],
+        )
+
+        assert summary.records_seen == 2
+        assert summary.records_accepted == 0
+        assert summary.records_duplicate == 0
+        assert summary.records_unresolved == 2
+        assert summary.event_counts == {}
+        assert summary.restore_boundary_separation == "report_only"
+        assert summary.authoritative_mutation_attempted is False
+        assert any(
+            "missing_identity:canonical_identity_key" in reason
+            for reason in summary.unresolved_reasons
+        )
+        assert any(
+            "missing_identity:rid" in reason
+            for reason in summary.unresolved_reasons
+        )
 
     def test_is_idempotent_for_duplicate_identity(self, tmp_wal: pathlib.Path) -> None:
         _write_chained_records(

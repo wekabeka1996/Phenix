@@ -49,6 +49,15 @@ class AdapterInitMixin:
         legacy global trading mode only when that mode is explicitly present.
         Live and hybrid execution modes fail closed on missing credentials.
         """
+        if bool(getattr(self, "no_order_observation_mode", False)):
+            self.shadow_mode = True
+            self.adapter = None
+            LOG.warning(
+                "NO_ORDER_OBSERVATION_MODE_ACTIVE: exchange execution adapter "
+                "initialization is unreachable"
+            )
+            return
+
         from unittest.mock import Mock
         if isinstance(self.config, Mock):
             LOG.info("Adapter initialization skipped for test Mock config.")

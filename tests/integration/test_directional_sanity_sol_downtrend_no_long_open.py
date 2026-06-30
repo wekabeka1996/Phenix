@@ -130,6 +130,7 @@ def test_single_bar_uptick_does_not_hard_block_short_when_veto_requires_two_bars
     dm._emit_trade_intent_rejected = lambda **_k: None
 
     dm.config = MagicMock()
+    dm.config.trading_mode = "live"
     dm.config.domains.decision_making.directional_sanity.enabled = True
     dm.config.domains.decision_making.directional_sanity.min_abs_delta_price = 0.0
     dm.config.domains.decision_making.directional_sanity.min_confidence = 0.0
@@ -137,6 +138,7 @@ def test_single_bar_uptick_does_not_hard_block_short_when_veto_requires_two_bars
     dm.config.domains.decision_making.directional_sanity.consecutive_bars = 1
     dm.config.domains.decision_making.directional_sanity.hard_veto_consecutive_bars = 2
     dm.config.domains.decision_making.price_motion_sanity.enabled = False
+    dm.config.domains.decision_making.low_vol_cost_floor_gate = MagicMock(enabled=False)
 
     dm._propose_trade_intent(
         symbol="ETHUSDT",

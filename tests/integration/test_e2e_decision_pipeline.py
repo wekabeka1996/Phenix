@@ -153,7 +153,10 @@ class TestE2EDecisionPipeline:
         
         # --- Simulate Stage 1: Bar closes ---
         fsm.emit("EVT:BAR_CLOSED", {
+            "ts_ms": 1180000,
+            "tf_sec": 180,
             "symbol": "BTCUSDT",
+            "bar_close_ts": 1180000,
             "bar": {
                 "symbol": "BTCUSDT",
                 "timeframe_sec": 180,
@@ -174,14 +177,16 @@ class TestE2EDecisionPipeline:
             "symbol": "BTCUSDT",
             "tf_sec": 180,
             "ts": 1180000,
-            "features": {"price": "50050", "obi": "0.5"},
-            "warmup": {"full_ready": True},
-        }, why="features_calculated")
-        
-        fsm.emit("CMD:PROCESS_STRATEGY", {
-            "symbol": "BTCUSDT",
-            "tf_sec": 180,
-            "bar_close_ts": 1180000,
+            "features": {
+                "price": "50050",
+                "obi": "0.5",
+                "tfi": "0.0",
+                "delta_price": "50.0",
+                "absorption": "0.0",
+                "liquidity_kappa": "0.5",
+            },
+            "warmup": {"full_ready": True, "ticks_seen": 100, "ready": {}, "reasons": []},
+            "price_motion": {"ret_10s": 0.0, "ret_60s": 0.0, "ret_300s": 0.0},
             "bar": {
                 "symbol": "BTCUSDT",
                 "timeframe_sec": 180,
@@ -194,8 +199,33 @@ class TestE2EDecisionPipeline:
                 "start_ts_ms": 1000000,
                 "end_ts_ms": 1180000,
             },
-            "features": {"price": "50050", "obi": "0.5"},
-            "warmup": {"full_ready": True},
+            "source_mode": "live",
+            "diagnostics": {"fe": {"features_emitted": 1, "cmd_emitted": 1, "cmd_blocked": 0}},
+        }, why="features_calculated")
+        
+        fsm.emit("CMD:PROCESS_STRATEGY", {
+            "symbol": "BTCUSDT",
+            "tf_sec": 180,
+            "bar_close_ts": 1180000,
+            "structural_regime": "UNCERTAIN",
+            "regime": None,
+            "bar": {
+                "symbol": "BTCUSDT",
+                "timeframe_sec": 180,
+                "open": "50000",
+                "high": "50100",
+                "low": "49900",
+                "close": "50050",
+                "volume": "100",
+                "trade_count": 50,
+                "start_ts_ms": 1000000,
+                "end_ts_ms": 1180000,
+            },
+            "features": {"price": "50050", "obi": "0.5", "tfi": "0.0", "absorption": "0.0"},
+            "warmup": {"full_ready": True, "ticks_seen": 100, "ready": {}, "reasons": []},
+            "source_mode": "live",
+            "diagnostics": {"fe": {"features_emitted": 1, "cmd_emitted": 1, "cmd_blocked": 0}},
+            "price_motion": {"ret_10s": 0.0, "ret_60s": 0.0, "ret_300s": 0.0},
         }, why="process_strategy:bar:180s")
         
         # --- Simulate Stage 3: Strategy processes CMD and emits signal ---

@@ -40,7 +40,7 @@ def test_real_artifact_exposes_schema_passport() -> None:
     assert artifact["artifact_version"] == "baseline_logreg_v1"
     assert artifact["feature_columns"]
     assert artifact["feature_names"] == artifact["feature_columns"]
-    assert artifact["threshold"] == 0.835
+    assert artifact["threshold"] == 0.85
     assert artifact["toxic_label"] == 1
     schema_passport = artifact["schema_passport"]
     assert schema_passport["passport_id"] == "neocortex.baseline_model_artifact_schema.v1"

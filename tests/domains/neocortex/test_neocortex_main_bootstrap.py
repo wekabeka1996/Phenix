@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import joblib
 import numpy as np
@@ -115,6 +117,37 @@ def test_event_flow_mock_logs_shadow_decision_without_hard_block(tmp_path: Path)
         ),
     )
 
+    allow_response = SimpleNamespace(
+        action=ControlDecisionAction.ALLOW,
+        shadow_logged=True,
+        model_action=ControlDecisionAction.BLOCK,
+        enforcement_mode="shadow",
+    )
+
+    async def _allow_request(_request, timeout_ms=50):
+        runtime._emit_shadow_decision(
+            SHADOW_DECISION_EVENT,
+            {
+                "decision_id": "decision-bootstrap-001",
+                "action": "BLOCK",
+                "data_quality_flags": {
+                    "model_action": "BLOCK",
+                    "returned_action": "ALLOW",
+                    "shadow_mode_forced_allow": True,
+                },
+                "causal_state_snapshot": {
+                    "neocortex_state": {
+                        "state_vector_dim": len(runtime.config.ingest.feature_list) + 11,
+                    }
+                },
+            },
+            "neocortex_baseline_shadow_decision",
+        )
+        return allow_response
+
+    runtime.authority_bridge.request_authority = AsyncMock(
+        side_effect=_allow_request
+    )
     response = asyncio.run(
         runtime.handle_event_frame(_feature_payload(runtime)))
 

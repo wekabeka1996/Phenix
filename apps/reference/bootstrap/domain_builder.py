@@ -20,12 +20,13 @@ from apps.reference.domains.regime_detector.regime_detector import RegimeDetecto
 from apps.reference.domains.risk_management.risk_management import RiskManagement
 from apps.reference.domains.system_stress.system_stress_overlay import SystemStressOverlay
 from apps.reference.domains.ta_features import TAFeaturesEngine
+from apps.reference.runtime_profile import RuntimeLaunchProfile
 from vfoundation.core import FSMCore
 
 
 @dataclass
 class LiveDomainBundle:
-    account_balance: AccountConnector
+    account_balance: Optional[AccountConnector]
     market_data: Any
     feature_engineering: FeatureEngineering
     risk_management: RiskManagement
@@ -55,8 +56,10 @@ def build_live_domains(
     fsm: FSMCore,
     logger: logging.Logger,
     debug_event_listener: Optional[Callable[[Any], None]] = None,
+    runtime_profile: Optional[RuntimeLaunchProfile] = None,
 ) -> LiveDomainBundle:
     """Compose live domains and return a typed bundle for runtime wiring."""
+    profile = runtime_profile or RuntimeLaunchProfile(name="normal")
     if bool(getattr(config.system, "debug_event_listener_enabled", False)):
         if debug_event_listener is not None:
             for event_name in _DEBUG_EVENTS:
@@ -66,7 +69,13 @@ def build_live_domains(
     else:
         logger.debug("Debug event listener DISABLED in config")
 
-    account_balance = AccountConnector(fsm=fsm, config=config)
+    if profile.no_order_observation:
+        account_balance = None
+        logger.warning(
+            "NO_ORDER_OBSERVATION_MODE_ACTIVE: authenticated account connector omitted"
+        )
+    else:
+        account_balance = AccountConnector(fsm=fsm, config=config)
 
     if config.trading.market_data is None:
         raise ConfigContractError(
@@ -138,7 +147,16 @@ def build_live_domains(
         )
 
     risk_management = RiskManagement(fsm=fsm, config=config)
-    execution_position = ExecPosFSM(config=config, fsm=fsm)
+    if profile.no_order_observation:
+        execution_position = ExecPosFSM(
+            config=config,
+            fsm=fsm,
+            shadow_mode=True,
+            is_live_execution=False,
+            no_order_observation_mode=True,
+        )
+    else:
+        execution_position = ExecPosFSM(config=config, fsm=fsm)
     position_tracking = PositionTracking(fsm=fsm, config=config)
     decision_making = DecisionMaking(fsm=fsm, config=config)
     regime_detector = RegimeDetector(config=config, fsm=fsm)

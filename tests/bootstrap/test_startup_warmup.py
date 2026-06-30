@@ -181,8 +181,8 @@ def test_startup_warmup_report_keeps_restore_and_warmup_separate() -> None:
 
 
 def test_main_starts_regime_detector_before_market_data() -> None:
-    source = Path(
-        "C:/Users/user/Music/Phenix/apps/reference/main.py"
+    source = (
+        Path(__file__).resolve().parents[2] / "apps" / "reference" / "main.py"
     ).read_text(encoding="utf-8")
 
     assert source.index("regime_detector.start()") < source.index(

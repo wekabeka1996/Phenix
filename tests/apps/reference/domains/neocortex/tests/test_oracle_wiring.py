@@ -144,6 +144,12 @@ def _make_neuro_config(reward_mode: str = "pnl", action_dim: int = 3) -> dict:
                 "val_ratio": 0.15,
                 "test_ratio": 0.15,
             },
+            "cutover": {
+                "min_real_executed_rows": 1,
+                "allow_synthetic_fallback": False,
+                "max_non_causal_rows": 0,
+                "require_reward_methodology": True,
+            },
         },
         "evaluation": {
             "report_version": 1,
@@ -209,9 +215,32 @@ def _build_config(
 ) -> NeocortexConfig:
     """Build a minimal NeocortexConfig for testing."""
     kwargs = {
+        "trust_enabled": False,
         "system": _make_system_config(tmp_path),
         "ingest": _make_ingest_config(),
         "neuro": _make_neuro_config(reward_mode, action_dim),
+        "replay": {
+            "enabled": False,
+            "wal_dir": str(tmp_path / "wal"),
+            "poll_interval": 0.1,
+            "feature_missing_timestamp_policy": "fail_closed",
+        },
+        "authority": {
+            "mode": "shadow",
+            "deadline_ms": 10,
+            "fallback_policy": "baseline_yaml",
+            "max_inflight_per_symbol": 1,
+            "modulation_allowlist": ["decision_making.signal_threshold_bias"],
+            "signal_threshold_bias_bounds": [-0.1, 0.1],
+            "cooldown_mult_bounds": [1.0, 3.0],
+        },
+        "evidence_capture": {
+            "mode": "disabled",
+            "collect_observation": False,
+            "collect_authority_request": False,
+            "collect_authority_response": False,
+            "emit_shadow_decision_logged": False,
+        },
     }
     if include_oracle:
         kwargs["oracle"] = _make_oracle_config()

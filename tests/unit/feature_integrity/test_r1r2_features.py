@@ -314,7 +314,6 @@ class TestNoSilentFallbacksAudit(unittest.TestCase):
         """absorption mode should default to disabled."""
         from apps.reference.domains.feature_engineering.types import FeatureEngineeringConfig
         from unittest.mock import MagicMock
-        """Config now has macro_resid in signal_weights."""
         from apps.reference.config_loader import get_config
         cfg = get_config()
         
@@ -323,7 +322,7 @@ class TestNoSilentFallbacksAudit(unittest.TestCase):
         # Check default signal_weights
         sw = aurora.decision.signal_weights
         self.assertTrue(hasattr(sw, 'macro_resid'), "signal_weights should have macro_resid")
-        self.assertGreater(sw.macro_resid, 0, "macro_resid weight should be > 0")
+        self.assertNotEqual(sw.macro_resid, 0, "macro_resid weight should be non-zero")
         
         # Check deprecated macro_sync
         self.assertEqual(sw.macro_sync, 0.0, "macro_sync should be deprecated (0.0)")

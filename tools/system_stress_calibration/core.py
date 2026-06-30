@@ -188,6 +188,45 @@ def _set_path(mapping: Dict[str, Any], path: str, value: Any) -> None:
     cursor[parts[-1]] = value
 
 
+def _sanitize_explicit_null_side_overrides(cfg_dict: Dict[str, Any]) -> None:
+    regime_conf = (
+        cfg_dict.get("strategies", {})
+        .get("aurora", {})
+        .get("safety_gates", {})
+        .get("regime_confidence", {})
+    )
+    for mapping_key in ("max_by_symbol_regime_side", "max_by_regime_side"):
+        side_map = regime_conf.get(mapping_key)
+        if not isinstance(side_map, dict):
+            continue
+        for scope_key, regime_map in list(side_map.items()):
+            if not isinstance(regime_map, dict):
+                continue
+            for regime_key, side_cfg in list(regime_map.items()):
+                if not isinstance(side_cfg, dict):
+                    continue
+                for side in ("BUY", "SELL"):
+                    if side_cfg.get(side) is None:
+                        side_cfg.pop(side, None)
+                if not side_cfg:
+                    regime_map.pop(regime_key, None)
+            if not regime_map:
+                side_map.pop(scope_key, None)
+        if not side_map:
+            regime_conf.pop(mapping_key, None)
+
+
+def _sync_trading_mode(cfg_dict: Dict[str, Any]) -> None:
+    trading = cfg_dict.get("trading")
+    if isinstance(trading, dict) and "trading_mode" in cfg_dict:
+        trading["mode"] = cfg_dict["trading_mode"]
+
+
+def _drop_root_execution_alias(cfg_dict: Dict[str, Any]) -> None:
+    cfg_dict.pop("execution", None)
+    cfg_dict.pop("ops", None)
+
+
 def _coerce_integral_series(series: pd.Series) -> pd.Series:
     numeric = pd.to_numeric(series, errors="coerce")
     rounded = pd.Series(np.rint(numeric), index=series.index, dtype="float64")
@@ -806,6 +845,10 @@ def build_evaluation_config(
 
     for path, value in overlay.items():
         _set_path(cfg_dict, path, value)
+
+    _sanitize_explicit_null_side_overrides(cfg_dict)
+    _drop_root_execution_alias(cfg_dict)
+    _sync_trading_mode(cfg_dict)
 
     from apps.reference.config_models import AuroraConfig as PydanticAuroraConfig
 

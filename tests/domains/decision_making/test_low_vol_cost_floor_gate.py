@@ -389,7 +389,7 @@ def test_missing_selected_source_scale_and_family_fails_closed_for_override() ->
 
 def test_current_config_allows_segment_override_without_new_yaml_fields() -> None:
     cfg = ConfigLoader(CONFIG_DIR).load_config()
-    gate_cfg = cfg.domains.decision_making.low_vol_cost_floor_gate
+    gate_cfg = cfg.domains.decision_making.low_vol_cost_floor_gate.model_copy(update={"enabled": True})
 
     evaluation = _segment_candidate_evaluation(gate_cfg=gate_cfg)
 
@@ -1075,7 +1075,7 @@ def test_strategy_symbol_override_uses_default_map_without_leaking_low_vol_thres
 
 def test_current_config_requires_explicit_live_normalized_confidence_for_aurora() -> None:
     cfg = ConfigLoader(CONFIG_DIR).load_config()
-    gate_cfg = cfg.domains.decision_making.low_vol_cost_floor_gate
+    gate_cfg = cfg.domains.decision_making.low_vol_cost_floor_gate.model_copy(update={"enabled": True})
 
     aurora_xrp = evaluate_low_vol_cost_floor_gate(
         gate_cfg=gate_cfg,

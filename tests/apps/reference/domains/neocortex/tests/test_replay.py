@@ -152,7 +152,10 @@ def test_replayer_disabled():
 
     config = ReplayConfig(
         enabled=False,
-        wal_glob="*.jsonl"
+        wal_glob="*.jsonl",
+        wal_dir="/tmp/neocortex_test/wal",
+        poll_interval=0.1,
+        feature_missing_timestamp_policy="fail_closed",
     )
 
     replayer = WALReplayer(

@@ -205,6 +205,7 @@ class TestSchemaValidation:
             },
             "warmup": {"full_ready": True, "ticks_seen": 100},
             "regime": None,
+            "structural_regime": "UNCERTAIN",
         }
         
         # Should not raise
@@ -241,6 +242,7 @@ class TestSchemaValidation:
             },
             "warmup": {"full_ready": True, "ticks_seen": 5},
             "regime": None,
+            "structural_regime": "UNCERTAIN",
         }
         
         # Should not raise
@@ -271,6 +273,7 @@ class TestSchemaValidation:
             },
             "warmup": {"full_ready": True, "ticks_seen": 100},
             "regime": None,
+            "structural_regime": "UNCERTAIN",
         }
         
         # Should raise because atr_ready is required

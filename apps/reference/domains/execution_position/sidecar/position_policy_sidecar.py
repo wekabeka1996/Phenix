@@ -184,9 +184,12 @@ def _extract_ts_ms(payload: Dict[str, Any], fallback_ms: int) -> int:
         "timestamp_ms",
         "timestamp",
         "positions_last_ts_ms",
+        "ts",
     ):
         value = _coerce_float(payload.get(key))
         if value is not None and value >= 0:
+            if value > 10_000_000_000_000:
+                value = value / 1000.0
             return int(value)
     return int(fallback_ms)
 

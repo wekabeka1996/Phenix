@@ -206,6 +206,7 @@ class VAEConfig(BaseModel):
 
         enabled: bool = Field(
             json_schema_extra={"default_class": "runtime_behavior"},
+            default=False,
             description="Enable auxiliary regime-classification head on latent mean."
         )
         alpha: float = Field(

@@ -32,11 +32,30 @@ LOG = logging.getLogger(
 VERB_STORED = "PENDING_BRACKETS_STORED"
 VERB_CLEARED = "PENDING_BRACKETS_CLEARED"
 PENDING_BRACKETS_WAL_FILENAME = "execution_position_pending_brackets_v1.jsonl"
+SECONDARY_APPEND_FAILURES_FILENAME = "pending_brackets_secondary_append_failures_v1.jsonl"
 _LOCK_RETRY_INTERVAL_S = 0.01
 _LOCK_TIMEOUT_S = 5.0
 _MALFORMED_WAL_REPORT_HINT = (
     "reports/runtime/WAL_MALFORMED_ROW_FORENSIC_HARDENING_REPORT.md"
 )
+
+# ---------------------------------------------------------------------------
+# D4 — Secondary daily append failure counter
+# Counts how many times _append_daily_wal_record has returned False since
+# the module was loaded. Diagnostic only; never blocks trading or startup.
+# ---------------------------------------------------------------------------
+_secondary_daily_append_failures: int = 0
+
+
+def get_secondary_daily_append_failure_count() -> int:
+    """Return the number of secondary daily append failures since module load."""
+    return _secondary_daily_append_failures
+
+
+def _reset_secondary_daily_append_failure_count_for_tests() -> None:
+    """Reset failure counter. For test isolation only — do not call in production code."""
+    global _secondary_daily_append_failures
+    _secondary_daily_append_failures = 0
 
 
 class CriticalStartupError(RuntimeError):
@@ -136,32 +155,102 @@ def _append_pending_brackets_record(record: Dict[str, Any]) -> None:
             os.fsync(handle.fileno())
 
 
-def _append_daily_wal_record(record: Dict[str, Any]) -> None:
-    entry_order_id = ""
+def _append_daily_wal_record(record: Dict[str, Any]) -> bool:
+    """Append record to shared daily WAL (observability mirror).
+
+    Returns:
+        True  — wal.append() returned a hash (success)
+        False — wal.append() returned None or raised an exception (failure)
+
+    Failures are best-effort: they do not raise, do not block the dedicated
+    WAL write, and do not affect trading or startup semantics.  A structured
+    WARNING is emitted and the module-level failure counter is incremented on
+    every failure so that observability tooling can detect silent dead windows.
+    A diagnostic artifact row is written to
+    pending_brackets_secondary_append_failures_v1.jsonl on failure.
+    """
+    global _secondary_daily_append_failures
+
     payload = record.get("pld") if isinstance(record.get("pld"), dict) else {}
-    if isinstance(payload, dict):
-        entry_order_id = str(payload.get("entry_order_id") or "").strip()
+    if not isinstance(payload, dict):
+        payload = {}
+
+    entry_order_id = str(payload.get("entry_order_id") or "").strip()
+    symbol = str(payload.get("symbol") or "").strip()
+    rid = str(record.get("rid") or payload.get("rid") or "").strip()
+    idem_key = str(payload.get("idem_key") or "").strip()
+    reason = str(payload.get("reason") or "").strip()
+    ts_ms = payload.get("ts_ms") or record.get("ts")
+    verb = str(record.get("verb") or "").strip()
 
     daily_record = dict(record)
     daily_record["dst"] = "observability"
 
+    wal_append_result = "none"
+    exc_type = ""
+    exc_msg = ""
+
     try:
         appended_hash = wal.append(daily_record)
     except Exception as exc:
-        LOG.warning(
-            "[WAL] secondary daily append failed verb=%s entry_order_id=%s error=%s",
-            daily_record.get("verb"),
-            entry_order_id,
-            exc,
-        )
-        return
+        wal_append_result = "exception"
+        exc_type = type(exc).__name__
+        exc_msg = str(exc)
+        appended_hash = None
 
-    if not appended_hash:
+    if appended_hash:
+        return True
+
+    # -----------------------------------------------------------------------
+    # Failure path — enrich log, increment counter, write diagnostic artifact
+    # -----------------------------------------------------------------------
+    _secondary_daily_append_failures += 1
+
+    if wal_append_result == "exception":
         LOG.warning(
-            "[WAL] secondary daily append returned no hash verb=%s entry_order_id=%s",
-            daily_record.get("verb"),
-            entry_order_id,
+            "[WAL] pending_brackets_secondary_daily_append_failed "
+            "verb=%s symbol=%s entry_order_id=%s rid=%s idem_key=%s "
+            "reason=%s ts_ms=%s exception_type=%s exception=%s",
+            verb, symbol, entry_order_id, rid, idem_key or None,
+            reason or None, ts_ms, exc_type, exc_msg,
         )
+    else:
+        LOG.warning(
+            "[WAL] pending_brackets_secondary_daily_append_failed "
+            "verb=%s symbol=%s entry_order_id=%s rid=%s idem_key=%s "
+            "reason=%s ts_ms=%s failure_reason=no_hash_returned",
+            verb, symbol, entry_order_id, rid, idem_key or None,
+            reason or None, ts_ms,
+        )
+
+    # Best-effort diagnostic artifact — must never raise into trading path
+    try:
+        from vfoundation.config import config as _cfg
+        diag_path = _cfg.wal_dir / SECONDARY_APPEND_FAILURES_FILENAME
+        diag_record: Dict[str, Any] = {
+            "ts_ms": int(ts_ms) if ts_ms is not None else int(time.time() * 1000),
+            "verb": verb,
+            "symbol": symbol,
+            "entry_order_id": entry_order_id,
+            "rid": rid,
+            "idem_key": idem_key or None,
+            "reason": reason or None,
+            "wal_append_result": wal_append_result,
+            "exception_type": exc_type or None,
+            "exception_message": exc_msg or None,
+            "source_component": "execution_position.pending_brackets_wal",
+            "authority": "diagnostic_only",
+        }
+        with diag_path.open("a", encoding="utf-8") as _dh:
+            _dh.write(json.dumps(diag_record, ensure_ascii=False) + "\n")
+            _dh.flush()
+    except Exception as _diag_exc:  # noqa: BLE001
+        LOG.debug(
+            "[WAL] secondary append diagnostic artifact write failed (non-critical): %s",
+            _diag_exc,
+        )
+
+    return False
 
 
 def _pending_brackets_replay_key(record: Dict[str, Any]) -> Optional[tuple[Any, ...]]:

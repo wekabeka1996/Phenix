@@ -23,18 +23,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Stub vfoundation before any aurora imports
-for _mod in (
-    "vfoundation",
-    "vfoundation.core",
-    "vfoundation.core.protocol",
-    "vfoundation.dr",
-    "vfoundation.dr.wal",
-    "vfoundation.obs",
-    "vfoundation.obs.domain_bridge",
-):
-    sys.modules.setdefault(_mod, MagicMock())
-
 
 # ---------------------------------------------------------------------------
 # Helpers

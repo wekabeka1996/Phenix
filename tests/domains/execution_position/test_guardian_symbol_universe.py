@@ -147,7 +147,7 @@ def test_collect_guardian_symbols_current_repo_uses_active_strategy_universe() -
 
     assert symbols == set(config.trading.symbols_to_track)
     assert symbols
-    assert "DOGEUSDT" not in symbols
+    assert "DOGEUSDT" in symbols
     assert "DOGEUSDT" in config.instruments
 
 

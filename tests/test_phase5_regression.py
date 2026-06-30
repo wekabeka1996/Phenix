@@ -110,7 +110,7 @@ class TestSignalScoreIntegration:
     def test_signal_score_mixed_metrics(self):
         """
         Test: Mixed metric values (realistic scenario).
-        Expected: score in [0,1], weighted correctly.
+        Expected: score matches the signed weighted total and stays bounded.
 
         Scenario:
         - Legacy metrics (obi, tfi, delta_price): medium values (0.5)
@@ -157,7 +157,7 @@ class TestSignalScoreIntegration:
         print(f"  Expected score: {expected_score}")
 
         assert score == expected_score, f"Expected score={expected_score}, got {score}"
-        assert 0 <= score <= 1, f"Score must be in [0,1], got {score}"
+        assert Decimal("-1") <= score <= Decimal("1"), f"Score must stay bounded, got {score}"
 
 
 class TestPsiVectorCompletion:

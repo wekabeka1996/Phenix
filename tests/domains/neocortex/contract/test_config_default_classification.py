@@ -46,7 +46,7 @@ ALLOWED_DEFAULTS: dict[type, set[str]] = {
     EvaluationConfig: {"report_version"},
     ShadowGateConfig: {"gate_set_version"},
     VAEConfig: {"regime_aux"},
-    VAEConfig.RegimeAuxConfig: {"alpha", "num_classes", "ema_decay", "alpha_schedule"},
+    VAEConfig.RegimeAuxConfig: {"enabled", "alpha", "num_classes", "ema_decay", "alpha_schedule"},
     PPOConfig: {"entropy_schedule"},
     OracleConfig: {"reward_matrix"},
     ReplayConfig: {

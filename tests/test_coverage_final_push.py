@@ -34,8 +34,8 @@ def test_config_wal_dir_default() -> None:
     import os
     from vfoundation.config import config
 
-    # Should use default (may be Path object)
-    assert str(config.wal_dir) == "ops/wal" or str(config.wal_dir) == "ops\\wal"
+    # Should resolve to the WAL directory regardless of the active cwd.
+    assert pathlib.Path(config.wal_dir).name == "wal"
 
 
 def test_idempotency_store_simple() -> None:

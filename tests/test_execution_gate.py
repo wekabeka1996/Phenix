@@ -20,6 +20,7 @@ class TestExecutionGate(unittest.TestCase):
             ],
             structural_gate=StructuralGateConfig(
                 min_risk_reward=1.5,
+                max_risk_reward=3.0,
                 enabled=True,
             )
         )

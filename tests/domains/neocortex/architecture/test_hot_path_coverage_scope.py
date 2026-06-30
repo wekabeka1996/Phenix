@@ -32,6 +32,7 @@ EXPECTED_MYPY_TARGET_FILES = sorted(
         "apps/reference/domains/neocortex/logic/ingest/parsers/core_parser.py",
         "apps/reference/domains/neocortex/logic/ingest/parsers/feature_parser.py",
         "apps/reference/domains/neocortex/logic/ingest/parsers/order_parser.py",
+        "apps/reference/domains/neocortex/logic/ingest/parsers/wallclock.py",
         "apps/reference/domains/neocortex/logic/brain/baseline_inference.py",
         "apps/reference/domains/neocortex/transport/authority_bridge.py",
     ]
@@ -58,6 +59,7 @@ EXPECTED_COVERAGE_TARGET_MODULES = sorted(
         "apps.reference.domains.neocortex.logic.ingest.parsers.core_parser",
         "apps.reference.domains.neocortex.logic.ingest.parsers.feature_parser",
         "apps.reference.domains.neocortex.logic.ingest.parsers.order_parser",
+        "apps.reference.domains.neocortex.logic.ingest.parsers.wallclock",
         "apps.reference.domains.neocortex.logic.brain.baseline_inference",
         "apps.reference.domains.neocortex.transport.authority_bridge",
     ]

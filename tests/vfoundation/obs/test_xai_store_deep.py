@@ -3,6 +3,7 @@ from vfoundation.obs.xai_store import append_why, xai_store, XAIRecord
 
 def test_record_xai_step_coverage():
     """Test append_why to cover missing lines in xai_store.py."""
+    xai_store.clear()
     rid = "test_rid_123"
     verb = "DEC:OPEN"
     why = "Signal threshold exceeded"
@@ -30,6 +31,7 @@ def test_record_xai_step_coverage():
     
 def test_xai_store_clear():
     """Test clearing the store."""
+    xai_store.clear()
     append_why("clear_me", "V", "W")
     assert len(xai_store.get("clear_me")) == 1
     xai_store.clear()

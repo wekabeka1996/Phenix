@@ -70,9 +70,9 @@ decision_making:
     hard_veto_consecutive_bars_by_regime: {}
     consecutive_bars: 1
     nrr026_enabled: true
-    nrr027_enabled: true
+    nrr027_enabled: false
   low_vol_cost_floor_gate:
-    enabled: true
+    enabled: false
     decision_chain_enabled: false
     enforce_in_modes:
     - testnet
@@ -154,6 +154,9 @@ decision_making:
     bleed_threshold_norm: 0.5
     require_bleed_ready: true
     pm_norm_clip_abs: 10.0
+    nrr028_enabled: true
+    nrr029_enabled: false
+    nrr030_enabled: false
   flip:
     enabled: false
   regime_loss_embargo:
@@ -235,6 +238,20 @@ decision_making:
           unknown: 0.0
           disagree: 0.0
           no_experts: 0.0
+  trade_flow_gate:
+    enabled: true
+    sensitive_strategies:
+    - aurora
+    block_states:
+    - degraded
+    - stale
+    missing_state_behavior: observe_only
+    unknown_state_behavior: observe_only
+    apply_to:
+    - ENTRY
+    preserve:
+    - FULL_CLOSE
+    - PARTIAL_CLOSE
   neocortex_enforcement_mode: shadow
   fail_closed_on_degraded_context: false
   degraded_context_critical_keys: []
@@ -619,7 +636,7 @@ execution_position:
     mode: enable
     freshness:
       portfolio_max_age_ms: 60000
-      features_max_age_ms: 15000
+      features_max_age_ms: 195000
       regime_max_age_ms: 30000
       order_state_max_age_ms: 15000
     startup_grace:

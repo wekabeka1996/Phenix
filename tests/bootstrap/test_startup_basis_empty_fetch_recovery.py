@@ -26,6 +26,12 @@ from apps.reference.domains.market_data.bar_aggregator import BarAggregator
 from apps.reference.domains.strategies.plugins.aurora_builtin import (
     AuroraBuiltinPlugin,
 )
+from apps.reference.domains.strategies.plugins.alpha_mr_s01 import (
+    AlphaMrS01Plugin,
+)
+from apps.reference.domains.strategies.plugins.alpha_ta_ensemble import (
+    AlphaTaEnsemblePlugin,
+)
 from apps.reference.domains.strategies.plugins.md_amr import MDAMRPlugin
 from apps.reference.domains.strategies.plugins.mean_reversion import (
     MeanReversionPlugin,
@@ -111,6 +117,8 @@ def _load_live_config():
 def _build_started_handlers(config, bus: _Bus):
     plugins = StrategyPluginRegistry()
     plugins.register(AuroraBuiltinPlugin())
+    plugins.register(AlphaMrS01Plugin())
+    plugins.register(AlphaTaEnsemblePlugin())
     plugins.register(MeanReversionPlugin())
     plugins.register(MDAMRPlugin())
     return StrategyRuntime(fsm=bus, config=config, registry=plugins).start()

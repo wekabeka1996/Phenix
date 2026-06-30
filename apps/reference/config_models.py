@@ -144,6 +144,7 @@ from apps.reference.config.domains.decision_making import (
     SafetyGatesConfig,
     ScoringEngineConfig,
     StructuralGateConfig,
+    TradeFlowGateConfig,
     VolAdjGatesConfig,
     WarmupEnforcementConfig,
 )
@@ -1172,6 +1173,31 @@ class TradingRiskManagementConfig(BaseModel):
 
 # SCORCHED-EARTH-2026-01-27: LegacyLoggingConfig DELETED (zombie code, observability.yaml is SSOT)
 
+class PublicExchangeInfoConfig(BaseModel):
+    """Credential-free public metadata source for Agent Bridge readiness."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = False
+    environment: Literal["live", "testnet"] = "testnet"
+    endpoint: str = "https://testnet.binancefuture.com/fapi/v1/exchangeInfo"
+    ttl_sec: int = Field(default=900, ge=1, le=86400)
+    retry_sec: int = Field(default=60, ge=1, le=3600)
+    timeout_sec: float = Field(default=10.0, gt=0, le=30)
+    max_response_bytes: int = Field(default=2 * 1024 * 1024, ge=1024, le=4 * 1024 * 1024)
+    max_cache_bytes: int = Field(default=64 * 1024, ge=1024, le=256 * 1024)
+    max_symbols: int = Field(default=12, ge=1, le=12)
+
+    @model_validator(mode='after')
+    def _endpoint_is_exact_public_allowlist(self) -> "PublicExchangeInfoConfig":
+        allowed = {
+            "live": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+            "testnet": "https://testnet.binancefuture.com/fapi/v1/exchangeInfo",
+        }
+        if self.endpoint != allowed[self.environment]:
+            raise ValueError("public exchange-info endpoint must exactly match its environment allowlist")
+        return self
+
+
 class SystemConfig(BaseModel):
     """System configuration (framework-level)."""
     model_config = ConfigDict(extra='forbid')
@@ -1192,6 +1218,10 @@ class SystemConfig(BaseModel):
             "Enable debug event listener (EVT:MARKET_TICK_RECEIVED, EVT:FEATURES_CALCULATED, EVT:TICK_FEATURES_CALCULATED, etc.). "
             "DEV ONLY: do not enable in production (high-frequency logging)."
         ),
+    )
+    public_exchange_info: PublicExchangeInfoConfig = Field(
+        default_factory=PublicExchangeInfoConfig,
+        description="Optional credential-free public exchange metadata cache.",
     )
 
 

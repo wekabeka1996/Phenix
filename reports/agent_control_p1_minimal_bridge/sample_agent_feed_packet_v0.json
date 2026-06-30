@@ -1,0 +1,145 @@
+{
+  "schema_version": "agent-feed/v0",
+  "packet_id": "afp_sanitized_sample_v0",
+  "produced_ts_ms": 1782639172405,
+  "read_only": true,
+  "symbols": ["BTCUSDT"],
+  "global_market": {
+    "meta": {
+      "source_ts_ms": 1782639171160,
+      "produced_ts_ms": 1782639172405,
+      "freshness": "fresh",
+      "source_refs": ["aurora://portfolio/latest#bounded-tail"],
+      "missing_fields": ["market_snapshots"],
+      "diagnostics": ["bounded_tail:max_bytes=524288:max_lines=200"]
+    },
+    "symbols_requested": ["BTCUSDT"],
+    "symbols_available": [],
+    "equity_usd": 3110.97837065,
+    "available_balance_usd": 3110.97837065,
+    "open_positions_usd": 8890.06,
+    "unrealized_pnl_usd": 0.0,
+    "realized_pnl_usd": -444.50284,
+    "active_position_count": 1
+  },
+  "symbol_markets": [
+    {
+      "meta": {
+        "source_ts_ms": 1782514199999,
+        "produced_ts_ms": 1782639172405,
+        "freshness": "stale",
+        "source_refs": ["aurora://shadow-snapshot/BTCUSDT/300/latest", "aurora://decision-ledger/recent#bounded-tail"],
+        "missing_fields": ["close_price"],
+        "diagnostics": ["snapshot_missing"]
+      },
+      "symbol": "BTCUSDT",
+      "tf_sec": 300,
+      "regime": "MEAN_REVERSION",
+      "regime_confidence": 0.2626205486,
+      "decision_score": 0.9019252677
+    }
+  ],
+  "feature_signals": [
+    {
+      "meta": {
+        "produced_ts_ms": 1782639172405,
+        "freshness": "missing",
+        "source_refs": ["aurora://shadow-snapshot/BTCUSDT/300/latest"],
+        "missing_fields": ["momentum", "volatility", "trend_strength", "order_flow_imbalance", "liquidity_score"],
+        "diagnostics": ["snapshot_missing"]
+      },
+      "symbol": "BTCUSDT",
+      "signal_side": "SELL"
+    }
+  ],
+  "position_life": {
+    "meta": {
+      "source_ts_ms": 1782639171160,
+      "produced_ts_ms": 1782639172405,
+      "freshness": "fresh",
+      "source_refs": ["aurora://portfolio/latest#bounded-tail"],
+      "missing_fields": [],
+      "diagnostics": ["bounded_portfolio_fallback"]
+    },
+    "positions": [
+      {
+        "symbol": "BNBUSDT",
+        "side": "SHORT",
+        "state": "portfolio_truth",
+        "qty": "-15.94",
+        "entry_price": "557.72",
+        "mark_price": "556.83",
+        "unrealized_pnl": "14.18",
+        "bracket_status": "unknown"
+      }
+    ],
+    "lifecycle_reconciliation_available": false
+  },
+  "business_warnings": {
+    "meta": {
+      "source_ts_ms": 1782639006928,
+      "produced_ts_ms": 1782639172405,
+      "freshness": "fresh",
+      "source_refs": ["aurora://order-log/recent#bounded-tail"],
+      "missing_fields": [],
+      "diagnostics": ["advisory_only:not_enforced"]
+    },
+    "policy": "advisory_only",
+    "warnings": [
+      {
+        "code": "REGIME_GATE_BLOCKED",
+        "disposition": "would_block",
+        "symbol": "BTCUSDT",
+        "message": "regime not allowlisted",
+        "source_ref": "aurora://order-log/recent#bounded-tail",
+        "source_ts_ms": 1782639006928
+      },
+      {
+        "code": "READINESS_DATA_MISSING",
+        "disposition": "warning",
+        "symbol": "BTCUSDT",
+        "message": "No safe current market snapshot was available in the bounded source window.",
+        "source_ref": "aurora://shadow-snapshot/BTCUSDT/latest"
+      }
+    ]
+  },
+  "execution_body": {
+    "meta": {
+      "source_ts_ms": 1782604200359,
+      "produced_ts_ms": 1782639172405,
+      "freshness": "stale",
+      "source_refs": ["aurora://execution-position/runtime", "aurora://decision-ledger/recent#bounded-tail"],
+      "missing_fields": ["runtime_execution_position"],
+      "diagnostics": ["mechanical_invariants_are_not_business_gates"]
+    },
+    "execution_available": false,
+    "invariants": [
+      {"name": "testnet_only_or_mode", "status": "unknown", "detail": "Runtime mode was not safely exposed."},
+      {"name": "exchange_filter_readiness", "status": "unknown", "detail": "No bounded read-only readiness surface was available."},
+      {"name": "precision_minimum_constraints", "status": "unknown", "detail": "Constraints remain execution-owned and were not re-derived."},
+      {"name": "reduce_only_close_protect", "status": "unknown", "detail": "Invariant remains execution-owned; this bridge cannot alter it."},
+      {"name": "duplicate_idempotency_protection", "status": "unknown", "detail": "Execution runtime unavailable."},
+      {"name": "lifecycle_reconciliation", "status": "degraded", "detail": "Portfolio fallback has no lifecycle reconciliation."},
+      {"name": "bracket_ownership", "status": "unknown", "detail": "Bracket owner surface unavailable."},
+      {"name": "trace_correlation_identity", "status": "ready", "detail": "Recent opaque decision identity available."},
+      {"name": "secret_isolation", "status": "unknown", "detail": "Secrets were intentionally not read by this bridge."}
+    ],
+    "trace_ref": "aurora://decision-ledger/recent#trace"
+  },
+  "budget": {
+    "estimated_tokens": 1105,
+    "payload_bytes": 4420,
+    "max_tokens_requested": 4400,
+    "truncated": false,
+    "omitted_sections": []
+  },
+  "oldest_source_age_ms": 34972046,
+  "freshness_summary": {"fresh": 3, "stale": 2, "missing": 1, "unknown": 0},
+  "raw_refs": [
+    "aurora://shadow-snapshot/BTCUSDT/300/latest",
+    "aurora://decision-ledger/recent#bounded-tail",
+    "aurora://portfolio/latest#bounded-tail",
+    "aurora://order-log/recent#bounded-tail"
+  ],
+  "diagnostics": ["sanitized_runtime_sample", "bounded_tail_only"]
+}

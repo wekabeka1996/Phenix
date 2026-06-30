@@ -14,6 +14,45 @@ class _DummyFsm:
         return
 
 
+def _sanitize_explicit_null_side_overrides(cfg_dict: dict) -> None:
+    regime_conf = (
+        cfg_dict.get("strategies", {})
+        .get("aurora", {})
+        .get("safety_gates", {})
+        .get("regime_confidence", {})
+    )
+    for mapping_key in ("max_by_symbol_regime_side", "max_by_regime_side"):
+        side_map = regime_conf.get(mapping_key)
+        if not isinstance(side_map, dict):
+            continue
+        for scope_key, regime_map in list(side_map.items()):
+            if not isinstance(regime_map, dict):
+                continue
+            for regime_key, side_cfg in list(regime_map.items()):
+                if not isinstance(side_cfg, dict):
+                    continue
+                for side in ("BUY", "SELL"):
+                    if side_cfg.get(side) is None:
+                        side_cfg.pop(side, None)
+                if not side_cfg:
+                    regime_map.pop(regime_key, None)
+            if not regime_map:
+                side_map.pop(scope_key, None)
+        if not side_map:
+            regime_conf.pop(mapping_key, None)
+
+
+def _drop_root_execution_alias(cfg_dict: dict) -> None:
+    cfg_dict.pop("execution", None)
+    cfg_dict.pop("ops", None)
+
+
+def _sync_trading_mode(cfg_dict: dict) -> None:
+    trading = cfg_dict.get("trading")
+    if isinstance(trading, dict) and "trading_mode" in cfg_dict:
+        trading["mode"] = cfg_dict["trading_mode"]
+
+
 def test_regime_strict_config_rejects_dict():
     from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
 
@@ -29,6 +68,9 @@ def test_regime_missing_models_raises_config_contract_error():
     base = get_config()
     cfg_dict = base.to_dict()
     cfg_dict["models"] = None
+    _sanitize_explicit_null_side_overrides(cfg_dict)
+    _drop_root_execution_alias(cfg_dict)
+    _sync_trading_mode(cfg_dict)
     cfg = AuroraConfig(**cfg_dict)
 
     with pytest.raises(ConfigContractError):
@@ -52,6 +94,9 @@ def test_atr_requires_ohlc_or_explicit_opt_in(monkeypatch):
     base = get_config()
     cfg_dict = base.to_dict()
     cfg_dict["models"]["volatility"]["allow_close_to_close_atr"] = False
+    _sanitize_explicit_null_side_overrides(cfg_dict)
+    _drop_root_execution_alias(cfg_dict)
+    _sync_trading_mode(cfg_dict)
     cfg = AuroraConfig(**cfg_dict)
 
     fsm = _DummyFsm()

@@ -514,10 +514,23 @@ class CloseExecutor:
             if exchange_code is not None:
                 metadata["exchange_code"] = exchange_code
 
+        attribution = dict(
+            getattr(self._fsm, "_open_attribution_by_symbol", {}).get(
+                str(submission.symbol or "").strip().upper(), {}
+            )
+            or {}
+        )
         payload: dict[str, Any] = {
             "rid": rid,
             "event_type": event_type,
             "symbol": submission.symbol,
+            "strategy_id": attribution.get("strategy_id"),
+            "decision_id": attribution.get("decision_id"),
+            "intent_id": attribution.get("intent_id"),
+            "entry_rid": attribution.get("entry_rid"),
+            "regime": attribution.get("regime"),
+            "regime_confidence": attribution.get("regime_confidence"),
+            "regime_provenance": attribution.get("regime_provenance"),
             "side": submission.side,
             "quantity": float(submission.quantity),
             "client_order_id": submission.client_order_id,

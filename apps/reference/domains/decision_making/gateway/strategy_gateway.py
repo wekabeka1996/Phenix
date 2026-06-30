@@ -58,7 +58,7 @@ from apps.reference.domains.decision_making.gateway.chain import GateChain
 from apps.reference.domains.decision_making.gates import (
     risk_gate, risk_skew_gate, flip_gate, qos_gate,
     exposure_gate, ttl_gate, warmup_gate, safety_gate,
-    arbitration_gate,
+    arbitration_gate, trade_flow_gate,
 )
 from apps.reference.domains.neocortex.contracts.control_decision import (
     AuthorityMode,
@@ -1948,7 +1948,7 @@ class StrategyGateway:
                 why_chain=why_chain if isinstance(why_chain, list) else [],
                 ts_ms=pld["ts_ms"],
                 tf_sec=tf_sec,
-                is_reduce_path=False,
+                is_reduce_path=is_reduce_path,
             )
             chain = GateChain([
                 arbitration_gate.check,
@@ -1960,6 +1960,7 @@ class StrategyGateway:
                 exposure_gate.check,
                 ttl_gate.check,
                 warmup_gate.check,
+                trade_flow_gate.check,
                 safety_gate.check,
             ])
             chain_result = chain.run(gate_ctx)

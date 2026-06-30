@@ -229,12 +229,14 @@ class TestIntentBuilderDstRouting:
         assert call_order == [
             "arb_commit_False",
             "decision_trace_emit",
-            "accepted:BTCUSDT",
             "wal_append",
             "intent_emit",
+            "wal_append",
         ]
         assert arb_fn.call_count == 1
-        _side_effect_sinks.assert_not_called()
+        assert "accepted:BTCUSDT" not in call_order
+        _side_effect_sinks.assert_called_once()
+        assert _side_effect_sinks.call_args[0][0]["reason_code"] == "INTENT_EVENT_EMIT_FAILED"
 
     @patch("apps.reference.domains.decision_making.intent.builder.wal.append")
     @patch("apps.reference.domains.decision_making.intent.builder.IntentBuilder._resolve_order_policy")

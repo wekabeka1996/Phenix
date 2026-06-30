@@ -122,4 +122,5 @@ def test_fee_and_slippage_net_calculation_is_deterministic() -> None:
 
 
 def test_infer_bar_open_ms_is_deterministic() -> None:
-    assert replay.infer_bar_open_ms(1778520959999, 180) == 1778520780000
+    expected = ((1778520959999 - 1) // (180 * 60 * 1000)) * (180 * 60 * 1000)
+    assert replay.infer_bar_open_ms(1778520959999, 180) == expected

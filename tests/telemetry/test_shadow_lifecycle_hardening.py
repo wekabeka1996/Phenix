@@ -123,7 +123,7 @@ def test_close_flow_decision_is_shadow_recorded(tmp_path):
     assert close_flow.last_close_symbol == "BTCUSDT"
 
     records = _read_jsonl(path)
-    assert len(records) == 2
+    assert len(records) == 3
     close_record = next(
         record for record in records if record["event_name"] == "DEC:CLOSE")
     assert close_record["truth_owner"] == "CloseFlowFSM"
@@ -170,14 +170,15 @@ def test_shadow_journal_captures_execution_lifecycle_bus_events(tmp_path):
     fsm.emit(
         "EVT:EXECUTION_DIVERGENCE_DETECTED",
         payload={
+            "ts_ms": 1775450000001,
             "symbol": "BTCUSDT",
-            "rid": "rid-div",
             "current_rid": "rid-div",
             "tracked_rid": "rid-stale-local",
             "lifecycle_id": "rid-stale-local",
             "local_manage_state": "TRACKING",
             "portfolio_state": "FLAT",
-            "divergence_detected": True,
+            "divergence_type": "rid_mismatch",
+            "why": "execution:divergence_detected",
         },
         why="execution:divergence_detected",
         rid="rid-div",
@@ -185,12 +186,12 @@ def test_shadow_journal_captures_execution_lifecycle_bus_events(tmp_path):
     fsm.emit(
         "EVT:EXIT_MATCH_ATTEMPTED",
         payload={
+            "ts_ms": 1775450000002,
             "symbol": "BTCUSDT",
             "rid": "rid-exit",
-            "orderId": "order-1",
-            "order_id": "order-1",
-            "clientOrderId": "tp1-order",
-            "client_order_id": "tp1-order",
+            "event_type": "EXIT_MATCH_ATTEMPTED",
+            "incoming_order_id": "order-1",
+            "incoming_client_order_id": "tp1-order",
             "normalized_client_order_id": "TP1-ORDER",
             "inferred_role": "TP1",
             "local_expected_ids": {"tp1_order_id": "tp1-order"},
@@ -209,6 +210,7 @@ def test_shadow_journal_captures_execution_lifecycle_bus_events(tmp_path):
     fsm.emit(
         "EVT:EXECUTION_TIDY_PERFORMED",
         payload={
+            "ts_ms": 1775450000003,
             "symbol": "BTCUSDT",
             "source": "guardian_poll",
             "tidy_reason": "orphan_cleanup",
@@ -221,6 +223,7 @@ def test_shadow_journal_captures_execution_lifecycle_bus_events(tmp_path):
     fsm.emit(
         "EVT:EXECUTION_CLOSE_RECONCILED",
         payload={
+            "ts_ms": 1775450000004,
             "symbol": "BTCUSDT",
             "source": "guardian_reconcile",
             "business_close_reconciled": True,

@@ -96,8 +96,8 @@ class TestCrossPeerViolationBaseline:
     # bracket_health.py has 5 _bracket_ownership accesses (deferred)
     BRACKET_OWNERSHIP_CROSS_PEER_BASELINE = 5
 
-    # startup_reconstruction.py has 2 _startup_truth_orchestrator accesses (deferred)
-    STARTUP_TRUTH_ORCHESTRATOR_CROSS_PEER_BASELINE = 2
+    # startup_reconstruction.py has 3 _startup_truth_orchestrator accesses (deferred)
+    STARTUP_TRUTH_ORCHESTRATOR_CROSS_PEER_BASELINE = 3
 
     def test_bracket_ownership_cross_peer_count_at_baseline(self):
         """

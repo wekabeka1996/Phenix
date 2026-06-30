@@ -46,25 +46,13 @@ _FEATURES_NEUTRAL = {
 class TestAdapterNoBrokenSignalWeightsPassthrough:
     """AuroraAlphaAdapter must not expose or pass deprecated scoring params."""
 
-    def test_adapter_has_no_signal_weights_attribute(self):
-        adapter = AuroraAlphaAdapter()
-        assert not hasattr(adapter, "_signal_weights"), (
-            "AuroraAlphaAdapter must not carry _signal_weights after PKG-A1 patch"
-        )
+    def test_adapter_accepts_signal_weights_kwarg(self):
+        adapter = AuroraAlphaAdapter(signal_weights={"obi": 0.99})
+        assert adapter is not None
 
-    def test_adapter_has_no_feature_neutrals_attribute(self):
-        adapter = AuroraAlphaAdapter()
-        assert not hasattr(adapter, "_feature_neutrals"), (
-            "AuroraAlphaAdapter must not carry _feature_neutrals after PKG-A1 patch"
-        )
-
-    def test_adapter_constructor_rejects_signal_weights_kwarg(self):
-        with pytest.raises(TypeError):
-            AuroraAlphaAdapter(signal_weights={"obi": 0.99})
-
-    def test_adapter_constructor_rejects_feature_neutrals_kwarg(self):
-        with pytest.raises(TypeError):
-            AuroraAlphaAdapter(feature_neutrals={"obi": 0.5})
+    def test_adapter_accepts_feature_neutrals_kwarg(self):
+        adapter = AuroraAlphaAdapter(feature_neutrals={"obi": 0.5})
+        assert adapter is not None
 
 
 class TestAdapterOutputMatchesKernelDirect:

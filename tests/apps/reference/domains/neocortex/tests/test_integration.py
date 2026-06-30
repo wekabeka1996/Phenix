@@ -12,7 +12,7 @@ import asyncio
 import numpy as np
 from unittest.mock import MagicMock, AsyncMock
 
-from apps.reference.domains.neocortex.config_models import NeocortexConfig, IngestConfig, SystemConfig, NeuroConfig, VAEConfig, PPOConfig, WorldModelConfig
+from apps.reference.domains.neocortex.config_models import NeocortexConfig, IngestConfig, SystemConfig, NeuroConfig, VAEConfig, PPOConfig, WorldModelConfig, ReplayConfig
 from apps.reference.domains.neocortex.logic.ingest.parser import FeatureParser
 from apps.reference.domains.neocortex.logic.ingest.observation import MarketObservation
 from apps.reference.domains.neocortex.logic.amygdala.valuation import ValuationEngine
@@ -28,6 +28,7 @@ from apps.reference.domains.neocortex.transport.adapter import NeocortexAdapter
 def full_config():
     """Complete valid configuration."""
     return NeocortexConfig(
+        trust_enabled=False,
         system=SystemConfig(
             data_dir="/tmp/neocortex_test",
             checkpoint_dir="/tmp/neocortex_test/checkpoints",
@@ -104,6 +105,12 @@ def full_config():
                     "val_ratio": 0.15,
                     "test_ratio": 0.15,
                 },
+                "cutover": {
+                    "min_real_executed_rows": 1,
+                    "allow_synthetic_fallback": False,
+                    "max_non_causal_rows": 0,
+                    "require_reward_methodology": True,
+                },
             },
             evaluation={
                 "report_version": 1,
@@ -135,7 +142,29 @@ def full_config():
             checkpoint_every_n_steps=100,
             keep_last_n_checkpoints=1,
             dream_episode_threshold=1,
-        )
+        ),
+        replay=ReplayConfig(
+            enabled=False,
+            wal_dir="/tmp/neocortex_test/wal",
+            poll_interval=0.1,
+            feature_missing_timestamp_policy="fail_closed",
+        ),
+        authority={
+            "mode": "shadow",
+            "deadline_ms": 10,
+            "fallback_policy": "baseline_yaml",
+            "max_inflight_per_symbol": 1,
+            "modulation_allowlist": ["decision_making.signal_threshold_bias"],
+            "signal_threshold_bias_bounds": [-0.1, 0.1],
+            "cooldown_mult_bounds": [1.0, 3.0],
+        },
+        evidence_capture={
+            "mode": "disabled",
+            "collect_observation": False,
+            "collect_authority_request": False,
+            "collect_authority_response": False,
+            "emit_shadow_decision_logged": False,
+        },
     )
 
 
@@ -289,6 +318,7 @@ def test_mock_bridge_training():
 
     # Create minimal config
     config = NeocortexConfig(
+        trust_enabled=False,
         system=SystemConfig(
             data_dir="/tmp/test",
             checkpoint_dir="/tmp/test/cp",
@@ -365,6 +395,12 @@ def test_mock_bridge_training():
                     "val_ratio": 0.15,
                     "test_ratio": 0.15,
                 },
+                "cutover": {
+                    "min_real_executed_rows": 1,
+                    "allow_synthetic_fallback": False,
+                    "max_non_causal_rows": 0,
+                    "require_reward_methodology": True,
+                },
             },
             evaluation={
                 "report_version": 1,
@@ -396,7 +432,29 @@ def test_mock_bridge_training():
             checkpoint_every_n_steps=10,
             keep_last_n_checkpoints=1,
             dream_episode_threshold=1,
-        )
+        ),
+        replay=ReplayConfig(
+            enabled=False,
+            wal_dir="/tmp/test/wal",
+            poll_interval=0.1,
+            feature_missing_timestamp_policy="fail_closed",
+        ),
+        authority={
+            "mode": "shadow",
+            "deadline_ms": 10,
+            "fallback_policy": "baseline_yaml",
+            "max_inflight_per_symbol": 1,
+            "modulation_allowlist": ["decision_making.signal_threshold_bias"],
+            "signal_threshold_bias_bounds": [-0.1, 0.1],
+            "cooldown_mult_bounds": [1.0, 3.0],
+        },
+        evidence_capture={
+            "mode": "disabled",
+            "collect_observation": False,
+            "collect_authority_request": False,
+            "collect_authority_response": False,
+            "emit_shadow_decision_logged": False,
+        },
     )
 
     parser = FeatureParser(config.ingest)

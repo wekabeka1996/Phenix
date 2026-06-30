@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -8,6 +9,7 @@ import pytest
 
 from vfoundation.core.protocol import Message
 
+from apps.reference.config_loader import ConfigLoader
 from apps.reference.domains.decision_making.core.facade import DecisionMaking
 # from apps.reference.main import AuroraBridge  # REMOVED: AuroraBridge does not exist
 
@@ -97,6 +99,7 @@ def _dm_domain_cfg() -> SimpleNamespace:
             threshold_pct_production=50.0,
             min_intents_for_check=10,
         ),
+        neocortex_enforcement_mode="shadow",
     )
 
 
@@ -184,10 +187,10 @@ def test_vertical_flip_close_dm_to_bridge_to_execpos(monkeypatch, fsm_harness):
     pass
 
     # 2) DecisionMaking flip orchestration will emit reduce-only close, then INTENT_DEFERRED.
-    dm_cfg = _mk_dm_cfg(symbol=symbol, stale_ttl_sec=stale_ttl_sec)
+    dm_cfg = ConfigLoader(Path("config/aurora")).load_config()
     with patch("apps.reference.domains.decision_making.core.facade.DomainConfigResolver") as MockResolver:
         MockResolver.return_value.get_decision_making.return_value = _dm_domain_cfg()
-        dm = DecisionMaking(fsm=bus, config=dm_cfg)  # type: ignore[arg-type]
+        dm = DecisionMaking(fsm=bus, config=dm_cfg)
 
     now_ms = int(time.time() * 1000)
     dm.latest_portfolio = {

@@ -181,6 +181,8 @@ def _make_gateway(symbol: str, instr_cfg: SimpleNamespace, entry_plan_raw: dict)
         system=SimpleNamespace(market_data=None),
         strategies=SimpleNamespace(
             aurora=SimpleNamespace(
+                enabled=True,
+                mode="runtime",
                 decision=SimpleNamespace(
                     retry_max_count=5, retry_backoff_factor=2.0),
                 safety_gates=SimpleNamespace(system_stress_policy="off"),

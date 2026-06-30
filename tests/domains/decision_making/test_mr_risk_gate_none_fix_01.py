@@ -5,6 +5,9 @@ from types import SimpleNamespace
 import pytest
 from vfoundation.core.protocol import Message
 
+from apps.reference.domains.decision_making.gates import risk_gate
+from apps.reference.domains.decision_making.gateway.protocol import GateContext
+
 
 class _DummyFsm:
     def __init__(self):
@@ -79,6 +82,24 @@ def _mk_dm(*, max_risk_score=0.96, aurora_override=None):
     return dm
 
 
+def _risk_gate_ctx(dm, *, symbol: str, rid: str, now_ms: int) -> GateContext:
+    return GateContext(
+        symbol=symbol,
+        strategy_id="mean_reversion",
+        side="BUY",
+        rid=rid,
+        pld={"rid": rid},
+        config=dm.config,
+        clock=dm._clock,
+        dm=dm,
+        symbol_states=dm.symbol_states,
+        why_chain=[],
+        accumulated={},
+        ts_ms=now_ms,
+        tf_sec=60,
+    )
+
+
 def test_gateway_does_not_crash_on_missing_risk_score_emits_deferred(caplog):
     dm = _mk_dm()
     now_ms = int(time.time() * 1000)
@@ -108,11 +129,14 @@ def test_gateway_does_not_crash_on_missing_risk_score_emits_deferred(caplog):
     )
 
     with caplog.at_level(logging.WARNING):
-        dm._on_strategy_signal_gateway(evt)
+        result = risk_gate.check(
+            _risk_gate_ctx(dm, symbol="DOGEUSDT", rid="rid-1", now_ms=now_ms)
+        )
 
     assert any("RISK_SCORE_MISSING" in rec.message for rec in caplog.records)
-    assert any(name == "EVT:INTENT_DEFERRED" for name, _ in dm.fsm.emitted)
-    assert not any(name == "EVT:TRADE_INTENT_PROPOSED" for name, _ in dm.fsm.emitted)
+    assert result.reason_code == "RISK_SCORE_MISSING"
+    assert result.context == "strategy_signal_gateway:risk_score_missing"
+    assert result.outcome.name == "DEFER"
 
 
 def test_gateway_uses_override_threshold_when_present(caplog):
@@ -146,10 +170,13 @@ def test_gateway_uses_override_threshold_when_present(caplog):
     )
 
     with caplog.at_level(logging.WARNING):
-        dm._on_strategy_signal_gateway(evt)
+        result = risk_gate.check(
+            _risk_gate_ctx(dm, symbol="DOGEUSDT", rid="rid-1", now_ms=now_ms)
+        )
 
     assert any("used_override=True" in rec.message for rec in caplog.records)
-    assert not any(name == "EVT:TRADE_INTENT_PROPOSED" for name, _ in dm.fsm.emitted)
+    assert result.reason_code == "RISK_SCORE_TOO_HIGH"
+    assert result.outcome.name == "REJECT"
 
 
 def test_gateway_uses_global_threshold_when_override_missing(caplog):
@@ -181,7 +208,10 @@ def test_gateway_uses_global_threshold_when_override_missing(caplog):
     )
 
     with caplog.at_level(logging.WARNING):
-        dm._on_strategy_signal_gateway(evt)
+        result = risk_gate.check(
+            _risk_gate_ctx(dm, symbol="DOGEUSDT", rid="rid-1", now_ms=now_ms)
+        )
 
     assert any("used_override=False" in rec.message for rec in caplog.records)
-    assert not any(name == "EVT:TRADE_INTENT_PROPOSED" for name, _ in dm.fsm.emitted)
+    assert result.reason_code == "RISK_SCORE_TOO_HIGH"
+    assert result.outcome.name == "REJECT"

@@ -286,8 +286,13 @@ def test_strategy_gateway_rejects_fresh_entry_when_embargo_blocks() -> None:
             position_tracking=SimpleNamespace(positions_stale_ttl_sec=60),
         ),
         strategies=SimpleNamespace(
-            aurora=SimpleNamespace(decision=SimpleNamespace(
-                retry_max_count=5, retry_backoff_factor=2.0)),
+            aurora=SimpleNamespace(
+                enabled=True,
+                mode="runtime",
+                decision=SimpleNamespace(
+                    retry_max_count=5, retry_backoff_factor=2.0
+                ),
+            ),
         ),
         system=SimpleNamespace(market_data=None),
     )

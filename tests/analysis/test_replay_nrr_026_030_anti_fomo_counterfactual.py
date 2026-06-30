@@ -1,4 +1,3 @@
-import replay_nrr_026_030_anti_fomo_counterfactual as replay
 import os
 import json
 import io
@@ -9,6 +8,8 @@ import sys
 # Add tools to sys.path so we can import the script
 sys.path.insert(0, os.path.abspath(os.path.join(
     os.path.dirname(__file__), '../../tools/analysis')))
+
+import replay_nrr_026_030_anti_fomo_counterfactual as replay
 
 
 def test_parser_handles_missing_files(tmp_path):

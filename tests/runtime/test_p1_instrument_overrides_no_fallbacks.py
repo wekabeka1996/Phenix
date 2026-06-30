@@ -194,6 +194,7 @@ def test_decision_making_contract_missing_sl(mock_fsm):
             domains__decision_making__behavior_fsm__low_vol_multiplier=0.5,
             domains__decision_making__flip__enabled=True
         ).domains.decision_making
+        dm_cfg.neocortex_enforcement_mode = "shadow"
 
         mock_res_inst.get_decision_making.return_value = dm_cfg
 

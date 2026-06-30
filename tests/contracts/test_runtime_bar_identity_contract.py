@@ -216,6 +216,7 @@ def test_cmd_process_strategy_schema_accepts_canonical_identity_fields() -> None
         "features": {},
         "warmup": {"full_ready": True, "ticks_seen": 100},
         "regime": {"regime": "TREND_UP"},
+        "structural_regime": "TREND_UP",
     }
     attach_canonical_bar_payload(payload, identity=identity, replay_generation=0)
     validate(instance=payload, schema=schema)

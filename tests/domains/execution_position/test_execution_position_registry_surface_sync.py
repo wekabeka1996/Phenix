@@ -18,6 +18,11 @@ from typing import Set
 import yaml
 import pytest
 
+from apps.reference.domains.execution_position.contract_layer.emitted_surface_audit import (
+    _KNOWN_DOMAIN_DICT_EXCEPTIONS,
+    _KNOWN_REGISTRY_EXCEPTIONS,
+)
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EP_DIR = PROJECT_ROOT / "apps" / "reference" / "domains" / "execution_position"
 VERB_REGISTRY = PROJECT_ROOT / "apps" / "reference" / \
@@ -151,7 +156,9 @@ class TestRegistrySurfaceSync:
             "EVT:EXTERNAL_OPEN_REQUEST_REJECTED_V1",  # EP emits but schema not in EP dir
         }
 
-        unregistered = emitted - registered - co_emitter_surfaces
+        unregistered = (
+            emitted - registered - co_emitter_surfaces - _KNOWN_REGISTRY_EXCEPTIONS
+        )
         assert not unregistered, (
             f"execution_position emits {len(unregistered)} surface(s) missing from "
             f"verb_registry_v1.yaml:\n"
@@ -175,7 +182,12 @@ class TestRegistrySurfaceSync:
             "EVT:SYMBOL_TIDY",
         }
 
-        missing_from_dd = emitted - domain_dict_surfaces - co_emitter_or_external
+        missing_from_dd = (
+            emitted
+            - domain_dict_surfaces
+            - co_emitter_or_external
+            - _KNOWN_DOMAIN_DICT_EXCEPTIONS
+        )
         assert not missing_from_dd, (
             f"execution_position emits {len(missing_from_dd)} surface(s) missing from "
             f"domain_dict.json (neither in imports nor exports):\n"

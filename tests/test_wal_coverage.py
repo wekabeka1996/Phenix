@@ -85,14 +85,18 @@ class TestWalCoverage:
         wal_dir = tmp_path / "test_wal"
         set_wal_dir(wal_dir)
 
-        # Mock _file_lock to raise TimeoutError
-        def mock_file_lock(*args, **kwargs):
+        # Mock the append lock context manager to time out immediately.
+        from contextlib import contextmanager
+
+        @contextmanager
+        def mock_append_operation_lock(*args, **kwargs):
             raise TimeoutError("Lock timeout")
+            yield  # pragma: no cover
 
         # Import the wal module to patch it
         from vfoundation.dr import wal as wal_module
 
-        monkeypatch.setattr(wal_module, "_file_lock", mock_file_lock)
+        monkeypatch.setattr(wal_module, "_append_operation_lock", mock_append_operation_lock)
 
         result = append({"test": "data"})
         assert result is None  # Should return None on timeout

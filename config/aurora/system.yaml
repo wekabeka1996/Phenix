@@ -17,6 +17,16 @@ system:
   validate_instruments_on_startup: true
   warn_only_filters: false
   debug_event_listener_enabled: false
+  public_exchange_info:
+    enabled: true
+    environment: testnet
+    endpoint: https://testnet.binancefuture.com/fapi/v1/exchangeInfo
+    ttl_sec: 900
+    retry_sec: 60
+    timeout_sec: 10.0
+    max_response_bytes: 2097152
+    max_cache_bytes: 65536
+    max_symbols: 12
 # T-OPS-SSOT-2026-05-09: ops block removed. Canonical source: trading.yaml -> trading.ops.*
 # EX-REMOVE-ROOT-2026-05-09: execution block removed. Canonical source: trading.yaml -> trading.execution.*
 brackets: null

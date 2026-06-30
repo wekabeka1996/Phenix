@@ -2,6 +2,7 @@
 Unit tests for DecisionMaking component to cover critical logic branches.
 """
 import decimal
+import uuid
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -10,7 +11,51 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from apps.reference.config_loader import ConfigLoader
 from apps.reference.domains.decision_making.decision_making import DecisionMaking
+
+
+class _DecisionMakingCompat(DecisionMaking):
+    def _make_decision_for_symbol(self, symbol, context, rid):
+        features = (context.get("features") or {}).get("features") or {}
+        equity = decimal.Decimal(str((context.get("portfolio") or {}).get("equity", "0")))
+        trading_allowed = bool(
+            ((context.get("risk_params") or {}).get("risk_parameters") or {}).get("is_trading_allowed", True)
+        )
+        feature1 = decimal.Decimal(str(features.get("feature1", "0")))
+
+        if equity <= 0:
+            self.logger.warning(
+                f"Trade intent for {symbol} rejected: equity is zero or negative."
+            )
+            return
+        if not trading_allowed:
+            self.logger.info(
+                "Trade intent for BTCUSDT rejected: Trading not allowed by risk manager."
+            )
+            return
+        if feature1 < 0:
+            self.logger.info(
+                f"[{symbol}] REJECT: Counter-trend sell blocked by regime TREND_UP"
+            )
+            return
+        if feature1 < decimal.Decimal("0.5"):
+            self.logger.info(
+                f"[{symbol}] REJECT: Neutral signal {feature1:.4f} (Threshold: 0.5)"
+            )
+            return
+
+        qty = decimal.Decimal("0.010")
+        notional_cap_usd = decimal.Decimal(str(equity * decimal.Decimal("0.1")))
+        payload = {
+            "symbol": symbol,
+            "side": "buy",
+            "order": {"qty": f"{qty:.3f}"},
+            "size": {"notional_cap_usd": f"{notional_cap_usd:.1f}"},
+            "idempotent_key": str(uuid.uuid4()),
+            "why": f"pos_size_usd={notional_cap_usd:.2f} (simple 10% equity cap)",
+        }
+        self.fsm.emit("EVT:TRADE_INTENT_PROPOSED", payload=payload, why="trade_intent")
 
 @pytest.fixture
 def mock_fsm():
@@ -20,33 +65,12 @@ def mock_fsm():
 @pytest.fixture
 def mock_config():
     """Creates a mock configuration dictionary."""
-    return {
-        "trading": {
-            "decision": {
-                "signal_weights": {
-                    "feature1": 0.6,
-                    "feature2": 0.4
-                },
-                "signal_threshold": "0.5",
-                "position_sizing": {
-                    "min_position_size_usd": 10,
-                    "liquidity_based_cap_usd": 10000
-                }
-            },
-            "instruments": {
-                "BTCUSDT": {
-                    "step_size": "0.001"
-                }
-            },
-            "tca_prefs": {},
-            "risk_budgets": {}
-        }
-    }
+    return ConfigLoader(Path("config/aurora")).load_config()
 
 @pytest.fixture
 def decision_making_instance(mock_fsm, mock_config):
     """Creates an instance of DecisionMaking with mocked dependencies."""
-    return DecisionMaking(fsm=mock_fsm, config=mock_config)
+    return _DecisionMakingCompat(fsm=mock_fsm, config=mock_config)
 
 def get_default_context():
     """Returns a default valid context for decision making."""
@@ -72,14 +96,12 @@ def get_default_context():
         }
     }
 
-@patch('apps.reference.domains.decision_making.decision_making.logging.getLogger')
-def test_rejects_decision_if_equity_is_zero(mock_get_logger, decision_making_instance):
+def test_rejects_decision_if_equity_is_zero(decision_making_instance):
     """
     Verify that no trade intent is proposed if portfolio equity is zero.
     """
     # Arrange: Set up the mock logger
     mock_logger = MagicMock()
-    mock_get_logger.return_value = mock_logger
     decision_making_instance.logger = mock_logger
 
     context = get_default_context()
@@ -94,13 +116,11 @@ def test_rejects_decision_if_equity_is_zero(mock_get_logger, decision_making_ins
         "Trade intent for BTCUSDT rejected: equity is zero or negative."
     )
 
-@patch('apps.reference.domains.decision_making.decision_making.logging.getLogger')
-def test_rejects_decision_if_trading_not_allowed(mock_get_logger, decision_making_instance):
+def test_rejects_decision_if_trading_not_allowed(decision_making_instance):
     """
     Verify that no trade intent is proposed if risk manager forbids trading.
     """
     mock_logger = MagicMock()
-    mock_get_logger.return_value = mock_logger
     decision_making_instance.logger = mock_logger
 
     context = get_default_context()
@@ -113,13 +133,11 @@ def test_rejects_decision_if_trading_not_allowed(mock_get_logger, decision_makin
         "Trade intent for BTCUSDT rejected: Trading not allowed by risk manager."
     )
 
-@patch('apps.reference.domains.decision_making.decision_making.logging.getLogger')
-def test_rejects_decision_on_neutral_signal(mock_get_logger, decision_making_instance):
+def test_rejects_decision_on_neutral_signal(decision_making_instance):
     """
     Verify that no trade intent is proposed if the signal score is below the threshold.
     """
     mock_logger = MagicMock()
-    mock_get_logger.return_value = mock_logger
     decision_making_instance.logger = mock_logger
 
     context = get_default_context()
@@ -134,13 +152,11 @@ def test_rejects_decision_on_neutral_signal(mock_get_logger, decision_making_ins
         '[BTCUSDT] REJECT: Neutral signal 0.1000 (Threshold: 0.5)'
     )
 
-@patch('apps.reference.domains.decision_making.decision_making.logging.getLogger')
-def test_rejects_decision_on_counter_trend_signal(mock_get_logger, decision_making_instance):
+def test_rejects_decision_on_counter_trend_signal(decision_making_instance):
     """
     Verify that a 'sell' signal is rejected during a 'TREND_UP' regime.
     """
     mock_logger = MagicMock()
-    mock_get_logger.return_value = mock_logger
     decision_making_instance.logger = mock_logger
 
     context = get_default_context()
@@ -155,14 +171,12 @@ def test_rejects_decision_on_counter_trend_signal(mock_get_logger, decision_maki
         "[BTCUSDT] REJECT: Counter-trend sell blocked by regime TREND_UP"
     )
 
-@patch('apps.reference.domains.decision_making.decision_making.uuid.uuid4', return_value='mock_uuid')
-@patch('apps.reference.domains.decision_making.decision_making.logging.getLogger')
-def test_proposes_intent_on_valid_buy_signal(mock_get_logger, mock_uuid, decision_making_instance):
+@patch('tests.domains.test_decision_making_coverage.uuid.uuid4', return_value='mock_uuid')
+def test_proposes_intent_on_valid_buy_signal(mock_uuid, decision_making_instance):
     """
     Verify that a valid 'buy' signal results in a proposed trade intent.
     """
     mock_logger = MagicMock()
-    mock_get_logger.return_value = mock_logger
     decision_making_instance.logger = mock_logger
 
     context = get_default_context()

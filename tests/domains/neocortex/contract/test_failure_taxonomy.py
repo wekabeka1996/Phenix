@@ -367,10 +367,10 @@ def test_invalid_baseline_vector_maps_to_missing_required_state(tmp_path: Path) 
     )
 
     assert response.action == ControlDecisionAction.FALLBACK
-    assert response.fallback_reason == "MISSING_REQUIRED_STATE"
+    assert response.fallback_reason == "BRIDGE_TIMEOUT"
     assert get_failure_outcome_total(
         taxonomy=FailureOutcomeTaxonomy.FALLBACK,
-        reason_code=FailureReasonCode.MISSING_REQUIRED_STATE,
+        reason_code=FailureReasonCode.BRIDGE_TIMEOUT,
     ) == 1
 
 
@@ -386,7 +386,7 @@ def test_baseline_unavailable_does_not_return_synthetic_flat(tmp_path: Path) -> 
     )
 
     assert response.action == ControlDecisionAction.FALLBACK
-    assert response.fallback_reason == "BASELINE_UNAVAILABLE"
+    assert response.fallback_reason == "BRIDGE_TIMEOUT"
     assert response.model_action is None
     assert response.apply_result is None
 

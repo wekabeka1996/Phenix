@@ -9,6 +9,8 @@ generic fallback constants (MIN_ORDER_QTY, MIN_NOTIONAL, etc.).
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -27,18 +29,22 @@ class _FakeAdapterInitFSM(AdapterInitMixin):
 
 def _make_config(mode: str, *, api_key: str = "k", api_secret: str = "s", rest_url: str = "https://testnet.binancefuture.com"):
     """Build a minimal mock config with given mode and credentials."""
-    config = MagicMock()
-    config.get_domain_mode.return_value = mode
-
-    env_config = MagicMock()
-    env_config.api_key = api_key
-    env_config.api_secret = api_secret
-    env_config.rest_url = rest_url
-
-    config.binance_api.live = env_config if mode == "live" else MagicMock(
-        api_key="", api_secret="", rest_url="")
-    config.binance_api.testnet = env_config if mode != "live" else MagicMock(
-        api_key="", api_secret="", rest_url="")
+    env_config = SimpleNamespace(
+        api_key=api_key,
+        api_secret=api_secret,
+        rest_url=rest_url,
+    )
+    config = SimpleNamespace(
+        get_domain_mode=MagicMock(return_value=mode),
+        binance_api=SimpleNamespace(
+            live=env_config if mode == "live" else SimpleNamespace(
+                api_key="", api_secret="", rest_url=""
+            ),
+            testnet=env_config if mode != "live" else SimpleNamespace(
+                api_key="", api_secret="", rest_url=""
+            ),
+        ),
+    )
     return config
 
 
@@ -50,14 +56,7 @@ class TestAdapterInitModeBehavior:
         DEF-E09: When live mode credentials are missing, execution must fail
         closed instead of silently degrading to shadow_mode.
         """
-        config = MagicMock()
-        config.get_domain_mode.return_value = "live"
-        # Credentials are missing (empty strings → falsy)
-        env_config = MagicMock()
-        env_config.api_key = ""
-        env_config.api_secret = ""
-        env_config.rest_url = ""
-        config.binance_api.live = env_config
+        config = _make_config("live", api_key="", api_secret="", rest_url="")
 
         fsm = _FakeAdapterInitFSM(config)
 
@@ -71,10 +70,12 @@ class TestAdapterInitModeBehavior:
 
     def test_missing_hybrid_credentials_fail_closed(self):
         """Hybrid live-data/testnet-exec mode must also fail closed on missing testnet credentials."""
-        config = MagicMock()
-        config.get_domain_mode.return_value = "hybrid_live_data_testnet_exec"
-        config.binance_api.testnet = MagicMock(
-            api_key="", api_secret="", rest_url="")
+        config = _make_config(
+            "hybrid_live_data_testnet_exec",
+            api_key="",
+            api_secret="",
+            rest_url="",
+        )
 
         fsm = _FakeAdapterInitFSM(config)
 
@@ -84,34 +85,30 @@ class TestAdapterInitModeBehavior:
 
     def test_mode_resolution_uses_domain_config_first(self):
         """Domain-specific mode must take priority over global trading mode."""
-        config = MagicMock()
-        config.get_domain_mode.return_value = "testnet"
-        env_config = MagicMock()
-        env_config.api_key = "key"
-        env_config.api_secret = "secret"
-        env_config.rest_url = "https://testnet.binancefuture.com"
-        config.binance_api.testnet = env_config
+        config = _make_config(
+            "backtest",
+            api_key="key",
+            api_secret="secret",
+            rest_url="https://testnet.binancefuture.com",
+        )
 
         fsm = _FakeAdapterInitFSM(config)
 
         with patch("apps.reference.adapters.binance_adapter.BinanceAdapter") as mock_adapter_cls:
             mock_adapter_cls.return_value = MagicMock()
-            try:
-                fsm._initialize_adapter()
-            except Exception:
-                pass  # WS client setup may fail in test; we only care about mode resolution
+            fsm._initialize_adapter()
 
         # get_domain_mode should have been called (domain-first resolution)
-        config.get_domain_mode.assert_called()
+        config.get_domain_mode.assert_called_once_with("execution_position")
+        assert fsm.shadow_mode is True
 
     def test_mode_resolution_failure_raises_instead_of_defaulting_to_testnet(self):
         """
         DEF-E09: unresolved mode must fail closed instead of silently defaulting
         to testnet.
         """
-        config = MagicMock()
-        config.get_domain_mode.side_effect = RuntimeError(
-            "mode resolution failed")
+        config = _make_config("testnet")
+        config.get_domain_mode.side_effect = RuntimeError("mode resolution failed")
         config.trading = None
 
         fsm = _FakeAdapterInitFSM(config)
@@ -122,10 +119,7 @@ class TestAdapterInitModeBehavior:
 
     def test_explicit_testnet_mode_can_degrade_to_shadow_on_missing_credentials(self):
         """Explicit testnet mode may simulate, but only because testnet itself was explicit."""
-        config = MagicMock()
-        config.get_domain_mode.return_value = "testnet"
-        config.binance_api.testnet = MagicMock(
-            api_key="", api_secret="", rest_url="")
+        config = _make_config("testnet", api_key="", api_secret="", rest_url="")
 
         fsm = _FakeAdapterInitFSM(config)
 

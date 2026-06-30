@@ -15,6 +15,7 @@ class _DMStub:
     def __init__(self) -> None:
         self.logger = logging.getLogger("tests.gateway.objective")
         self._clock = SimpleNamespace(now_ms=lambda: 1_700_000_000_000)
+        self.fsm = SimpleNamespace(emit=lambda *_args, **_kwargs: None)
         self.features_ttl_sec = 30
         self.symbol_states = {
             "DOGEUSDT": {
@@ -54,7 +55,12 @@ class _DMStub:
                 market_data=SimpleNamespace(bar_ttl_ms=600_000)
             ),
             strategies=SimpleNamespace(mean_reversion=SimpleNamespace(
-                decision=SimpleNamespace(), safety_gates=SimpleNamespace(enabled=True))),
+                enabled=True,
+                mode="runtime",
+                execution=SimpleNamespace(entry_order_type="MARKET", entry_tif="GTC"),
+                decision=SimpleNamespace(),
+                safety_gates=SimpleNamespace(enabled=True),
+            )),
         )
 
     def _emit_trade_intent_rejected(self, **kwargs):

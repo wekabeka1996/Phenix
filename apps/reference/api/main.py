@@ -520,5 +520,26 @@ def _register_trading_read_model_routes() -> None:
             raise HTTPException(status_code=503, detail=str(exc))
 
 
+def _runtime_execution_position() -> object | None:
+    try:
+        from apps.reference.main import execution_position  # type: ignore
+
+        return execution_position
+    except Exception:
+        return None
+
+
+def _register_agent_feed_routes() -> None:
+    from apps.reference.domains.agent_bridge.routes import register_agent_feed_routes
+
+    register_agent_feed_routes(
+        app,
+        project_root=Path(__file__).resolve().parents[3],
+        snapshot_store_provider=_shadow_telemetry_snapshot_store,
+        execution_position_provider=_runtime_execution_position,
+    )
+
+
 _register_statdump_route()
 _register_trading_read_model_routes()
+_register_agent_feed_routes()

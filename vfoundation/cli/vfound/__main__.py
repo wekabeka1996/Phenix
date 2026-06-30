@@ -290,14 +290,20 @@ def drift_batch(
     Reads all DEC and EVT messages from WAL, computes confusion matrix and drift%.
     Saves report to ops/reports/drift_<timestamp>.json
     """
-    # Import drift_monitor dynamically to ensure sys.path is set
+    wal_dir = pathlib.Path("ops/wal")
+
+    if not wal_dir.exists():
+        typer.echo(f"❌ WAL directory not found: {wal_dir}", err=True)
+        raise typer.Exit(code=1)
+
+    # Import drift_monitor dynamically only after the WAL path is confirmed.
     import importlib.util
     import types
     from importlib.machinery import ModuleSpec
 
     drift_monitor_path = (_cli_root / "apps" / "reference" / "domains" / "execution_position" / "drift_monitor.py")
     spec: ModuleSpec | None = importlib.util.spec_from_file_location(
-        "drift_monitor", drift_monitor_path
+        "_vfound_drift_monitor", drift_monitor_path
     )
 
     if spec is None or spec.loader is None:
@@ -306,17 +312,10 @@ def drift_batch(
         raise typer.Exit(code=1)
 
     drift_monitor: types.ModuleType = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = drift_monitor  # Add to sys.modules before exec
     spec.loader.exec_module(drift_monitor)
     compute_drift = drift_monitor.compute_drift
 
     REPORTS_DIR.mkdir(exist_ok=True, parents=True)
-
-    wal_dir = pathlib.Path("ops/wal")
-
-    if not wal_dir.exists():
-        typer.echo(f"❌ WAL directory not found: {wal_dir}", err=True)
-        raise typer.Exit(code=1)
 
     # Read all DEC and EVT messages from WAL
     decisions: list[dict[str, Any]] = []

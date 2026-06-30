@@ -53,7 +53,13 @@ def mock_config():
             count_pending_orders=True,
             exclude_reduce_only=True,
         ),
-        manage=None,
+        manage=SimpleNamespace(
+            emergency=SimpleNamespace(
+                enabled=False,
+                wait_mode_bars=2,
+                emergency_sl_bps=100,
+            )
+        ),
         cooldown_after_close_ms=1000,
         fsm_periodic_cleanup_enabled=False,
         order_guardian=SimpleNamespace(
@@ -67,6 +73,7 @@ def mock_config():
         check_interval_ms=1000,
         rps_limit=10,
     )
+    exec_cfg.watchdog = watchdog_cfg
     guardian_cfg = SimpleNamespace(
         poll_interval_ms=500,
         unified=True,
@@ -93,7 +100,6 @@ def mock_config():
     cfg.trading = SimpleNamespace(
         risk=trading_risk,
         execution=exec_cfg,
-        watchdog=watchdog_cfg,
     )
     cfg.domains = SimpleNamespace(execution_position=dom_ep)
     cfg.execution = None

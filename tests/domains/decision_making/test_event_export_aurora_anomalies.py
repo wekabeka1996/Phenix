@@ -88,6 +88,7 @@ class TestEventExportAuroraAnomalies:
             symbol="BTCUSDT",
             cmd={
                 "bar_close_ts": 1000,
+                "tf_sec": 900,
                 "features": features
             }
         )
@@ -143,6 +144,7 @@ class TestEventExportAuroraAnomalies:
             symbol="BTCUSDT",
             cmd={
                 "bar_close_ts": 1000,
+                "tf_sec": 900,
                 "features": features
             }
         )

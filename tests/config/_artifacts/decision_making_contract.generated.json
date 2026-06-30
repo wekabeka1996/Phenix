@@ -397,6 +397,11 @@
   "DecisionMakingDomainConfig": {
     "extra": "forbid",
     "fields": {
+      "trade_flow_gate": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
       "position_sizing": {
         "default": "'<required>'",
         "default_factory": null,
@@ -1091,6 +1096,21 @@
         "default": "'<required>'",
         "default_factory": null,
         "required": true
+      },
+      "nrr028_enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "nrr029_enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "nrr030_enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
       }
     }
   },
@@ -1456,6 +1476,46 @@
         "default": "None",
         "default_factory": null,
         "required": false
+      }
+    }
+  },
+  "TradeFlowGateConfig": {
+    "extra": "forbid",
+    "fields": {
+      "enabled": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "sensitive_strategies": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "block_states": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "missing_state_behavior": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "unknown_state_behavior": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "apply_to": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
+      },
+      "preserve": {
+        "default": "'<required>'",
+        "default_factory": null,
+        "required": true
       }
     }
   }

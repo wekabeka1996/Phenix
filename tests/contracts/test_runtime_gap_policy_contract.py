@@ -214,6 +214,7 @@ def test_cmd_process_strategy_schema_accepts_gap_contract_fields() -> None:
         "features": {},
         "warmup": {"full_ready": True, "ticks_seen": 100},
         "regime": {"regime": "TREND_UP"},
+        "structural_regime": "TREND_UP",
     }
     attach_gap_status_payload(
         payload,

@@ -109,7 +109,7 @@ def test_current_aurora_config_loads_decision_making_contract() -> None:
         "TREND_DOWN": 0.20,
     }
     assert dm_domain.directional_sanity.max_regime_confidence_by_regime == expected_max_regime_confidence_by_regime
-    assert dm_domain.low_vol_cost_floor_gate.enabled is True
+    assert dm_domain.low_vol_cost_floor_gate.enabled is False
     assert dm_domain.low_vol_cost_floor_gate.decision_chain_enabled is False
     assert dm_domain.low_vol_cost_floor_gate.enforce_in_modes == [
         "testnet",

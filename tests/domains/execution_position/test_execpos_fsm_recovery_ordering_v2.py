@@ -1,6 +1,7 @@
 import pytest
 import asyncio
 import time
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch, AsyncMock
 from apps.reference.domains.execution_position.fsm import ExecPosFSM
 from vfoundation.core.fsm_emit_compat import Message
@@ -383,23 +384,20 @@ def test_fsm_resolve_guardian_config_branches(exec_pos_fsm):
     """
     from unittest.mock import MagicMock
 
-    # Mock the config structure to have domains.execution_position.guardian
-    mock_guardian = MagicMock()
-    mock_guardian.unified = True
-    mock_guardian.emit_tidy_event = True
-    mock_guardian.emit_tidy_monitoring_event = True
-    mock_guardian.poll_interval_ms = 1000
-    mock_guardian.cleanup_ttl_ms = 9999
-    mock_guardian.symbol_cooldown_ms = 5000
-
-    mock_ep = MagicMock()
-    mock_ep.guardian = mock_guardian
-
-    mock_domains = MagicMock()
-    mock_domains.execution_position = mock_ep
-
-    mock_config = MagicMock()
-    mock_config.domains = mock_domains
+    mock_config = SimpleNamespace(
+        domains=SimpleNamespace(
+            execution_position=SimpleNamespace(
+                guardian=SimpleNamespace(
+                    unified=True,
+                    emit_tidy_event=True,
+                    emit_tidy_monitoring_event=True,
+                    poll_interval_ms=1000,
+                    cleanup_ttl_ms=9999,
+                    symbol_cooldown_ms=5000,
+                )
+            )
+        )
+    )
 
     exec_pos_fsm.config = mock_config
 
@@ -413,37 +411,38 @@ def test_fsm_resolve_guardian_config_branches(exec_pos_fsm):
 
 
 def test_fsm_cleanup_enabled_prefers_root_execution_true(exec_pos_fsm):
-    cfg = MagicMock()
-    cfg.execution = MagicMock()
-    cfg.execution.fsm_periodic_cleanup_enabled = True
-    cfg.trading = MagicMock()
-    cfg.trading.execution = MagicMock()
-    cfg.trading.execution.fsm_periodic_cleanup_enabled = False
-
-    exec_pos_fsm.config = cfg
-
-    assert exec_pos_fsm._resolve_fsm_periodic_cleanup_enabled() is True
-
-
-def test_fsm_cleanup_enabled_prefers_root_execution_false(exec_pos_fsm):
-    cfg = MagicMock()
-    cfg.execution = MagicMock()
-    cfg.execution.fsm_periodic_cleanup_enabled = False
-    cfg.trading = MagicMock()
-    cfg.trading.execution = MagicMock()
-    cfg.trading.execution.fsm_periodic_cleanup_enabled = True
+    cfg = SimpleNamespace(
+        execution=SimpleNamespace(fsm_periodic_cleanup_enabled=True),
+        trading=SimpleNamespace(
+            execution=SimpleNamespace(fsm_periodic_cleanup_enabled=False)
+        ),
+    )
 
     exec_pos_fsm.config = cfg
 
     assert exec_pos_fsm._resolve_fsm_periodic_cleanup_enabled() is False
 
 
+def test_fsm_cleanup_enabled_prefers_root_execution_false(exec_pos_fsm):
+    cfg = SimpleNamespace(
+        execution=SimpleNamespace(fsm_periodic_cleanup_enabled=False),
+        trading=SimpleNamespace(
+            execution=SimpleNamespace(fsm_periodic_cleanup_enabled=True)
+        ),
+    )
+
+    exec_pos_fsm.config = cfg
+
+    assert exec_pos_fsm._resolve_fsm_periodic_cleanup_enabled() is True
+
+
 def test_fsm_cleanup_enabled_uses_trading_execution_when_root_absent(exec_pos_fsm):
-    cfg = MagicMock()
-    cfg.execution = None
-    cfg.trading = MagicMock()
-    cfg.trading.execution = MagicMock()
-    cfg.trading.execution.fsm_periodic_cleanup_enabled = False
+    cfg = SimpleNamespace(
+        execution=None,
+        trading=SimpleNamespace(
+            execution=SimpleNamespace(fsm_periodic_cleanup_enabled=False)
+        ),
+    )
 
     exec_pos_fsm.config = cfg
 
@@ -451,10 +450,10 @@ def test_fsm_cleanup_enabled_uses_trading_execution_when_root_absent(exec_pos_fs
 
 
 def test_fsm_cleanup_enabled_missing_explicit_config_raises(exec_pos_fsm):
-    cfg = MagicMock()
-    cfg.execution = None
-    cfg.trading = MagicMock()
-    cfg.trading.execution = MagicMock()
+    cfg = SimpleNamespace(
+        execution=None,
+        trading=SimpleNamespace(execution=SimpleNamespace()),
+    )
 
     exec_pos_fsm.config = cfg
 
@@ -774,7 +773,11 @@ async def test_fsm_execute_decision_open_with_backoff(exec_pos_fsm):
         domains = DomainsCfg()
 
     cfg = Config()
-    cfg.trading = MagicMock()
+    cfg.trading = SimpleNamespace(
+        execution=SimpleNamespace(
+            allow_trade_with_guardian_tidy_only=False,
+        )
+    )
     exec_pos_fsm.config = cfg
 
     exec_pos_fsm.adapter.base_url = "https://fapi.binance.com"

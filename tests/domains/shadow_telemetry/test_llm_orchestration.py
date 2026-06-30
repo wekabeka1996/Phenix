@@ -47,6 +47,35 @@ def _runtime_stub():
 
 
 def test_market_context_collector_and_guardian_persist_packets(tmp_path: Path) -> None:
+    class SnapshotStoreStub:
+        source_name = "shadow_telemetry_api"
+
+        def latest(self, symbol: str | None, tf_sec: int | None):
+            if symbol == "BNBUSDT" and tf_sec == 300:
+                return {
+                    "snapshot_id": "snap-bnb",
+                    "ts_ms": 1234,
+                    "symbol": "BNBUSDT",
+                    "tf_sec": 300,
+                    "features": {"obi": 0.2},
+                    "regime": {"state": "TREND_UP"},
+                    "execution": {"event": "ORDER_PLACED"},
+                }
+            if symbol == "BTCUSDT" and tf_sec == 300:
+                return {
+                    "snapshot_id": "snap-btc",
+                    "ts_ms": 1234,
+                    "symbol": "BTCUSDT",
+                    "tf_sec": 300,
+                    "features": {"obi": 0.25},
+                    "regime": {"state": "TREND_UP"},
+                    "execution": {"event": "ORDER_PLACED"},
+                }
+            return None
+
+        def tail(self, symbol: str | None, limit: int):
+            return []
+
     _write_jsonl(
         tmp_path / "data" / "shadow_telemetry" / "snapshots" / "BNBUSDT" / "2026-05-10" / "12.jsonl",
         [{"snapshot_id": "snap-1", "ts_ms": 1234, "symbol": "BNBUSDT", "tf_sec": 300, "features": {"obi": 0.2}}],
@@ -64,7 +93,11 @@ def test_market_context_collector_and_guardian_persist_packets(tmp_path: Path) -
         encoding="utf-8",
     )
 
-    read_models = TradingReadModelService(project_root=tmp_path, execution_position=_runtime_stub())
+    read_models = TradingReadModelService(
+        project_root=tmp_path,
+        snapshot_store=SnapshotStoreStub(),
+        execution_position=_runtime_stub(),
+    )
     collector = MarketContextCollector(read_models)
     coordinator = DecisionCoordinator(project_root=tmp_path)
     guardian = PositionGuardian(collector=collector, coordinator=coordinator)

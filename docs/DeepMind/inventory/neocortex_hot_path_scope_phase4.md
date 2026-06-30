@@ -120,6 +120,10 @@ hot_path_scope:
       reason: "Order log parser feeding causal-time/order boundary evidence."
       mypy_included: true
       coverage_included: true
+    - path: "logic/ingest/parsers/wallclock.py"
+      reason: "Stable wallclock parsing helper used by active ingest parsers."
+      mypy_included: true
+      coverage_included: true
     - path: "transport/__init__.py"
       reason: "Package marker for the Phase 5 transport authority seam; must remain import-safe."
       mypy_included: false
@@ -214,6 +218,7 @@ hot_path_scope:
     - "apps/reference/domains/neocortex/logic/ingest/parsers/core_parser.py"
     - "apps/reference/domains/neocortex/logic/ingest/parsers/feature_parser.py"
     - "apps/reference/domains/neocortex/logic/ingest/parsers/order_parser.py"
+    - "apps/reference/domains/neocortex/logic/ingest/parsers/wallclock.py"
     - "apps/reference/domains/neocortex/logic/brain/baseline_inference.py"
     - "apps/reference/domains/neocortex/transport/authority_bridge.py"
   coverage_target_modules:
@@ -237,6 +242,7 @@ hot_path_scope:
     - "apps.reference.domains.neocortex.logic.ingest.parsers.core_parser"
     - "apps.reference.domains.neocortex.logic.ingest.parsers.feature_parser"
     - "apps.reference.domains.neocortex.logic.ingest.parsers.order_parser"
+    - "apps.reference.domains.neocortex.logic.ingest.parsers.wallclock"
     - "apps.reference.domains.neocortex.transport.authority_bridge"
   coverage_target:
     branch_coverage: "100% on declared hot-path"

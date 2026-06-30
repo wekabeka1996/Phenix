@@ -93,11 +93,11 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
-
+order_log_old
 # IPython
 profile_default/
 ipython_config.py
-
+calibrators/*
 # pyenv
 .python-version
 
@@ -176,6 +176,7 @@ $RECYCLE.BIN/
 *.lnk
 
 # Project specific
+/MagicMock/
 checkpoints/
 *.pth
 *.pt
@@ -240,4 +241,19 @@ best_metrics*.json
 
 # deepseek-terminal-agent run logs
 .agent_runs/
+
+# Keep the required Agent Control P1 implementation evidence
+!reports/
+!reports/agent_control_p1_minimal_bridge/
+!reports/agent_control_p1_minimal_bridge/**
+!reports/agent_control_p2_runtime_observation/
+!reports/agent_control_p2_runtime_observation/**
+!reports/agent_control_p3_runtime_publication/
+!reports/agent_control_p3_runtime_publication/**
+!reports/agent_control_p4_no_order_publication/
+!reports/agent_control_p4_no_order_publication/**
+!reports/agent_control_p5_execution_capabilities/
+!reports/agent_control_p5_execution_capabilities/**
+!reports/agent_control_p6_exchange_info_cache/
+!reports/agent_control_p6_exchange_info_cache/**
 

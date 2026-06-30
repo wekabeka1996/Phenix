@@ -138,6 +138,7 @@ def test_decision_making_uses_constructor_domain_resolver_seam_for_config_spec(
         degraded_context_critical_keys=[],
         degraded_context_critical_keys_by_strategy={},
         degraded_context_contracts_by_strategy={},
+        neocortex_enforcement_mode="shadow",
     )
 
     class FakeResolver:

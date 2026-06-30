@@ -53,7 +53,7 @@ def clean_env():
 
 
 def _patch_trading_mode(config_dir: Path, mode: str) -> None:
-    """Patch system.yaml AND trading.yaml to set specific trading_mode."""
+    """Patch system.yaml to set specific trading_mode."""
     system_yaml = config_dir / "system.yaml"
     system_payload = yaml.safe_load(system_yaml.read_text()) or {}
     system_payload["trading_mode"] = mode
@@ -61,17 +61,6 @@ def _patch_trading_mode(config_dir: Path, mode: str) -> None:
         yaml.safe_dump(system_payload, sort_keys=False),
         encoding="utf-8",
     )
-
-    trading_yaml = config_dir / "trading.yaml"
-    if trading_yaml.exists():
-        trading_payload = yaml.safe_load(trading_yaml.read_text()) or {}
-        trading_block = trading_payload.setdefault("trading", {})
-        if isinstance(trading_block, dict):
-            trading_block["mode"] = mode
-        trading_yaml.write_text(
-            yaml.safe_dump(trading_payload, sort_keys=False),
-            encoding="utf-8",
-        )
 
 
 # ============================================================================

@@ -8,9 +8,13 @@ import joblib
 import numpy as np
 
 from apps.reference.domains.decision_making.authority_bridge import NeocortexAuthorityBridge
+from apps.reference.domains.decision_making.authority_process_runner import (
+    AuthorityProcessResult,
+)
 from apps.reference.domains.decision_making.schemas.control_decision import (
     ControlDecisionAction,
     ControlDecisionRequest,
+    ControlDecisionResponse,
 )
 from apps.reference.domains.neocortex.contracts.failure_taxonomy import (
     FailureOutcomeTaxonomy,
@@ -55,6 +59,42 @@ def _make_request() -> ControlDecisionRequest:
     )
 
 
+class _ShadowRunnerStub:
+    def __init__(
+        self,
+        *,
+        response_action: ControlDecisionAction = ControlDecisionAction.ALLOW,
+        model_action: ControlDecisionAction = ControlDecisionAction.BLOCK,
+        returned_action: ControlDecisionAction = ControlDecisionAction.ALLOW,
+    ) -> None:
+        self.response_action = response_action
+        self.model_action = model_action
+        self.returned_action = returned_action
+        self.telemetry = None
+
+    async def submit(
+        self,
+        req: ControlDecisionRequest,
+        timeout_ms: int,
+    ) -> AuthorityProcessResult:
+        response = ControlDecisionResponse(
+            decision_id=req.decision_id,
+            action=self.response_action,
+            apply_result=f"SHADOW_MODEL_{self.model_action.value}",
+            fallback_reason=None,
+            ttl_ms=max(0, req.deadline_ms - int(time.time() * 1000)),
+            model_action=self.model_action,
+            enforcement_mode="shadow",
+            shadow_logged=False,
+        )
+        return AuthorityProcessResult(
+            response=response,
+            shadow_snapshot={"state_vector": [1.0]},
+            model_action=self.model_action,
+            returned_action=self.returned_action,
+        )
+
+
 def test_baseline_controller_predicts_block_for_dangerous_state_vector(tmp_path: Path) -> None:
     model_path = tmp_path / "baseline_logreg_v1.pkl"
     _write_baseline_artifact(model_path, toxic_probability=0.90)
@@ -72,8 +112,8 @@ def test_shadow_authority_logs_model_block_but_returns_allow(tmp_path: Path) -> 
     shadow_events: list[tuple[str, dict, str]] = []
 
     bridge = NeocortexAuthorityBridge(
-        baseline_controller=controller,
         enforcement_mode="shadow",
+        process_runner=_ShadowRunnerStub(),
         shadow_emit_fn=lambda event_name, payload, why: shadow_events.append(
             (event_name, payload, why)),
     )
@@ -105,8 +145,8 @@ def test_shadow_emit_failure_degrades_observability_without_crashing(tmp_path: P
         raise RuntimeError("emit failed")
 
     bridge = NeocortexAuthorityBridge(
-        baseline_controller=controller,
         enforcement_mode="shadow",
+        process_runner=_ShadowRunnerStub(),
         shadow_emit_fn=_boom,
     )
 

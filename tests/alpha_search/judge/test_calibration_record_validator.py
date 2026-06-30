@@ -13,6 +13,7 @@ same formula the validator uses), independent of any disagreements list.
 """
 from __future__ import annotations
 
+import json
 import yaml
 from dataclasses import dataclass, field as dc_field
 from pathlib import Path
@@ -302,10 +303,66 @@ def test_7_calibration_builder_outputs_validator_consistent_records():
 # T8 — Simulator CLI smoke: run_simulation() completes without exception
 # ---------------------------------------------------------------------------
 
-def test_8_simulator_cli_smoke_runs_past_calibration_dataset_build():
-    """run_simulation() against real data must complete and produce non-empty
-    calibration_records.  This was the primary PKG-4.PRE blocker."""
-    cfg = _cfg()
+def test_8_simulator_cli_smoke_runs_past_calibration_dataset_build(tmp_path):
+    """run_simulation() must complete and produce non-empty calibration_records."""
+    ts_ms = 1779054479999
+    logs_dir = tmp_path / "judge_logs"
+    logs_dir.mkdir()
+    (logs_dir / "verdict_smoke.jsonl").write_text(
+        json.dumps(
+            {
+                "verdict_id": "v_smoke",
+                "envelope_id": "e_smoke",
+                "chamber_id": "c_smoke",
+                "symbol": "BTCUSDT",
+                "tf_sec": 180,
+                "ts_ms": ts_ms,
+                "verdict_scope": "ENTRY",
+                "entry_verdict": "OPEN_LONG",
+                "lifecycle_verdict": None,
+                "suppression_reason": None,
+                "suppression_code": None,
+                "confidence": 0.7,
+                "reasoning": ["smoke fixture"],
+                "dissent_noted": False,
+                "authority_mode": "shadow",
+                "applied": False,
+                "strategy_id": "aurora",
+                "schema_version": "1",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    outcome_path = tmp_path / "outcomes.json"
+    outcome_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1",
+                "outcomes": [
+                    {
+                        "strategy_id": "aurora",
+                        "symbol": "BTCUSDT",
+                        "tf_sec": 180,
+                        "bar_close_ts": ts_ms,
+                        "matched_trade": True,
+                        "entry_price": 100.0,
+                        "exit_price": 105.0,
+                        "exit_ts_ms": ts_ms + 180_000,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = _cfg().model_copy(
+        update={
+            "judge_logs_path": str(logs_dir),
+            "outcome_data_path": str(outcome_path),
+            "calibration_dataset_path": str(tmp_path / "calibration.jsonl"),
+            "summary_report_path": str(tmp_path / "summary.md"),
+        }
+    )
     result = run_simulation(cfg)
 
     assert result.calibration_records, "calibration_records must be non-empty"

@@ -244,6 +244,7 @@ class ExecPosFSM(
         shadow_mode: bool = False,
         leverage_service: Optional[Any] = None,
         is_live_execution: bool = False,
+        no_order_observation_mode: bool = False,
     ):
         if isinstance(config, dict):
             raise TypeError("ExecPosFSM requires typed AuroraConfig, got dict")
@@ -252,7 +253,20 @@ class ExecPosFSM(
                 f"CRITICAL: {self.__class__.__name__} requires valid AuroraConfig. "
                 "Refusing to start with empty defaults."
             )
+        if no_order_observation_mode and not shadow_mode:
+            raise ValueError(
+                "agent_bridge_observation_only requires shadow_mode=True; "
+                "refusing an execution-capable composition"
+            )
         self.config = config
+        self.no_order_observation_mode = bool(no_order_observation_mode)
+        self.runtime_mode = (
+            "agent_bridge_observation_only"
+            if self.no_order_observation_mode
+            else "normal"
+        )
+        self.mode = self.runtime_mode
+        self.no_order_blocked_action_count = 0
 
         self.fsm = fsm
         try:
@@ -392,6 +406,7 @@ class ExecPosFSM(
         self._last_close_reason_by_symbol: Dict[str, str] = {}
         self._proven_terminal_close_by_symbol: Dict[str, Dict[str, Any]] = {}
         self._close_accounting_truth_by_symbol: Dict[str, Dict[str, Any]] = {}
+        self._close_fill_trade_ids_by_symbol_order: Dict[str, set[str]] = {}
 
         self._position_policy_mediator = PositionPolicyMediator(self)
 
@@ -555,21 +570,29 @@ class ExecPosFSM(
         self.bus.listen("EVT:EXECUTION_CLOSE_RECONCILED",
                         self._on_execution_close_reconciled)
         # BUGFIX: Connect DecisionMaking intent to ExecutionPosition logic
-        self.bus.listen("EVT:TRADE_INTENT_PROPOSED",
-                        self._on_trade_intent_proposed)
+        if not self.no_order_observation_mode:
+            self.bus.listen("EVT:TRADE_INTENT_PROPOSED",
+                            self._on_trade_intent_proposed)
         self.bus.listen("EVT:TRADE_INTENT_REJECTED",
                         self._on_trade_intent_rejected)
         # LLM external intent path: wire CMD:EXTERNAL_OPEN_REQUEST_V1
-        self.bus.listen("CMD:EXTERNAL_OPEN_REQUEST_V1",
-                        self._on_external_open_request)
-        self.bus.listen("CMD:EXTERNAL_POSITION_CLOSE_REQUEST_V1",
-                        self._on_external_position_close_request)
-        self.bus.listen("CMD:EXTERNAL_BRACKET_AMEND_REQUEST_V1",
-                        self._on_external_bracket_amend_request)
-        self.bus.listen(
-            CLOSE_REQUEST_COMMAND_TOPIC,
-            self._position_policy_mediator.on_position_policy_close_request,
-        )
+        if not self.no_order_observation_mode:
+            self.bus.listen("CMD:EXTERNAL_OPEN_REQUEST_V1",
+                            self._on_external_open_request)
+            self.bus.listen("CMD:EXTERNAL_POSITION_CLOSE_REQUEST_V1",
+                            self._on_external_position_close_request)
+            self.bus.listen("CMD:EXTERNAL_BRACKET_AMEND_REQUEST_V1",
+                            self._on_external_bracket_amend_request)
+            self.bus.listen(
+                CLOSE_REQUEST_COMMAND_TOPIC,
+                self._position_policy_mediator.on_position_policy_close_request,
+            )
+        else:
+            LOG.warning(
+                "NO_ORDER_OBSERVATION_MODE_ACTIVE: consequential execution "
+                "listeners are not registered; adapter=%s",
+                self.adapter,
+            )
 
         # Phase 14D: DomainBridge for orphan domains
         self._domain_bridge = DomainBridge("execution_position", bus=self.bus)
@@ -854,6 +877,8 @@ class ExecPosFSM(
 
     async def _cancel_order(self, symbol: str, order_id: str) -> Any:
         """Unified cancel path with optional idempotent helper."""
+        if self._block_no_order_action("cancel_order"):
+            return {"status": "BLOCKED", "reason": "no_order_observation_mode"}
         if not self.adapter:
             raise RuntimeError("ExecPosFSM adapter is not initialized")
 
@@ -914,6 +939,8 @@ class ExecPosFSM(
 
     def _on_trade_intent_proposed(self, msg: Message) -> None:
         """Phase 14A: Delegated to IntentRouter."""
+        if self._block_no_order_action("trade_intent_proposed"):
+            return
         self._intent_router.on_trade_intent_proposed(msg)
 
     def _on_trade_intent_rejected(self, msg: Message) -> None:
@@ -922,15 +949,35 @@ class ExecPosFSM(
 
     def _on_external_open_request(self, msg: Message) -> None:
         """Phase 14A: Delegated to IntentRouter (LLM external intent path)."""
+        if self._block_no_order_action("external_open_request"):
+            return
         self._intent_router.on_external_open_request(msg)
 
     def _on_external_position_close_request(self, msg: Message) -> None:
         """Phase 14A: Delegated to IntentRouter (LLM external close path)."""
+        if self._block_no_order_action("external_close_request"):
+            return
         self._intent_router.on_external_position_close_request(msg)
 
     def _on_external_bracket_amend_request(self, msg: Message) -> None:
         """Phase 14A: Delegated to IntentRouter (LLM external bracket amend path)."""
+        if self._block_no_order_action("external_bracket_amend_request"):
+            return
         self._intent_router.on_external_bracket_amend_request(msg)
+
+    def _block_no_order_action(self, action: str) -> bool:
+        """Return true and record telemetry when an execution action is blocked."""
+        if not bool(getattr(self, "no_order_observation_mode", False)):
+            return False
+        self.no_order_blocked_action_count = int(
+            getattr(self, "no_order_blocked_action_count", 0)
+        ) + 1
+        LOG.warning(
+            "NO_ORDER_ACTION_BLOCKED action=%s runtime_mode=%s",
+            action,
+            getattr(self, "runtime_mode", "unknown"),
+        )
+        return True
 
     def _on_portfolio_state_updated(self, event: Message) -> None:
         """Phase 14A: Delegated to EPEventHandlers."""
@@ -2193,6 +2240,10 @@ class ExecPosFSM(
 
     async def _execute_decision(self, decision: Message):
         """Phase 14A: Thin dispatcher  delegates to sub-module executors."""
+        if self._block_no_order_action(
+            f"execute_decision:{getattr(decision, 'verb', 'unknown')}"
+        ):
+            return
         if not self.adapter:
             return
 

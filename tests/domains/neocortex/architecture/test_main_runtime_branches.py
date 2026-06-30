@@ -316,16 +316,30 @@ def test_shadow_runtime_handle_event_frame_paths(runtime_bundle) -> None:
     )
     runtime.aggregator.ingest_event = MagicMock(return_value=snapshot)
 
-    request = runtime._build_control_request(
-        snapshot,
-        _feature_payload(runtime),
+    allow_response = SimpleNamespace(
+        action=ControlDecisionAction.ALLOW,
+        shadow_logged=True,
+        model_action=ControlDecisionAction.ALLOW,
+        enforcement_mode="shadow",
+    )
+
+    async def _allow_request(_request, timeout_ms=50):
+        runtime._emit_shadow_decision(
+            neocortex_main.SHADOW_DECISION_EVENT,
+            {"decision_id": "decision-shadow-allow"},
+            "test_shadow_allow",
+        )
+        return allow_response
+
+    runtime.authority_bridge.request_authority = AsyncMock(
+        side_effect=_allow_request
     )
     response = asyncio.run(
-        runtime.authority_bridge.request_authority(request, timeout_ms=50)
+        runtime.handle_event_frame(_feature_payload(runtime))
     )
     assert response.action == ControlDecisionAction.ALLOW
     assert response.shadow_logged is True
-    assert runtime.decisions_logged == 0
+    assert runtime.decisions_logged == 1
     assert shadow_events
 
     fallback_response = SimpleNamespace(
@@ -341,7 +355,7 @@ def test_shadow_runtime_handle_event_frame_paths(runtime_bundle) -> None:
         runtime.handle_event_frame(_feature_payload(runtime)))
     assert response.action == ControlDecisionAction.FALLBACK
     assert runtime.shadow_fallbacks == 1
-    assert runtime.decisions_logged == 0
+    assert runtime.decisions_logged == 1
 
     block_response = SimpleNamespace(
         action=ControlDecisionAction.BLOCK,

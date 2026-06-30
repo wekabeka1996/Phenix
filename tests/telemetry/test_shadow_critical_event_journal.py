@@ -174,18 +174,23 @@ def _decision_trace_payload() -> dict:
         "trend_run_length": 5,
         "ts": 1779246904883,
         "event_ts_ms": 1779246904883,
-        "ts_ms": 1779246904883,
-        "features_ts_ms": 1779246899999,
-        "bar_close_ts": 1779246899999,
+        "bar_close_ts_ms": 1779246899999,
         "tf_sec": 300,
         "intent_side": "SHORT",
         "decision_surface": "decision_trace",
+        "signal_score": 0.0,
+        "delta_price": 0.0,
         "gate_chain_result": "ALLOW",
+        "gate_outcome": "ALLOW",
         "accepted_or_rejected": "ACCEPTED",
+        "deny_reason": None,
         "why": "low_vol_allow",
         "pm_norm_10s": None,
         "pm_norm_60s": -2.3026263054187086,
         "pm_norm_300s": -3.91772263739205,
+        "vol_pct_10s": None,
+        "vol_pct_60s": 0.00014428888975548883,
+        "vol_pct_300s": 6.235069930206187e-05,
         "price_motion_context": {
             "pm_norm_10s": None,
             "pm_norm_60s": -2.3026263054187086,
@@ -236,13 +241,24 @@ def _decision_trace_payload() -> dict:
             "path": "should_not_be_retained",
             "records": [],
         },
-        "tpsl_owner_ctx": {
-            "owner": "risk",
-        },
         "regime_provenance": {
             "source_kind": "detector_cache",
             "detector_event": {
-                "bar_close_ts_ms": 1779246899999,
+                "event_name": "EVT:REGIME_DETECTED",
+                "rid": "rid-regime-1",
+                "ts_ms": 1779246899999,
+                "last_update_ts_ms": 1779246900000,
+                "structural_regime_ref": "structural:BTCUSDT:1779246899999",
+                "changed": False,
+                "regime": "LOW_VOLATILITY",
+                "confidence": "0.41",
+                "raw_regime": "LOW_VOLATILITY",
+                "raw_confidence": "0.41",
+            },
+            "cache_snapshot": {
+                "cache_write_ts_ms": 1779246900001,
+                "regime": "LOW_VOLATILITY",
+                "confidence": 0.41,
             },
         },
     }
@@ -388,9 +404,15 @@ def test_shadow_journal_captures_regime_detected_transition_truth(tmp_path):
 
 
 def test_shadow_journal_typed_default_matches_runtime_default_allowlist():
-    assert list(ShadowCriticalEventJournalConfig().critical_events) == list(
-        DEFAULT_CRITICAL_EVENTS
+    cfg = ShadowCriticalEventJournalConfig(
+        enabled=True,
+        path="logs/shadow_critical_event_journal_v1.jsonl",
+        schema_version="1.0.0",
+        instrumentation_version="1.0.0",
+        critical_events=list(DEFAULT_CRITICAL_EVENTS),
     )
+
+    assert list(cfg.critical_events) == list(DEFAULT_CRITICAL_EVENTS)
 
 
 def test_loaded_runtime_config_retains_regime_detected_in_shadow_journal():
@@ -510,9 +532,9 @@ def test_shadow_journal_captures_compact_decision_trace_replay_fragment(tmp_path
     assert fragment["trend_dir"] == "DOWN"
     assert fragment["trend_confidence"] == 0.72
     assert fragment["trend_run_length"] == 5
-    assert fragment["ts_ms"] == 1779246904883
-    assert fragment["features_ts_ms"] == 1779246899999
-    assert fragment["bar_close_ts"] == 1779246899999
+    assert fragment["ts"] == 1779246904883
+    assert fragment["event_ts_ms"] == 1779246904883
+    assert fragment["bar_close_ts_ms"] == 1779246899999
     assert fragment["price_motion_context"]["pm_norm_60s"] == - \
         2.3026263054187086
     assert fragment["price_motion_context"]["pm_norm_300s"] == - \
@@ -610,7 +632,31 @@ def test_shadow_journal_captures_low_vol_trace_events_with_decision_source_conte
             "admission_mode": "quadratic",
             "sizing_mode": "quadratic",
             "quadratic_path_reached": True,
-            "compact_trace": {"regime": "LOW_VOLATILITY", "admission_result": "neutral"},
+            "price_motion_source": "features",
+            "price_motion_age_ms": 0,
+            "price_motion_ready": True,
+            "compact_trace": {
+                "regime": "LOW_VOLATILITY",
+                "raw_sum": 0.0,
+                "raw_score": 0.0,
+                "admission_mode": "quadratic",
+                "sizing_mode": "quadratic",
+                "raw_exposure": 0.0,
+                "shield_multiplier": 1.0,
+                "admission_shield_multiplier": 1.0,
+                "decision_score": 0.0,
+                "sizing_score": 0.0,
+                "final_score": 0.0,
+                "thr_buy": 0.1,
+                "thr_sell": 0.1,
+                "threshold_factor": 1.0,
+                "admission_result": "neutral",
+                "side": "",
+                "deferred": False,
+                "defer_reason": None,
+                "side_why": None,
+            },
+            "score_lineage": {"path": "quadratic_trace", "records": []},
             "ts_ms": 1775106000000,
         },
         why="quadratic_trace",
@@ -690,14 +736,32 @@ def test_loaded_runtime_shadow_journal_links_business_rid_to_retained_detector_a
     fsm.emit(
         "EVT:TRADE_INTENT_PROPOSED",
         payload={
-            "rid": business_rid,
-            "symbol": "ETHUSDT",
+            "instrument": "ETHUSDT",
             "side": "BUY",
-            "qty": "0.01",
-            "price": "2400.0",
-            "strategy_id": "aurora",
-            "regime": "LOW_VOLATILITY",
-            "regime_confidence": 0.57,
+            "p": "0.5",
+            "payoff_ratio_r": "1.5",
+            "tca_budget": {
+                "max_slippage_bps": "10",
+                "max_latency_ms": 100,
+                "maker_preference": "False",
+            },
+            "risk_budget": {
+                "trade_cvar95_max_bps": "50",
+                "session_cvar95_max_bps": "100",
+            },
+            "size": {
+                "kelly_fraction": "0.1666666666666666666666666667",
+                "notional_cap_usd": "5000.0",
+            },
+            "order": {
+                "qty": "0.01",
+                "price_ref": "2400.0",
+                "price": "2400.0",
+                "reduce_only": False,
+                "order_type": "LIMIT",
+                "tif": "GTX",
+            },
+            "valid_for_ms": 5000,
             "regime_provenance": {
                 "source_kind": "detector_cache",
                 "detector_event": {
@@ -718,6 +782,9 @@ def test_loaded_runtime_shadow_journal_links_business_rid_to_retained_detector_a
                     "confidence": 0.57,
                 },
             },
+            "why": ["controlled_runtime_like_business_case"],
+            "dto_version": "1.0.0",
+            "schema_ref": "trade_intent_v1.json",
         },
         why="controlled_runtime_like_business_case",
         rid=business_rid,
@@ -776,7 +843,7 @@ def test_close_flow_transition_captures_before_after_state(tmp_path):
     assert result is not None
     assert result.op == "DEC"
     records = _read_jsonl(path)
-    assert len(records) == 2
+    assert len(records) == 3
     close_record = next(
         record for record in records if record["event_name"] == "DEC:CLOSE")
     input_record = next(

@@ -1515,6 +1515,15 @@ class PriceMotionSanityConfig(BaseModel):
         le=50.0,
         description="Absolute clipping bound for pm_norm: clip to [-clip_abs, +clip_abs]. Default 10.0 for Anti-FOMO."
     )
+    nrr028_enabled: bool = Field(
+        ..., description="Enable NRR-028 (PRICE_MOTION_INSUFFICIENT) gate."
+    )
+    nrr029_enabled: bool = Field(
+        ..., description="Enable NRR-029 (PRICE_MOTION_FLASH_BLOCKED) gate."
+    )
+    nrr030_enabled: bool = Field(
+        ..., description="Enable NRR-030 (PRICE_MOTION_BLEED_BLOCKED) gate."
+    )
 
 
 class FlipOrchestrationConfig(BaseModel):
@@ -2307,11 +2316,29 @@ class JudgeBridgeConfig(BaseModel):
         return self
 
 
+class TradeFlowGateConfig(BaseModel):
+    """Configuration for T6C3 strategy-aware trade-flow degraded entry gate."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(...)
+    sensitive_strategies: List[str] = Field(...)
+    block_states: List[str] = Field(...)
+    missing_state_behavior: Literal["observe_only", "fail_closed"] = Field(...)
+    unknown_state_behavior: Literal["observe_only", "fail_closed"] = Field(...)
+    apply_to: List[str] = Field(...)
+    preserve: List[str] = Field(...)
+
+
 class DecisionMakingDomainConfig(BaseModel):
     """Complete decision making domain configuration."""
 
     model_config = ConfigDict(extra='forbid')
 
+    trade_flow_gate: TradeFlowGateConfig = Field(
+        ...,
+        description="T6C3 strategy-aware trade-flow degraded entry gate configuration.",
+    )
     position_sizing: PositionSizingConfig = Field(...)
     entry_plan: EntryPlanConfig = Field(
         ..., description="EP-01.2: EntryPlan config for ATR-based entry/SL/TP computation"

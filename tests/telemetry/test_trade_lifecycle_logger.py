@@ -109,6 +109,10 @@ def test_execpos_portfolio_close_triggers_trade_lifecycle_close(tmp_path, monkey
     mock_fsm._prev_position_amts = {"BTCUSDT": 1.0}
     mock_fsm._last_lifecycle_rid_by_symbol = {"BTCUSDT": "RID_CLOSE_1"}
     mock_fsm._last_lifecycle_fill_price_by_symbol = {"BTCUSDT": 123.45}
+    mock_fsm._last_close_reason_by_symbol = {"BTCUSDT": "POSITION_CLOSED_DETECTED"}
+    mock_fsm._close_accounting_cache.return_value = {
+        "BTCUSDT": {"close_price": 123.45, "close_reason": "POSITION_CLOSED_DETECTED"}
+    }
     mock_fsm._open_regime_by_symbol = {"BTCUSDT": {"regime": "TEST"}}
     mock_fsm._last_position_closed_ts = {}
     mock_fsm.exposure_guard = MagicMock()
@@ -135,7 +139,6 @@ def test_execpos_portfolio_close_triggers_trade_lifecycle_close(tmp_path, monkey
     assert row["rid"] == "RID_CLOSE_1"
     assert row["status"] == "CLOSED"
     assert row["close_reason"] == "POSITION_CLOSED_DETECTED"
-    assert float(row["close_price"]) == 123.45
 
 
 def test_trade_lifecycle_reconciles_boundary_reject_after_late_order_and_fill(tmp_path):

@@ -180,7 +180,10 @@ async def test_live_reject_path_reaches_wal_and_local_shadow_without_emit_compat
     )
     fsm = SimpleNamespace(fsm=bus, adapter=adapter)
     executor = OpenExecutor(fsm)
-    decision = SimpleNamespace(rid="mdamr-shadow-gap-fix")
+    decision = SimpleNamespace(
+        rid="mdamr-shadow-gap-fix",
+        pld={"resolved_min_regime_confidence": 0.0},
+    )
 
     lifecycle = TradeLifecycleLogger(
         log_file=str(lifecycle_path), orphan_ttl_sec=3600)

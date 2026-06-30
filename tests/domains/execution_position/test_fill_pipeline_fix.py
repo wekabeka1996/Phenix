@@ -11,6 +11,7 @@ Covers:
 import asyncio
 import pytest
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import MagicMock, AsyncMock, patch
 
 import yaml
@@ -300,13 +301,12 @@ class TestWSClientIntegration:
         env_config.api_secret = "secret"
         env_config.rest_url = "https://test"
 
-        api_config = MagicMock()
-        api_config.testnet = env_config
-        api_config.live = env_config
+        api_config = SimpleNamespace(testnet=env_config, live=env_config)
 
-        config = MagicMock()
-        config.get_domain_mode.return_value = "testnet"
-        config.binance_api = api_config
+        config = SimpleNamespace(
+            get_domain_mode=MagicMock(return_value="testnet"),
+            binance_api=api_config,
+        )
         mixin.config = config
 
         mock_adapter = MagicMock()

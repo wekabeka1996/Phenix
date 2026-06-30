@@ -365,6 +365,7 @@ class FlipCfgStub:
 class DecisionMakingCfgStub:
     """Stub for DecisionMaking config with real values."""
     flip_hysteresis_mult: float = 1.0
+    neocortex_enforcement_mode: str = "shadow"
     flip: FlipCfgStub = field(default_factory=FlipCfgStub)
     qos: QosCfgStub = field(default_factory=QosCfgStub)
     position_sizing: PositionSizingCfgStub = field(

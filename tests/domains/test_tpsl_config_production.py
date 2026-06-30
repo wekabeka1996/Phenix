@@ -122,13 +122,13 @@ class TestAuroraConfigLoading:
             f"XRPUSDT max_hold_sec={xrp_cfg.exit.max_hold_sec}, expected 1500"
         )
 
-    def test_btcusdt_trailing_stop_disabled(self, production_config: AuroraConfig):
-        """BTCUSDT should have trailing stop DISABLED."""
+    def test_btcusdt_trailing_stop_enabled(self, production_config: AuroraConfig):
+        """BTCUSDT should have trailing stop enabled in the current SSOT config."""
         btc_cfg = production_config.strategies.aurora.assets.get("BTCUSDT")
         assert btc_cfg.trailing_stop is not None, "BTCUSDT.trailing_stop missing"
         
-        assert btc_cfg.trailing_stop.enabled is False, (
-            f"BTCUSDT trailing_stop.enabled={btc_cfg.trailing_stop.enabled}, expected False"
+        assert btc_cfg.trailing_stop.enabled is True, (
+            f"BTCUSDT trailing_stop.enabled={btc_cfg.trailing_stop.enabled}, expected True"
         )
 
     def test_global_brackets_fallback_values(self, production_config: AuroraConfig):
@@ -323,12 +323,12 @@ class TestTrailingStopConfig:
         assert cfg.trailing_stop.min_update_interval_sec == 5
 
     def test_ethusdt_trailing_disabled(self, production_config: AuroraConfig):
-        """ETHUSDT trailing stop should be disabled."""
+        """ETHUSDT trailing stop should match production config."""
         fsm = ManageFlowFSM(config=production_config)
         fsm.symbol = "ETHUSDT"
         
         cfg = fsm._get_aurora_instr_cfg()
-        assert cfg.trailing_stop.enabled is False
+        assert cfg.trailing_stop.enabled is True
 
 
 class TestConfigConsistency:

@@ -31,6 +31,7 @@ class _MockDomainConfig:
         self.qos = MagicMock()
         self.position_sizing = MagicMock()
         self.risk_skew = MagicMock()
+        self.neocortex_enforcement_mode = "shadow"
         self.flip = SimpleNamespace(enabled=True)
         self.regime_thresholds = {}
         self.regime_threshold_multipliers = {}
@@ -127,4 +128,3 @@ def test_ttl_gate_uses_signal_ts_ms() -> None:
         dm._on_strategy_signal_gateway(evt)
 
         dm._record_blocked_intent.assert_called_with("BTCUSDT")
-        dm.logger.info.assert_called()

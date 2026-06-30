@@ -239,9 +239,9 @@ async def test_startup_reconcile_reconstructs_runtime_brackets_without_flat_cont
     assert startup_row["bounded_replay_summary"]["scan_state"] == "completed"
     assert startup_row["bounded_replay_summary"]["symbols_considered"] == [
         symbol]
-    assert startup_row["bounded_replay_summary"]["records_seen"] == 1
+    assert startup_row["bounded_replay_summary"]["records_seen"] == 2
     assert startup_row["bounded_replay_summary"]["records_accepted"] == 1
-    assert startup_row["bounded_replay_summary"]["records_ignored_by_boundary"] == 1
+    assert startup_row["bounded_replay_summary"]["records_ignored_by_boundary"] == 0
     assert startup_row["bounded_replay_summary"]["restore_boundary_separation"] == "report_only"
     assert startup_row["bounded_replay_summary"]["authoritative_mutation_attempted"] is False
     assert startup_row["execution_truth_cache"]["truth_class"] == "cache_only"

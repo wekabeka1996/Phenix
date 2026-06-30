@@ -92,6 +92,23 @@ def sim_config(temp_workspace) -> NeocortexConfig:
             log_level="INFO",
             log_to_file=False
         ),
+        trust_enabled=False,
+        authority={
+            "mode": "shadow",
+            "deadline_ms": 100,
+            "fallback_policy": "baseline_yaml",
+            "max_inflight_per_symbol": 1,
+            "modulation_allowlist": ["signal_threshold_bias"],
+            "signal_threshold_bias_bounds": [-1.0, 1.0],
+            "cooldown_mult_bounds": [0.5, 2.0],
+        },
+        evidence_capture={
+            "mode": "disabled",
+            "collect_observation": False,
+            "collect_authority_request": False,
+            "collect_authority_response": False,
+            "emit_shadow_decision_logged": False,
+        },
         ingest=IngestConfig(
             feature_list=FEATURE_NAMES,
             normalization_method="zscore",
@@ -157,6 +174,12 @@ def sim_config(temp_workspace) -> NeocortexConfig:
                     "train_ratio": 0.7,
                     "val_ratio": 0.15,
                     "test_ratio": 0.15,
+                },
+                "cutover": {
+                    "min_real_executed_rows": 1,
+                    "allow_synthetic_fallback": False,
+                    "max_non_causal_rows": 0,
+                    "require_reward_methodology": True,
                 },
             },
             evaluation={

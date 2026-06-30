@@ -955,6 +955,9 @@ def _check_price_motion_gate(
     pm_norm_10s: Optional[float],
     pm_norm_60s: Optional[float],
     pm_norm_300s: Optional[float],
+    nrr028_enabled: bool = True,
+    nrr029_enabled: bool = True,
+    nrr030_enabled: bool = True,
 ) -> tuple[str, Optional[str], str]:
     """Evaluate the multi-window price-motion sanity gate.
 
@@ -1000,22 +1003,28 @@ def _check_price_motion_gate(
     pm_bleed = _select_pm(bleed_window)
 
     if pm_flash is None:
-        return "DENY", NormalizedRejectReasons.PRICE_MOTION_INSUFFICIENT, "price_motion flash insufficient"
+        if nrr028_enabled:
+            return "DENY", NormalizedRejectReasons.PRICE_MOTION_INSUFFICIENT, "price_motion flash insufficient"
+        else:
+            return "ALLOW", None, "ok"
     if require_bleed_ready and (pm_bleed is None):
-        return "DENY", NormalizedRejectReasons.PRICE_MOTION_INSUFFICIENT, "price_motion bleed insufficient"
+        if nrr028_enabled:
+            return "DENY", NormalizedRejectReasons.PRICE_MOTION_INSUFFICIENT, "price_motion bleed insufficient"
 
     # Flash gate
-    if intent_side == "LONG" and pm_flash <= -t_flash:
-        return "DENY", NormalizedRejectReasons.PRICE_MOTION_FLASH_BLOCKED, "flash down blocks long"
-    if intent_side == "SHORT" and pm_flash >= t_flash:
-        return "DENY", NormalizedRejectReasons.PRICE_MOTION_FLASH_BLOCKED, "flash up blocks short"
+    if nrr029_enabled:
+        if intent_side == "LONG" and pm_flash <= -t_flash:
+            return "DENY", NormalizedRejectReasons.PRICE_MOTION_FLASH_BLOCKED, "flash down blocks long"
+        if intent_side == "SHORT" and pm_flash >= t_flash:
+            return "DENY", NormalizedRejectReasons.PRICE_MOTION_FLASH_BLOCKED, "flash up blocks short"
 
     # Bleed gate (only if ready)
-    if pm_bleed is not None:
-        if intent_side == "LONG" and pm_bleed <= -t_bleed:
-            return "DENY", NormalizedRejectReasons.PRICE_MOTION_BLEED_BLOCKED, "bleed down blocks long"
-        if intent_side == "SHORT" and pm_bleed >= t_bleed:
-            return "DENY", NormalizedRejectReasons.PRICE_MOTION_BLEED_BLOCKED, "bleed up blocks short"
+    if nrr030_enabled:
+        if pm_bleed is not None:
+            if intent_side == "LONG" and pm_bleed <= -t_bleed:
+                return "DENY", NormalizedRejectReasons.PRICE_MOTION_BLEED_BLOCKED, "bleed down blocks long"
+            if intent_side == "SHORT" and pm_bleed >= t_bleed:
+                return "DENY", NormalizedRejectReasons.PRICE_MOTION_BLEED_BLOCKED, "bleed up blocks short"
 
     return "ALLOW", None, "ok"
 
@@ -1489,14 +1498,21 @@ def apply_safety_gates(
         is_backtest = False
     result.price_motion_sanity_enabled = pm_enabled
     result.price_motion_backtest_bypass = is_backtest
-    result.nrr028_enabled = pm_enabled
-    result.nrr029_enabled = pm_enabled
-    result.nrr030_enabled = pm_enabled
+    nrr028_val = bool(getattr(pm_cfg, "nrr028_enabled", True))
+    nrr029_val = bool(getattr(pm_cfg, "nrr029_enabled", True))
+    nrr030_val = bool(getattr(pm_cfg, "nrr030_enabled", True))
+    result.nrr028_enabled = bool(pm_enabled and nrr028_val)
+    result.nrr029_enabled = bool(pm_enabled and nrr029_val)
+    result.nrr030_enabled = bool(pm_enabled and nrr030_val)
     result.nrr028_effective_enforced = bool(
-        apply_flag and not reduce_only and pm_enabled and not is_backtest
+        apply_flag and not reduce_only and result.nrr028_enabled and not is_backtest
     )
-    result.nrr029_effective_enforced = result.nrr028_effective_enforced
-    result.nrr030_effective_enforced = result.nrr028_effective_enforced
+    result.nrr029_effective_enforced = bool(
+        apply_flag and not reduce_only and result.nrr029_enabled and not is_backtest
+    )
+    result.nrr030_effective_enforced = bool(
+        apply_flag and not reduce_only and result.nrr030_enabled and not is_backtest
+    )
 
     pm_outcome, pm_deny, pm_why = _check_price_motion_gate(
         config=config,
@@ -1507,6 +1523,9 @@ def apply_safety_gates(
         pm_norm_10s=result.pm_norm_10s,
         pm_norm_60s=result.pm_norm_60s,
         pm_norm_300s=result.pm_norm_300s,
+        nrr028_enabled=result.nrr028_enabled,
+        nrr029_enabled=result.nrr029_enabled,
+        nrr030_enabled=result.nrr030_enabled,
     )
 
     if pm_outcome == "DENY":

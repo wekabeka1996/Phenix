@@ -1142,8 +1142,8 @@ def test_apply_safety_gates_strategy_regime_side_max_raise_is_exact_side_only() 
 
 def test_current_aurora_yaml_activates_only_eth_trend_down_sell_nrr063_exception() -> None:
     cfg = _fresh_config()
-    assert cfg.domains.decision_making.directional_sanity.nrr026_enabled is False
-    assert cfg.strategies.aurora.assets["XRPUSDT"].enabled is False
+    assert cfg.domains.decision_making.directional_sanity.nrr026_enabled is True
+    assert cfg.strategies.aurora.assets["XRPUSDT"].enabled is True
     assert cfg.strategies.aurora.safety_gates.regime_confidence is not None
     assert "DOGEUSDT" not in cfg.strategies.aurora.safety_gates.regime_confidence.max_by_symbol_regime_side
 
@@ -1194,13 +1194,15 @@ def test_current_aurora_yaml_activates_only_eth_trend_down_sell_nrr063_exception
         **common_kwargs,
     )
 
-    assert eth_sell.outcome == "ALLOW"
+    assert eth_sell.outcome == "DENY"
+    assert eth_sell.deny_reason == "NRR-028"
     assert eth_sell.resolved_min_regime_confidence == 0.20
     assert eth_sell.resolved_min_regime_confidence_source == "domain_regime_specific"
     assert eth_sell.resolved_max_regime_confidence is None
     assert eth_sell.resolved_max_regime_confidence_source == "strategy_symbol_regime_side_specific_disabled"
     assert eth_sell.nrr063_enabled is False
     assert eth_sell.regime_confidence_gate_verdict == "ALLOW"
+    assert eth_sell.regime_confidence_breach_kind == "none"
 
     assert eth_buy.outcome == "DENY"
     assert eth_buy.deny_reason == "NRR-063"

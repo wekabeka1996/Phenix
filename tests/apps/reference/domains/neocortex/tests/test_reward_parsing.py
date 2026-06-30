@@ -45,7 +45,7 @@ class TestCoreLogParsing:
         assert entry.event_type == CoreEventType.POSITION_CLOSED
         assert entry.symbol == "ETHUSDT"
         assert entry.reason == "neutral"
-        assert entry.event_ts_ms == 1768015004365
+        assert entry.event_ts_ms == 1768011404365
     
     def test_parse_position_closed_btc(self):
         """Parse BTC position closed event."""
@@ -552,6 +552,5 @@ class TestMultiTailerIntegration:
 # Run tests if executed directly
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-
 
 

@@ -77,6 +77,14 @@ class EPEventHandlers:
         setattr(self._fsm, "_close_accounting_truth_by_symbol", cache)
         return cache
 
+    def _close_fill_seen_cache(self) -> Dict[str, set[str]]:
+        cache = getattr(self._fsm, "_close_fill_trade_ids_by_symbol_order", None)
+        if isinstance(cache, dict):
+            return cache
+        cache = {}
+        setattr(self._fsm, "_close_fill_trade_ids_by_symbol_order", cache)
+        return cache
+
     @staticmethod
     def _optional_float(value: Any) -> Optional[float]:
         try:
@@ -365,6 +373,11 @@ class EPEventHandlers:
                 "metadata": {
                     "close_price": _close_price,
                     "realized_pnl": _realized_pnl,
+                    "close_qty": close_truth.get("close_qty"),
+                    "close_fill_count": close_truth.get("close_fill_count"),
+                    "source_trade_ids": close_truth.get("source_trade_ids") or [],
+                    "close_commission": close_truth.get("close_commission"),
+                    "entry_commission": close_truth.get("entry_commission"),
                     "close_fill_order_id": close_truth.get("close_fill_order_id"),
                     "close_fill_client_order_id": close_truth.get("close_fill_client_order_id"),
                 },
@@ -389,6 +402,11 @@ class EPEventHandlers:
                         "intent_id": _attribution.get("intent_id"),
                         "regime": _attribution.get("regime") or (open_regime or {}).get("regime"),
                         "realized_pnl": _realized_pnl,
+                        "close_qty": close_truth.get("close_qty"),
+                        "close_fill_count": close_truth.get("close_fill_count"),
+                        "source_trade_ids": close_truth.get("source_trade_ids") or [],
+                        "close_commission": close_truth.get("close_commission"),
+                        "entry_commission": close_truth.get("entry_commission"),
                         "close_price": _close_price,
                         "pnl_status": _pnl_status,
                         "pnl_source": close_truth.get("pnl_source") if _resolved else "unresolved",
@@ -410,6 +428,12 @@ class EPEventHandlers:
             self._fsm._accumulated_fees_by_symbol.pop(sym, None)
             self._fsm._open_attribution_by_symbol.pop(sym, None)
             self._close_accounting_cache().pop(sym, None)
+            seen_cache = getattr(
+                self._fsm, "_close_fill_trade_ids_by_symbol_order", None)
+            if isinstance(seen_cache, dict):
+                for key in list(seen_cache.keys()):
+                    if str(key).startswith(f"{sym}:"):
+                        seen_cache.pop(key, None)
         except Exception:
             pass
 
@@ -489,7 +513,23 @@ class EPEventHandlers:
 
         trade_id = str(payload.get("tradeId") or payload.get(
             "trade_id") or "").strip() or None
+        order_id = str(payload.get("orderId") or "").strip() or None
+        client_order_id = str(
+            payload.get("clientOrderId") or payload.get(
+                "client_order_id") or ""
+        ).strip() or None
+        seen_key = f"{symbol}:{order_id or client_order_id or 'unknown'}"
+        if trade_id:
+            seen_by_order = self._close_fill_seen_cache()
+            seen_trade_ids = seen_by_order.setdefault(seen_key, set())
+            if trade_id in seen_trade_ids:
+                return
+            seen_trade_ids.add(trade_id)
+
         close_price = self._optional_float(payload.get("price"))
+        fill_qty = self._optional_float(
+            payload.get("quantity") or payload.get("qty") or payload.get("last_fill_qty")
+        )
         fill_realized_pnl = self._optional_float(payload.get("realizedPnl"))
         previous_realized_pnl = self._optional_float(
             existing.get("realized_pnl"))
@@ -500,6 +540,23 @@ class EPEventHandlers:
         accumulated_fees = self._optional_float(
             getattr(self._fsm, "_accumulated_fees_by_symbol", {}).get(symbol)
         )
+        fill_commission = self._optional_float(payload.get("commission")) or 0.0
+        previous_close_commission = self._optional_float(
+            existing.get("close_commission"))
+        close_commission = (
+            (previous_close_commission or 0.0) + fill_commission
+        )
+        previous_close_qty = self._optional_float(existing.get("close_qty"))
+        close_qty = (
+            (previous_close_qty or 0.0) + fill_qty
+            if fill_qty is not None
+            else previous_close_qty
+        )
+        previous_fill_count = int(existing.get("close_fill_count") or 0)
+        source_trade_ids = list(existing.get("source_trade_ids") or [])
+        if trade_id and trade_id not in source_trade_ids:
+            source_trade_ids.append(trade_id)
+
         lifecycle_id = str(
             getattr(self._fsm, "_last_lifecycle_ikey_by_symbol",
                     {}).get(symbol) or ""
@@ -532,9 +589,18 @@ class EPEventHandlers:
         cache[symbol] = {
             "symbol": symbol,
             "trade_id": trade_id,
+            "source_trade_ids": source_trade_ids,
+            "close_fill_count": previous_fill_count + 1,
+            "close_qty": close_qty,
             "close_price": close_price,
             "realized_pnl": realized_pnl,
             "fees": accumulated_fees,
+            "close_commission": close_commission,
+            "entry_commission": (
+                accumulated_fees - close_commission
+                if accumulated_fees is not None
+                else None
+            ),
             "lifecycle_id": lifecycle_id,
             "entry_side": entry_side,
             "close_reason": close_reason,
@@ -542,11 +608,8 @@ class EPEventHandlers:
             "pnl_source": "close_fill",
             "economic_close_detected": True,
             "economic_close_kind": economic_close_kind,
-            "close_fill_order_id": str(payload.get("orderId") or "").strip() or None,
-            "close_fill_client_order_id": str(
-                payload.get("clientOrderId") or payload.get(
-                    "client_order_id") or ""
-            ).strip() or None,
+            "close_fill_order_id": order_id,
+            "close_fill_client_order_id": client_order_id,
             "accounting_unresolved_reason": unresolved_reason,
         }
         self._fsm._last_close_reason_by_symbol[symbol] = close_reason

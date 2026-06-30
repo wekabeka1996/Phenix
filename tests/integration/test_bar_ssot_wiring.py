@@ -9,6 +9,7 @@ Validates:
 """
 import pytest
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from vfoundation.core import FSMCore
 from vfoundation.core.protocol import Message
@@ -27,9 +28,9 @@ class TestBarAggregatorWiring:
         # Mock on_tick to capture calls
         tick_calls = []
         original_on_tick = aggregator.on_tick
-        def mock_on_tick(symbol, price, volume, ts_ms):
-            tick_calls.append((symbol, price, volume, ts_ms))
-            original_on_tick(symbol, price, volume, ts_ms)
+        def mock_on_tick(symbol, price, volume, ts_ms, trade_flow_metadata=None):
+            tick_calls.append((symbol, price, volume, ts_ms, trade_flow_metadata))
+            original_on_tick(symbol, price, volume, ts_ms, trade_flow_metadata)
         aggregator.on_tick = mock_on_tick
         
         # Simulate EVT:MARKET_TICK_RECEIVED payload (standard format)
@@ -44,11 +45,12 @@ class TestBarAggregatorWiring:
         aggregator.on_market_tick(event)
         
         assert len(tick_calls) == 1
-        symbol, price, volume, ts_ms = tick_calls[0]
+        symbol, price, volume, ts_ms, trade_flow_metadata = tick_calls[0]
         assert symbol == "BTCUSDT"
         assert price == Decimal("50000.50")
         assert volume == Decimal("1.5")
         assert ts_ms == 1700000000000
+        assert trade_flow_metadata == {}
     
     def test_on_market_tick_fallback_to_bid_ask_average(self):
         """Verify on_market_tick calculates mid from bid/ask when mid is missing."""
@@ -58,8 +60,8 @@ class TestBarAggregatorWiring:
         aggregator = BarAggregator(timeframes_sec=[60], emit_fn=fsm.emit)
         
         tick_calls = []
-        def mock_on_tick(symbol, price, volume, ts_ms):
-            tick_calls.append((symbol, price, volume, ts_ms))
+        def mock_on_tick(symbol, price, volume, ts_ms, trade_flow_metadata=None):
+            tick_calls.append((symbol, price, volume, ts_ms, trade_flow_metadata))
         aggregator.on_tick = mock_on_tick
         
         event = MagicMock()
@@ -74,7 +76,7 @@ class TestBarAggregatorWiring:
         aggregator.on_market_tick(event)
         
         assert len(tick_calls) == 1
-        _, price, _, _ = tick_calls[0]
+        _, price, _, _, _ = tick_calls[0]
         assert price == Decimal("3001.00")  # (3000 + 3002) / 2
     
     def test_on_market_tick_skips_incomplete_payload(self):
@@ -85,8 +87,8 @@ class TestBarAggregatorWiring:
         aggregator = BarAggregator(timeframes_sec=[60], emit_fn=fsm.emit)
         
         tick_calls = []
-        def mock_on_tick(symbol, price, volume, ts_ms):
-            tick_calls.append((symbol, price, volume, ts_ms))
+        def mock_on_tick(symbol, price, volume, ts_ms, trade_flow_metadata=None):
+            tick_calls.append((symbol, price, volume, ts_ms, trade_flow_metadata))
         aggregator.on_tick = mock_on_tick
         
         # Missing ts_ms
@@ -104,8 +106,8 @@ class TestBarAggregatorWiring:
         aggregator = BarAggregator(timeframes_sec=[60], emit_fn=fsm.emit)
         
         tick_calls = []
-        def mock_on_tick(symbol, price, volume, ts_ms):
-            tick_calls.append((symbol, price, volume, ts_ms))
+        def mock_on_tick(symbol, price, volume, ts_ms, trade_flow_metadata=None):
+            tick_calls.append((symbol, price, volume, ts_ms, trade_flow_metadata))
         aggregator.on_tick = mock_on_tick
         
         # Dict event without pld attribute
@@ -121,10 +123,11 @@ class TestBarAggregatorWiring:
         aggregator.on_market_tick(event)
         
         assert len(tick_calls) == 1
-        symbol, price, _, ts_ms = tick_calls[0]
+        symbol, price, _, ts_ms, trade_flow_metadata = tick_calls[0]
         assert symbol == "SOLUSDT"
         assert price == Decimal("100.00")
         assert ts_ms == 1700000002000
+        assert trade_flow_metadata == {}
     
     def test_bar_closed_event_emitted_on_timeframe_boundary(self):
         """Verify EVT:BAR_CLOSED is emitted when bar closes."""
@@ -244,11 +247,10 @@ class TestBarAggregatorFSMIntegration:
         
         fsm = FSMCore()
         aggregator = BarAggregator(timeframes_sec=[60], emit_fn=fsm.emit)
-        fsm.listen("EVT:MARKET_TICK_RECEIVED", aggregator.on_market_tick)
         
         symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
         for i, symbol in enumerate(symbols):
-            fsm.emit("EVT:MARKET_TICK_RECEIVED", {
+            aggregator.on_market_tick(SimpleNamespace(pld={
                 "ts": 1700000000000,
                 "symbol": symbol,
                 "price": f"{50000 + i * 1000}.00",
@@ -262,7 +264,7 @@ class TestBarAggregatorFSMIntegration:
                 "data_type": "market_tick_aggregated",
                 "data_source": "websocket_live",
                 "volume": "1.0", # Added for test compatibility
-            }, why="test multi-symbol")
+            }))
         
         # Verify bars are tracked per symbol
         for symbol in symbols:
@@ -275,9 +277,8 @@ class TestBarAggregatorFSMIntegration:
         
         fsm = FSMCore()
         aggregator = BarAggregator(timeframes_sec=[60, 300], emit_fn=fsm.emit)
-        fsm.listen("EVT:MARKET_TICK_RECEIVED", aggregator.on_market_tick)
         
-        fsm.emit("EVT:MARKET_TICK_RECEIVED", {
+        aggregator.on_market_tick(SimpleNamespace(pld={
             "ts": 1700000000000,
             "symbol": "BTCUSDT",
             "price": "50000.00",
@@ -291,7 +292,7 @@ class TestBarAggregatorFSMIntegration:
             "data_type": "market_tick_aggregated",
             "data_source": "websocket_live",
             "volume": "1.0", # Added for test compatibility
-        }, why="test multi-tf")
+        }))
         
         # Both timeframes should have partial bars
         assert ("BTCUSDT", 60) in aggregator._current_bars

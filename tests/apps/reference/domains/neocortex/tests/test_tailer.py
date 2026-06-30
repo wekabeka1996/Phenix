@@ -375,7 +375,11 @@ def test_tailer_handles_incomplete_json(temp_wal_dir, temp_state_file):
 def test_tailer_stats():
     """Test tailer statistics."""
 
-    config = ReplayConfig(enabled=False)
+    config = ReplayConfig(
+        enabled=False,
+        poll_interval=0.05,
+        feature_missing_timestamp_policy="fail_closed",
+    )
 
     tailer = WalTailer(
         config=config,
@@ -397,7 +401,11 @@ def test_tailer_stats():
 def test_tailer_disabled():
     """Test disabled tailer does nothing."""
 
-    config = ReplayConfig(enabled=False)
+    config = ReplayConfig(
+        enabled=False,
+        poll_interval=0.05,
+        feature_missing_timestamp_policy="fail_closed",
+    )
 
     handled = []
 

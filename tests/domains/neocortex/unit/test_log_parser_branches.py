@@ -178,9 +178,9 @@ def test_feature_log_parser_error_and_file_paths(tmp_path: Path) -> None:
         )
 
     with patch(
-        "apps.reference.domains.neocortex.logic.ingest.parsers.feature_parser.datetime"
-    ) as mock_datetime:
-        mock_datetime.strptime.side_effect = ValueError("bad timestamp")
+        "apps.reference.domains.neocortex.logic.ingest.parsers.feature_parser.parse_log_wallclock_ms",
+        return_value=None,
+    ):
         assert (
             parse_feature_log_line(
                 "2026-01-09 12:58:42,585 - module - INFO - Calculated features for BTCUSDT: {\"obi\": \"0.5\"}",

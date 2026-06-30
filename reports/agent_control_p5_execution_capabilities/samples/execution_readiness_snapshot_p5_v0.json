@@ -1,0 +1,244 @@
+{
+  "schema_version": "execution-readiness/v0",
+  "produced_ts_ms": 1782832605428,
+  "runtime_available": true,
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "invariants": [
+    {
+      "name": "testnet_only_or_mode",
+      "status": "ready",
+      "detail": "Runtime flags observed: no_order_observation=true, shadow_mode=true, live_execution=false, adapter_present=false.",
+      "evidence_source": "aurora://execution-position/runtime#readiness",
+      "source_ts_ms": 1782832605428,
+      "raw_ref": "aurora://execution-position/runtime#readiness"
+    },
+    {
+      "name": "no_order_execution_isolation",
+      "status": "ready",
+      "detail": "Runtime-owned observation profile is active with shadow mode, no live execution, no exchange adapter, and consequential bus listeners omitted. Blocked action count=0.",
+      "evidence_source": "aurora://execution-position/runtime#readiness",
+      "source_ts_ms": 1782832605428,
+      "raw_ref": "aurora://execution-position/runtime#readiness"
+    },
+    {
+      "name": "exchange_filter_readiness",
+      "status": "degraded",
+      "detail": "Exchange-confirmed fresh constraints: 0/2; configured-only constraints: 2/2.",
+      "evidence_source": "aurora://execution-position/runtime#exchange-filter-cache",
+      "source_ts_ms": 1782832605428,
+      "raw_ref": "aurora://execution-position/runtime#exchange-filter-cache"
+    },
+    {
+      "name": "precision_minimum_constraints",
+      "status": "ready",
+      "detail": "Runtime-owned qty/price/minimum normalization is ready for 2/2 requested symbols.",
+      "evidence_source": "aurora://execution-position/runtime#exchange-filter-cache",
+      "source_ts_ms": 1782832605428,
+      "raw_ref": "aurora://execution-position/runtime#exchange-filter-cache"
+    },
+    {
+      "name": "reduce_only_close_protect",
+      "status": "ready",
+      "detail": "Explicit runtime-owner reduce-only capabilities ready: 3/3; exchange acceptance is not claimed.",
+      "evidence_source": "aurora://execution-position/runtime#readiness",
+      "source_ts_ms": 1782832605428,
+      "raw_ref": "aurora://execution-position/runtime#readiness"
+    },
+    {
+      "name": "duplicate_idempotency_protection",
+      "status": "ready",
+      "detail": "Runtime idempotent helper present=true, order index present=true.",
+      "evidence_source": "aurora://execution-position/runtime#readiness",
+      "source_ts_ms": 1782832605428,
+      "raw_ref": "aurora://execution-position/runtime#readiness"
+    },
+    {
+      "name": "lifecycle_reconciliation",
+      "status": "ready",
+      "detail": "Startup truth owner present=true, managed symbols=0.",
+      "evidence_source": "aurora://execution-position/runtime#readiness",
+      "source_ts_ms": 1782832605428,
+      "raw_ref": "aurora://execution-position/runtime#readiness"
+    },
+    {
+      "name": "bracket_ownership",
+      "status": "ready",
+      "detail": "Bracket owner present=true, linked symbols=0, truth-source symbols=0.",
+      "evidence_source": "aurora://execution-position/runtime#readiness",
+      "source_ts_ms": 1782832605428,
+      "raw_ref": "aurora://execution-position/runtime#readiness"
+    },
+    {
+      "name": "trace_correlation_identity",
+      "status": "ready",
+      "detail": "Runtime correlation store present=true, recent bounded trace present=true.",
+      "evidence_source": "aurora://execution-position/runtime#readiness",
+      "source_ts_ms": 1782832605428,
+      "raw_ref": "aurora://execution-position/runtime#readiness"
+    },
+    {
+      "name": "secret_isolation",
+      "status": "ready",
+      "detail": "The readiness inspector uses an explicit allowlist and does not read secret-bearing adapter attributes.",
+      "evidence_source": "agent-bridge://execution-readiness/allowlist-v0",
+      "source_ts_ms": 1782832605428,
+      "raw_ref": "agent-bridge://execution-readiness/allowlist-v0"
+    }
+  ],
+  "capability_descriptors": [
+    {
+      "name": "exchange_filter_constraints",
+      "symbol": "ETHUSDT",
+      "status": "degraded",
+      "evidence_level": "configured_only",
+      "owner": "execution_position.exchange_filter_cache",
+      "source_ts_ms": 1782832605428,
+      "detail": "Canonical typed constraints are loaded; exchange parity is not confirmed.",
+      "constraints": {
+        "tick_size": "0.01",
+        "step_size": "0.001",
+        "min_qty": "0.001",
+        "min_notional": "20",
+        "max_notional_known": false,
+        "max_position_known": false
+      },
+      "raw_ref": "aurora://config/instruments#precision",
+      "missing_reason": "exchange_filter_not_runtime_confirmed"
+    },
+    {
+      "name": "precision_minimum_normalization",
+      "symbol": "ETHUSDT",
+      "status": "ready",
+      "evidence_level": "runtime_owner",
+      "owner": "execution_position.qty_normalizer+price_quantizer",
+      "source_ts_ms": 1782832605428,
+      "detail": "Runtime owner can resolve the symbol, floor quantity to step size, quantize price to tick size, and fail closed on min quantity/notional.",
+      "constraints": {
+        "can_normalize_qty": true,
+        "can_normalize_price": true,
+        "can_check_min_notional": true,
+        "can_resolve_symbol": true,
+        "unknown_symbol_fails_closed": true
+      },
+      "raw_ref": "aurora://execution-position/guards/qty-normalizer;aurora://execution-position/utils#quantize-stop-price"
+    },
+    {
+      "name": "exchange_filter_constraints",
+      "symbol": "BTCUSDT",
+      "status": "degraded",
+      "evidence_level": "configured_only",
+      "owner": "execution_position.exchange_filter_cache",
+      "source_ts_ms": 1782832605428,
+      "detail": "Canonical typed constraints are loaded; exchange parity is not confirmed.",
+      "constraints": {
+        "tick_size": "0.1",
+        "step_size": "0.001",
+        "min_qty": "0.001",
+        "min_notional": "100",
+        "max_notional_known": false,
+        "max_position_known": false
+      },
+      "raw_ref": "aurora://config/instruments#precision",
+      "missing_reason": "exchange_filter_not_runtime_confirmed"
+    },
+    {
+      "name": "precision_minimum_normalization",
+      "symbol": "BTCUSDT",
+      "status": "ready",
+      "evidence_level": "runtime_owner",
+      "owner": "execution_position.qty_normalizer+price_quantizer",
+      "source_ts_ms": 1782832605428,
+      "detail": "Runtime owner can resolve the symbol, floor quantity to step size, quantize price to tick size, and fail closed on min quantity/notional.",
+      "constraints": {
+        "can_normalize_qty": true,
+        "can_normalize_price": true,
+        "can_check_min_notional": true,
+        "can_resolve_symbol": true,
+        "unknown_symbol_fails_closed": true
+      },
+      "raw_ref": "aurora://execution-position/guards/qty-normalizer;aurora://execution-position/utils#quantize-stop-price"
+    },
+    {
+      "name": "reduce_only_order_parameter",
+      "status": "ready",
+      "evidence_level": "runtime_owner",
+      "owner": "execution_position.contracts.BracketOrderPayload",
+      "source_ts_ms": 1782832605428,
+      "detail": "Typed bracket request contract explicitly represents reduce_only. Exchange acceptance is not claimed.",
+      "constraints": {
+        "exchange_acceptance_confirmed": false
+      },
+      "raw_ref": "aurora://execution-position/contracts#bracket-order-payload"
+    },
+    {
+      "name": "close_path_reduce_only_enforcement",
+      "status": "ready",
+      "evidence_level": "runtime_owner",
+      "owner": "execution_position.flows.close.CloseExecutor",
+      "source_ts_ms": 1782832605428,
+      "detail": "Runtime CloseExecutor owns a dedicated reduce-only close submission path. Exchange acceptance is not claimed.",
+      "constraints": {
+        "exchange_acceptance_confirmed": false
+      },
+      "raw_ref": "aurora://execution-position/close-executor#reduce-only"
+    },
+    {
+      "name": "protect_path_reduce_only_enforcement",
+      "status": "ready",
+      "evidence_level": "runtime_owner",
+      "owner": "execution_position.flows.manage.BracketManager",
+      "source_ts_ms": 1782832605428,
+      "detail": "Runtime BracketManager owns reduce-only/close-position protection semantics. Exchange acceptance is not claimed.",
+      "constraints": {
+        "exchange_acceptance_confirmed": false
+      },
+      "raw_ref": "aurora://execution-position/bracket-manager#reduce-only"
+    }
+  ],
+  "constraint_summary": [
+    {
+      "symbol": "ETHUSDT",
+      "status": "degraded",
+      "evidence_level": "configured_only",
+      "filter_source": "typed_config",
+      "source_ts_ms": 1782832605428,
+      "freshness": "unknown",
+      "tick_size": "0.01",
+      "step_size": "0.001",
+      "min_qty": "0.001",
+      "min_notional": "20",
+      "missing_fields": [
+        "max_notional",
+        "max_position"
+      ]
+    },
+    {
+      "symbol": "BTCUSDT",
+      "status": "degraded",
+      "evidence_level": "configured_only",
+      "filter_source": "typed_config",
+      "source_ts_ms": 1782832605428,
+      "freshness": "unknown",
+      "tick_size": "0.1",
+      "step_size": "0.001",
+      "min_qty": "0.001",
+      "min_notional": "100",
+      "missing_fields": [
+        "max_notional",
+        "max_position"
+      ]
+    }
+  ],
+  "readiness_summary": {
+    "ready": 5,
+    "degraded": 2,
+    "missing": 0,
+    "unknown": 0,
+    "reasons": [
+      "exchange_filter_not_runtime_confirmed"
+    ]
+  }
+}

@@ -76,13 +76,15 @@ def test_portfolio_fallback_on_timeout() -> None:
 def test_portfolio_fallback_payload_shape() -> None:
     """Fallback payload has correct structure."""
     fallback = {
-        "positions": {},
+        "positions": [],
+        "positions_last_ts_ms": int(time.time() * 1000),
         "balances": {},
         "updated_at": int(time.time() * 1000),
         "source": "startup:portfolio_fallback",
     }
-    assert isinstance(fallback["positions"], dict)
+    assert isinstance(fallback["positions"], list)
     assert isinstance(fallback["balances"], dict)
+    assert fallback["positions_last_ts_ms"] > 0
     assert fallback["source"] == "startup:portfolio_fallback"
     assert fallback["updated_at"] > 0
 
@@ -90,7 +92,8 @@ def test_portfolio_fallback_payload_shape() -> None:
 # ── Fallback portfolio safety proofs ─────────────────────────────────────────
 
 FALLBACK_PORTFOLIO = {
-    "positions": {},
+    "positions": [],
+    "positions_last_ts_ms": int(time.time() * 1000),
     "balances": {},
     "source": "startup:portfolio_fallback",
 }
@@ -167,6 +170,8 @@ def test_fallback_portfolio_gateway_rejects_no_trade() -> None:
         ),
         strategies=SimpleNamespace(
             aurora=SimpleNamespace(
+                enabled=True,
+                mode="runtime",
                 decision=SimpleNamespace(
                     retry_max_count=5, retry_backoff_factor=2.0),
             ),

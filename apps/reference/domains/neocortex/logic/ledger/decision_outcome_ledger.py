@@ -629,6 +629,17 @@ class DecisionOutcomeLedgerSink:
         rid = _string_alias(payload, "rid", "corr_id")
         symbol = _string_alias(payload, "symbol")
         if decision_id is None or rid is None or symbol is None:
+            record_failure_outcome(
+                FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
+                FailureReasonCode.MISSING_REQUIRED_STATE,
+                location="logic/ledger/decision_outcome_ledger.py:_on_shadow_decision_logged",
+                message="Cannot register pending decision: missing decision_id, rid or symbol",
+                details={
+                    "decision_id_present": decision_id is not None,
+                    "rid_present": rid is not None,
+                    "symbol_present": symbol is not None,
+                },
+            )
             return
 
         raw_flags = payload.get("data_quality_flags")
@@ -640,6 +651,18 @@ class DecisionOutcomeLedgerSink:
         _ensure_snapshot_observation_ts(snapshot, request_ts_ms)
         support_quality = self._build_support_quality(flags, payload, snapshot)
         stress_metrics = _json_object(snapshot.get("stress_metrics"))
+
+        strategy_id = _string_alias(payload, "strategy_id")
+        if strategy_id is None:
+            strategy_id = _string_alias(snapshot.get("candidate_intent_summary") or {}, "strategy_id")
+        if strategy_id is None:
+            strategy_id = _string_alias(snapshot, "strategy_id")
+
+        side = _string_alias(payload, "side")
+        if side is None:
+            side = _string_alias(snapshot.get("candidate_intent_summary") or {}, "side")
+        if side is None:
+            side = _string_alias(snapshot, "side")
 
         entry = _PendingDecision(
             decision_id=decision_id,
@@ -659,11 +682,82 @@ class DecisionOutcomeLedgerSink:
             stress_metrics=stress_metrics,
             support_quality=support_quality,
             expires_at_ms=response_ts_ms + self._pending_ttl_ms,
+            strategy_id=strategy_id,
+            side=side,
         )
 
+        seed_row: DecisionOutcomeLedgerRow | None = None
         with self._lock:
+            existing = self._pending_by_decision_id.get(decision_id)
+            if existing is not None:
+                entry.seed_written = existing.seed_written
+                entry.rid_aliases.update(existing.rid_aliases)
+                entry.lifecycle_aliases.update(existing.lifecycle_aliases)
+                entry.trade_aliases.update(existing.trade_aliases)
+                if existing.downstream_rid and not entry.downstream_rid:
+                    entry.downstream_rid = existing.downstream_rid
+                if existing.lifecycle_id and not entry.lifecycle_id:
+                    entry.lifecycle_id = existing.lifecycle_id
+                if existing.trade_id and not entry.trade_id:
+                    entry.trade_id = existing.trade_id
+                if existing.event_ts_ms and not entry.event_ts_ms:
+                    entry.event_ts_ms = existing.event_ts_ms
+                if existing.strategy_id and not entry.strategy_id:
+                    entry.strategy_id = existing.strategy_id
+                if existing.side and not entry.side:
+                    entry.side = existing.side
+                if existing.tf_sec and not entry.tf_sec:
+                    entry.tf_sec = existing.tf_sec
+                if existing.bar_close_ts_ms and not entry.bar_close_ts_ms:
+                    entry.bar_close_ts_ms = existing.bar_close_ts_ms
+                if existing.regime and not entry.regime:
+                    entry.regime = existing.regime
+                if existing.regime_confidence and not entry.regime_confidence:
+                    entry.regime_confidence = existing.regime_confidence
+                if existing.decision_surface and not entry.decision_surface:
+                    entry.decision_surface = existing.decision_surface
+                if existing.raw_score is not None and entry.raw_score is None:
+                    entry.raw_score = existing.raw_score
+                if existing.decision_score is not None and entry.decision_score is None:
+                    entry.decision_score = existing.decision_score
+                if existing.active_threshold is not None and entry.active_threshold is None:
+                    entry.active_threshold = existing.active_threshold
+                if existing.score_to_threshold_ratio is not None and entry.score_to_threshold_ratio is None:
+                    entry.score_to_threshold_ratio = existing.score_to_threshold_ratio
+                if existing.gate_chain_result and not entry.gate_chain_result:
+                    entry.gate_chain_result = existing.gate_chain_result
+                if existing.reject_reason and not entry.reject_reason:
+                    entry.reject_reason = existing.reject_reason
+                if existing.accepted_or_rejected and not entry.accepted_or_rejected:
+                    entry.accepted_or_rejected = existing.accepted_or_rejected
+
+            capture_mode = support_quality.get("capture_mode")
+            authority_applied = support_quality.get("authority_applied")
+            no_effect = support_quality.get("no_effect")
+            is_accepted = (entry.neocortex_action == "ALLOW")
+
+            if (
+                is_accepted
+                and capture_mode == "journal_only"
+                and authority_applied is False
+                and no_effect is True
+                and not entry.seed_written
+            ):
+                entry.seed_written = True
+                seed_row = self._build_row(
+                    entry,
+                    terminal_status=DecisionOutcomeTerminalStatus.INVALID_FOR_DATASET,
+                    invalid_reason_code="OUTCOME_UNRESOLVED",
+                    realized_pnl_net=None,
+                    fees=None,
+                    joined_by=None,
+                )
+
             self._pending_by_decision_id[decision_id] = entry
             self._register_alias_locked(entry, rid=rid)
+
+        if seed_row is not None:
+            self._enqueue_row(seed_row)
 
     def _on_decision_trace_emitted(self, event: Mapping[str, object] | _EventLike | object) -> None:
         payload = _payload_view(event)

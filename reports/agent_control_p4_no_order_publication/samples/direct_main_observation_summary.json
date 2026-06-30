@@ -1,0 +1,97 @@
+{
+  "schema_version": "agent-feed-runtime-observation/v0",
+  "cockpit_base_url": "http://127.0.0.1:18081",
+  "requested_symbols": [
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "request_method": "GET",
+  "polls": 10,
+  "successes": 10,
+  "failures": 0,
+  "packet_ids": [
+    "afp_307aca906b3e48aba8f6a0fd55d0d95e",
+    "afp_b920a7a388cd4fc987f38c0aa83b19c9",
+    "afp_6e3febd7b7ba4216a3977acb3764ac2a",
+    "afp_0440bed5a7ee44c8b02262ce6cd24b99",
+    "afp_ed69116f0cd0468aad1aff2d59558cf5",
+    "afp_80a90b0e55ad496f8e7ddd179094f7f2",
+    "afp_8d5dfc4fc85047bb9490e4e3237eb027",
+    "afp_9690b4114b5247c59ff08c8b9f1c5aeb",
+    "afp_c6cde014d5b14b00b5583712c2cdf448",
+    "afp_93df6ea7450646899df49dcf7824a627"
+  ],
+  "packet_bytes_min": 11293,
+  "packet_bytes_max": 11295,
+  "estimated_tokens_min": 2824,
+  "estimated_tokens_max": 2824,
+  "freshness_summaries": [
+    {
+      "fresh": 8,
+      "stale": 0,
+      "missing": 0,
+      "unknown": 0
+    },
+    {
+      "fresh": 8,
+      "stale": 0,
+      "missing": 0,
+      "unknown": 0
+    },
+    {
+      "fresh": 8,
+      "stale": 0,
+      "missing": 0,
+      "unknown": 0
+    },
+    {
+      "fresh": 8,
+      "stale": 0,
+      "missing": 0,
+      "unknown": 0
+    },
+    {
+      "fresh": 8,
+      "stale": 0,
+      "missing": 0,
+      "unknown": 0
+    },
+    {
+      "fresh": 8,
+      "stale": 0,
+      "missing": 0,
+      "unknown": 0
+    },
+    {
+      "fresh": 8,
+      "stale": 0,
+      "missing": 0,
+      "unknown": 0
+    },
+    {
+      "fresh": 8,
+      "stale": 0,
+      "missing": 0,
+      "unknown": 0
+    },
+    {
+      "fresh": 8,
+      "stale": 0,
+      "missing": 0,
+      "unknown": 0
+    },
+    {
+      "fresh": 8,
+      "stale": 0,
+      "missing": 0,
+      "unknown": 0
+    }
+  ],
+  "oldest_source_age_ms_min": 249695,
+  "oldest_source_age_ms_max": 254405,
+  "sqlite_table": "agent_feed_packet_metadata",
+  "sqlite_rows_before": 20,
+  "sqlite_rows_after": 30,
+  "sqlite_rows_inserted": 10,
+  "latest_packet_id": "afp_93df6ea7450646899df49dcf7824a627"
+}

@@ -106,10 +106,10 @@ def test_live_decision_geometry_linear_admission_quadratic_sizing() -> None:
 
     assert summary["geometry"]["status"] == "PRESENT"
     assert summary["geometry"]["admission_mode"] == "linear"
-    assert summary["geometry"]["sizing_mode"] == "quadratic"
+    assert summary["geometry"]["sizing_mode"] == "soft_power"
     assert (
         summary["verdicts"]["quadratic_logic_classification"]
-        == "QUADRATIC_USED_FOR_SIZING_ONLY"
+        == "QUADRATIC_MIXED_SEMANTICS_FOUND"
     )
 
 

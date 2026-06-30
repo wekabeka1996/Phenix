@@ -32,7 +32,7 @@ MODEL_DEFAULT_WHITELIST = {
     SystemConfig: set(),
     IngestConfig: set(),
     VAEConfig: {"regime_aux"},
-    VAEConfig.RegimeAuxConfig: {"alpha", "num_classes", "ema_decay", "alpha_schedule"},
+    VAEConfig.RegimeAuxConfig: {"enabled", "alpha", "num_classes", "ema_decay", "alpha_schedule"},
     VAEConfig.RegimeAuxConfig.AlphaScheduleConfig: set(),
     PPONumericalSafetyConfig: set(),
     PPOConfig: {"entropy_schedule"},
@@ -120,11 +120,11 @@ def test_actual_neocortex_ssot_yaml_is_explicit_and_loads():
     assert config.oracle.reward_matrix_enabled is True
     # Phase 2: §6.2 keys must be present
     assert config.trust_enabled is False
-    assert config.evidence_capture.mode == "disabled"
-    assert config.evidence_capture.collect_observation is False
-    assert config.evidence_capture.collect_authority_request is False
-    assert config.evidence_capture.collect_authority_response is False
-    assert config.evidence_capture.emit_shadow_decision_logged is False
+    assert config.evidence_capture.mode == "journal_only"
+    assert config.evidence_capture.collect_observation is True
+    assert config.evidence_capture.collect_authority_request is True
+    assert config.evidence_capture.collect_authority_response is True
+    assert config.evidence_capture.emit_shadow_decision_logged is True
     assert config.authority.mode == "shadow"
     assert config.authority.deadline_ms == 10
     assert config.authority.fallback_policy == "baseline_yaml"

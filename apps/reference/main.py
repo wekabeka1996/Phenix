@@ -15,6 +15,7 @@ Run with: python apps/reference/main.py
 from apps.reference.bootstrap.preflight import check_hybrid_coherence  # NEW IMPORT
 from apps.reference.bootstrap.async_runtime import AsyncLoopRuntime
 from apps.reference.bootstrap.domain_builder import build_live_domains
+from apps.reference.runtime_profile import resolve_runtime_launch_profile
 from apps.reference.bootstrap.runtime_analytics_restore import (
     StartupAnalyticsRestoreReport,
     build_startup_analytics_restore_report,
@@ -427,6 +428,17 @@ def main() -> None:
 
     LOG.info("Starting Aurora Core...")
 
+    # P4 Agent Control: process-level composition profile. This is resolved
+    # before configuration or any execution adapter construction and fails
+    # closed on an unknown/empty explicit value.
+    launch_profile = resolve_runtime_launch_profile()
+    if launch_profile.no_order_observation:
+        LOG.warning(
+            "NO_ORDER_OBSERVATION_MODE_ACTIVE profile=%s "
+            "execution_submission=false consequential_listeners=false",
+            launch_profile.name,
+        )
+
     # Step 1: Load configuration
     LOG.info("Loading configuration...")
     # ConfigLoader accepts config_dir parameter (path to aurora configs)
@@ -447,7 +459,7 @@ def main() -> None:
     LOG.info(f" Trading Mode: {config.trading_mode}")
 
     # TASK-EXF-WIRE-STARTUP-09: Validate Instruments vs Exchange
-    if config.system.validate_instruments_on_startup:
+    if config.system.validate_instruments_on_startup and not launch_profile.no_order_observation:
         async def _startup_validation():
             LOG.info(" STARTUP GUARD: Validating exchange filters...")
 
@@ -516,6 +528,11 @@ def main() -> None:
         except Exception as e:
             LOG.critical(f"Async loop error during filter validation: {e}")
             sys.exit(1)
+    elif launch_profile.no_order_observation:
+        LOG.warning(
+            "NO_ORDER_OBSERVATION_MODE_ACTIVE: authenticated startup exchange "
+            "filter validation skipped; runtime filter readiness may remain missing"
+        )
 
     # Initialize WAL Garbage Collector
     wal_dir = project_root / "ops" / "wal"
@@ -593,6 +610,7 @@ def main() -> None:
         fsm=fsm,
         logger=LOG,
         debug_event_listener=debug_event_listener,
+        runtime_profile=launch_profile,
     )
     account_balance = domains.account_balance
     market_data = domains.market_data
@@ -608,6 +626,42 @@ def main() -> None:
     execution_position = domains.execution_position
     LOG.info(" DomainBuilder completed")
 
+    # P3 Agent Control: publish immutable, read-only runtime truth for the
+    # separate FastAPI read host. This is not a Cockpit filesystem contract.
+    agent_bridge_publisher = None
+    try:
+        from apps.reference.domains.agent_bridge.exchange_info import PublicExchangeInfoCache
+        from apps.reference.domains.agent_bridge.publication import AgentBridgeRuntimePublisher
+
+        exchange_info_cache = None
+        public_cfg = config.system.public_exchange_info
+        if public_cfg.enabled:
+            exchange_info_cache = PublicExchangeInfoCache(
+                directory=project_root / "ops" / "agent_bridge" / "exchange_info",
+                symbols=list(config.instruments.keys()),
+                environment=public_cfg.environment,
+                endpoint=public_cfg.endpoint,
+                ttl_sec=public_cfg.ttl_sec,
+                retry_sec=public_cfg.retry_sec,
+                timeout_sec=public_cfg.timeout_sec,
+                max_response_bytes=public_cfg.max_response_bytes,
+                max_cache_bytes=public_cfg.max_cache_bytes,
+                max_symbols=public_cfg.max_symbols,
+            )
+
+        agent_bridge_publisher = AgentBridgeRuntimePublisher(
+            event_bus=fsm,
+            execution_position=execution_position,
+            output_dir=project_root / "ops" / "agent_bridge" / "runtime",
+            symbols=list(config.instruments.keys()),
+            publisher_version="p6.v0",
+            public_exchange_info=exchange_info_cache,
+        )
+        agent_bridge_publisher.publish_initial()
+        LOG.info(" AgentBridgeRuntimePublisher registered (read-only atomic publication)")
+    except Exception as exc:
+        LOG.warning(" AgentBridgeRuntimePublisher unavailable: %s", exc)
+
     # ==========================================
     # DR: DISASTER RECOVERY STATE RESTORATION
     # ==========================================
@@ -621,7 +675,14 @@ def main() -> None:
     snapshot_dir_path = str(project_root / "ops" / "snapshots")
     wal_dir_path = str(project_root / "ops" / "wal")
 
-    latest_snapshot_path = find_latest_snapshot(snapshot_dir_path)
+    if launch_profile.no_order_observation:
+        LOG.warning(
+            "NO_ORDER_OBSERVATION_MODE_ACTIVE: snapshot restore and WAL replay "
+            "are skipped; observation runtime starts with empty execution state"
+        )
+        latest_snapshot_path = None
+    else:
+        latest_snapshot_path = find_latest_snapshot(snapshot_dir_path)
 
     if latest_snapshot_path:
         try:
@@ -675,7 +736,7 @@ def main() -> None:
             import traceback
 
             LOG.debug(traceback.format_exc())
-    else:
+    elif not launch_profile.no_order_observation:
         LOG.warning("No snapshot found. Starting with a clean state.")
 
     LOG.info("--- Disaster Recovery Check Finished ---")
@@ -926,12 +987,19 @@ def main() -> None:
     strategy_plugins.register(MDAMRPlugin())
     strategy_plugins.register(LlmMicrostructurePlugin())
 
-    started_strategy_handlers = StrategyRuntime(
-        fsm=fsm,
-        config=config,
-        registry=strategy_plugins,
-        telemetry_writer=order_logger.write,
-    ).start()
+    if launch_profile.no_order_observation:
+        started_strategy_handlers = {}
+        LOG.warning(
+            "NO_ORDER_OBSERVATION_MODE_ACTIVE: strategy runtime startup omitted; "
+            "startup hydration cannot access authenticated exchange clients"
+        )
+    else:
+        started_strategy_handlers = StrategyRuntime(
+            fsm=fsm,
+            config=config,
+            registry=strategy_plugins,
+            telemetry_writer=order_logger.write,
+        ).start()
     LOG.info(" RegimeDetector initialized and subscribed to EVT:FEATURES_CALCULATED")
     restore_report = None
     hydration_plan = None
@@ -1070,7 +1138,13 @@ def main() -> None:
 
     # Step 4: Start all components
     LOG.info("Starting account connector...")
-    account_balance.start()
+    if account_balance is not None:
+        account_balance.start()
+    else:
+        LOG.warning(
+            "NO_ORDER_OBSERVATION_MODE_ACTIVE: account balance startup omitted; "
+            "no authenticated exchange reads are permitted"
+        )
 
     LOG.info("Starting account observer - SKIPPED (Deleted)")
     # account_observer.start()
@@ -1483,7 +1557,8 @@ def main() -> None:
             _portfolio_timeout,
         )
         fsm.emit("EVT:PORTFOLIO_STATE_UPDATED", payload={
-            "positions": {},
+            "positions": [],
+            "positions_last_ts_ms": int(time.time() * 1000),
             "balances": {},
             "updated_at": int(time.time() * 1000),
             "source": "startup:portfolio_fallback",
@@ -1555,6 +1630,12 @@ def main() -> None:
                 except Exception as e:
                     LOG.error(f"Error in decision_making.handle_tick: {e}")
 
+            if agent_bridge_publisher is not None:
+                try:
+                    agent_bridge_publisher.tick()
+                except Exception as e:
+                    LOG.error("Error in agent_bridge_publisher.tick: %s", e)
+
             time.sleep(_MAIN_LOOP_CADENCE_SEC)
     except KeyboardInterrupt:
         LOG.info("Shutdown signal received.")
@@ -1612,6 +1693,8 @@ def main() -> None:
                 position_tracking),  timeout_sec=2.0),
             ShutdownStage("csv_recorder",       _safe_stop(
                 csv_recorder),       timeout_sec=2.0),
+            ShutdownStage("agent_bridge_publisher", _safe_stop(
+                agent_bridge_publisher), timeout_sec=5.0),
         ).add_stage(
             # Stage 6: Async loop  only after ALL components released it
             ShutdownStage(
@@ -1675,6 +1758,12 @@ def main() -> None:
                     asyncio.run(execution_position.adapter.aclose())
             except Exception as cleanup_error:
                 LOG.warning("Fallback adapter close failed: %s", cleanup_error)
+
+            try:
+                if agent_bridge_publisher is not None:
+                    agent_bridge_publisher.stop()
+            except Exception as cleanup_error:
+                LOG.warning("Fallback Agent Bridge publisher stop failed: %s", cleanup_error)
 
             try:
                 wal_gc.stop()

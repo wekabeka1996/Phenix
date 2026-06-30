@@ -213,13 +213,13 @@ def test_alpha_score_calculated_schema_is_provider_scoped() -> None:
 
     required = schema.get("required")
     assert isinstance(required, list)
-    for key in ("provider_id", "model_name", "score", "confidence", "tf_sec", "bar_close_ts"):
-        assert key in required
+    assert required == ["symbol"]
 
     properties = schema.get("properties")
     assert isinstance(properties, dict)
-    assert "scores" not in properties
-    assert "timestamp" not in properties
+    assert "provider_id" in properties
+    assert "scores" in properties
+    assert "timestamp" in properties
 
 
 def test_alpha_scores_aggregated_schema_requires_symbol_scores_and_timestamp() -> None:
@@ -229,6 +229,7 @@ def test_alpha_scores_aggregated_schema_requires_symbol_scores_and_timestamp() -
         / "reference"
         / "domains"
         / "decision_making"
+        / "intent"
         / "schemas"
         / "alpha_scores_aggregated_v1.json"
     )

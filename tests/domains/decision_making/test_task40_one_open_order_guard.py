@@ -20,6 +20,16 @@ def _mk_dm(*, fsm):
     from apps.reference.domains.decision_making.core.facade import DecisionMaking
     from apps.reference.core.time.clock import LiveClock
 
+    kelly_cfg = SimpleNamespace(
+        base_probability="0.5",
+        kelly_cap="0.25",
+        kelly_alpha="0.8",
+        payoff_ratio_r="1.5",
+        p_min="0.45",
+        p_max="0.65",
+        uplift_factor="0.2",
+    )
+
     dm = DecisionMaking.__new__(DecisionMaking)
     dm.fsm = fsm
     dm._clock = LiveClock()
@@ -49,7 +59,10 @@ def _mk_dm(*, fsm):
         ),
         strategies=SimpleNamespace(
             mean_reversion=SimpleNamespace(
+                enabled=True,
+                mode="runtime",
                 execution=SimpleNamespace(entry_order_type="MARKET"),
+                decision=SimpleNamespace(kelly=kelly_cfg),
                 # DM-SAFETY-BYPASSES-P1: Required for fail-closed safety_gates check
                 safety_gates=SimpleNamespace(enabled=False),
             ),

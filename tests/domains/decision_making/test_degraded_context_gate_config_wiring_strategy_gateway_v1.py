@@ -20,8 +20,9 @@ def test_degraded_context_gate_can_defer_strategy_signal_per_strategy_override()
     cfg.domains.decision_making.degraded_context_critical_keys = []
     cfg.domains.decision_making.degraded_context_critical_keys_by_strategy = {}
     cfg.domains.decision_making.degraded_context_contracts_by_strategy = {
-        "stratX": DegradedContextStrategyContractConfig(enabled=True, critical_keys=["ema_bias"]),
+        "aurora": DegradedContextStrategyContractConfig(enabled=True, critical_keys=["ema_bias"]),
     }
+    cfg.strategies_registry.assignments["ETHUSDT"] = ["aurora"]
 
     fsm = FSMCore()
     deferred: list[dict] = []
@@ -60,7 +61,7 @@ def test_degraded_context_gate_can_defer_strategy_signal_per_strategy_override()
 
     fsm.emit(
         "EVT:STRATEGY_SIGNAL_PRODUCED",
-        {"strategy_id": "stratX", "symbol": symbol, "side": "BUY", "rid": "rid-1",
+        {"strategy_id": "aurora", "symbol": symbol, "side": "BUY", "rid": "rid-1",
             "ts_ms": now_ms, "why_chain": ["test"], "readiness": {"warmup_ok": True}},
         why="test",
     )

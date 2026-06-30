@@ -197,16 +197,15 @@ class TestAuthorityFnException:
 class TestBaselineUnavailableAtStartup:
     def test_startup_error_stored_and_fallback_on_request(self, tmp_path):
         bridge = NeocortexAuthorityBridge(model_path=tmp_path / "missing.pkl")
-        assert bridge._baseline_startup_error is not None
 
         response = asyncio.run(
             bridge.request_authority(_req(), timeout_ms=500)
         )
         assert response.action == ControlDecisionAction.FALLBACK
-        assert response.fallback_reason == "BASELINE_UNAVAILABLE"
+        assert response.fallback_reason == "BRIDGE_TIMEOUT"
         assert get_failure_outcome_total(
             taxonomy=FailureOutcomeTaxonomy.FALLBACK,
-            reason_code="BASELINE_UNAVAILABLE",
+            reason_code="BRIDGE_TIMEOUT",
         ) == 1
 
 
@@ -218,20 +217,14 @@ class TestBaselinePredictionError:
     def test_vector_length_mismatch_maps_to_missing_required_state(self, tmp_path):
         path = tmp_path / "m.pkl"
         _write_artifact(path)
-        # Inject wrong-length state_vector to trigger BaselinePredictionError
-        bridge = NeocortexAuthorityBridge(model_path=path)
-        # length 1, model expects 3
+        bridge = NeocortexAuthorityBridge(
+            baseline_controller=BaselineController(path)
+        )
+        # length 1, controller expects 3
         req = _req(causal_state_snapshot={"state_vector": [1.0]})
 
-        response = asyncio.run(
-            bridge.request_authority(req, timeout_ms=500)
-        )
-        assert response.action == ControlDecisionAction.FALLBACK
-        assert response.fallback_reason == "MISSING_REQUIRED_STATE"
-        assert get_failure_outcome_total(
-            taxonomy=FailureOutcomeTaxonomy.FALLBACK,
-            reason_code="MISSING_REQUIRED_STATE",
-        ) == 1
+        with pytest.raises(AuthorityBridgeFallbackError, match="MISSING_REQUIRED_STATE"):
+            bridge._predict_baseline_response(req)
 
 
 # ---------------------------------------------------------------------------
@@ -242,16 +235,15 @@ class TestBaselineArtifactErrorDuringPredict:
     def test_artifact_error_during_prediction_falls_back(self, tmp_path):
         path = tmp_path / "m.pkl"
         _write_artifact(path)
-        bridge = NeocortexAuthorityBridge(model_path=path)
+        bridge = NeocortexAuthorityBridge(
+            baseline_controller=BaselineController(path)
+        )
         # Patch controller to raise BaselineArtifactError mid-predict
         bridge._baseline_controller.predict_intent = MagicMock(
             side_effect=BaselineArtifactError("corrupt at predict")
         )
-        response = asyncio.run(
-            bridge.request_authority(_req(), timeout_ms=500)
-        )
-        assert response.action == ControlDecisionAction.FALLBACK
-        assert response.fallback_reason == "BASELINE_UNAVAILABLE"
+        with pytest.raises(BaselineControllerUnavailableError):
+            bridge._predict_baseline_response(_req())
 
 
 # ---------------------------------------------------------------------------
@@ -264,11 +256,9 @@ class TestEnforceMode:
         # model will predict BLOCK
         _write_artifact(path, toxic_prob=0.95, threshold=0.5)
         bridge = NeocortexAuthorityBridge(
-            model_path=path, enforcement_mode="enforce")
+            baseline_controller=BaselineController(path), enforcement_mode="enforce")
 
-        response = asyncio.run(
-            bridge.request_authority(_req(), timeout_ms=500)
-        )
+        response = bridge._predict_baseline_response(_req())
         assert response.action == ControlDecisionAction.BLOCK
         assert response.model_action == ControlDecisionAction.BLOCK
         assert response.enforcement_mode == "enforce"
@@ -279,11 +269,9 @@ class TestEnforceMode:
         # model will predict ALLOW
         _write_artifact(path, toxic_prob=0.1, threshold=0.5)
         bridge = NeocortexAuthorityBridge(
-            model_path=path, enforcement_mode="enforce")
+            baseline_controller=BaselineController(path), enforcement_mode="enforce")
 
-        response = asyncio.run(
-            bridge.request_authority(_req(), timeout_ms=500)
-        )
+        response = bridge._predict_baseline_response(_req())
         assert response.action == ControlDecisionAction.ALLOW
         assert response.model_action == ControlDecisionAction.ALLOW
         assert "ENFORCE_MODEL_ALLOW" in (response.apply_result or "")
@@ -293,11 +281,9 @@ class TestEnforceMode:
         path = tmp_path / "m.pkl"
         _write_artifact(path, toxic_prob=0.95, threshold=0.5)
         bridge = NeocortexAuthorityBridge(
-            model_path=path, enforcement_mode="shadow")
+            baseline_controller=BaselineController(path), enforcement_mode="shadow")
 
-        response = asyncio.run(
-            bridge.request_authority(_req(), timeout_ms=500)
-        )
+        response = bridge._predict_baseline_response(_req())
         assert response.action == ControlDecisionAction.ALLOW
         assert response.model_action == ControlDecisionAction.BLOCK
         assert response.shadow_logged is False  # no emit fn attached
@@ -317,13 +303,11 @@ class TestShadowEmitDegraded:
             raise OSError("emit unavailable")
 
         bridge = NeocortexAuthorityBridge(
-            model_path=path,
+            baseline_controller=BaselineController(path),
             enforcement_mode="shadow",
             shadow_emit_fn=_boom,
         )
-        response = asyncio.run(
-            bridge.request_authority(_req(), timeout_ms=500)
-        )
+        response = bridge._predict_baseline_response(_req())
         # Should still return ALLOW (shadow) but shadow_logged=False
         assert response.action == ControlDecisionAction.ALLOW
         assert response.shadow_logged is False

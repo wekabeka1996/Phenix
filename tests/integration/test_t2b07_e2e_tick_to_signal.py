@@ -236,9 +236,17 @@ class TestT2B07E2ETickToSignal:
             "features": {
                 "price": "50100",
                 "obi": "0.5",
+                "tfi": "0.0",
+                "delta_price": "0.0",
+                "absorption": "0.0",
+                "liquidity_kappa": "0.5",
             },
-            "warmup": {"full_ready": True},
+            "warmup": {"full_ready": True, "ticks_seen": 100, "ready": {}, "reasons": []},
             "regime": None,
+            "structural_regime": "UNCERTAIN",
+            "source_mode": "live",
+            "diagnostics": {"fe": {"features_emitted": 1, "cmd_emitted": 1, "cmd_blocked": 0}},
+            "price_motion": {"ret_10s": 0.0, "ret_60s": 0.0, "ret_300s": 0.0},
         }
         
         fsm.emit("CMD:PROCESS_STRATEGY", cmd_payload, why="bar_closed_trigger")
@@ -285,9 +293,21 @@ class TestT2B07E2ETickToSignal:
                 "tf_sec": bar.get("timeframe_sec", tf_sec),
                 "bar_close_ts": bar.get("end_ts_ms", 0),
                 "bar": bar,
-                "features": {"price": bar.get("close", "0"), "computed": True},
-                "warmup": {"full_ready": True},
+                "features": {
+                    "price": bar.get("close", "0"),
+                    "obi": "0.0",
+                    "tfi": "0.0",
+                    "delta_price": "0.0",
+                    "absorption": "0.0",
+                    "liquidity_kappa": "0.5",
+                    "computed": True,
+                },
+                "warmup": {"full_ready": True, "ticks_seen": 100, "ready": {}, "reasons": []},
                 "regime": None,
+                "structural_regime": "UNCERTAIN",
+                "source_mode": "live",
+                "diagnostics": {"fe": {"features_emitted": 1, "cmd_emitted": 1, "cmd_blocked": 0}},
+                "price_motion": {"ret_10s": 0.0, "ret_60s": 0.0, "ret_300s": 0.0},
             }
             fsm.emit("CMD:PROCESS_STRATEGY", cmd_payload, why="bar_closed_trigger")
         
@@ -375,16 +395,15 @@ class TestT2B07E2ETickToSignal:
                 "symbol": pld.get("symbol"),
             }, why="signal")
         
-        fsm.listen("CMD:PROCESS_STRATEGY", strategy_with_gate4)
-        
-        # CMD without bar (violates contract)
-        fsm.emit("CMD:PROCESS_STRATEGY", {
+        # CMD without bar (violates contract) - call the gate directly so the
+        # test exercises the gate-4 logic instead of schema validation.
+        strategy_with_gate4(SimpleNamespace(pld={
             "symbol": "BTCUSDT",
             "tf_sec": 180,
             "bar_close_ts": 360_000,
             "features": {"price": "50000"},
             # NO BAR!
-        }, why="broken_cmd")
+        }))
         
         assert reject_count["value"] == 1, "Should reject CMD without bar"
         assert signal_count["value"] == 0, "Should NOT emit signal without bar"
@@ -412,8 +431,20 @@ class TestT2B07E2ETickToSignal:
                 "tf_sec": bar.get("timeframe_sec"),
                 "bar_close_ts": bar.get("end_ts_ms"),
                 "bar": bar,
-                "features": {},
-                "warmup": {"full_ready": True},
+                "features": {
+                    "price": bar.get("close", "0"),
+                    "obi": "0.0",
+                    "tfi": "0.0",
+                    "delta_price": "0.0",
+                    "absorption": "0.0",
+                    "liquidity_kappa": "0.5",
+                },
+                "warmup": {"full_ready": True, "ticks_seen": 100, "ready": {}, "reasons": []},
+                "regime": None,
+                "structural_regime": "UNCERTAIN",
+                "source_mode": "live",
+                "diagnostics": {"fe": {"features_emitted": 1, "cmd_emitted": 1, "cmd_blocked": 0}},
+                "price_motion": {"ret_10s": 0.0, "ret_60s": 0.0, "ret_300s": 0.0},
             }, why="test")
         
         def mock_strategy(msg: Message):

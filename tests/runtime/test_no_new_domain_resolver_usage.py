@@ -15,11 +15,14 @@ def test_domain_config_resolver_usage_is_frozen() -> None:
         # FIX-FROZEN-LIST: added during T2B refactor
         "apps/reference/domains/decision_making/aurora_handler.py",
         "apps/reference/domains/decision_making/decision_making.py",
+        "apps/reference/domains/decision_making/core/config_spec.py",
+        "apps/reference/domains/decision_making/core/facade.py",
         "apps/reference/domains/execution_position/exposure_guard.py",
         # SSOT: fail-closed brackets loading
         "apps/reference/domains/execution_position/fsm.py",
         "apps/reference/domains/feature_engineering/feature_engineering.py",
         "apps/reference/domains/feature_engineering/types.py",
+        "apps/reference/domains/strategies/runtimes/aurora/config_loader.py",
         "apps/reference/domains/position_tracking/position_tracking.py",
         "apps/reference/domains/risk_management/risk_management.py",
     }

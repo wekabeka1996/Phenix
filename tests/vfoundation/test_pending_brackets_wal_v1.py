@@ -221,7 +221,8 @@ class TestWALBasicOperations:
         assert len(records) == 1
         assert records[0]["pld"]["entry_order_id"] == "ORD-FAILOVER-001"
         assert any(
-            "secondary daily append failed" in record.message
+            "pending_brackets_secondary_daily_append_failed" in record.message
+            or "secondary daily append failed" in record.message
             for record in caplog.records
         )
 

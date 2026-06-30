@@ -91,6 +91,11 @@ def _configure_shadow_llm(cfg_dir: Path, *, mode: str) -> None:
     }
     _write_yaml(trading_path, trading_data)
 
+    strategy_path = cfg_dir / "strategies" / "llm_microstructure.yaml"
+    strategy_data = yaml.safe_load(strategy_path.read_text(encoding="utf-8"))
+    strategy_data["llm_microstructure"]["mode"] = "runtime"
+    _write_yaml(strategy_path, strategy_data)
+
     domains_path = cfg_dir / "domains.yaml"
     domains_data = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
     domains_data["shadow_telemetry"] = {
@@ -230,7 +235,9 @@ def test_llm_ingress_bridge_rejects_baseline_mode(tmp_path: Path) -> None:
 
     bridge._on_command(_llm_cmd_payload())
 
-    assert fsm.emitted[0]["event"] == "EVT:LLM_INTENT_REJECTED_V1"
+    assert [event["event"] for event in fsm.emitted] == [
+        "EVT:LLM_INTENT_REJECTED_V1",
+    ]
     assert fsm.emitted[0]["payload"]["reason_code"] == "LLM_MODE_DISABLED"
 
 

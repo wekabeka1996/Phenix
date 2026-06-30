@@ -338,6 +338,7 @@ class NormalizedRejectReasons:
     REGIME_LOSS_EMBARGO_BLOCKED = "NRR-061"
     # LVC-2: LOW_VOLATILITY fee-adjusted entry gate
     LOW_VOL_COST_FLOOR_BLOCKED = "NRR-062"
+    TRADE_FLOW_DEGRADED_ENTRY_BLOCK = "NRR-064"
     UNKNOWN_ERROR = "NRR-999"
 
     # Regex normalization is intentionally partial: not every NRR constant is
@@ -438,6 +439,11 @@ class NormalizedRejectReasons:
             r"regime.*confidence.*above.*max",
             r"confidence.*above.*max",
             r"above.*max.*regime.*confidence",
+        ],
+        TRADE_FLOW_DEGRADED_ENTRY_BLOCK: [
+            r"trade.*flow.*degraded",
+            r"trade.*flow.*stale",
+            r"degraded.*trade.*flow",
         ],
         PRICE_MOTION_INSUFFICIENT: [
             r"price_motion.*insufficient",

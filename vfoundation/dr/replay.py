@@ -77,6 +77,25 @@ _ORDER_STATE_CHANGED_IDENTITY_FIELDS: Tuple[str, ...] = (
     "rid",
 )
 
+_ORDER_REJECTED_STRONG_IDENTITY_FIELDS: Tuple[str, ...] = (
+    "order_id",
+    "orderId",
+    "exchange_order_id",
+    "exchangeOrderId",
+    "client_order_id",
+    "clientOrderId",
+    "corr_id",
+    "corrId",
+)
+
+_ORDER_REJECTED_ALLOWED_IDENTITY_QUALITY: frozenset[str] = frozenset(
+    {
+        "order_identity_exact",
+        "order_identity_degraded",
+        "order_identity_weak",
+    }
+)
+
 
 def _normalize_text(value: Any) -> str:
     if value is None:
@@ -178,9 +197,94 @@ def _order_state_changed_identity_key(record: Dict[str, Any]) -> tuple[Optional[
     return canonical_identity_key, []
 
 
+def _order_rejected_identity_key(record: Dict[str, Any]) -> tuple[Optional[str], List[str]]:
+    reasons: List[str] = []
+
+    if _normalize_text(record.get("op")).upper() != "EVT" or _normalize_text(
+        record.get("verb")
+    ).upper() != "ORDER_REJECTED":
+        reasons.append("unexpected_op_verb")
+
+    symbol = _normalize_symbol(record)
+    if not symbol:
+        reasons.append("missing_symbol")
+
+    event_ts_ms = _record_event_ts_ms(record)
+    if event_ts_ms <= 0:
+        ts_ms = _record_ts_ms(record)
+        event_ts_ms = ts_ms if ts_ms > 0 else 0
+    if event_ts_ms <= 0:
+        reasons.append("missing_identity:event_ts_ms")
+
+    rid = _normalize_text(_record_value(record, "rid"))
+    if not rid:
+        reasons.append("missing_identity:rid")
+
+    strong_identity_name = ""
+    strong_identity_value = ""
+    for candidate_field in _ORDER_REJECTED_STRONG_IDENTITY_FIELDS:
+        candidate_value = _normalize_text(
+            _record_value(record, candidate_field)
+        )
+        if candidate_value:
+            strong_identity_name = candidate_field
+            strong_identity_value = candidate_value
+            break
+
+    if strong_identity_name:
+        if reasons:
+            return None, reasons
+        return "|".join(
+            (
+                "EVT:ORDER_REJECTED",
+                symbol,
+                rid,
+                strong_identity_name,
+                strong_identity_value,
+            )
+        ), []
+
+    canonical_identity_key = _normalize_text(
+        _record_value(record, "canonical_identity_key")
+    )
+    if not canonical_identity_key:
+        reasons.append("missing_identity:canonical_identity_key")
+
+    terminal_non_fill = _record_value(record, "terminal_non_fill")
+    if terminal_non_fill is not True:
+        reasons.append("missing_identity:terminal_non_fill")
+
+    terminal_state_kind = _normalize_text(
+        _record_value(record, "terminal_state_kind")
+    ).upper()
+    if terminal_state_kind != "REJECTED":
+        reasons.append("missing_identity:terminal_state_kind")
+
+    identity_quality = _normalize_text(_record_value(record, "identity_quality"))
+    if identity_quality not in _ORDER_REJECTED_ALLOWED_IDENTITY_QUALITY:
+        reasons.append("missing_identity:identity_quality")
+
+    origin_class = _normalize_text(_record_value(record, "origin_class"))
+    if not origin_class:
+        reasons.append("missing_identity:origin_class")
+
+    compatibility_aliases_retained = _record_value(
+        record, "compatibility_aliases_retained"
+    )
+    if compatibility_aliases_retained is not True:
+        reasons.append("missing_identity:compatibility_aliases_retained")
+
+    if reasons:
+        return None, reasons
+
+    return canonical_identity_key, []
+
+
 def _identity_key_for_record(event_name: str, record: Dict[str, Any]) -> tuple[Optional[str], List[str]]:
     if event_name == "EVT:ORDER_STATE_CHANGED":
         return _order_state_changed_identity_key(record)
+    if event_name == "EVT:ORDER_REJECTED":
+        return _order_rejected_identity_key(record)
 
     identity_fields = _REPLAY_IDENTITY_FIELDS.get(event_name, ())
     reasons: List[str] = []

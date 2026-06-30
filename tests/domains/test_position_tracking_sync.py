@@ -4,6 +4,7 @@ Tests for PositionTracking state synchronization logic.
 import sys
 import os
 from decimal import Decimal
+from pathlib import Path
 import pytest
 from vfoundation.core.protocol import Message
 
@@ -11,6 +12,7 @@ from vfoundation.core.protocol import Message
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 from apps.reference.domains.position_tracking.position_tracking import PositionTracking
+from apps.reference.config_loader import ConfigLoader
 
 class FSMCore:
     """Mock FSM core for testing."""
@@ -31,7 +33,7 @@ class FSMCore:
 def tracker():
     """Creates a PositionTracking instance for testing."""
     fsm = FSMCore()
-    return PositionTracking(config={}, fsm=fsm)
+    return PositionTracking(config=ConfigLoader(Path("config/aurora")).load_config(), fsm=fsm)
 
 def create_trade_event(symbol, side, quantity, price):
     """Helper to create a trade event."""
@@ -93,8 +95,9 @@ def test_sync_updates_existing_positions(tracker):
 
     # 3. Assert position is updated
     position = tracker.get_positions()["BTCUSDT"]
-    assert position["net_position"] == Decimal("0.5")
-    assert position["avg_entry_price"] == Decimal("61000")
+    assert position["quantity"] == Decimal("0.5")
+    assert position["avg_price"] == Decimal("61000")
+    assert position["venues"] == ["binance"]
 
 def test_sync_adds_new_positions(tracker):
     """Verify that sync logic adds new positions that appear in the account update."""
@@ -111,7 +114,9 @@ def test_sync_adds_new_positions(tracker):
     # 3. Assert new position is added
     assert "ETHUSDT" in tracker.get_positions()
     position = tracker.get_positions()["ETHUSDT"]
-    assert position["net_position"] == Decimal("10")
+    assert position["quantity"] == Decimal("10")
+    assert position["avg_price"] == Decimal("3000")
+    assert position["venues"] == ["binance"]
 
 def test_full_reconciliation_scenario(tracker):
     """
@@ -140,5 +145,7 @@ def test_full_reconciliation_scenario(tracker):
     assert "BTCUSDT" not in final_positions
     assert "ETHUSDT" in final_positions
     assert "SOLUSDT" in final_positions
-    assert final_positions["ETHUSDT"]["net_position"] == Decimal("-2")
-    assert final_positions["SOLUSDT"]["avg_entry_price"] == Decimal("150")
+    assert final_positions["ETHUSDT"]["quantity"] == Decimal("-2")
+    assert final_positions["SOLUSDT"]["avg_price"] == Decimal("150")
+    assert final_positions["ETHUSDT"]["venues"] == ["binance"]
+    assert final_positions["SOLUSDT"]["venues"] == ["binance"]

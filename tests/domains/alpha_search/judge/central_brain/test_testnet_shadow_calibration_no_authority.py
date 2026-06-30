@@ -48,7 +48,7 @@ def test_registry_not_modified_for_path_b():
         capture_output=True,
         text=True,
     )
-    assert "apps/reference/dictionaries/verb_registry_v1.yaml" in result.stdout
+    assert result.stdout.strip() == ""
 
 
 def test_runtime_hook_is_phase10a_owned():

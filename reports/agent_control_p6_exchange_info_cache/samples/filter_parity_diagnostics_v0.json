@@ -1,0 +1,23 @@
+{
+  "schema_version": "filter-parity-diagnostics/v0",
+  "venue": "binance_usdm",
+  "environment": "testnet",
+  "endpoint": "https://testnet.binancefuture.com/fapi/v1/exchangeInfo",
+  "symbols": [
+    {
+      "symbol": "BTCUSDT",
+      "severity": "minor_mismatch",
+      "configured": {"tick_size": "0.1", "step_size": "0.001", "min_qty": "0.001", "min_notional": "100"},
+      "exchange": {"tick_size": "0.10", "step_size": "0.0001", "min_qty": "0.0001", "max_qty": "1000", "min_notional": "50", "max_notional": null},
+      "fields": {"tick_size": "match", "step_size": "mismatch", "min_qty": "mismatch", "min_notional": "mismatch"},
+      "interpretation": "configured constraints are stricter and exchange-grid compatible"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "severity": "match",
+      "configured": {"tick_size": "0.01", "step_size": "0.001", "min_qty": "0.001", "min_notional": "20"},
+      "exchange": {"tick_size": "0.01", "step_size": "0.001", "min_qty": "0.001", "max_qty": "10000", "min_notional": "20", "max_notional": null},
+      "fields": {"tick_size": "match", "step_size": "match", "min_qty": "match", "min_notional": "match"}
+    }
+  ]
+}

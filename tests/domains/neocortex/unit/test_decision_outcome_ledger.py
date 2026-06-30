@@ -104,8 +104,17 @@ def test_journal_only_capture_rows_remain_diagnostics_only(tmp_path: Path) -> No
         for line in ledger_path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    assert len(rows) == 1
-    row = rows[0]
+    assert len(rows) == 2
+    
+    # Row 0 is the seed row
+    seed_row = rows[0]
+    assert seed_row.decision_id == "decision-1"
+    assert seed_row.revision_status.value == "SEED_PENDING_OUTCOME"
+    assert seed_row.dataset_visibility == "diagnostics_only"
+    assert seed_row.invalid_reason_code == "OUTCOME_UNRESOLVED"
+    
+    # Row 1 is the terminal row
+    row = rows[1]
     assert row.dataset_visibility == "diagnostics_only"
     assert row.counterfactual_support == "unsupported"
     assert row.terminal_status == DecisionOutcomeTerminalStatus.EXECUTED_AND_CLOSED
@@ -341,3 +350,142 @@ def test_non_causal_snapshot_remains_blocked_without_journal_only_gate(tmp_path:
     assert row.support_quality["observation_time_source"] == CausalTimeProvenance.UNKNOWN.value
     assert row.support_quality["observation_time_is_causal"] is False
     assert row.support_quality["observation_trainable"] is False
+
+
+def test_ledger_seed_immediate_and_idempotent(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "decision_ledger_v1.jsonl"
+    sink = DecisionOutcomeLedgerSink(
+        path=ledger_path,
+        queue_maxsize=8,
+        overflow_policy="fail_closed",
+        enqueue_timeout_ms=0,
+        shutdown_timeout_ms=1_000,
+    )
+    sink.start()
+    try:
+        # Fixture for T1
+        shadow_payload = {
+            "decision_id": "fresh-test-decision-id",
+            "rid": "aurora_DOGEUSDT_test_seed",
+            "symbol": "DOGEUSDT",
+            "request_ts_ms": 1_700_000_000_000,
+            "response_ts_ms": 1_700_000_000_001,
+            "authority_mode": "shadow",
+            "action": "allow",
+            "apply_result": "SHADOW_RECORDED",
+            "fallback_reason": None,
+            "causal_state_snapshot": {
+                **_observation_snapshot(),
+                "snapshot_contract": "test_neocortex_state_snapshot_v1",
+                "candidate_intent_summary": {
+                    "strategy_id": "aurora",
+                    "side": "BUY"
+                },
+            },
+            "data_quality_flags": {
+                "authority_mode": "shadow",
+                "reason_code": "JOURNAL_ONLY_CAPTURE",
+                "capture_mode": "journal_only",
+                "authority_applied": False,
+                "no_effect": True,
+                "supports_counterfactual_join": True,
+                "snapshot_provider_configured": True,
+                "snapshot_missing": False,
+                "has_nan": False,
+                "is_stale": False,
+            },
+        }
+        
+        # Ingest authority response (T1)
+        sink._on_shadow_decision_logged({"payload": shadow_payload})
+        
+        # Verify seed written immediately
+        assert sink.wait_until_idle(timeout_sec=2.0) is True
+        rows = [json.loads(line) for line in ledger_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        assert len(rows) == 1
+        
+        seed_row = DecisionOutcomeLedgerRow.model_validate(rows[0])
+        assert seed_row.decision_id == "fresh-test-decision-id"
+        assert seed_row.rid == "aurora_DOGEUSDT_test_seed"
+        assert seed_row.symbol == "DOGEUSDT"
+        assert seed_row.strategy_id == "aurora"
+        assert seed_row.side == "BUY"
+        assert seed_row.revision_status.value == "SEED_PENDING_OUTCOME"
+        assert seed_row.dataset_visibility == "diagnostics_only"
+        assert seed_row.counterfactual_support == "unsupported"
+        assert seed_row.invalid_reason_code == "OUTCOME_UNRESOLVED"
+        
+        # Ingest duplicate response (T2)
+        sink._on_shadow_decision_logged({"payload": shadow_payload})
+        assert sink.wait_until_idle(timeout_sec=2.0) is True
+        rows_dup = [json.loads(line) for line in ledger_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        # Verify no duplicate seed row written
+        assert len(rows_dup) == 1
+        
+        # Ingest terminal event (T3)
+        sink._on_terminal_event(
+            "EVT:POSITION_CLOSED",
+            {
+                "payload": {
+                    "decision_id": "fresh-test-decision-id",
+                    "rid": "aurora_DOGEUSDT_test_seed",
+                    "lifecycle_id": "life-doge",
+                    "trade_id": "trade-doge",
+                    "realized_pnl_net": 25.0,
+                    "fees": 0.5,
+                }
+            }
+        )
+        assert sink.wait_until_idle(timeout_sec=2.0) is True
+        rows_terminal = [json.loads(line) for line in ledger_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        assert len(rows_terminal) == 2
+        
+        term_row = DecisionOutcomeLedgerRow.model_validate(rows_terminal[1])
+        assert term_row.decision_id == "fresh-test-decision-id"
+        assert term_row.revision_status.value == "OUTCOME_FINAL"
+        assert term_row.dataset_visibility == "diagnostics_only"
+        assert term_row.realized_pnl_net == 25.0
+        assert term_row.fees == 0.5
+
+    finally:
+        sink.stop()
+
+
+def test_ledger_seed_missing_identity_fail_closed(tmp_path: Path) -> None:
+    ledger_path = tmp_path / "decision_ledger_v1.jsonl"
+    sink = DecisionOutcomeLedgerSink(
+        path=ledger_path,
+        queue_maxsize=8,
+        overflow_policy="fail_closed",
+        enqueue_timeout_ms=0,
+        shutdown_timeout_ms=1_000,
+    )
+    sink.start()
+    try:
+        # missing decision_id
+        payload_no_dec = {
+            "rid": "aurora_DOGEUSDT_test_seed",
+            "symbol": "DOGEUSDT",
+            "request_ts_ms": 1_700_000_000_000,
+            "response_ts_ms": 1_700_000_000_001,
+            "authority_mode": "shadow",
+            "action": "allow",
+            "apply_result": "SHADOW_RECORDED",
+            "causal_state_snapshot": _observation_snapshot(),
+            "data_quality_flags": {
+                "capture_mode": "journal_only",
+                "authority_applied": False,
+                "no_effect": True,
+            },
+        }
+        sink._on_shadow_decision_logged({"payload": payload_no_dec})
+        assert sink.wait_until_idle(timeout_sec=2.0) is True
+        
+        if ledger_path.exists():
+            rows = [json.loads(line) for line in ledger_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        else:
+            rows = []
+        assert len(rows) == 0
+
+    finally:
+        sink.stop()

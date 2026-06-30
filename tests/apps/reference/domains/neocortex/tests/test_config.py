@@ -45,6 +45,23 @@ def valid_system_config():
         "log_level": "INFO",
         "log_to_file": True,
         "run_mode": "backtest",
+        "trust_enabled": False,
+        "authority": {
+            "mode": "shadow",
+            "deadline_ms": 10,
+            "fallback_policy": "baseline_yaml",
+            "max_inflight_per_symbol": 1,
+            "modulation_allowlist": ["decision_making.signal_threshold_bias"],
+            "signal_threshold_bias_bounds": [-0.1, 0.1],
+            "cooldown_mult_bounds": [1.0, 3.0],
+        },
+        "evidence_capture": {
+            "mode": "disabled",
+            "collect_observation": False,
+            "collect_authority_request": False,
+            "collect_authority_response": False,
+            "emit_shadow_decision_logged": False,
+        },
     }
 
 
@@ -140,6 +157,12 @@ def valid_neuro_config(valid_vae_config, valid_ppo_config, valid_world_model_con
                 "val_ratio": 0.15,
                 "test_ratio": 0.15,
             },
+            "cutover": {
+                "min_real_executed_rows": 1,
+                "allow_synthetic_fallback": False,
+                "max_non_causal_rows": 0,
+                "require_reward_methodology": True,
+            },
         },
         "evaluation": {
             "report_version": 1,
@@ -174,11 +197,33 @@ def valid_neuro_config(valid_vae_config, valid_ppo_config, valid_world_model_con
     }
 
 
+@pytest.fixture
+def valid_replay_config(tmp_path):
+    """Valid replay configuration."""
+    return {
+        "enabled": False,
+        "wal_dir": str(tmp_path / "wal"),
+        "poll_interval": 0.1,
+        "feature_missing_timestamp_policy": "fail_closed",
+    }
+
+
+def _write_config_files(config_dir, system_config, ingest_config, neuro_config, replay_config):
+    with open(config_dir / "system.yaml", "w") as f:
+        yaml.dump(system_config, f)
+    with open(config_dir / "ingest.yaml", "w") as f:
+        yaml.dump(ingest_config, f)
+    with open(config_dir / "neuro.yaml", "w") as f:
+        yaml.dump(neuro_config, f)
+    with open(config_dir / "replay.yaml", "w") as f:
+        yaml.dump(replay_config, f)
+
+
 # =============================================================================
 # TEST 1: Valid Configuration Loads Successfully
 # =============================================================================
 
-def test_valid_config_loads(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+def test_valid_config_loads(valid_system_config, valid_ingest_config, valid_neuro_config, valid_replay_config, tmp_path):
     """Test that a fully valid configuration loads without errors."""
 
     # Create temporary config directory
@@ -186,12 +231,7 @@ def test_valid_config_loads(valid_system_config, valid_ingest_config, valid_neur
     config_dir.mkdir()
 
     # Write YAML files
-    with open(config_dir / "system.yaml", "w") as f:
-        yaml.dump(valid_system_config, f)
-    with open(config_dir / "ingest.yaml", "w") as f:
-        yaml.dump(valid_ingest_config, f)
-    with open(config_dir / "neuro.yaml", "w") as f:
-        yaml.dump(valid_neuro_config, f)
+    _write_config_files(config_dir, valid_system_config, valid_ingest_config, valid_neuro_config, valid_replay_config)
 
     # Load and validate
     config = load_config(config_dir)
@@ -207,7 +247,7 @@ def test_valid_config_loads(valid_system_config, valid_ingest_config, valid_neur
     assert config.ingest.delta_price_mode in {"raw", "pct"}
 
 
-def test_feature_clip_abs_validation(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+def test_feature_clip_abs_validation(valid_system_config, valid_ingest_config, valid_neuro_config, valid_replay_config, tmp_path):
     """feature_clip_abs must be positive finite values."""
     config_dir = tmp_path / "config"
     config_dir.mkdir()
@@ -215,18 +255,13 @@ def test_feature_clip_abs_validation(valid_system_config, valid_ingest_config, v
     invalid_ingest = valid_ingest_config.copy()
     invalid_ingest["feature_clip_abs"] = {"delta_price": -1.0}
 
-    with open(config_dir / "system.yaml", "w") as f:
-        yaml.dump(valid_system_config, f)
-    with open(config_dir / "ingest.yaml", "w") as f:
-        yaml.dump(invalid_ingest, f)
-    with open(config_dir / "neuro.yaml", "w") as f:
-        yaml.dump(valid_neuro_config, f)
+    _write_config_files(config_dir, valid_system_config, invalid_ingest, valid_neuro_config, valid_replay_config)
 
     with pytest.raises(ValidationError):
         load_config(config_dir)
 
 
-def test_vae_regime_aux_schedule_and_ema_validation(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+def test_vae_regime_aux_schedule_and_ema_validation(valid_system_config, valid_ingest_config, valid_neuro_config, valid_replay_config, tmp_path):
     """Regime aux schedule/EMA fields should parse and enforce bounds."""
     config_dir = tmp_path / "config"
     config_dir.mkdir()
@@ -246,12 +281,7 @@ def test_vae_regime_aux_schedule_and_ema_validation(valid_system_config, valid_i
         },
     }
 
-    with open(config_dir / "system.yaml", "w") as f:
-        yaml.dump(valid_system_config, f)
-    with open(config_dir / "ingest.yaml", "w") as f:
-        yaml.dump(valid_ingest_config, f)
-    with open(config_dir / "neuro.yaml", "w") as f:
-        yaml.dump(neuro, f)
+    _write_config_files(config_dir, valid_system_config, valid_ingest_config, neuro, valid_replay_config)
 
     loaded = load_config(config_dir)
     assert loaded.neuro.vae.free_bits_per_dim == pytest.approx(0.2)
@@ -265,7 +295,7 @@ def test_vae_regime_aux_schedule_and_ema_validation(valid_system_config, valid_i
 # TEST 2: Missing Required Field -> ValidationError
 # =============================================================================
 
-def test_missing_required_field_fails(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+def test_missing_required_field_fails(valid_system_config, valid_ingest_config, valid_neuro_config, valid_replay_config, tmp_path):
     """Test that missing required field raises ValidationError."""
 
     config_dir = tmp_path / "config"
@@ -277,12 +307,7 @@ def test_missing_required_field_fails(valid_system_config, valid_ingest_config, 
     del invalid_vae["latent_dim"]  # Required field
     invalid_neuro["vae"] = invalid_vae
 
-    with open(config_dir / "system.yaml", "w") as f:
-        yaml.dump(valid_system_config, f)
-    with open(config_dir / "ingest.yaml", "w") as f:
-        yaml.dump(valid_ingest_config, f)
-    with open(config_dir / "neuro.yaml", "w") as f:
-        yaml.dump(invalid_neuro, f)
+    _write_config_files(config_dir, valid_system_config, valid_ingest_config, invalid_neuro, valid_replay_config)
 
     # Should raise ValidationError
     with pytest.raises(ValidationError) as exc_info:
@@ -296,7 +321,7 @@ def test_missing_required_field_fails(valid_system_config, valid_ingest_config, 
 # TEST 3: Extra Unknown Field -> ValidationError
 # =============================================================================
 
-def test_extra_field_fails(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+def test_extra_field_fails(valid_system_config, valid_ingest_config, valid_neuro_config, valid_replay_config, tmp_path):
     """Test that extra unknown field raises ValidationError (extra='forbid')."""
 
     config_dir = tmp_path / "config"
@@ -306,12 +331,7 @@ def test_extra_field_fails(valid_system_config, valid_ingest_config, valid_neuro
     invalid_system = valid_system_config.copy()
     invalid_system["unknown_magic_parameter"] = 42  # Not in schema
 
-    with open(config_dir / "system.yaml", "w") as f:
-        yaml.dump(invalid_system, f)
-    with open(config_dir / "ingest.yaml", "w") as f:
-        yaml.dump(valid_ingest_config, f)
-    with open(config_dir / "neuro.yaml", "w") as f:
-        yaml.dump(valid_neuro_config, f)
+    _write_config_files(config_dir, invalid_system, valid_ingest_config, valid_neuro_config, valid_replay_config)
 
     # Should raise ValidationError due to extra='forbid'
     with pytest.raises(ValidationError) as exc_info:
@@ -326,7 +346,7 @@ def test_extra_field_fails(valid_system_config, valid_ingest_config, valid_neuro
 # TEST 4: Type Mismatch -> ValidationError
 # =============================================================================
 
-def test_type_mismatch_fails(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+def test_type_mismatch_fails(valid_system_config, valid_ingest_config, valid_neuro_config, valid_replay_config, tmp_path):
     """Test that wrong types raise ValidationError."""
 
     config_dir = tmp_path / "config"
@@ -336,12 +356,7 @@ def test_type_mismatch_fails(valid_system_config, valid_ingest_config, valid_neu
     invalid_system = valid_system_config.copy()
     invalid_system["brain_workers"] = "two"  # String instead of int
 
-    with open(config_dir / "system.yaml", "w") as f:
-        yaml.dump(invalid_system, f)
-    with open(config_dir / "ingest.yaml", "w") as f:
-        yaml.dump(valid_ingest_config, f)
-    with open(config_dir / "neuro.yaml", "w") as f:
-        yaml.dump(valid_neuro_config, f)
+    _write_config_files(config_dir, invalid_system, valid_ingest_config, valid_neuro_config, valid_replay_config)
 
     with pytest.raises(ValidationError) as exc_info:
         load_config(config_dir)
@@ -353,7 +368,7 @@ def test_type_mismatch_fails(valid_system_config, valid_ingest_config, valid_neu
 # TEST 5: Cross-Field Validation (VAE input_dim vs feature_list)
 # =============================================================================
 
-def test_cross_field_validation_vae_input_dim(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+def test_cross_field_validation_vae_input_dim(valid_system_config, valid_ingest_config, valid_neuro_config, valid_replay_config, tmp_path):
     """Test that VAE input_dim must match len(feature_list)."""
 
     config_dir = tmp_path / "config"
@@ -363,12 +378,7 @@ def test_cross_field_validation_vae_input_dim(valid_system_config, valid_ingest_
     invalid_neuro = valid_neuro_config.copy()
     invalid_neuro["vae"]["input_dim"] = 5  # Mismatch!
 
-    with open(config_dir / "system.yaml", "w") as f:
-        yaml.dump(valid_system_config, f)
-    with open(config_dir / "ingest.yaml", "w") as f:
-        yaml.dump(valid_ingest_config, f)
-    with open(config_dir / "neuro.yaml", "w") as f:
-        yaml.dump(invalid_neuro, f)
+    _write_config_files(config_dir, valid_system_config, valid_ingest_config, invalid_neuro, valid_replay_config)
 
     with pytest.raises(ValidationError) as exc_info:
         load_config(config_dir)
@@ -381,7 +391,7 @@ def test_cross_field_validation_vae_input_dim(valid_system_config, valid_ingest_
 # TEST 6: Cross-Field Validation (PPO state_dim vs VAE latent_dim)
 # =============================================================================
 
-def test_cross_field_validation_ppo_state_dim(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+def test_cross_field_validation_ppo_state_dim(valid_system_config, valid_ingest_config, valid_neuro_config, valid_replay_config, tmp_path):
     """Test that PPO state_dim must be >= VAE latent_dim."""
 
     config_dir = tmp_path / "config"
@@ -391,12 +401,7 @@ def test_cross_field_validation_ppo_state_dim(valid_system_config, valid_ingest_
     invalid_neuro = valid_neuro_config.copy()
     invalid_neuro["ppo"]["state_dim"] = 5  # Less than latent_dim=8
 
-    with open(config_dir / "system.yaml", "w") as f:
-        yaml.dump(valid_system_config, f)
-    with open(config_dir / "ingest.yaml", "w") as f:
-        yaml.dump(valid_ingest_config, f)
-    with open(config_dir / "neuro.yaml", "w") as f:
-        yaml.dump(invalid_neuro, f)
+    _write_config_files(config_dir, valid_system_config, valid_ingest_config, invalid_neuro, valid_replay_config)
 
     with pytest.raises(ValidationError) as exc_info:
         load_config(config_dir)
@@ -428,7 +433,7 @@ def test_missing_config_file_fails(tmp_path):
 # TEST 8: Duplicate Features in feature_list
 # =============================================================================
 
-def test_duplicate_features_fails(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+def test_duplicate_features_fails(valid_system_config, valid_ingest_config, valid_neuro_config, valid_replay_config, tmp_path):
     """Test that duplicate feature names are rejected."""
 
     config_dir = tmp_path / "config"
@@ -438,12 +443,7 @@ def test_duplicate_features_fails(valid_system_config, valid_ingest_config, vali
     invalid_ingest = valid_ingest_config.copy()
     invalid_ingest["feature_list"] = ["rsi", "obi", "rsi"]  # Duplicate 'rsi'
 
-    with open(config_dir / "system.yaml", "w") as f:
-        yaml.dump(valid_system_config, f)
-    with open(config_dir / "ingest.yaml", "w") as f:
-        yaml.dump(invalid_ingest, f)
-    with open(config_dir / "neuro.yaml", "w") as f:
-        yaml.dump(valid_neuro_config, f)
+    _write_config_files(config_dir, valid_system_config, invalid_ingest, valid_neuro_config, valid_replay_config)
 
     with pytest.raises(ValidationError) as exc_info:
         load_config(config_dir)
@@ -455,18 +455,13 @@ def test_duplicate_features_fails(valid_system_config, valid_ingest_config, vali
 # TEST 9: Frozen Config (Immutability)
 # =============================================================================
 
-def test_config_is_frozen(valid_system_config, valid_ingest_config, valid_neuro_config, tmp_path):
+def test_config_is_frozen(valid_system_config, valid_ingest_config, valid_neuro_config, valid_replay_config, tmp_path):
     """Test that config models are immutable (frozen=True)."""
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
 
-    with open(config_dir / "system.yaml", "w") as f:
-        yaml.dump(valid_system_config, f)
-    with open(config_dir / "ingest.yaml", "w") as f:
-        yaml.dump(valid_ingest_config, f)
-    with open(config_dir / "neuro.yaml", "w") as f:
-        yaml.dump(valid_neuro_config, f)
+    _write_config_files(config_dir, valid_system_config, valid_ingest_config, valid_neuro_config, valid_replay_config)
 
     config = load_config(config_dir)
 
@@ -477,3 +472,4 @@ def test_config_is_frozen(valid_system_config, valid_ingest_config, valid_neuro_
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+

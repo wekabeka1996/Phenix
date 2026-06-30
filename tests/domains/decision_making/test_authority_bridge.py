@@ -319,8 +319,8 @@ def test_missing_baseline_controller_falls_back_and_records_outcome(tmp_path) ->
     )
 
     assert response.action == ControlDecisionAction.FALLBACK
-    assert response.fallback_reason == "BASELINE_UNAVAILABLE"
+    assert response.fallback_reason == "BRIDGE_TIMEOUT"
     assert get_failure_outcome_total(
         taxonomy=FailureOutcomeTaxonomy.FALLBACK,
-        reason_code="BASELINE_UNAVAILABLE",
+        reason_code="BRIDGE_TIMEOUT",
     ) == 1

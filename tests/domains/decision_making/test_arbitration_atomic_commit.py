@@ -19,6 +19,8 @@ def _make_builder_config():
         uplift_factor="0.2",
     )
     strategy_cfg = SimpleNamespace(
+        enabled=True,
+        mode="runtime",
         execution=SimpleNamespace(entry_order_type="LIMIT", entry_tif="GTC"),
         decision=SimpleNamespace(kelly=kelly_cfg),
     )
@@ -85,14 +87,20 @@ class TestArbitrationAtomicCommit:
             system=SimpleNamespace(market_data=None),
             strategies=SimpleNamespace(
                 aurora=SimpleNamespace(
+                    enabled=True,
+                    mode="runtime",
                     decision=SimpleNamespace(
                         retry_max_count=5, retry_backoff_factor=2.0),
                     safety_gates=SimpleNamespace(system_stress_policy="off"),
                 ),
                 strat_A=SimpleNamespace(
+                    enabled=True,
+                    mode="runtime",
                     safety_gates=SimpleNamespace(system_stress_policy="off"),
                 ),
                 strat_B=SimpleNamespace(
+                    enabled=True,
+                    mode="runtime",
                     safety_gates=SimpleNamespace(system_stress_policy="off"),
                 ),
             ),
@@ -380,5 +388,6 @@ class TestArbitrationAtomicCommit:
             entry_plan_trace=None, tf_sec=None, max_slippage_bps=None,
             max_latency_ms=None, risk_score=None, strategy_trace=None, sg=self.MockSG("strat_B", 1700000000500),
         )
-        builder._fsm.emit.assert_not_called()
+        builder._fsm.emit.assert_called_once()
+        assert builder._fsm.emit.call_args.args[0] == "EVT:INTENT_BUILD_REJECTED"
         builder._record_blocked.assert_called_once()
