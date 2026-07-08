@@ -1,0 +1,60 @@
+project_capsule:
+  project:
+    name: "Aurora/Phenix"
+    domain: "algorithmic_trading_system"
+    mode: "live_runtime_sensitive"
+    current_phase: "project_agent_os_transition"
+
+  ssot_rules:
+    config:
+      - "YAML + Pydantic only"
+      - "No silent fallbacks"
+      - "No hidden constants in business logic"
+    development:
+      - "Contract-first"
+      - "Additive-only when possible"
+      - "TDD required"
+      - "Agent report required before DONE"
+    runtime:
+      - "Do not change live behavior without explicit approval"
+      - "Logs are evidence"
+      - "Scripts collect data; models interpret structured output"
+
+  memory:
+    deep_checkpoint: true
+    accepted_reports_only: true
+    default_agent_search_mode: "current_ssot_and_accepted_facts"
+
+  permissions:
+    production_changes: "approval_required"
+    config_changes: "approval_required"
+    registry_changes: "approval_required"
+    memory_updates: "patch_approval_required"
+
+  current_phase:
+    name: "Agentic Dashboard / DeepSeek Workbench -> Project Agent OS transition"
+    status: "in_progress"
+    completed:
+      - "Dashboard FastAPI/Jinja2 baseline exists"
+      - "Session-first workbench primitives exist"
+      - "Subagents, memory atoms, compressor, and task router modules exist"
+      - "Context codec (ContextUnit, LossReport, conflict detection) implemented"
+      - "Playbook registry implemented (10 playbooks)"
+      - "Tool registry implemented (11 tools)"
+      - "Approval queue implemented"
+      - "Report center implemented"
+      - "Decision ledger implemented"
+      - "Memory patch flow implemented"
+      - "Evidence bundle / script-first forensics foundation implemented"
+    in_progress:
+      - "Acceptance-driven transition from dashboard baseline to Project Agent OS"
+      - "Phase 1-15 Agent OS build in progress"
+    blockers: []
+    risks:
+      - "Memory can degrade into summary blobs without source references"
+      - "Subagents can become decorative without trusted artifacts"
+      - "Raw logs must not bypass script-first evidence collection"
+    next_best_step:
+      - "Run Docker validation suite"
+      - "Live model-switch + restart proof"
+      - "Wire approval queue to risky actions"

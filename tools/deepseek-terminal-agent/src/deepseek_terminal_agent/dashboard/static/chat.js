@@ -11,6 +11,8 @@
   const workspaceSessionPill = document.getElementById("workspace-session-pill");
   const profileSelect = document.getElementById("profile-select");
   const simpleChatModelSelect = document.getElementById("simple-chat-model");
+  const simpleSessionList = document.getElementById("simple-session-list");
+  const simpleChatSessionTitle = document.getElementById("simple-chat-session-title");
   const centralWorkspace = document.getElementById("central-workspace");
   const centralWorkspaceStack = document.getElementById("central-workspace-stack");
   const workspacePresetSelect = document.getElementById("workspace-preset-select");
@@ -2164,27 +2166,47 @@ function applyBoardPanelState(panelKey, panelState) {
   }
 
   function renderSessions() {
-    if (!sessionList) {
-      return;
+    if (sessionList) {
+      if (!state.sessions.length) {
+        sessionList.innerHTML = '<div class="mini-empty">No sessions yet.</div>';
+      } else {
+        sessionList.innerHTML = state.sessions.map(function (session) {
+          const active = session.session_id === state.currentSessionId ? " is-active" : "";
+          return [
+            '<button type="button" class="session-row' + active + '" data-session-id="' + escapeHtml(session.session_id) + '">',
+            '<span class="session-row-title">' + escapeHtml(session.title || "New Session") + '</span>',
+            '<span class="session-row-meta mono">' + escapeHtml(session.active_profile ? session.active_profile.model_id : "") + '</span>',
+            '</button>'
+          ].join("");
+        }).join("");
+        Array.from(sessionList.querySelectorAll("[data-session-id]")).forEach(function (button) {
+          button.addEventListener("click", function () {
+            loadSession(button.getAttribute("data-session-id"));
+          });
+        });
+      }
     }
-    if (!state.sessions.length) {
-      sessionList.innerHTML = '<div class="mini-empty">No sessions yet.</div>';
-      return;
+
+    if (simpleSessionList) {
+      if (!state.sessions.length) {
+        simpleSessionList.innerHTML = '<div class="simple-chat-drawer__empty">Тут з’являться елементи керування чатами та сесіями.</div>';
+      } else {
+        simpleSessionList.innerHTML = state.sessions.map(function (session) {
+          const active = session.session_id === state.currentSessionId ? " is-active" : "";
+          return [
+            '<button type="button" class="session-row' + active + '" data-session-id="' + escapeHtml(session.session_id) + '">',
+            '<span class="session-row-title">' + escapeHtml(session.title || "New Session") + '</span>',
+            '<span class="session-row-meta mono">' + escapeHtml(session.active_profile ? session.active_profile.model_id : "") + '</span>',
+            '</button>'
+          ].join("");
+        }).join("");
+        Array.from(simpleSessionList.querySelectorAll("[data-session-id]")).forEach(function (button) {
+          button.addEventListener("click", function () {
+            loadSession(button.getAttribute("data-session-id"));
+          });
+        });
+      }
     }
-    sessionList.innerHTML = state.sessions.map(function (session) {
-      const active = session.session_id === state.currentSessionId ? " is-active" : "";
-      return [
-        '<button type="button" class="session-row' + active + '" data-session-id="' + escapeHtml(session.session_id) + '">',
-        '<span class="session-row-title">' + escapeHtml(session.title || "New Session") + '</span>',
-        '<span class="session-row-meta mono">' + escapeHtml(session.active_profile ? session.active_profile.model_id : "") + '</span>',
-        '</button>'
-      ].join("");
-    }).join("");
-    Array.from(sessionList.querySelectorAll("[data-session-id]")).forEach(function (button) {
-      button.addEventListener("click", function () {
-        loadSession(button.getAttribute("data-session-id"));
-      });
-    });
   }
 
   function normalizeSimpleTraceEvent(item) {
@@ -2614,6 +2636,9 @@ function renderThread(detail) {
     const session = detail.session || {};
     if (sessionTitle) {
       sessionTitle.textContent = session.title || 'Conversation';
+    }
+    if (simpleChatSessionTitle) {
+      simpleChatSessionTitle.textContent = session.title || 'Нова сесія';
     }
     if (sessionMeta) {
       sessionMeta.textContent = (session.active_profile ? session.active_profile.name + ' · ' + session.active_profile.model_id : 'No active profile');
