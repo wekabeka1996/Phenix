@@ -4,7 +4,7 @@ task: `P31B_COCKPIT_BROWSER_OR_HTTP_SMOKE_HARNESS`
 
 branch: `p31-cockpit-smoke-harness`
 
-commit: `PENDING_LOCAL_COMMIT_HASH`
+commit: `bc18b2da`
 
 verdict: `P31B_HTTP_ONLY_SMOKE_READY_BROWSER_BLOCKED`
 
