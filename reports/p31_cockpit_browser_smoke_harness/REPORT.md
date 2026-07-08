@@ -1,10 +1,10 @@
 # AGENT_REPORT_V1
 
-task: `P31B_COCKPIT_BROWSER_OR_HTTP_SMOKE_HARNESS`
+task: `P31B_COCKPIT_SMOKE_HARNESS`
 
-branch: `p31-cockpit-smoke-harness`
+branch: `p31b-smoke-primary-20260708`
 
-commit: `bc18b2da`
+commit: `df44b05f5722e506c80e73dd51a978fe0f308288`
 
 verdict: `P31B_HTTP_ONLY_SMOKE_READY_BROWSER_BLOCKED`
 
