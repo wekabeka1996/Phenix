@@ -8,9 +8,13 @@ from .session_context_contract import SessionContextV1
 
 
 class SessionContextReadModel:
-    """Read-only adapter that builds a SessionContextV1 from Cockpit memory."""
+    """Read-only adapter that builds a SessionContextV1 from Cockpit memory.
 
-    def __init__(self, memory_root: str | Path = ".agent_memory") -> None:
+    POLICY SAFETY RULE: Memory patches, session context, or FSM components must NOT
+    mutate YAML or system configurations. This read model is strictly read-only.
+    """
+
+    def __init__(self, memory_root: str | Path = "tools/deepseek-terminal-agent/.agent_memory") -> None:
         self.memory_root = Path(memory_root)
 
     def load_context(self, session_id: str) -> SessionContextV1:

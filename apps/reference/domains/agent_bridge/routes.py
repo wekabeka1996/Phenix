@@ -226,11 +226,20 @@ def register_agent_feed_routes(
     @app.get("/agent-session-context/v0/{session_id}")
     def agent_session_context(session_id: str):
         from .session_context_read_model import SessionContextReadModel
-        reader = SessionContextReadModel(memory_root=project_root / ".agent_memory")
+        # Cockpit memory is located under tools/deepseek-terminal-agent/.agent_memory/
+        memory_path = project_root / "tools" / "deepseek-terminal-agent" / ".agent_memory"
+        reader = SessionContextReadModel(memory_root=memory_path)
         try:
             context = reader.load_context(session_id)
             return context.model_dump(mode="json")
         except FileNotFoundError as exc:
+            # Differentiate between missing store/sessions (503) and specific session missing (404)
+            msg = str(exc)
+            if "Memory root directory does not exist" in msg or "Sessions directory does not exist" in msg:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Cockpit memory store is unavailable: {msg}"
+                ) from exc
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
