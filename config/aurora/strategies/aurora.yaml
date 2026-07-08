@@ -1,6 +1,6 @@
 aurora:
-  enabled: true
-  mode: runtime
+  enabled: false
+  mode: disabled
   type: bar_driven
   description: Bar-driven multi-signal alpha strategy (5m basis) with regime awareness
   timeframe_sec: 300

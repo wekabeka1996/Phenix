@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/session_context_v1.json",
+  "title": "SessionContextV1 Contract Schema",
+  "description": "Read-only shared trading session memory context contract between Cockpit and Aurora bridge.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "session_id",
+    "source",
+    "created_at",
+    "operator_notes_refs",
+    "memory_atom_refs",
+    "attachment_refs",
+    "pattern_refs",
+    "token_budget",
+    "compression_lineage_refs",
+    "approval_status",
+    "provenance"
+  ],
+  "properties": {
+    "session_id": { "type": "string", "minLength": 1 },
+    "source": { "type": "string" },
+    "created_at": { "type": "string" },
+    "operator_notes_refs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "memory_atom_refs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "attachment_refs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "pattern_refs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "token_budget": { "type": "integer", "minimum": 0 },
+    "compression_lineage_refs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "approval_status": {
+      "type": "string",
+      "enum": ["pending", "approved", "rejected", "expired", "none"]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

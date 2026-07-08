@@ -1,6 +1,6 @@
 alpha_mr_s01:
-  enabled: true
-  mode: testnet_candidate
+  enabled: false
+  mode: disabled
   source_scenario_id: S01_MR_RSI_HEAVY
   strategy_version: "1.0.0"
   timeframe_sec: 300

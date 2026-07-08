@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 RUNTIME_PROFILE_ENV = "AURORA_RUNTIME_PROFILE"
-RuntimeProfileName = Literal["normal", "agent_bridge_observation_only"]
+RuntimeProfileName = Literal["normal", "agent_bridge_observation_only", "deepseek_agent_only_testnet"]
 
 
 class RuntimeLaunchProfile(BaseModel):
@@ -26,6 +26,10 @@ class RuntimeLaunchProfile(BaseModel):
     @property
     def no_order_observation(self) -> bool:
         return self.name == "agent_bridge_observation_only"
+
+    @property
+    def deepseek_agent_only_testnet_active(self) -> bool:
+        return self.name == "deepseek_agent_only_testnet"
 
 
 def resolve_runtime_launch_profile(
@@ -45,5 +49,5 @@ def resolve_runtime_launch_profile(
     except Exception as exc:
         raise ValueError(
             f"Unsupported {RUNTIME_PROFILE_ENV}={candidate!r}; "
-            "allowed values are 'normal' and 'agent_bridge_observation_only'"
+            "allowed values are 'normal', 'agent_bridge_observation_only', and 'deepseek_agent_only_testnet'"
         ) from exc

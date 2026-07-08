@@ -1,6 +1,6 @@
 llm_microstructure:
-  enabled: true
-  mode: shadow
+  enabled: false
+  mode: disabled
   decision:
     kelly:
       base_probability: 0.51

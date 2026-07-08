@@ -753,14 +753,54 @@ registry:
   schema: apps/reference/domains/alpha_search/judge/schemas/shadow_entry_plan_v1.json
   since: '2026-04-25'
   note: "J6-S3 shadow LIMIT plan ladder telemetry — hypothetical order shape, never executed"
-# --- LLM Judge Phase 6 (J6-S16): Policy Cortex shadow evaluation event (2026-05-03) ---
 - op: EVT
-  verb: JUDGE_POLICY_CORTEX_EVALUATED_V1
-  owner: alpha_search
-  status: experimental
-  schema: apps/reference/domains/alpha_search/judge/policy_cortex/schemas/policy_cortex_annotation_v1.json
-  since: '2026-05-03'
-  note: "J6-S16 shadow policy cortex evaluation — surface evidence lookup + deterministic classifier. Shadow-only. Never consumed by decision_making or execution."
+  verb: DEEPSEEK_AGENT_DECISION_RECEIVED
+  owner: agent_bridge
+  status: active
+  schema: apps/reference/domains/agent_bridge/schemas/agent_trade_decision_received_v1.json
+  since: '2026-07-06'
+- op: EVT
+  verb: DEEPSEEK_AGENT_DECISION_REJECTED
+  owner: agent_bridge
+  status: active
+  schema: null
+  since: '2026-07-06'
+- op: EVT
+  verb: DEEPSEEK_AGENT_DECISION_COMPILED
+  owner: agent_bridge
+  status: active
+  schema: null
+  since: '2026-07-06'
+- op: EVT
+  verb: DEEPSEEK_AGENT_INTENT_ACCEPTED
+  owner: agent_bridge
+  status: active
+  schema: null
+  since: '2026-07-06'
+- op: EVT
+  verb: DEEPSEEK_AGENT_TESTNET_ORDER_SUBMITTED
+  owner: agent_bridge
+  status: active
+  schema: null
+  since: '2026-07-06'
+- op: EVT
+  verb: DEEPSEEK_AGENT_TESTNET_ORDER_RESULT
+  owner: agent_bridge
+  status: active
+  schema: null
+  since: '2026-07-06'
+- op: EVT
+  verb: DEEPSEEK_AGENT_SESSION_STARTED
+  owner: agent_bridge
+  status: active
+  schema: null
+  since: '2026-07-06'
+- op: EVT
+  verb: DEEPSEEK_AGENT_SESSION_STOPPED
+  owner: agent_bridge
+  status: active
+  schema: apps/reference/domains/agent_bridge/schemas/agent_session_stopped_v1.json
+  since: '2026-07-06'
 policies:
   wildcard:
     UPD: true

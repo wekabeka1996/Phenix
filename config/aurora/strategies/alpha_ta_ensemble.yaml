@@ -1,6 +1,6 @@
 alpha_ta_ensemble:
-  enabled: true
-  mode: runtime
+  enabled: false
+  mode: disabled
   strategy_version: "1.0.0"
   timeframe_sec: 300
   threshold: 0.12

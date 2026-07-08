@@ -1,0 +1,266 @@
+{
+  "schema_version": "scenario-memory-query-samples/p11",
+  "items": [
+    {
+      "schema_version": "scenario-memory-query-result/v0",
+      "query_id": "smq_1a87eafd98f3441d93907459a285b50e",
+      "query_type": "completed",
+      "symbol": "BTCUSDT",
+      "filters": {
+        "limit": 5
+      },
+      "result_count": 5,
+      "estimated_tokens": 1001,
+      "items": [
+        {
+          "review_id": "review_p11_p10stale_018_btcusdt_scalp_observation",
+          "revision": 2,
+          "symbol": "BTCUSDT",
+          "horizon": "scalp_observation",
+          "updated_ts_ms": 1782928737679,
+          "completed": true,
+          "unresolved": false,
+          "expected_scenarios": [
+            "data_stale_or_missing",
+            "no_clear_scenario"
+          ],
+          "realized_scenario": "data_stale_or_missing",
+          "expected_result_achieved": true,
+          "lesson": "Prefer visible missing-data classification over invented market interpretation.",
+          "packet_ref": "agent-feed://packet/afp_7ee0b24d8b924ccfa6dcc083fc5a7917",
+          "raw_ref": "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p10stale_018_btcusdt_scalp_observation&revision=2"
+        },
+        {
+          "review_id": "review_p11_p10stale_017_btcusdt_micro_observation",
+          "revision": 2,
+          "symbol": "BTCUSDT",
+          "horizon": "micro_observation",
+          "updated_ts_ms": 1782928737679,
+          "completed": true,
+          "unresolved": false,
+          "expected_scenarios": [
+            "data_stale_or_missing",
+            "no_clear_scenario"
+          ],
+          "realized_scenario": "data_stale_or_missing",
+          "expected_result_achieved": true,
+          "lesson": "Prefer visible missing-data classification over invented market interpretation.",
+          "packet_ref": "agent-feed://packet/afp_7ee0b24d8b924ccfa6dcc083fc5a7917",
+          "raw_ref": "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p10stale_017_btcusdt_micro_observation&revision=2"
+        },
+        {
+          "review_id": "review_p11_p10stale_014_btcusdt_scalp_observation",
+          "revision": 2,
+          "symbol": "BTCUSDT",
+          "horizon": "scalp_observation",
+          "updated_ts_ms": 1782928737007,
+          "completed": true,
+          "unresolved": false,
+          "expected_scenarios": [
+            "data_stale_or_missing",
+            "no_clear_scenario"
+          ],
+          "realized_scenario": "data_stale_or_missing",
+          "expected_result_achieved": true,
+          "lesson": "Prefer visible missing-data classification over invented market interpretation.",
+          "packet_ref": "agent-feed://packet/afp_f14f27b7e7c94f7ea4e106507216387b",
+          "raw_ref": "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p10stale_014_btcusdt_scalp_observation&revision=2"
+        },
+        {
+          "review_id": "review_p11_p10stale_013_btcusdt_micro_observation",
+          "revision": 2,
+          "symbol": "BTCUSDT",
+          "horizon": "micro_observation",
+          "updated_ts_ms": 1782928737007,
+          "completed": true,
+          "unresolved": false,
+          "expected_scenarios": [
+            "data_stale_or_missing",
+            "no_clear_scenario"
+          ],
+          "realized_scenario": "data_stale_or_missing",
+          "expected_result_achieved": true,
+          "lesson": "Prefer visible missing-data classification over invented market interpretation.",
+          "packet_ref": "agent-feed://packet/afp_f14f27b7e7c94f7ea4e106507216387b",
+          "raw_ref": "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p10stale_013_btcusdt_micro_observation&revision=2"
+        },
+        {
+          "review_id": "review_p11_p9fresh_010_btcusdt_scalp_observation",
+          "revision": 2,
+          "symbol": "BTCUSDT",
+          "horizon": "scalp_observation",
+          "updated_ts_ms": 1782916557956,
+          "completed": true,
+          "unresolved": false,
+          "expected_scenarios": [
+            "no_clear_scenario",
+            "continuation",
+            "volatility_expansion"
+          ],
+          "realized_scenario": "no_clear_scenario",
+          "expected_result_achieved": true,
+          "lesson": "Preserve uncertainty when deterministic thresholds are not met.",
+          "packet_ref": "agent-feed://packet/afp_9d917272d5c14086a7cf06e4f58183f3",
+          "raw_ref": "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p9fresh_010_btcusdt_scalp_observation&revision=2"
+        }
+      ],
+      "raw_refs": [
+        "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p10stale_018_btcusdt_scalp_observation&revision=2",
+        "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p10stale_017_btcusdt_micro_observation&revision=2",
+        "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p10stale_014_btcusdt_scalp_observation&revision=2",
+        "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p10stale_013_btcusdt_micro_observation&revision=2",
+        "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p9fresh_010_btcusdt_scalp_observation&revision=2"
+      ],
+      "truncated": false,
+      "omitted_sections": []
+    },
+    {
+      "schema_version": "scenario-memory-query-result/v0",
+      "query_id": "smq_b02e1dddaaea447983b11f696450484c",
+      "query_type": "lessons",
+      "symbol": "ETHUSDT",
+      "filters": {
+        "limit": 5
+      },
+      "result_count": 5,
+      "estimated_tokens": 1001,
+      "items": [
+        {
+          "review_id": "review_p11_p10stale_020_ethusdt_scalp_observation",
+          "revision": 2,
+          "symbol": "ETHUSDT",
+          "horizon": "scalp_observation",
+          "updated_ts_ms": 1782928737679,
+          "completed": true,
+          "unresolved": false,
+          "expected_scenarios": [
+            "data_stale_or_missing",
+            "no_clear_scenario"
+          ],
+          "realized_scenario": "data_stale_or_missing",
+          "expected_result_achieved": true,
+          "lesson": "Prefer visible missing-data classification over invented market interpretation.",
+          "packet_ref": "agent-feed://packet/afp_7ee0b24d8b924ccfa6dcc083fc5a7917",
+          "raw_ref": "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p10stale_020_ethusdt_scalp_observation&revision=2"
+        },
+        {
+          "review_id": "review_p11_p10stale_019_ethusdt_micro_observation",
+          "revision": 2,
+          "symbol": "ETHUSDT",
+          "horizon": "micro_observation",
+          "updated_ts_ms": 1782928737679,
+          "completed": true,
+          "unresolved": false,
+          "expected_scenarios": [
+            "data_stale_or_missing",
+            "no_clear_scenario"
+          ],
+          "realized_scenario": "data_stale_or_missing",
+          "expected_result_achieved": true,
+          "lesson": "Prefer visible missing-data classification over invented market interpretation.",
+          "packet_ref": "agent-feed://packet/afp_7ee0b24d8b924ccfa6dcc083fc5a7917",
+          "raw_ref": "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p10stale_019_ethusdt_micro_observation&revision=2"
+        },
+        {
+          "review_id": "review_p11_p10stale_016_ethusdt_scalp_observation",
+          "revision": 2,
+          "symbol": "ETHUSDT",
+          "horizon": "scalp_observation",
+          "updated_ts_ms": 1782928737007,
+          "completed": true,
+          "unresolved": false,
+          "expected_scenarios": [
+            "data_stale_or_missing",
+            "no_clear_scenario"
+          ],
+          "realized_scenario": "data_stale_or_missing",
+          "expected_result_achieved": true,
+          "lesson": "Prefer visible missing-data classification over invented market interpretation.",
+          "packet_ref": "agent-feed://packet/afp_f14f27b7e7c94f7ea4e106507216387b",
+          "raw_ref": "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p10stale_016_ethusdt_scalp_observation&revision=2"
+        },
+        {
+          "review_id": "review_p11_p10stale_015_ethusdt_micro_observation",
+          "revision": 2,
+          "symbol": "ETHUSDT",
+          "horizon": "micro_observation",
+          "updated_ts_ms": 1782928737007,
+          "completed": true,
+          "unresolved": false,
+          "expected_scenarios": [
+            "data_stale_or_missing",
+            "no_clear_scenario"
+          ],
+          "realized_scenario": "data_stale_or_missing",
+          "expected_result_achieved": true,
+          "lesson": "Prefer visible missing-data classification over invented market interpretation.",
+          "packet_ref": "agent-feed://packet/afp_f14f27b7e7c94f7ea4e106507216387b",
+          "raw_ref": "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p10stale_015_ethusdt_micro_observation&revision=2"
+        },
+        {
+          "review_id": "review_p11_p9fresh_012_ethusdt_scalp_observation",
+          "revision": 2,
+          "symbol": "ETHUSDT",
+          "horizon": "scalp_observation",
+          "updated_ts_ms": 1782916557956,
+          "completed": true,
+          "unresolved": false,
+          "expected_scenarios": [
+            "no_clear_scenario",
+            "continuation",
+            "volatility_expansion"
+          ],
+          "realized_scenario": "no_clear_scenario",
+          "expected_result_achieved": true,
+          "lesson": "Preserve uncertainty when deterministic thresholds are not met.",
+          "packet_ref": "agent-feed://packet/afp_9d917272d5c14086a7cf06e4f58183f3",
+          "raw_ref": "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p9fresh_012_ethusdt_scalp_observation&revision=2"
+        }
+      ],
+      "raw_refs": [
+        "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p10stale_020_ethusdt_scalp_observation&revision=2",
+        "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p10stale_019_ethusdt_micro_observation&revision=2",
+        "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p10stale_016_ethusdt_scalp_observation&revision=2",
+        "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p10stale_015_ethusdt_micro_observation&revision=2",
+        "aurora-publication://action-reviews/ledger/v1#review_id=review_p11_p9fresh_012_ethusdt_scalp_observation&revision=2"
+      ],
+      "truncated": false,
+      "omitted_sections": []
+    },
+    {
+      "schema_version": "scenario-memory-query-result/v0",
+      "query_id": "smq_afe0a7431ac64029974b8903cbe9cd7b",
+      "query_type": "confusion",
+      "filters": {
+        "limit": 5
+      },
+      "result_count": 1,
+      "estimated_tokens": 141,
+      "items": [
+        {
+          "expected_realized_matrix": {
+            "continuation": {
+              "no_clear_scenario": 12
+            },
+            "data_stale_or_missing": {
+              "data_stale_or_missing": 8,
+              "no_clear_scenario": 1
+            },
+            "no_clear_scenario": {
+              "data_stale_or_missing": 8,
+              "no_clear_scenario": 13
+            },
+            "volatility_expansion": {
+              "no_clear_scenario": 13
+            }
+          }
+        }
+      ],
+      "raw_refs": [
+        "aurora-publication://scenario-memory/index/v0"
+      ],
+      "truncated": false,
+      "omitted_sections": []
+    }
+  ]
+}

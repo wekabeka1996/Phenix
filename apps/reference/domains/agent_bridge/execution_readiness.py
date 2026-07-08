@@ -3,7 +3,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Iterable, Optional
 
-from .contracts import ExecutionReadinessSnapshotV0, MechanicalInvariant
+from .contracts import (
+    ExecutionReadinessSnapshotV0,
+    FilterParityAcknowledgementV0,
+    MechanicalInvariant,
+)
 from .capabilities import build_execution_capability_descriptors
 
 
@@ -38,6 +42,7 @@ def build_execution_readiness_snapshot(
     produced_ts_ms: int,
     trace_available: bool,
     public_exchange_info: Any | None = None,
+    filter_parity_acknowledgements: Optional[list[FilterParityAcknowledgementV0]] = None,
 ) -> ExecutionReadinessSnapshotV0:
     """Inspect a strict allowlist of read-only ExecPosFSM state.
 
@@ -87,6 +92,7 @@ def build_execution_readiness_snapshot(
             capability_descriptors=capability_descriptors,
             constraint_summary=constraint_summary,
             readiness_summary=readiness_summary,
+            filter_parity_acknowledgements=filter_parity_acknowledgements or [],
         )
 
     shadow_mode = bool(getattr(runtime, "shadow_mode", False))
@@ -230,4 +236,5 @@ def build_execution_readiness_snapshot(
         capability_descriptors=capability_descriptors,
         constraint_summary=constraint_summary,
         readiness_summary=readiness_summary,
+        filter_parity_acknowledgements=filter_parity_acknowledgements or [],
     )

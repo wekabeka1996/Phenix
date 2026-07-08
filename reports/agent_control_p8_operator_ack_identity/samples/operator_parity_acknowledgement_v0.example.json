@@ -1,0 +1,26 @@
+{
+  "schema_version": "filter-parity-operator-acknowledgements/v0",
+  "acknowledgements": [
+    {
+      "schema_version": "operator-parity-acknowledgement/v0",
+      "ack_id": "example_btcusdt_conservative_20260701",
+      "operator_id": "example.operator.market-risk",
+      "operator_display_name": "Example Market Risk Reviewer",
+      "created_ts_ms": 1782892045672,
+      "expires_ts_ms": 1785484045672,
+      "symbol": "BTCUSDT",
+      "venue": "binance_usdm",
+      "environment": "testnet",
+      "state_ref": "aurora-publication://exchange-info/filter-parity/v0/sha256:b715ab02e68f9a2e0cc830a6f26ae95926ebfb881011be25e32409eda500bf0e",
+      "parity_status": "conservative_mismatch",
+      "compatibility_assessment": "compatible_conservative",
+      "ack_status": "acknowledged_conservative",
+      "ack_reason": "Example only: exact conservative filter drift reviewed without configuration relaxation or trading authority.",
+      "review_required_by_ts_ms": 1785484045672,
+      "provenance": {
+        "source": "operator_authored_offline_file",
+        "format_version": "v0"
+      }
+    }
+  ]
+}

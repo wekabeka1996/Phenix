@@ -24,6 +24,7 @@ from .contracts import (
     VolatilityCostFeaturesV0,
 )
 from .execution_readiness import build_execution_readiness_snapshot
+from .parity_governance import FilterParityHistoryStore
 
 
 MARKET_FILENAME = "market_snapshot_v0.json"
@@ -128,6 +129,7 @@ class AgentBridgeRuntimePublisher:
         source_owner: str = "aurora_main_event_bus",
         publisher_version: str = "p3.v0",
         public_exchange_info: Any | None = None,
+        parity_history_dir: Path | None = None,
     ) -> None:
         self.event_bus = event_bus
         self.execution_position = execution_position
@@ -137,6 +139,10 @@ class AgentBridgeRuntimePublisher:
         self.source_owner = source_owner
         self.publisher_version = publisher_version
         self.public_exchange_info = public_exchange_info
+        self.parity_history = (
+            FilterParityHistoryStore(parity_history_dir)
+            if parity_history_dir is not None else None
+        )
         self._lock = threading.RLock()
         self._features: Dict[tuple[str, int], PublishedMarketSymbolV0] = {}
         self._regimes: Dict[str, Dict[str, Any]] = {}
@@ -284,12 +290,22 @@ class AgentBridgeRuntimePublisher:
         self.store.write(MARKET_FILENAME, model)
 
     def _write_readiness(self, observed: int) -> None:
+        parity_acknowledgements = (
+            self.parity_history.observe_many(
+                symbols=self.symbols,
+                runtime=self.execution_position,
+                public_exchange_info=self.public_exchange_info,
+                observed_ts_ms=observed,
+            )
+            if self.parity_history is not None else []
+        )
         snapshot = build_execution_readiness_snapshot(
             runtime=self.execution_position,
             symbols=self.symbols,
             produced_ts_ms=observed,
             trace_available=bool(getattr(self.execution_position, "correlation_store", None)),
             public_exchange_info=self.public_exchange_info,
+            filter_parity_acknowledgements=parity_acknowledgements,
         )
         publication = AgentExecutionReadinessPublicationV0(
             produced_ts_ms=observed,

@@ -1,0 +1,38 @@
+{
+  "schema_version": "action-review/v1",
+  "review_id": "review_p9_runtime_btcusdt_001",
+  "revision": 1,
+  "created_ts_ms": 1782916542606,
+  "updated_ts_ms": 1782916542606,
+  "mode": "no_execution",
+  "source": "no_model_local_sample",
+  "agent_id": "p9.no-model.runtime-sample",
+  "operator_ref": "p9://runtime-validation/no-model-author",
+  "packet_ref": "agent-feed://packet/afp_06cc5f9af7a5497695dd7698abac360d",
+  "symbol": "BTCUSDT",
+  "horizon": "next_packet",
+  "pre_action_note": {
+    "review_id": "review_p9_runtime_btcusdt_001",
+    "packet_id": "afp_06cc5f9af7a5497695dd7698abac360d",
+    "symbol": "BTCUSDT",
+    "horizon": "next_packet",
+    "proposed_action": "OBSERVE",
+    "thesis": "No-model P9 sample observes one later packet while BTCUSDT parity acknowledgement remains unavailable.",
+    "invalidation": "The source packet becomes stale, parity state changes, or later market data is missing.",
+    "expected_scenarios": [
+      {"scenario_id": "no_clear_scenario", "confidence": 0.6, "thesis": "A single later packet may not establish a clear scenario.", "evidence_refs": ["agent-feed://packet/afp_06cc5f9af7a5497695dd7698abac360d"]},
+      {"scenario_id": "volatility_expansion", "confidence": 0.3, "thesis": "A move above the deterministic threshold would indicate short-window expansion.", "evidence_refs": ["agent-feed://packet/afp_06cc5f9af7a5497695dd7698abac360d"]},
+      {"scenario_id": "data_stale_or_missing", "confidence": 0.1, "thesis": "The later packet may lack usable market data.", "evidence_refs": ["agent-feed://packet/afp_06cc5f9af7a5497695dd7698abac360d"]}
+    ],
+    "warnings_acknowledged": ["BTCUSDT filter parity acknowledgement is missing", "P9 has no execution authority"],
+    "data_refs_used": ["agent-feed://packet/afp_06cc5f9af7a5497695dd7698abac360d"],
+    "tool_refs_used": ["agent-bridge://p9-deterministic-runtime-sample/v1"],
+    "confidence": 0.55,
+    "no_execution": true
+  },
+  "execution_note": {"status": "not_submitted_p9_no_execution", "submitted": false, "detail": "P9 stores scenario memory only; no command or execution route was invoked.", "no_execution": true},
+  "raw_refs": ["agent-feed://packet/afp_06cc5f9af7a5497695dd7698abac360d"],
+  "compact_summary": "No-model OBSERVE note linked to a real BTCUSDT packet; no execution was submitted.",
+  "token_estimate": 542,
+  "validation_status": "valid"
+}

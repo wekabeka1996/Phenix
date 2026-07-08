@@ -37,6 +37,39 @@ FilterParitySeverity = Literal[
     "configured_missing",
     "stale_exchange_info",
 ]
+FilterParityStatus = Literal[
+    "match",
+    "conservative_mismatch",
+    "risky_mismatch",
+    "missing",
+    "stale",
+    "unavailable",
+]
+FilterParityGovernanceSeverity = Literal["info", "warning", "critical", "unavailable"]
+FilterCompatibilityAssessment = Literal[
+    "exact_match",
+    "compatible_conservative",
+    "incompatible_or_looser",
+    "not_assessable",
+]
+FilterParityAckStatus = Literal[
+    "unacknowledged",
+    "acknowledged_conservative",
+    "acknowledged_requires_review",
+    "rejected",
+    "expired",
+    "not_required",
+]
+OperatorAckValidationStatus = Literal[
+    "not_required",
+    "missing",
+    "valid",
+    "expired",
+    "state_mismatch",
+    "rejected",
+    "invalid_file",
+    "invalid_semantics",
+]
 
 
 class CardMeta(BaseModel):
@@ -184,6 +217,98 @@ class SymbolConstraintSummaryV0(BaseModel):
     parity_ref: Optional[str] = None
 
 
+class FilterParityAcknowledgementV0(BaseModel):
+    """Full read-only parity governance record retained outside the packet."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str
+    venue: str
+    environment: str
+    parity_status: FilterParityStatus
+    severity: FilterParityGovernanceSeverity
+    first_seen_ts_ms: int
+    last_seen_ts_ms: int
+    configured_values: Dict[str, Optional[str]] = Field(default_factory=dict, max_length=4)
+    exchange_values: Dict[str, Optional[str]] = Field(default_factory=dict, max_length=4)
+    difference_summary: List[str] = Field(default_factory=list, max_length=4)
+    compatibility_assessment: FilterCompatibilityAssessment
+    operator_ack_status: FilterParityAckStatus
+    operator_ack_ts_ms: Optional[int] = None
+    operator_ack_note: Optional[str] = Field(default=None, max_length=512)
+    operator_ack_id: Optional[str] = Field(default=None, max_length=128)
+    operator_id: Optional[str] = Field(default=None, max_length=128)
+    operator_display_name: Optional[str] = Field(default=None, max_length=128)
+    operator_ack_expires_ts_ms: Optional[int] = None
+    operator_review_required_by_ts_ms: Optional[int] = None
+    operator_ack_reason: Optional[str] = Field(default=None, max_length=512)
+    operator_ack_validation_status: OperatorAckValidationStatus = "missing"
+    operator_ack_invalid_reason: Optional[str] = Field(default=None, max_length=256)
+    operator_ack_provenance_ref: Optional[str] = None
+    operator_ack_file_hash: Optional[str] = Field(default=None, max_length=64)
+    requires_yaml_review: bool
+    requires_execution_block_before_authority: bool
+    configured_metadata_ref: str
+    exchange_metadata_ref: str
+    state_ref: str
+    raw_ref: str
+    history_ref: str
+
+
+class FilterParityAckSummaryV0(BaseModel):
+    """Bounded AgentFeedPacket projection; full values stay behind refs."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str
+    parity_status: FilterParityStatus
+    severity: FilterParityGovernanceSeverity
+    ack_status: FilterParityAckStatus
+    operator_id: Optional[str] = Field(default=None, max_length=128)
+    created_ts_ms: Optional[int] = None
+    expires_ts_ms: Optional[int] = None
+    state_ref: str
+    validation_status: OperatorAckValidationStatus
+    requires_review: bool
+    compatibility_summary: FilterCompatibilityAssessment
+    reason: Optional[str] = Field(default=None, max_length=160)
+    provenance_ref: Optional[str] = None
+    raw_ref: str
+    history_ref: str
+
+
+class ActionReviewScenarioMemoryV1(BaseModel):
+    """Compact no-execution memory projection; the full review stays in JSONL."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    review_id: str
+    revision: int = Field(ge=1)
+    symbol: str
+    proposed_action: Optional[str] = None
+    execution_status: Optional[str] = None
+    expected_scenarios: Optional[List[str]] = Field(default=None, max_length=3)
+    realized_scenario: Optional[str] = None
+    lesson: Optional[str] = Field(default=None, max_length=240)
+    unresolved: bool
+    packet_ref: Optional[str] = None
+    review_ref: str
+
+
+class ActionReviewMemorySummaryV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["action-review-memory-summary/v1"] = "action-review-memory-summary/v1"
+    latest_review_ids_by_symbol: Dict[str, str] = Field(default_factory=dict, max_length=12)
+    latest_scenario_memory: List[ActionReviewScenarioMemoryV1] = Field(
+        default_factory=list, max_length=12
+    )
+    unresolved_review_count: int = Field(ge=0)
+    unresolved_by_symbol: Dict[str, int] = Field(default_factory=dict, max_length=12)
+    scenario_memory_index_ref: Optional[str] = None
+    raw_ledger_ref: str
+
+
 class ExecutionReadinessSummaryV0(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -208,6 +333,9 @@ class ExecutionReadinessSnapshotV0(BaseModel):
     constraint_summary: List[SymbolConstraintSummaryV0] = Field(
         default_factory=list, max_length=12
     )
+    filter_parity_acknowledgements: List[FilterParityAcknowledgementV0] = Field(
+        default_factory=list, max_length=12
+    )
     readiness_summary: ExecutionReadinessSummaryV0 = Field(
         default_factory=ExecutionReadinessSummaryV0
     )
@@ -224,6 +352,9 @@ class ExecutionBodyCard(BaseModel):
         default_factory=list, max_length=24
     )
     constraint_summary: List[SymbolConstraintSummaryV0] = Field(
+        default_factory=list, max_length=12
+    )
+    filter_parity_acknowledgements: List[FilterParityAckSummaryV0] = Field(
         default_factory=list, max_length=12
     )
     readiness_summary: ExecutionReadinessSummaryV0 = Field(
@@ -267,6 +398,7 @@ class AgentFeedPacket(BaseModel):
     position_life: PositionLifeCard
     business_warnings: BusinessWarningsCard
     execution_body: ExecutionBodyCard
+    action_review_memory: ActionReviewMemorySummaryV1
     budget: PacketBudget
     oldest_source_age_ms: Optional[int] = None
     freshness_summary: FreshnessSummary
@@ -349,7 +481,7 @@ class AgentMarketRuntimeSnapshotV0(BaseModel):
     model_config = ConfigDict(extra="forbid")
     schema_version: Literal["agent-market-runtime/v0"] = "agent-market-runtime/v0"
     produced_ts_ms: int
-    publisher_version: Literal["p3.v0", "p4.v0", "p5.v0", "p6.v0"] = "p3.v0"
+    publisher_version: Literal["p3.v0", "p4.v0", "p5.v0", "p6.v0", "p7.v0", "p8.v0", "p9.v0"] = "p3.v0"
     publication_status: Literal["ready", "degraded", "missing"]
     symbols: List[PublishedMarketSymbolV0] = Field(default_factory=list, max_length=12)
 
@@ -358,7 +490,7 @@ class AgentExecutionReadinessPublicationV0(BaseModel):
     model_config = ConfigDict(extra="forbid")
     schema_version: Literal["agent-execution-readiness-publication/v0"] = "agent-execution-readiness-publication/v0"
     produced_ts_ms: int
-    publisher_version: Literal["p3.v0", "p4.v0", "p5.v0", "p6.v0"] = "p3.v0"
+    publisher_version: Literal["p3.v0", "p4.v0", "p5.v0", "p6.v0", "p7.v0", "p8.v0", "p9.v0"] = "p3.v0"
     source_owner: Literal["aurora_main_execution_position", "publication_relay_no_runtime"]
     snapshot: ExecutionReadinessSnapshotV0
 
@@ -367,7 +499,7 @@ class AgentBridgePublicationIndexV0(BaseModel):
     model_config = ConfigDict(extra="forbid")
     schema_version: Literal["agent-bridge-publication-index/v0"] = "agent-bridge-publication-index/v0"
     produced_ts_ms: int
-    publisher_version: Literal["p3.v0", "p4.v0", "p5.v0", "p6.v0"] = "p3.v0"
+    publisher_version: Literal["p3.v0", "p4.v0", "p5.v0", "p6.v0", "p7.v0", "p8.v0", "p9.v0"] = "p3.v0"
     source_owner: Literal["direct_main_publication", "publication_relay"] = "publication_relay"
     publication_status: Literal["ready", "degraded", "missing"]
     market_ref: str

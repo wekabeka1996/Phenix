@@ -166,13 +166,13 @@ trading:
     authority_mode: full_auto
     require_telemetry: true
     symbols_llm:
-    - BTCUSDT
+    - SOLUSDT
     - ETHUSDT
     allowlist_symbols:
-    - BTCUSDT
+    - SOLUSDT
     - ETHUSDT
     context_symbols:
-    - BTCUSDT
+    - SOLUSDT
     - ETHUSDT
     fast_cycle_sec: 300
     deep_cycle_sec: 900

@@ -19,6 +19,7 @@ from .contracts import (
     ExecutionBodyCard,
     FeatureSignalCard,
     FreshnessSummary,
+    FilterParityAckSummaryV0,
     GlobalMarketCard,
     MechanicalInvariant,
     PacketBudget,
@@ -30,6 +31,7 @@ from .contracts import (
 from .execution_readiness import build_execution_readiness_snapshot
 from .publication import RuntimePublicationReader
 from .capabilities import project_execution_readiness_snapshot
+from .scenario_memory import ScenarioMemoryStore
 
 
 DEFAULT_MAX_TOKENS = 4_400
@@ -139,6 +141,7 @@ class AgentFeedReducer:
         freshness: FreshnessPolicy = FreshnessPolicy(),
         tail_policy: TailPolicy = TailPolicy(),
         now_ms: Optional[int] = None,
+        scenario_memory_store: Optional[ScenarioMemoryStore] = None,
     ) -> None:
         self.project_root = Path(project_root)
         self.snapshot_store = snapshot_store
@@ -146,6 +149,7 @@ class AgentFeedReducer:
         self.freshness = freshness
         self.tail_policy = tail_policy
         self._fixed_now_ms = now_ms
+        self.scenario_memory_store = scenario_memory_store or ScenarioMemoryStore(self.project_root)
         self.publication_reader = RuntimePublicationReader(
             self.project_root / "ops" / "agent_bridge" / "runtime"
         )
@@ -478,6 +482,39 @@ class AgentFeedReducer:
             invariants=readiness.invariants,
             capability_descriptors=readiness.capability_descriptors,
             constraint_summary=readiness.constraint_summary,
+            filter_parity_acknowledgements=[
+                FilterParityAckSummaryV0(
+                    symbol=item.symbol,
+                    parity_status=item.parity_status,
+                    severity=item.severity,
+                    ack_status=item.operator_ack_status,
+                    operator_id=item.operator_id,
+                    created_ts_ms=item.operator_ack_ts_ms,
+                    expires_ts_ms=item.operator_ack_expires_ts_ms,
+                    state_ref=item.state_ref,
+                    validation_status=item.operator_ack_validation_status,
+                    requires_review=(
+                        item.requires_yaml_review
+                        or item.requires_execution_block_before_authority
+                        or item.operator_ack_status == "unacknowledged"
+                    ),
+                    compatibility_summary=item.compatibility_assessment,
+                    reason=(
+                        item.operator_ack_invalid_reason
+                        or item.operator_ack_reason
+                        or (
+                            "operator_acknowledgement_not_required"
+                            if item.operator_ack_status == "not_required"
+                            else "operator_acknowledgement_missing"
+                        )
+                    ),
+                    provenance_ref=item.operator_ack_provenance_ref,
+                    raw_ref=item.raw_ref,
+                    history_ref=item.history_ref,
+                )
+                for item in readiness.filter_parity_acknowledgements
+                if item.symbol in symbols
+            ],
             readiness_summary=readiness.readiness_summary,
             readiness_reasons=readiness.readiness_summary.reasons,
             trace_ref="aurora://decision-ledger/recent#trace" if trace_available else None,
@@ -651,6 +688,11 @@ class AgentFeedReducer:
             warnings=warning_items,
         )
         execution_card = self._execution_card(runtime_positions, decision_rows, normalized)
+        phase_started = time.perf_counter()
+        action_review_memory = self.scenario_memory_store.packet_summary(normalized)
+        timings["action_review_memory"] = round(
+            (time.perf_counter() - phase_started) * 1000, 3
+        )
         timings["cards_total"] = round((time.perf_counter() - build_started) * 1000, 3)
         metas = [global_card.meta, *[card.meta for card in symbol_cards], *[card.meta for card in feature_cards], position_card.meta, warning_card.meta, execution_card.meta]
         freshness_summary = FreshnessSummary()
@@ -668,6 +710,7 @@ class AgentFeedReducer:
             position_life=position_card,
             business_warnings=warning_card,
             execution_body=execution_card,
+            action_review_memory=action_review_memory,
             budget=PacketBudget(max_tokens_requested=requested_budget),
             oldest_source_age_ms=oldest_age,
             freshness_summary=freshness_summary,
@@ -696,7 +739,22 @@ class AgentFeedReducer:
             return packet
 
         packet.budget.truncated = True
+        def trim_action_review_memory() -> None:
+            rows = packet.action_review_memory.latest_scenario_memory[:1]
+            packet.action_review_memory.latest_scenario_memory = rows
+            packet.action_review_memory.latest_review_ids_by_symbol = {
+                row.symbol: row.review_id for row in rows
+            }
+            packet.action_review_memory.unresolved_review_count = sum(
+                row.unresolved for row in rows
+            )
+            packet.action_review_memory.unresolved_by_symbol = {
+                symbol: sum(row.unresolved and row.symbol == symbol for row in rows)
+                for symbol in packet.symbols
+            }
+
         reductions = [
+            ("action_review_memory_tail", trim_action_review_memory),
             ("business_warnings_tail", lambda: setattr(packet.business_warnings, "warnings", packet.business_warnings.warnings[:4])),
             ("position_tail", lambda: setattr(packet.position_life, "positions", packet.position_life.positions[:4])),
             ("additional_feature_cards", lambda: setattr(packet, "feature_signals", packet.feature_signals[:1])),
@@ -718,6 +776,8 @@ class AgentFeedReducer:
             ("runtime_market_publication", self.project_root / "ops" / "agent_bridge" / "runtime" / "market_snapshot_v0.json", "aurora-publication://market/v0", "atomic compact publication"),
             ("runtime_execution_readiness_publication", self.project_root / "ops" / "agent_bridge" / "runtime" / "execution_readiness_v0.json", "aurora-publication://execution-readiness/v0", "atomic compact publication"),
             ("public_exchange_info_cache", self.project_root / "ops" / "agent_bridge" / "exchange_info" / "public_exchange_info_cache_v0.json", "aurora-publication://exchange-info/public-exchange-info-cache/v0", "atomic bounded public metadata"),
+            ("action_review_ledger", self.project_root / "ops" / "agent_bridge" / "action_reviews" / "action_review_ledger_v1.jsonl", "aurora-publication://action-reviews/ledger/v1", "append-only read-only source"),
+            ("scenario_memory_index", self.project_root / "ops" / "agent_bridge" / "scenario_memory" / "scenario_memory_index_v0.json", "aurora-publication://scenario-memory/index/v0", "atomic compact latest-revision index"),
             ("market_features_regime", self.data_dir / "shadow_telemetry" / "snapshots", "aurora://shadow-snapshot/*/latest", "runtime latest or bounded newest-file tail"),
             ("positions_portfolio", self.logs_dir / "shadow_critical_event_journal_v1.jsonl", "aurora://portfolio/latest#bounded-tail", "bounded tail"),
             ("decisions", self.logs_dir / "shadow_telemetry" / "decision_ledger_v1.jsonl", "aurora://decision-ledger/recent#bounded-tail", "bounded tail"),

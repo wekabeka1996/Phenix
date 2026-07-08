@@ -136,6 +136,12 @@ venv.bak/
 # Rope project settings
 .ropeproject
 reports/*
+!reports/agent_control_p7_filter_parity_ack/
+!reports/agent_control_p7_filter_parity_ack/**
+!reports/agent_control_p8_operator_ack_identity/
+!reports/agent_control_p8_operator_ack_identity/**
+!reports/agent_control_p9_action_review_ledger/
+!reports/agent_control_p9_action_review_ledger/**
 # mkdocs documentation
 /site
 ops/
@@ -256,4 +262,10 @@ best_metrics*.json
 !reports/agent_control_p5_execution_capabilities/**
 !reports/agent_control_p6_exchange_info_cache/
 !reports/agent_control_p6_exchange_info_cache/**
+!reports/agent_control_p9_action_review_ledger/
+!reports/agent_control_p9_action_review_ledger/**
+!reports/agent_control_p10_scenario_memory_index/
+!reports/agent_control_p10_scenario_memory_index/**
+!reports/agent_control_p11_memory_corpus_expansion/
+!reports/agent_control_p11_memory_corpus_expansion/**
 

@@ -38,7 +38,7 @@ authority:
   # Operating mode: shadow | advisory | gated
   mode: shadow
   # Max milliseconds before fallback to baseline_yaml (I6)
-  deadline_ms: 10
+  deadline_ms: 5000
   # Fallback policy when deadline is missed
   fallback_policy: baseline_yaml
   # Max concurrent authority requests per symbol

@@ -1,0 +1,41 @@
+enabled: true
+profile: deepseek_agent_only_testnet
+environment: testnet
+session_id: ds_session_p26_01
+agent_id: deepseek_agent_p26
+provider: deepseek
+model: deepseek-v4-pro
+allowed_symbols:
+  - SOLUSDT
+  - ETHUSDT
+allowed_horizons:
+  - scalp
+  - swing
+allowed_actions:
+  - TESTNET_OPEN_LONG
+  - TESTNET_OPEN_SHORT
+  - TESTNET_CLOSE
+  - TESTNET_REDUCE
+  - WAIT
+  - OBSERVE
+  - NO_ACTION
+max_session_duration_sec: 36000
+max_orders_per_session: 1000
+max_orders_per_symbol: 500
+max_open_positions_total: 1
+max_open_positions_per_symbol: 1
+max_notional_per_order: 25.0
+max_total_notional: 10000.0
+min_seconds_between_orders: 180
+duplicate_decision_window_sec: 60
+default_order_type: LIMIT
+default_time_in_force: GTC
+decision_timeout_sec: 30
+provider_timeout_sec: 30
+stop_on_first_execution_error: true
+stop_on_unmatched_fill: true
+stop_on_lifecycle_divergence: true
+kill_switch_enabled: true
+record_all_decisions: true
+record_all_rejections: true
+record_all_orders: true

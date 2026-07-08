@@ -654,8 +654,9 @@ def main() -> None:
             execution_position=execution_position,
             output_dir=project_root / "ops" / "agent_bridge" / "runtime",
             symbols=list(config.instruments.keys()),
-            publisher_version="p6.v0",
+            publisher_version="p9.v0",
             public_exchange_info=exchange_info_cache,
+            parity_history_dir=project_root / "ops" / "agent_bridge" / "parity_history",
         )
         agent_bridge_publisher.publish_initial()
         LOG.info(" AgentBridgeRuntimePublisher registered (read-only atomic publication)")

@@ -1,6 +1,6 @@
 mean_reversion:
   enabled: true
-  mode: runtime
+  mode: shadow
   decision:
     kelly:
       base_probability: 0.51

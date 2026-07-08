@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aurora.internal/schemas/agent_trade_decision_received_v1.json",
+  "title": "EVT:DEEPSEEK_AGENT_DECISION_RECEIVED payload schema",
+  "description": "JSON schema for AgentTradeDecisionV0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "agent_id",
+    "provider",
+    "model",
+    "packet_ref",
+    "symbol",
+    "horizon",
+    "action",
+    "side",
+    "confidence",
+    "thesis",
+    "invalidation",
+    "expected_scenarios",
+    "evidence_refs",
+    "risk_note"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["agent-trade-decision/v0"] },
+    "agent_id": { "type": "string", "minLength": 3, "maxLength": 120 },
+    "provider": { "type": "string" },
+    "model": { "type": "string" },
+    "packet_ref": { "type": "string", "pattern": "^agent-feed://packet/afp_[a-f0-9]+$" },
+    "symbol": { "type": "string", "pattern": "^[A-Z0-9_-]{2,32}$" },
+    "horizon": { "type": "string", "minLength": 2, "maxLength": 64 },
+    "action": {
+      "type": "string",
+      "enum": [
+        "TESTNET_OPEN_LONG",
+        "TESTNET_OPEN_SHORT",
+        "TESTNET_CLOSE",
+        "TESTNET_REDUCE",
+        "WAIT",
+        "OBSERVE",
+        "NO_ACTION"
+      ]
+    },
+    "side": { "type": "string", "enum": ["BUY", "SELL", "NONE"] },
+    "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+    "thesis": { "type": "string", "minLength": 3, "maxLength": 1000 },
+    "invalidation": { "type": "string", "minLength": 3, "maxLength": 1000 },
+    "expected_scenarios": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "maxItems": 10
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "maxItems": 20
+    },
+    "acknowledged_warnings": {
+      "type": "array",
+      "items": { "type": "string" },
+      "maxItems": 20
+    },
+    "risk_note": { "type": "string", "minLength": 3, "maxLength": 1000 },
+    "testnet_only": { "type": "boolean", "enum": [true] }
+  }
+}

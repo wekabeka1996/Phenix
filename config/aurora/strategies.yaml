@@ -23,43 +23,15 @@ version: "1.0.0"
 # - "alpha_mr_s01": S01 weighted mean-reversion strategy candidate (5m basis)
 # ==============================================================================
 assignments:
-  ETHUSDT:
-    - aurora
-    - alpha_mr_s01
+  BTCUSDT:
     - mean_reversion
-    - md_amr
+  ETHUSDT:
+    - mean_reversion
     - llm_microstructure
   SOLUSDT:
-    - alpha_ta_ensemble
     - mean_reversion
-  XRPUSDT:
-    - aurora
-    - alpha_mr_s01
-    - mean_reversion
-    - md_amr
-  BTCUSDT:
-    - aurora
-    - alpha_mr_s01
-    - mean_reversion
-    - md_amr
     - llm_microstructure
-  BNBUSDT:
-    - aurora
-    - alpha_mr_s01
-    - mean_reversion
-    - md_amr
-  1000PEPEUSDT:
-    - aurora
-    - alpha_mr_s01
-    - mean_reversion
-    - md_amr
-  DOGEUSDT:
-    - alpha_ta_ensemble
-    - mean_reversion
-# New entries only. Existing-position SL/TP/CLOSE paths remain authorized.
-entry_quarantine:
-  XRPUSDT:
-    - SELL
+entry_quarantine: {}
 
 counterfactual_overlays:
   - experiment_id: btc_md_amr_nrr063

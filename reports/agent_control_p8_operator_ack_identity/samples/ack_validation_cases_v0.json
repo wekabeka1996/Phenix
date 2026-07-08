@@ -1,0 +1,62 @@
+{
+  "schema_version": "operator-parity-ack-validation-cases/v0",
+  "generated_from": "synthetic_isolated_tests",
+  "real_runtime_ack_file_present": false,
+  "cases": [
+    {
+      "case": "valid_exact_conservative",
+      "effective_ack_status": "acknowledged_conservative",
+      "validation_status": "valid",
+      "operator_identity_projected": true,
+      "authority_granted": false
+    },
+    {
+      "case": "wrong_state_ref",
+      "effective_ack_status": "expired",
+      "validation_status": "state_mismatch",
+      "invalid_reason": "exact_parity_state_mismatch"
+    },
+    {
+      "case": "wrong_symbol",
+      "effective_ack_status": "rejected",
+      "validation_status": "rejected",
+      "invalid_reason": "wrong_symbol"
+    },
+    {
+      "case": "wrong_environment",
+      "effective_ack_status": "rejected",
+      "validation_status": "rejected",
+      "invalid_reason": "wrong_environment"
+    },
+    {
+      "case": "review_due_or_expiry_passed",
+      "effective_ack_status": "expired",
+      "validation_status": "expired",
+      "invalid_reason": "review_or_acknowledgement_expired"
+    },
+    {
+      "case": "stale_or_missing_metadata",
+      "effective_ack_status": "rejected",
+      "validation_status": "rejected",
+      "authority_block_preserved": true
+    },
+    {
+      "case": "risky_mismatch_reviewed",
+      "effective_ack_status": "acknowledged_requires_review",
+      "validation_status": "valid",
+      "requires_yaml_review": true,
+      "authority_block_preserved": true
+    },
+    {
+      "case": "ethusdt_match",
+      "effective_ack_status": "not_required",
+      "validation_status": "not_required"
+    },
+    {
+      "case": "real_runtime_btcusdt_no_file",
+      "effective_ack_status": "unacknowledged",
+      "validation_status": "missing",
+      "operator_identity_projected": false
+    }
+  ]
+}

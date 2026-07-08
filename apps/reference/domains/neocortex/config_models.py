@@ -1050,7 +1050,7 @@ class AuthorityConfig(BaseModel):
         description="Authority operating mode. 'shadow'=observe-only, 'advisory'=influence, 'gated'=hard gate.",
     )
     deadline_ms: int = Field(
-        ge=1, le=1000,
+        ge=1, le=10000,
         json_schema_extra={"default_class": "runtime_behavior"},
         description="Max milliseconds authority may take before fallback is applied (invariant I6).",
     )

@@ -126,7 +126,7 @@ def test_actual_neocortex_ssot_yaml_is_explicit_and_loads():
     assert config.evidence_capture.collect_authority_response is True
     assert config.evidence_capture.emit_shadow_decision_logged is True
     assert config.authority.mode == "shadow"
-    assert config.authority.deadline_ms == 10
+    assert config.authority.deadline_ms == 5000
     assert config.authority.fallback_policy == "baseline_yaml"
     assert config.authority.max_inflight_per_symbol == 1
     assert len(config.authority.modulation_allowlist) >= 1

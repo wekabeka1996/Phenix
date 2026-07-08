@@ -382,6 +382,9 @@ def project_execution_readiness_snapshot(
         if item.symbol is None or item.symbol in allowed
     ]
     constraints = [item for item in snapshot.constraint_summary if item.symbol in allowed]
+    parity_acknowledgements = [
+        item for item in snapshot.filter_parity_acknowledgements if item.symbol in allowed
+    ]
     counts = {name: 0 for name in ("ready", "degraded", "missing", "unknown")}
     reasons: list[str] = []
     for descriptor in descriptors:
@@ -438,6 +441,7 @@ def project_execution_readiness_snapshot(
             "invariants": projected_invariants,
             "capability_descriptors": descriptors,
             "constraint_summary": constraints,
+            "filter_parity_acknowledgements": parity_acknowledgements,
             "readiness_summary": summary,
         }
     )

@@ -1,0 +1,47 @@
+{
+  "schema_version": "filter-parity-acknowledgements/v0",
+  "acknowledgements": [
+    {
+      "symbol": "ETHUSDT",
+      "venue": "binance_usdm",
+      "environment": "testnet",
+      "parity_status": "match",
+      "severity": "info",
+      "first_seen_ts_ms": 1782857138383,
+      "last_seen_ts_ms": 1782857409910,
+      "configured_values": {"tick_size": "0.01", "step_size": "0.001", "min_qty": "0.001", "min_notional": "20"},
+      "exchange_values": {"tick_size": "0.01", "step_size": "0.001", "min_qty": "0.001", "min_notional": "20"},
+      "difference_summary": [],
+      "compatibility_assessment": "exact_match",
+      "operator_ack_status": "not_required",
+      "requires_yaml_review": false,
+      "requires_execution_block_before_authority": false,
+      "configured_metadata_ref": "aurora://config/instruments#precision/sha256:402f384618fc4aa150d18d6c733d29209973dffe63fe13639e5d980c6579b48e",
+      "exchange_metadata_ref": "aurora-publication://exchange-info/public-exchange-info-cache/v0/sha256:402f384618fc4aa150d18d6c733d29209973dffe63fe13639e5d980c6579b48e",
+      "state_ref": "aurora-publication://exchange-info/filter-parity/v0/sha256:cf49e17ba72f2aba975d1e27846d1fec9841b030de4e024451db50d953336fca",
+      "raw_ref": "aurora-publication://exchange-info/filter-parity/v0",
+      "history_ref": "aurora-publication://filter-parity/history/v1"
+    },
+    {
+      "symbol": "BTCUSDT",
+      "venue": "binance_usdm",
+      "environment": "testnet",
+      "parity_status": "conservative_mismatch",
+      "severity": "warning",
+      "first_seen_ts_ms": 1782857138383,
+      "last_seen_ts_ms": 1782857409910,
+      "configured_values": {"tick_size": "0.1", "step_size": "0.001", "min_qty": "0.001", "min_notional": "100"},
+      "exchange_values": {"tick_size": "0.10", "step_size": "0.0001", "min_qty": "0.0001", "min_notional": "50"},
+      "difference_summary": ["step_size:0.001->0.0001", "min_qty:0.001->0.0001", "min_notional:100->50"],
+      "compatibility_assessment": "compatible_conservative",
+      "operator_ack_status": "unacknowledged",
+      "requires_yaml_review": false,
+      "requires_execution_block_before_authority": false,
+      "configured_metadata_ref": "aurora://config/instruments#precision/sha256:74b62c7f0e9316df19704a08cb87ad067adf252683fd60a0aaca8c6c6ccd9fa3",
+      "exchange_metadata_ref": "aurora-publication://exchange-info/public-exchange-info-cache/v0/sha256:2b8713c6591be0fef44062c7adc921ddbb28fd7fff8a9fbfc792775e044a8aca",
+      "state_ref": "aurora-publication://exchange-info/filter-parity/v0/sha256:b715ab02e68f9a2e0cc830a6f26ae95926ebfb881011be25e32409eda500bf0e",
+      "raw_ref": "aurora-publication://exchange-info/filter-parity/v0",
+      "history_ref": "aurora-publication://filter-parity/history/v1"
+    }
+  ]
+}
