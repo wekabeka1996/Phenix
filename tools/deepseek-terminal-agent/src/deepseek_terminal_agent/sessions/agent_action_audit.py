@@ -213,7 +213,7 @@ class FSMAuditRegistry:
 
     def __init__(self, registered_kinds: Optional[set[str]] = None) -> None:
         self.registered_kinds = registered_kinds or {
-            "ENTRY", "FULL_CLOSE", "PARTIAL_CLOSE", "OBSERVE"
+            "ENTRY", "FULL_CLOSE", "PARTIAL_CLOSE", "OBSERVE", "AGENT_TESTNET_ORDER_REQUESTED"
         }
 
     def verify_registration(self, command: AgentActionCommand) -> None:
@@ -277,3 +277,148 @@ class CommandAuditJournal:
         """Terminal close stage."""
         transit_status(command, "lifecycle_closed")
         self.history.append((datetime.now(timezone.utc), command.status, reason))
+
+
+class FSMHandoffGateway:
+    """Performs FSM handoff validations and coordinates testnet order execution."""
+
+    def __init__(self, registry: FSMAuditRegistry, execution_adapter: Any = None) -> None:
+        self.registry = registry
+        self.execution_adapter = execution_adapter
+
+    def validate_and_transit(self, command: AgentActionCommand, journal: CommandAuditJournal) -> None:
+        """Validates incoming command and transitions status from pending_fsm to accepted or rejected."""
+        # Auto-transition from recorded to pending_fsm
+        if command.status == "recorded":
+            transit_status(command, "pending_fsm")
+
+        if command.status != "pending_fsm":
+            raise ValueError(f"Command must be in 'pending_fsm' status to transit, got '{command.status}'")
+
+        # 1. Missing registry check
+        if self.registry is None:
+            journal.process_fsm_decision(command, accepted=False, reason="REJECTED: missing registry")
+            return
+
+        # 2. Unknown event kind (verify registration)
+        try:
+            self.registry.verify_registration(command)
+        except ValueError as e:
+            journal.process_fsm_decision(command, accepted=False, reason=f"REJECTED: unknown event kind ({e})")
+            return
+
+        # 3. Missing agent identity
+        if not command.agent_id or not command.session_id or command.agent_number is None:
+            journal.process_fsm_decision(command, accepted=False, reason="REJECTED: missing agent identity")
+            return
+
+        # 4. Non-testnet flag (testnet_only must be True)
+        if not command.testnet_only:
+            journal.process_fsm_decision(command, accepted=False, reason="REJECTED: non-testnet flag")
+            return
+
+        # 5. Missing or invalid side check
+        if command.command_kind in {"ENTRY", "AGENT_TESTNET_ORDER_REQUESTED"}:
+            side = command.payload.get("side")
+            if not side or str(side).upper() not in {"BUY", "SELL"}:
+                journal.process_fsm_decision(command, accepted=False, reason="REJECTED: missing or invalid side (must be BUY or SELL)")
+                return
+
+        # 6. Missing explicit quantity/notional where required
+        if command.command_kind in {"ENTRY", "AGENT_TESTNET_ORDER_REQUESTED"}:
+            payload = command.payload
+            qty = payload.get("quantity") or payload.get("qty")
+            notional = payload.get("notional")
+            if not qty and not notional:
+                journal.process_fsm_decision(command, accepted=False, reason="REJECTED: missing explicit quantity/notional")
+                return
+            # Validate positive values
+            if qty:
+                try:
+                    if float(qty) <= 0:
+                        journal.process_fsm_decision(command, accepted=False, reason="REJECTED: invalid quantity <= 0")
+                        return
+                except (ValueError, TypeError):
+                    journal.process_fsm_decision(command, accepted=False, reason="REJECTED: quantity must be float-castable")
+                    return
+            if notional:
+                try:
+                    if float(notional) <= 0:
+                        journal.process_fsm_decision(command, accepted=False, reason="REJECTED: invalid notional <= 0")
+                        return
+                except (ValueError, TypeError):
+                    journal.process_fsm_decision(command, accepted=False, reason="REJECTED: notional must be float-castable")
+                    return
+
+        # 7. No execution adapter available
+        if self.execution_adapter is None:
+            journal.process_fsm_decision(command, accepted=False, reason="REJECTED: no execution adapter available")
+            return
+
+        # Check adapter base URL to prove it is testnet
+        is_simulated = self.execution_adapter.__class__.__name__ == "SimulatedAdapter"
+        if not is_simulated:
+            base_url = getattr(self.execution_adapter, "base_url", "") or getattr(self.execution_adapter, "rest_url", "")
+            if not base_url or "testnet" not in base_url.lower():
+                journal.process_fsm_decision(command, accepted=False, reason="REJECTED: adapter base URL does not prove testnet")
+                return
+
+        # Passed all checks!
+        journal.process_fsm_decision(command, accepted=True, reason="ACCEPTED: FSM handoff validated successfully")
+
+    async def execute_testnet_order(self, command: AgentActionCommand, journal: CommandAuditJournal) -> Any:
+        """Submits the accepted command to the exchange via the adapter and records the outcome."""
+        if command.status != "accepted_by_fsm":
+            raise ValueError(f"Command must be accepted_by_fsm to execute, got '{command.status}'")
+
+        journal.submit_to_exchange(command, "Routing command to execution adapter")
+
+        payload = command.payload
+        symbol = payload.get("symbol") or payload.get("ticker")
+        side = payload.get("side")
+        order_type = payload.get("order_type") or "MARKET"
+        quantity = str(payload.get("quantity") or payload.get("qty") or "")
+        price = payload.get("price")
+        time_in_force = payload.get("time_in_force") or payload.get("tif") or "GTC"
+        reduce_only = bool(payload.get("reduce_only") or payload.get("reduceOnly"))
+        close_position = bool(payload.get("close_position") or payload.get("closePosition"))
+        client_order_id = payload.get("client_order_id") or payload.get("newClientOrderId") or command.command_id
+        position_side = payload.get("position_side") or payload.get("positionSide")
+        stop_price = payload.get("stop_price") or payload.get("stopPrice")
+        working_type = payload.get("working_type") or payload.get("workingType")
+
+        # Map to ExchangeOrderParams
+        from vfoundation.core.adapters.base import ExchangeOrderParams
+        params = ExchangeOrderParams(
+            symbol=symbol,
+            side=side.upper(),
+            order_type=order_type.upper(),
+            quantity=quantity,
+            price=price,
+            time_in_force=time_in_force.upper(),
+            reduce_only=reduce_only,
+            close_position=close_position,
+            client_order_id=client_order_id,
+            position_side=position_side,
+            stop_price=stop_price,
+            working_type=working_type,
+        )
+
+        try:
+            resp = await self.execution_adapter.create_order(params)
+            # Log exchange response
+            logger.info(f"Exchange response received: {resp}")
+            # Record success (exchange_ack)
+            journal.record_exchange_response(command, ack=True, reason=f"Exchange ACK: {resp.order_id}")
+            # Record lifecycle reference in command payload
+            command.payload["exchange_order_id"] = resp.order_id
+            command.payload["exchange_status"] = resp.status
+            journal.close_command(command, "FSM handoff execution lifecycle closed")
+            return resp
+        except Exception as e:
+            logger.error(f"Exchange order submission failed: {e}")
+            # Record failure (exchange_reject)
+            journal.record_exchange_response(command, ack=False, reason=f"Exchange REJECT: {e}")
+            journal.close_command(command, "FSM handoff execution lifecycle closed after rejection")
+            raise
+

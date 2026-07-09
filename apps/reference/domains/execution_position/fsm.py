@@ -579,6 +579,8 @@ class ExecPosFSM(
         if not self.no_order_observation_mode:
             self.bus.listen("CMD:EXTERNAL_OPEN_REQUEST_V1",
                             self._on_external_open_request)
+            self.bus.listen("CMD:AGENT_TESTNET_ORDER_REQUESTED",
+                            self._on_agent_testnet_order_requested)
             self.bus.listen("CMD:EXTERNAL_POSITION_CLOSE_REQUEST_V1",
                             self._on_external_position_close_request)
             self.bus.listen("CMD:EXTERNAL_BRACKET_AMEND_REQUEST_V1",
@@ -952,6 +954,13 @@ class ExecPosFSM(
         if self._block_no_order_action("external_open_request"):
             return
         self._intent_router.on_external_open_request(msg)
+
+    def _on_agent_testnet_order_requested(self, msg: Message) -> None:
+        """Handle incoming testnet order requests from external agents."""
+        if self._block_no_order_action("agent_testnet_order_requested"):
+            return
+        if hasattr(self, "_intent_router") and hasattr(self._intent_router, "on_agent_testnet_order_requested"):
+            self._intent_router.on_agent_testnet_order_requested(msg)
 
     def _on_external_position_close_request(self, msg: Message) -> None:
         """Phase 14A: Delegated to IntentRouter (LLM external close path)."""

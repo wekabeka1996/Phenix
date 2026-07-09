@@ -1134,3 +1134,96 @@ class IntentRouter:
             )
         except Exception as e:
             LOG.error(f"Failed to process TRADE_INTENT_REJECTED: {e}")
+
+    def on_agent_testnet_order_requested(self, msg: "Message") -> None:
+        """Processes AGENT_TESTNET_ORDER_REQUESTED by verifying FSM Handoff Gateway rules."""
+        from deepseek_terminal_agent.sessions.agent_action_audit import (
+            AgentActionCommand,
+            FSMAuditRegistry,
+            CommandAuditJournal,
+            FSMHandoffGateway
+        )
+        pld = msg.pld or {}
+        try:
+            cmd = AgentActionCommand(
+                event_id=str(pld.get("event_id") or msg.rid or ""),
+                command_id=str(pld.get("command_id") or msg.rid or ""),
+                session_id=str(pld.get("session_id") or ""),
+                agent_id=str(pld.get("agent_id") or ""),
+                agent_number=int(pld.get("agent_number") or 0),
+                command_kind="AGENT_TESTNET_ORDER_REQUESTED",
+                testnet_only=True,
+                payload=pld,
+            )
+        except Exception as e:
+            LOG.error(f"Failed to instantiate AgentActionCommand for AGENT_TESTNET_ORDER_REQUESTED: {e}")
+            if hasattr(self._fsm, "bus"):
+                self._fsm.bus.emit(
+                    "EVT:DEEPSEEK_AGENT_DECISION_REJECTED",
+                    {"reason": f"Command instantiation failed: {e}"},
+                    "validation_failed",
+                    msg.data_ref,
+                    rid=msg.rid
+                )
+            return
+
+        registry = FSMAuditRegistry()
+        journal = CommandAuditJournal(registry)
+        gateway = FSMHandoffGateway(registry, self._fsm.adapter)
+
+        # Validate handoff rules
+        gateway.validate_and_transit(cmd, journal)
+
+        if cmd.status == "rejected_by_fsm":
+            LOG.warning(f"FSM Handoff Gateway REJECTED command {cmd.command_id}: {journal.history[-1][2]}")
+            if hasattr(self._fsm, "bus"):
+                self._fsm.bus.emit(
+                    "EVT:DEEPSEEK_AGENT_DECISION_REJECTED",
+                    {"command_id": cmd.command_id, "reason": journal.history[-1][2]},
+                    "gateway_rejected",
+                    msg.data_ref,
+                    rid=msg.rid
+                )
+            return
+
+        # Accepted! Let's submit order
+        LOG.info(f"FSM Handoff Gateway ACCEPTED command {cmd.command_id}. Submitting to testnet...")
+        if hasattr(self._fsm, "bus"):
+            self._fsm.bus.emit(
+                "EVT:DEEPSEEK_AGENT_INTENT_ACCEPTED",
+                {"command_id": cmd.command_id},
+                "gateway_accepted",
+                msg.data_ref,
+                rid=msg.rid
+            )
+
+        async def _execute():
+            try:
+                resp = await gateway.execute_testnet_order(cmd, journal)
+                if hasattr(self._fsm, "bus"):
+                    self._fsm.bus.emit(
+                        "EVT:DEEPSEEK_AGENT_TESTNET_ORDER_SUBMITTED",
+                        {"command_id": cmd.command_id, "exchange_order_id": resp.order_id},
+                        "order_submitted",
+                        msg.data_ref,
+                        rid=msg.rid
+                    )
+                    self._fsm.bus.emit(
+                        "EVT:DEEPSEEK_AGENT_TESTNET_ORDER_RESULT",
+                        {"command_id": cmd.command_id, "exchange_order_id": resp.order_id, "status": resp.status},
+                        "order_result",
+                        msg.data_ref,
+                        rid=msg.rid
+                    )
+            except Exception as ex:
+                if hasattr(self._fsm, "bus"):
+                    self._fsm.bus.emit(
+                        "EVT:DEEPSEEK_AGENT_DECISION_REJECTED",
+                        {"command_id": cmd.command_id, "reason": f"Execution failed: {ex}"},
+                        "execution_failed",
+                        msg.data_ref,
+                        rid=msg.rid
+                    )
+
+        # Dispatch async task
+        asyncio.create_task(_execute())
