@@ -1,0 +1,12 @@
+# Branch And Merge Matrix
+
+| Branch | Commit | Files changed | Tests run | Validation status | Merge recommendation | Merge order | Conflict risk | Likely conflicts |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `agent-hub-integrated-2026-07-09` | `60abdaf8` | P35A docs in `reports/p35a_primary_final_integration_close/` (`BRANCH_VISIBILITY.md`, `MERGE_SEQUENCE.md`, `PATCH_DIFF.md`, `RISKS.md`, `VALIDATION.md`); package also includes `REPORT.md` | `python -m pytest tests/test_attachments_api.py tests/test_context_builder.py tests/test_dashboard_chat_app.py tests/test_attachment_ui_panel.py` -> `20 passed`; `python -m pytest tests/domains/agent_bridge/test_session_context_contract.py` -> `6 passed` | PASS | ACCEPT | Baseline already on this branch | Low | None for this docs-only close package |
+| `p35c-cli-proposal-ledger-primary-20260709` | `c711d4ab` | `tools/deepseek-terminal-agent/src/deepseek_terminal_agent/dashboard/app.py`; `tools/deepseek-terminal-agent/src/deepseek_terminal_agent/sessions/agent_proposals.py`; `tools/deepseek-terminal-agent/tests/test_agent_proposal_api.py`; `tools/deepseek-terminal-agent/tests/test_agent_proposals.py`; `reports/p35c_cli_agent_proposal_ledger/API_CONTRACT.md`; `PATCH_DIFF.md`; `REPORT.md`; `RISKS.md`; `VALIDATION.md` | `python -m pytest tests/test_agent_proposals.py tests/test_agent_proposal_api.py` -> `14 passed`; `python -m pytest tests/test_dashboard_chat_app.py` -> `9 passed` | PASS | ACCEPT | After baseline review; before any later smoke merge that depends on proposal APIs | Medium | `tools/deepseek-terminal-agent/src/deepseek_terminal_agent/dashboard/app.py`, session store code, proposal API tests |
+| `p35b_final_integrated_cockpit_smoke` | not visible | none | none | MISSING | BLOCKED | After report publication | Unknown until branch appears | Likely `tools/deepseek-terminal-agent/src/deepseek_terminal_agent/dashboard/app.py`, `tools/deepseek-terminal-agent/scripts/run_integrated_smoke_test.ps1`, smoke-test report files |
+| `p35_secondary_coordination` | not visible | none | none | MISSING | BLOCKED | After report publication | Unknown until branch appears | Likely coordination/report docs, and any cadence/runtime files if the branch is not docs-only |
+
+Notes:
+- `p35b` and secondary are not just absent in the main tree; `git ls-remote --heads origin 'p35*'` returned no remote heads either.
+- `p35c` is validated in its own worktree but is not yet proven merged into `agent-hub-integrated-2026-07-09`.
