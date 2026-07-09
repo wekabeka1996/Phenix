@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -28,6 +28,7 @@ from ..deepseek_client import DeepSeekAPIError, DeepSeekTimeoutError
 from ..logging_utils import redact
 from ..sessions.approval_queue import ApprovalQueue
 from ..sessions.artifacts import ArtifactStore
+from ..sessions.attachments import AttachmentKind, AttachmentStore
 from ..sessions.chat_runtime import SessionChatRuntime
 from ..sessions.compressor import ContextCompressor
 from ..sessions.context_builder import ContextBuilder
@@ -63,6 +64,7 @@ _session_store: Optional[SessionStore] = None
 _model_registry: Optional[ModelRegistry] = None
 _memory_store: Optional[MemoryAtomStore] = None
 _artifact_store: Optional[ArtifactStore] = None
+_attachment_store: Optional[AttachmentStore] = None
 _context_builder: Optional[ContextBuilder] = None
 _context_inspector: Optional[ContextInspector] = None
 _compressor: Optional[ContextCompressor] = None
@@ -142,6 +144,14 @@ def _get_artifact_store() -> ArtifactStore:
     return _artifact_store
 
 
+def _get_attachment_store() -> AttachmentStore:
+    global _attachment_store
+    if _attachment_store is None:
+        _attachment_store = AttachmentStore(
+            _get_settings(), root_dir=_get_root_dir())
+    return _attachment_store
+
+
 def _get_context_builder() -> ContextBuilder:
     global _context_builder
     if _context_builder is None:
@@ -150,6 +160,7 @@ def _get_context_builder() -> ContextBuilder:
             session_store=_get_session_store(),
             memory_store=_get_memory_store(),
             artifact_store=_get_artifact_store(),
+            attachment_store=_get_attachment_store(),
             root_dir=_get_root_dir(),
         )
     return _context_builder
@@ -380,6 +391,43 @@ def _session_artifacts(session_id: str) -> list[dict[str, Any]]:
     return [artifact.to_public_dict() for artifact in _get_artifact_store().list_artifacts(parent_session_id=session_id)]
 
 
+def _session_attachments(session_id: str) -> list[dict[str, Any]]:
+    _get_session_store().get_session(session_id)
+    return [
+        attachment.model_dump()
+        for attachment in _get_attachment_store().list_attachments(session_id=session_id)
+    ]
+
+
+def _payload_bool(payload: dict[str, Any], key: str, default: bool) -> bool:
+    value = payload.get(key, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() not in {"0", "false", "no", "off"}
+    return bool(value)
+
+
+def _payload_source_refs(payload: dict[str, Any]) -> list[str]:
+    refs = payload.get("source_refs", [])
+    if refs is None:
+        return []
+    if isinstance(refs, str):
+        return [refs]
+    if isinstance(refs, list):
+        return [str(item) for item in refs]
+    raise ValueError("source_refs must be a list of strings.")
+
+
+def _reject_raw_attachment_blob_fields(payload: dict[str, Any]) -> None:
+    forbidden = {"raw_bytes", "image_bytes", "file_bytes", "content_base64", "blob", "bytes"}
+    present = sorted(key for key in forbidden if key in payload)
+    if present:
+        raise ValueError(
+            f"Raw attachment bytes are not accepted by this metadata route: {', '.join(present)}."
+        )
+
+
 def _search_session_memory(session_id: str, query: str) -> list[dict[str, Any]]:
     session = _get_session_store().get_session(session_id)
     atoms = _get_memory_store().search(
@@ -408,6 +456,7 @@ def _session_detail(session_id: str) -> dict[str, Any]:
         "events": session_store.list_events(session_id),
         "memory_atoms": _session_memory_atoms(session_id),
         "artifacts": _session_artifacts(session_id),
+        "attachments": _session_attachments(session_id),
         "subagents": _get_subagent_manager().list_subagents(session_id),
     }
 
@@ -730,6 +779,47 @@ async def chat_disable_memory(session_id: str, atom_id: str) -> JSONResponse:
     except KeyError:
         return _json_error(f"Memory atom '{atom_id}' not found.", status_code=404)
     return JSONResponse(atom.model_dump())
+
+
+@app.post("/chat/sessions/{session_id}/attachments")
+async def chat_create_attachment(session_id: str, request: Request) -> JSONResponse:
+    payload = await _extract_payload(request)
+    try:
+        _get_session_store().get_session(session_id)
+        _reject_raw_attachment_blob_fields(payload)
+        attachment = _get_attachment_store().create_attachment(
+            session_id=session_id,
+            kind=cast(AttachmentKind, str(payload.get("kind") or "")),
+            raw_ref=str(payload.get("raw_ref") or payload.get("path") or ""),
+            summary=str(payload.get("summary") or "").strip(),
+            source_refs=_payload_source_refs(payload),
+            created_by=str(payload.get("created_by") or "operator"),
+            include_in_prompt=_payload_bool(payload, "include_in_prompt", True),
+            token_estimate=int(payload.get("token_estimate") or 0),
+        )
+    except (KeyError, FileNotFoundError):
+        return _json_error(f"Session '{session_id}' not found.", status_code=404)
+    except (TypeError, ValueError) as exc:
+        return _json_error(str(exc), status_code=400)
+    return JSONResponse(attachment.model_dump(), status_code=201)
+
+
+@app.get("/chat/sessions/{session_id}/attachments")
+async def chat_list_attachments(session_id: str) -> JSONResponse:
+    try:
+        return JSONResponse({"attachments": _session_attachments(session_id)})
+    except (KeyError, FileNotFoundError, ValueError):
+        return _json_error(f"Session '{session_id}' not found.", status_code=404)
+
+
+@app.get("/chat/attachments/{attachment_id}")
+async def chat_attachment_detail(attachment_id: str) -> JSONResponse:
+    try:
+        attachment = _get_attachment_store().get_attachment(attachment_id)
+        _get_session_store().get_session(attachment.session_id)
+    except (KeyError, FileNotFoundError, ValueError):
+        return _json_error(f"Attachment '{attachment_id}' not found.", status_code=404)
+    return JSONResponse(attachment.model_dump())
 
 
 @app.post("/chat/sessions/{session_id}/context")

@@ -8,6 +8,7 @@ from typing import Any, Optional
 from ..config import Settings
 from ..sessions.token_budget import estimate_tokens, truncate_chars
 from .artifacts import ArtifactStore
+from .attachments import AttachmentRecord, AttachmentStore
 from .memory_atoms import MemoryAtomStore
 from .models import ArtifactRecord, ChatSession, ChatTurn, ContextReport, ModelProfile, SessionSpine
 from .persistence import quarantine_jsonl_issue, read_jsonl_records
@@ -22,12 +23,14 @@ class ContextBuilder:
         session_store: SessionStore,
         memory_store: Optional[MemoryAtomStore] = None,
         artifact_store: Optional[ArtifactStore] = None,
+        attachment_store: Optional[AttachmentStore] = None,
         root_dir: str | Path = ".",
     ) -> None:
         self.settings = settings
         self.session_store = session_store
         self.memory_store = memory_store
         self.artifact_store = artifact_store
+        self.attachment_store = attachment_store
         self.root_dir = Path(root_dir)
         self.spines_path = self.root_dir / ".agent_memory" / "session_spines.dsspine.jsonl"
         self.quarantine_root = self.root_dir / ".agent_memory" / "quarantine"
@@ -48,6 +51,7 @@ class ContextBuilder:
         pinned_atoms, retrieved_atoms = self._load_memory_atoms(
             session, current_user_message, selected_profile)
         artifacts = self._load_artifacts(session, relevant_artifact_ids)
+        attachments = self._load_attachments(session)
         recent_turns, omitted_turns_count, compacted_turns_count = self._select_recent_turns(
             turns, selected_profile)
 
@@ -68,6 +72,9 @@ class ContextBuilder:
         if artifacts:
             sections.append(
                 ("artifacts", "system", self._format_artifacts(artifacts)))
+        if attachments:
+            sections.append(
+                ("attachments", "system", self._format_attachments(attachments)))
         for turn in recent_turns:
             sections.append(
                 (
@@ -205,6 +212,24 @@ class ContextBuilder:
             used += artifact_chars
         return clipped
 
+    def _load_attachments(self, session: ChatSession) -> list[AttachmentRecord]:
+        if self.attachment_store is None:
+            return []
+        attachments = self.attachment_store.list_attachments(
+            session_id=session.session_id,
+            include_in_prompt=True,
+        )
+        clipped: list[AttachmentRecord] = []
+        used = 0
+        budget = min(self.settings.context.artifact_budget_chars, 12000)
+        for attachment in attachments:
+            attachment_chars = len(attachment.prompt_ref())
+            if used + attachment_chars > budget:
+                break
+            clipped.append(attachment)
+            used += attachment_chars
+        return clipped
+
     def _select_recent_turns(
         self,
         turns: list[ChatTurn],
@@ -254,6 +279,9 @@ class ContextBuilder:
 
     def _format_artifact(self, artifact: ArtifactRecord) -> str:
         return artifact.render_compact(max_findings=5, max_refs=3)
+
+    def _format_attachments(self, attachments: list[AttachmentRecord]) -> str:
+        return "\n\n".join(attachment.prompt_ref() for attachment in attachments)
 
     def _format_turn(self, turn: ChatTurn, selected_profile: ModelProfile) -> str:
         chunks = [turn.visible_content]
