@@ -200,6 +200,58 @@ def test_integrated_cockpit_smoke():
             # Should be 404 since P33 endpoint is not present in app.py
             assert p33_resp.status_code == 404
 
+            # 10. Verify Proposal Ledger API (POST/GET/List)
+            print("Verifying Proposal Ledger API...")
+            prop_payload = {
+                "agent_id": "integrated-agent-1",
+                "agent_number": 2,
+                "kind": "analysis_note",
+                "rationale": "Strong order book imbalance support.",
+                "source_refs": ["ob-imbalance"],
+                "payload": {"ratio": 1.45},
+            }
+            post_prop_resp = httpx.post(
+                f"{sessions_url}/{session_id}/agent-proposals",
+                json=prop_payload,
+                timeout=3.0,
+            )
+            assert post_prop_resp.status_code == 201
+            proposal_id = post_prop_resp.json()["proposal_id"]
+            assert proposal_id
+
+            list_prop_resp = httpx.get(
+                f"{sessions_url}/{session_id}/agent-proposals",
+                timeout=3.0,
+            )
+            assert list_prop_resp.status_code == 200
+            proposals = list_prop_resp.json()["agent_proposals"]
+            proposal_ids = [p["proposal_id"] for p in proposals]
+            assert proposal_id in proposal_ids
+
+            detail_prop_resp = httpx.get(
+                f"{base_url}/chat/agent-proposals/{proposal_id}",
+                timeout=3.0,
+            )
+            assert detail_prop_resp.status_code == 200
+            assert detail_prop_resp.json()["rationale"] == "Strong order book imbalance support."
+
+            # 11. Verify Forbidden Proposal Fields are Rejected
+            print("Verifying Forbidden Proposal Fields Rejection...")
+            forbidden_prop_payload = {
+                "agent_id": "integrated-agent-1",
+                "agent_number": 2,
+                "kind": "analysis_note",
+                "rationale": "Attempting forbidden sizing",
+                "payload": {"sizing": 1000},
+            }
+            post_forbid_prop_resp = httpx.post(
+                f"{sessions_url}/{session_id}/agent-proposals",
+                json=forbidden_prop_payload,
+                timeout=3.0,
+            )
+            assert post_forbid_prop_resp.status_code == 400
+            assert "Forbidden proposal field" in post_forbid_prop_resp.json()["error"]
+
         finally:
             print("Cleaning up server subprocess...")
             process.terminate()
