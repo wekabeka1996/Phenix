@@ -31,16 +31,21 @@ ALLOWED_TRANSITIONS: dict[CommandStatus, set[CommandStatus]] = {
 }
 
 
-class AdapterCapabilityDescriptor(BaseModel):
+class AdapterCapability(BaseModel):
     """Explicit adapter capability descriptor."""
     model_config = ConfigDict(extra="forbid")
 
     adapter_id: str = Field(..., min_length=1)
     environment: Literal["testnet", "sandbox", "mainnet", "unknown"]
-    supports_order_submit: bool
-    supports_no_order_observation: bool
+    order_submit_enabled: bool
+    no_order_observation_mode: bool
+    supports_cancel: bool
+    supports_close: bool
     source_of_truth: str = Field(..., min_length=1)
     checked_at: str = Field(..., min_length=1)
+
+
+AdapterCapabilityDescriptor = AdapterCapability
 
 
 def log_rejection(command: AgentActionCommand, reason: str) -> None:
@@ -54,6 +59,8 @@ def log_rejection(command: AgentActionCommand, reason: str) -> None:
         "session_id": command.session_id or "unknown",
         "command_id": command.command_id or "unknown",
         "event_id": command.event_id or "unknown",
+        "agent_number": command.agent_number,
+        "rationale": command.rationale or "unknown",
         "reason": reason,
         "timestamp": timestamp,
     }
@@ -83,8 +90,8 @@ def log_rejection(command: AgentActionCommand, reason: str) -> None:
 
 def verify_handoff_safety(
     command: AgentActionCommand,
-    descriptor: Optional[AdapterCapabilityDescriptor],
-    no_order_observation_mode: bool,
+    descriptor: Optional[AdapterCapability],
+    no_order_observation_mode: Optional[bool] = None,
     base_url: Optional[str] = None,
 ) -> None:
     """Verifies FSM handoff safety parameters and capability descriptors."""
@@ -107,9 +114,17 @@ def verify_handoff_safety(
         if descriptor.environment not in ("testnet", "sandbox"):
             raise ValueError(f"invalid environment: {descriptor.environment}")
 
-        # 4. No-order observation mode
-        if no_order_observation_mode:
+        # 4. Descriptor-owned adapter submit gates
+        no_order_active = (
+            descriptor.no_order_observation_mode
+            if no_order_observation_mode is None
+            else descriptor.no_order_observation_mode or no_order_observation_mode
+        )
+        if no_order_active:
             raise ValueError("no_order_observation_mode is active")
+
+        if not descriptor.order_submit_enabled:
+            raise ValueError("adapter capability disables order submit")
 
         # 5. Quantity / Notional validation for order submissions
         is_order_submit = command.command_kind.upper() in {"ENTRY", "ORDER", "FULL_CLOSE", "PARTIAL_CLOSE"} or any(
@@ -165,6 +180,7 @@ class AgentActionCommand(BaseModel):
     command_kind: str = Field(..., min_length=1)
     testnet_only: bool = True
     status: CommandStatus = "recorded"
+    rationale: str = Field(..., min_length=1)
     payload: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("testnet_only")
@@ -251,8 +267,8 @@ class CommandAuditJournal:
     def verify_handoff_safety(
         self,
         command: AgentActionCommand,
-        descriptor: Optional[AdapterCapabilityDescriptor],
-        no_order_observation_mode: bool,
+        descriptor: Optional[AdapterCapability],
+        no_order_observation_mode: Optional[bool] = None,
         base_url: Optional[str] = None,
     ) -> None:
         """Verifies safety parameters and records transition on failure."""
