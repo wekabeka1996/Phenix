@@ -801,6 +801,12 @@ registry:
   status: active
   schema: apps/reference/domains/agent_bridge/schemas/agent_session_stopped_v1.json
   since: '2026-07-06'
+- op: CMD
+  verb: AGENT_TESTNET_ORDER_REQUESTED
+  owner: agent_bridge
+  status: active
+  schema: null
+  since: '2026-07-09'
 policies:
   wildcard:
     UPD: true
