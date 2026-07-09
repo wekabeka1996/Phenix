@@ -26,6 +26,12 @@ from fastapi.templating import Jinja2Templates
 from ..config import Settings, load_settings
 from ..deepseek_client import DeepSeekAPIError, DeepSeekTimeoutError
 from ..logging_utils import redact
+from ..sessions.agent_events import (
+    AgentArenaAction,
+    build_agent_arena_event_command,
+    ensure_agent_arena_registry_available,
+    validate_no_forbidden_arena_fields,
+)
 from ..sessions.agent_proposals import (
     AgentProposalStore,
     ProposalKind,
@@ -422,6 +428,36 @@ def _session_agent_proposals(session_id: str) -> list[dict[str, Any]]:
     ]
 
 
+def _session_agent_arena_events(session_id: str) -> list[dict[str, Any]]:
+    _get_session_store().get_session(session_id)
+    events = []
+    for event in _get_session_store().list_events(session_id):
+        if not str(event.get("event_type") or "").startswith("agent_arena."):
+            continue
+        metadata = event.get("metadata") or {}
+        command = metadata.get("arena_command") or {}
+        events.append(
+            {
+                "event_id": event.get("event_id"),
+                "event_type": event.get("event_type"),
+                "created_at": event.get("created_at"),
+                "command_id": command.get("command_id"),
+                "session_id": command.get("session_id", session_id),
+                "agent_id": command.get("agent_id"),
+                "agent_number": command.get("agent_number"),
+                "action": command.get("action"),
+                "status": command.get("status"),
+                "environment": command.get("environment"),
+                "rationale": command.get("rationale"),
+                "payload": command.get("payload", {}),
+                "fsm_registered": command.get("fsm_registered", False),
+                "exchange_submitted": command.get("exchange_submitted", False),
+            }
+        )
+    events.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    return events
+
+
 def _payload_bool(payload: dict[str, Any], key: str, default: bool) -> bool:
     value = payload.get(key, default)
     if isinstance(value, bool):
@@ -483,6 +519,50 @@ def _append_agent_proposal_event(session_id: str, proposal: Any) -> None:
     )
 
 
+def _create_agent_arena_event(session_id: str, action: AgentArenaAction, payload: dict[str, Any]) -> dict[str, Any]:
+    _get_session_store().get_session(session_id)
+    ensure_agent_arena_registry_available()
+    validate_no_forbidden_arena_fields(payload, path="request")
+    command_payload = payload.get("payload") or {}
+    if not isinstance(command_payload, dict):
+        raise ValueError("payload must be an object.")
+    command = build_agent_arena_event_command(
+        session_id=session_id,
+        action=action,
+        agent_id=str(payload.get("agent_id") or "").strip(),
+        agent_number=_payload_required_int(payload, "agent_number"),
+        rationale=str(payload.get("rationale") or payload.get("reason") or "").strip(),
+        payload=command_payload,
+        event_id=str(payload.get("event_id") or "").strip() or None,
+        command_id=str(payload.get("command_id") or "").strip() or None,
+    )
+    event = SessionEvent(
+        event_id=command.event_id,
+        session_id=session_id,
+        event_type=command.event_type,
+        message=f"Agent arena event recorded: {command.action}",
+        created_at=command.created_at,
+        metadata={"arena_command": command.model_dump()},
+    )
+    _get_session_store().append_event(session_id, event)
+    return {
+        "event_id": command.event_id,
+        "command_id": command.command_id,
+        "session_id": command.session_id,
+        "agent_id": command.agent_id,
+        "agent_number": command.agent_number,
+        "action": command.action,
+        "event_type": command.event_type,
+        "created_at": command.created_at,
+        "rationale": command.rationale,
+        "status": command.status,
+        "environment": command.environment,
+        "payload": command.payload,
+        "fsm_registered": command.fsm_registered,
+        "exchange_submitted": command.exchange_submitted,
+    }
+
+
 def _search_session_memory(session_id: str, query: str) -> list[dict[str, Any]]:
     session = _get_session_store().get_session(session_id)
     atoms = _get_memory_store().search(
@@ -513,6 +593,7 @@ def _session_detail(session_id: str) -> dict[str, Any]:
         "artifacts": _session_artifacts(session_id),
         "attachments": _session_attachments(session_id),
         "agent_proposals": _session_agent_proposals(session_id),
+        "agent_events": _session_agent_arena_events(session_id),
         "subagents": _get_subagent_manager().list_subagents(session_id),
     }
 
@@ -922,6 +1003,84 @@ async def chat_agent_proposal_detail(proposal_id: str) -> JSONResponse:
     except (KeyError, FileNotFoundError, ValueError):
         return _json_error(f"Agent proposal '{proposal_id}' not found.", status_code=404)
     return JSONResponse(proposal.model_dump())
+
+
+@app.post("/chat/sessions/{session_id}/agent-events/rationale")
+async def chat_agent_event_rationale(session_id: str, request: Request) -> JSONResponse:
+    payload = await _extract_payload(request)
+    try:
+        event = _create_agent_arena_event(session_id, "rationale", payload)
+    except (KeyError, FileNotFoundError):
+        return _json_error(f"Session '{session_id}' not found.", status_code=404)
+    except RuntimeError as exc:
+        return _json_error(str(exc), status_code=503)
+    except (TypeError, ValueError) as exc:
+        return _json_error(str(exc), status_code=400)
+    return JSONResponse(event, status_code=201)
+
+
+@app.post("/chat/sessions/{session_id}/agent-events/sos")
+async def chat_agent_event_sos(session_id: str, request: Request) -> JSONResponse:
+    payload = await _extract_payload(request)
+    try:
+        event = _create_agent_arena_event(session_id, "sos", payload)
+    except (KeyError, FileNotFoundError):
+        return _json_error(f"Session '{session_id}' not found.", status_code=404)
+    except RuntimeError as exc:
+        return _json_error(str(exc), status_code=503)
+    except (TypeError, ValueError) as exc:
+        return _json_error(str(exc), status_code=400)
+    return JSONResponse(event, status_code=201)
+
+
+@app.post("/chat/sessions/{session_id}/agent-events/testnet-order-request")
+async def chat_agent_event_testnet_order_request(session_id: str, request: Request) -> JSONResponse:
+    payload = await _extract_payload(request)
+    try:
+        event = _create_agent_arena_event(session_id, "testnet_order_request", payload)
+    except (KeyError, FileNotFoundError):
+        return _json_error(f"Session '{session_id}' not found.", status_code=404)
+    except RuntimeError as exc:
+        return _json_error(str(exc), status_code=503)
+    except (TypeError, ValueError) as exc:
+        return _json_error(str(exc), status_code=400)
+    return JSONResponse(event, status_code=201)
+
+
+@app.post("/chat/sessions/{session_id}/agent-events/testnet-cancel-request")
+async def chat_agent_event_testnet_cancel_request(session_id: str, request: Request) -> JSONResponse:
+    payload = await _extract_payload(request)
+    try:
+        event = _create_agent_arena_event(session_id, "testnet_cancel_request", payload)
+    except (KeyError, FileNotFoundError):
+        return _json_error(f"Session '{session_id}' not found.", status_code=404)
+    except RuntimeError as exc:
+        return _json_error(str(exc), status_code=503)
+    except (TypeError, ValueError) as exc:
+        return _json_error(str(exc), status_code=400)
+    return JSONResponse(event, status_code=201)
+
+
+@app.post("/chat/sessions/{session_id}/agent-events/testnet-close-request")
+async def chat_agent_event_testnet_close_request(session_id: str, request: Request) -> JSONResponse:
+    payload = await _extract_payload(request)
+    try:
+        event = _create_agent_arena_event(session_id, "testnet_close_request", payload)
+    except (KeyError, FileNotFoundError):
+        return _json_error(f"Session '{session_id}' not found.", status_code=404)
+    except RuntimeError as exc:
+        return _json_error(str(exc), status_code=503)
+    except (TypeError, ValueError) as exc:
+        return _json_error(str(exc), status_code=400)
+    return JSONResponse(event, status_code=201)
+
+
+@app.get("/chat/sessions/{session_id}/agent-events")
+async def chat_list_agent_events(session_id: str) -> JSONResponse:
+    try:
+        return JSONResponse({"agent_events": _session_agent_arena_events(session_id)})
+    except (KeyError, FileNotFoundError, ValueError):
+        return _json_error(f"Session '{session_id}' not found.", status_code=404)
 
 
 @app.post("/chat/sessions/{session_id}/context")
