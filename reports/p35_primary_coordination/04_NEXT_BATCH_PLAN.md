@@ -1,15 +1,15 @@
 # Next Batch Plan
 
-## Repair Prompts
+## Next Prompts
 
-1. To the P35B smoke agent: publish `reports/p35b_final_integrated_cockpit_smoke/REPORT.md`, `VALIDATION.md`, `PATCH_DIFF.md`, and `RISKS.md` in the assigned worktree. Include exact smoke commands, browser/runtime proof, and the AGENT_IDENTITY block.
-2. To the secondary coordination agent: publish `reports/p35_secondary_coordination/REPORT.md` plus any supporting docs that prove branch visibility, timing/cadence status, and whether the secondary side is synchronized with `agent-hub-integrated-2026-07-09`.
+1. If full validation symmetry is required, ask the P35B owner for a manual browser proof on a machine that can run the browser subagent, or attach screenshots / trace output for the attachments panel flow.
+2. If the operator is satisfied with the current evidence, treat `agent-hub-integrated-2026-07-09` as the next baseline decision point and move on without further P35 repair.
 
 ## Merge Validation Prompts
 
-1. After the missing reports land, rerun `git status --short --branch`, `git branch --all`, `git worktree list`, and `git log --oneline --decorate -15`.
-2. Re-run `git diff --stat` and `git diff --name-only` for the final candidate branches before any merge decision.
-3. Do not accept any batch-close claim until P35B and the secondary report are both present.
+1. Re-run `git status --short --branch`, `git branch --all`, `git worktree list`, and `git log --oneline --decorate -15` before any baseline move.
+2. Re-check the relevant report files after any new publication so the summary stays evidence-based.
+3. Do not merge to `main` without operator approval.
 
 ## Safe Git Commands
 
@@ -18,17 +18,10 @@
 - `git worktree list`
 - `git log --oneline --decorate -15`
 - `git fetch --all --prune`
-- `git show --stat p35c-cli-proposal-ledger-primary-20260709`
-- `git diff --stat agent-hub-sync-2026-07-08...agent-hub-integrated-2026-07-09`
-- `git diff --stat agent-hub-sync-2026-07-08...p35c-cli-proposal-ledger-primary-20260709`
-
-## Merge Guardrails
-
-- No destructive git commands.
-- No force push.
-- No merge to `main` without operator approval.
-- No batch-close claim until the missing P35B and secondary evidence exists.
+- `git rev-parse origin/p35-secondary-combined-report-20260709`
+- `git rev-parse p35c-cli-proposal-ledger-primary-20260709`
 
 ## Next Batch Proposal
 
-- If the missing reports arrive cleanly, keep `agent-hub-integrated-2026-07-09` as the next baseline and run one final regression sweep across cockpit smoke, proposal ledger, and timer/cadence surfaces before any broader release decision.
+- If the manual P35B browser proof lands, lock the current integration line and start the next batch on timer/cadence hardening and browser-parity cleanup.
+- If no more proof is needed, move to the next system-building target on the same baseline and keep the coordination docs as the batch record.
