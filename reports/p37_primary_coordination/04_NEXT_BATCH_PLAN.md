@@ -1,28 +1,27 @@
 # Next Batch Plan
 
-## Next Prompts
-1. If the operator wants full secondary symmetry, ask Agent 5 to publish the missing disable-map report and then rerun the secondary coordination summary.
-2. If the operator wants a stronger UI gate for P37C, ask for a manual browser check on a browser-capable runner to confirm the event buttons post only recorded-only, `pending_fsm` actions.
-3. If the operator wants to start the next implementation batch, use the published P37 contracts as the baseline and keep the event-first, testnet-only rule set unchanged.
+## Immediate Operator Gate
+1. Review P37B first as the registry/contract anchor.
+2. Review P37C second with a manual UI/API gate that verifies event buttons record only `pending_fsm` actions.
+3. Review secondary coordination as ready, while preserving its unknowns list.
 
 ## Safe Git Commands
 - `git status --short --branch`
 - `git branch --all`
-- `git worktree list`
-- `git show --stat p37a-event-fsm-surface-discovery-primary-20260709`
 - `git show --stat p37b-agent-arena-event-contract-primary-20260709`
 - `git show --stat p37c-cockpit-agent-event-buttons-primary-20260709`
 - `git show --stat origin/p37-secondary-combined-report-20260709`
-- `git diff --stat <base>...<branch>`
-- `git diff --name-only <base>...<branch>`
+- `git diff --stat agent-hub-integrated-2026-07-09...p37b-agent-arena-event-contract-primary-20260709`
+- `git diff --stat agent-hub-integrated-2026-07-09...p37c-cockpit-agent-event-buttons-primary-20260709`
 
-## Merge Guidance
-- No merge or push should happen from this coordinator task.
+## Next Implementation Batch
+- Implement the missing `agent_arena_testnet` profile only after P37B registry contract and P37C recorded-only event ingress are accepted.
+- Add FSM handoff proof from recorded `pending_fsm` commands to the registered FSM gateway.
+- Keep brain/strategy autonomous authority disabled while agent arena testnet profile is introduced.
+- Add runtime verification for the remaining secondary unknowns: `llm_microstructure`, `neocortex`, `md_amr`, and adapter write-path `no_order`.
+
+## Guardrails
 - No destructive git commands.
 - No force push.
 - No main merge until operator approval.
-
-## Next Batch Proposal
-- Start the next batch from the published P37 contracts, with P37B as the registry/contract anchor and P37C as the event-button entry surface.
-- If browser parity matters, add a browser-capable verification task before any claim of full UI proof.
-- Keep every command testnet-only, timestamped, attributable, and fail-closed on forbidden live/mainnet or raw-order fields.
+- No claim of actual exchange execution until runtime proof exists.
