@@ -17,6 +17,7 @@ Already up to date.
 ```
 
 ## Active Commit Baseline
-- **HEAD Commit**: `87b73b7b25ad757f4955c4d081e641772635905d`
-- **Commit Message**: `docs: compress p34 primary coordination batch`
+- **HEAD Commit (Baseline)**: `60abdaf8`
+- **Commit Message**: `Create P35A final integration close reports`
+- **Pushed Commit**: `fffce250` (includes these P35D reports)
 - **Worktree Status**: Clean (no local modifications, completely aligned with remote).
