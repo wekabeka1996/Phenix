@@ -1,0 +1,17 @@
+schema_version: 1
+events:
+  rationale:
+    event_type: agent_arena.rationale_recorded
+    default_status: recorded
+  sos:
+    event_type: agent_arena.sos_requested
+    default_status: pending_fsm
+  testnet_order_request:
+    event_type: agent_arena.testnet_order_requested
+    default_status: pending_fsm
+  testnet_cancel_request:
+    event_type: agent_arena.testnet_cancel_requested
+    default_status: pending_fsm
+  testnet_close_request:
+    event_type: agent_arena.testnet_close_requested
+    default_status: pending_fsm
