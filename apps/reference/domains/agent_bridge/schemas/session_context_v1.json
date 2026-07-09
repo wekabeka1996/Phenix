@@ -20,7 +20,7 @@
   ],
   "properties": {
     "session_id": { "type": "string", "minLength": 1 },
-    "source": { "type": "string" },
+    "source": { "type": "string", "pattern": "^cockpit-session://" },
     "created_at": { "type": "string" },
     "operator_notes_refs": {
       "type": "array",
@@ -49,6 +49,11 @@
     },
     "provenance": {
       "type": "object",
+      "required": ["title", "status"],
+      "properties": {
+        "title": { "type": "string" },
+        "status": { "type": "string" }
+      },
       "additionalProperties": true
     }
   }
