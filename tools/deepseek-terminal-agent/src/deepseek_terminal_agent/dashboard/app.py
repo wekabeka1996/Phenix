@@ -32,6 +32,7 @@ from ..sessions.agent_events import (
     ensure_agent_arena_registry_available,
     validate_no_forbidden_arena_fields,
 )
+from ..sessions.agent_memory_lifecycle import AgentMemoryLifecycle
 from ..sessions.agent_proposals import (
     AgentProposalStore,
     ProposalKind,
@@ -91,6 +92,7 @@ _report_center: Optional[ReportCenter] = None
 _decision_ledger: Optional[DecisionLedger] = None
 _memory_patch_store: Optional[MemoryPatchStore] = None
 _evidence_bundle_store: Optional[EvidenceBundleStore] = None
+_agent_memory_lifecycle: Optional[AgentMemoryLifecycle] = None
 
 
 def _get_settings() -> Settings:
@@ -342,6 +344,14 @@ def _get_evidence_bundle_store() -> EvidenceBundleStore:
     return _evidence_bundle_store
 
 
+def _get_agent_memory_lifecycle() -> AgentMemoryLifecycle:
+    global _agent_memory_lifecycle
+    if _agent_memory_lifecycle is None:
+        _agent_memory_lifecycle = AgentMemoryLifecycle(
+            _get_settings(), root_dir=_get_root_dir())
+    return _agent_memory_lifecycle
+
+
 def _default_profiles() -> list[ModelProfile]:
     return _get_model_registry().get_default_profiles()
 
@@ -458,6 +468,13 @@ def _session_agent_arena_events(session_id: str) -> list[dict[str, Any]]:
     return events
 
 
+def _agent_identity_from_payload(payload: dict[str, Any]) -> tuple[str, int]:
+    agent_id = str(payload.get("agent_id") or "").strip()
+    if not agent_id:
+        raise ValueError("agent_id is required.")
+    return agent_id, _payload_required_int(payload, "agent_number")
+
+
 def _payload_bool(payload: dict[str, Any], key: str, default: bool) -> bool:
     value = payload.get(key, default)
     if isinstance(value, bool):
@@ -545,6 +562,15 @@ def _create_agent_arena_event(session_id: str, action: AgentArenaAction, payload
         metadata={"arena_command": command.model_dump()},
     )
     _get_session_store().append_event(session_id, event)
+    if action == "rationale":
+        _get_agent_memory_lifecycle().append_rationale_event(
+            session_id=session_id,
+            agent_id=command.agent_id,
+            agent_number=command.agent_number,
+            event_id=command.event_id,
+            command_id=command.command_id,
+            rationale=command.rationale,
+        )
     return {
         "event_id": command.event_id,
         "command_id": command.command_id,
@@ -860,6 +886,110 @@ async def chat_search_memory(session_id: str, request: Request) -> JSONResponse:
     except (KeyError, FileNotFoundError):
         return _json_error(f"Session '{session_id}' not found.", status_code=404)
     return JSONResponse({"query": query, "memory_atoms": matches})
+
+
+@app.post("/chat/sessions/{session_id}/agent-memory/identity")
+async def chat_agent_memory_identity(session_id: str, request: Request) -> JSONResponse:
+    payload = await _extract_payload(request)
+    try:
+        _get_session_store().get_session(session_id)
+        agent_id, agent_number = _agent_identity_from_payload(payload)
+        memory = _get_agent_memory_lifecycle().attach_identity(
+            session_id=session_id,
+            agent_id=agent_id,
+            agent_number=agent_number,
+            instruction_manifest_version=str(
+                payload.get("instruction_manifest_version") or "p39d-runtime-v1"),
+        )
+    except (TypeError, ValueError) as exc:
+        return _json_error(str(exc), status_code=400)
+    except (KeyError, FileNotFoundError):
+        return _json_error(f"Session '{session_id}' not found.", status_code=404)
+    return JSONResponse({"memory": memory.model_dump(mode="json")}, status_code=201)
+
+
+@app.get("/chat/sessions/{session_id}/agent-memory")
+async def chat_agent_memory(session_id: str, request: Request) -> JSONResponse:
+    payload = {
+        "agent_id": request.query_params.get("agent_id"),
+        "agent_number": request.query_params.get("agent_number"),
+    }
+    try:
+        _get_session_store().get_session(session_id)
+        agent_id, agent_number = _agent_identity_from_payload(payload)
+        return JSONResponse(_get_agent_memory_lifecycle().read_memory(
+            session_id=session_id,
+            agent_id=agent_id,
+            agent_number=agent_number,
+        ))
+    except (TypeError, ValueError) as exc:
+        return _json_error(str(exc), status_code=400)
+    except (KeyError, FileNotFoundError):
+        return _json_error(f"Session '{session_id}' not found.", status_code=404)
+
+
+@app.post("/chat/sessions/{session_id}/agent-memory/instruction-ack")
+async def chat_agent_memory_instruction_ack(session_id: str, request: Request) -> JSONResponse:
+    payload = await _extract_payload(request)
+    try:
+        _get_session_store().get_session(session_id)
+        agent_id, agent_number = _agent_identity_from_payload(payload)
+        event_id = str(payload.get("event_id") or "").strip()
+        if not event_id:
+            raise ValueError("event_id is required.")
+        memory = _get_agent_memory_lifecycle().append_instruction_ack(
+            session_id=session_id,
+            agent_id=agent_id,
+            agent_number=agent_number,
+            event_id=event_id,
+            instruction_manifest_version=str(
+                payload.get("instruction_manifest_version") or "p39d-runtime-v1"),
+        )
+    except (TypeError, ValueError) as exc:
+        return _json_error(str(exc), status_code=400)
+    except (KeyError, FileNotFoundError):
+        return _json_error(f"Session '{session_id}' not found.", status_code=404)
+    return JSONResponse({"memory": memory.model_dump(mode="json")})
+
+
+@app.post("/chat/sessions/{session_id}/agent-memory/fsm-decision")
+async def chat_agent_memory_fsm_decision(session_id: str, request: Request) -> JSONResponse:
+    payload = await _extract_payload(request)
+    try:
+        _get_session_store().get_session(session_id)
+        agent_id, agent_number = _agent_identity_from_payload(payload)
+        memory = _get_agent_memory_lifecycle().append_fsm_decision(
+            session_id=session_id,
+            agent_id=agent_id,
+            agent_number=agent_number,
+            event_id=str(payload.get("event_id") or "").strip(),
+            command_id=str(payload.get("command_id") or "").strip(),
+            accepted=_payload_bool(payload, "accepted", False),
+            reason=str(payload.get("reason") or payload.get("rationale") or "").strip(),
+            reflection_id=str(payload.get("reflection_id") or "").strip() or None,
+        )
+    except (TypeError, ValueError) as exc:
+        return _json_error(str(exc), status_code=400)
+    except (KeyError, FileNotFoundError):
+        return _json_error(f"Session '{session_id}' not found.", status_code=404)
+    return JSONResponse({"memory": memory.model_dump(mode="json")})
+
+
+@app.post("/chat/sessions/{session_id}/agent-memory/end")
+async def chat_agent_memory_end(session_id: str, request: Request) -> JSONResponse:
+    payload = await _extract_payload(request)
+    try:
+        _get_session_store().get_session(session_id)
+        agent_id, agent_number = _agent_identity_from_payload(payload)
+        return JSONResponse(_get_agent_memory_lifecycle().finalize_session(
+            session_id=session_id,
+            agent_id=agent_id,
+            agent_number=agent_number,
+        ))
+    except (TypeError, ValueError) as exc:
+        return _json_error(str(exc), status_code=400)
+    except (KeyError, FileNotFoundError):
+        return _json_error(f"Session '{session_id}' not found.", status_code=404)
 
 
 @app.post("/chat/sessions/{session_id}/memory")
