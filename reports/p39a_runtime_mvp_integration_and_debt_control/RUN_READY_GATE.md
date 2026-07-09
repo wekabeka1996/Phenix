@@ -2,6 +2,8 @@
 
 We evaluated the readiness of the integrated runtime MVP.
 
+## STATUS: RUN_READY_GATE_NO_ORDER_ONLY
+
 ## MVP Readiness Questions
 
 ### 1. Can Agent 5 run 4h MVP now?
@@ -14,7 +16,7 @@ We evaluated the readiness of the integrated runtime MVP.
 **N/A**.
 
 ### 4. If blocked, what exact mode is allowed?
-**no-order observation mode** is allowed. The agent can submit proposals and receive validation ACKs, but orders will not be sent to the testnet adapter.
+**no-order observation mode** is allowed (`RUN_READY_GATE_NO_ORDER_ONLY`). The agent can submit proposals and receive validation ACKs, but orders will not be sent to the testnet adapter.
 
 ### 5. Are P38C and P38D connected to runtime loop yet?
 **YES**. The instruction hot-reload preflight (P38C) and trading session memory lifecycle endpoints (P38D) have been connected to the active run loop through the respective P39C and P39D implementations.
