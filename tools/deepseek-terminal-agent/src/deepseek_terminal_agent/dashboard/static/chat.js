@@ -72,6 +72,16 @@
   const memorySearchResults = document.getElementById("memory-search-results");
   const addMemoryBtn = document.getElementById("add-memory-btn");
   const memoryList = document.getElementById("memory-list");
+  const attachmentKind = document.getElementById("attachment-kind");
+  const attachmentSummary = document.getElementById("attachment-summary");
+  const attachmentRawRef = document.getElementById("attachment-raw-ref");
+  const attachmentSourceRefs = document.getElementById("attachment-source-refs");
+  const attachmentIncludePrompt = document.getElementById("attachment-include-prompt");
+  const attachmentAddBtn = document.getElementById("attachment-add-btn");
+  const attachmentReloadBtn = document.getElementById("attachment-reload-btn");
+  const attachmentStatus = document.getElementById("attachment-status");
+  const attachmentCount = document.getElementById("attachment-count");
+  const attachmentList = document.getElementById("attachment-list");
   const subagentCount = document.getElementById("subagent-count");
   const subagentList = document.getElementById("subagent-list");
   const artifactList = document.getElementById("artifact-list");
@@ -2488,6 +2498,70 @@ function renderThread(detail) {
     }).join('');
   }
 
+  function setAttachmentStatus(message, isError) {
+    if (!attachmentStatus) {
+      return;
+    }
+    attachmentStatus.textContent = message || '';
+    attachmentStatus.classList.toggle('text-danger', !!isError);
+  }
+
+  function parseAttachmentSourceRefs() {
+    const raw = attachmentSourceRefs && attachmentSourceRefs.value ? attachmentSourceRefs.value : '';
+    return raw
+      .split(/[\n,]+/)
+      .map(function (item) { return item.trim(); })
+      .filter(Boolean)
+      .slice(0, 20);
+  }
+
+  function renderAttachments(attachments) {
+    const items = Array.isArray(attachments) ? attachments : [];
+    if (attachmentCount) {
+      attachmentCount.textContent = String(items.length) + ' refs';
+    }
+    if (!attachmentList) {
+      return;
+    }
+    if (!state.currentSessionId) {
+      attachmentList.innerHTML = '<div class="mini-empty">Select or create a session first.</div>';
+      setAttachmentStatus('No active session.', true);
+      return;
+    }
+    if (!items.length) {
+      attachmentList.innerHTML = '<div class="mini-empty">No attachments yet.</div>';
+      return;
+    }
+    attachmentList.innerHTML = items.map(function (attachment) {
+      const sourceRefs = Array.isArray(attachment.source_refs) ? attachment.source_refs.slice(0, 3) : [];
+      return [
+        '<article class="mini-card">',
+        '<div class="mini-card-head">',
+        '<span class="badge badge-info">' + escapeHtml(attachment.kind || 'attachment') + '</span>',
+        attachment.include_in_prompt ? '<span class="badge badge-ok">prompt</span>' : '<span class="badge badge-muted">stored</span>',
+        '</div>',
+        '<p class="mini-card-text">' + escapeHtml(excerptText(attachment.summary || '', 180)) + '</p>',
+        attachment.raw_ref ? '<p class="mini-card-text small">ref: ' + escapeHtml(excerptText(attachment.raw_ref, 120)) + '</p>' : '',
+        sourceRefs.length ? '<p class="mini-card-text small">sources: ' + escapeHtml(sourceRefs.map(function (ref) { return excerptText(ref, 80); }).join('; ')) + '</p>' : '',
+        '<p class="mini-card-text small mono">' + escapeHtml((attachment.attachment_id || '').slice(0, 18)) + '</p>',
+        '</article>'
+      ].join('');
+    }).join('');
+  }
+
+  async function loadAttachments(sessionId) {
+    if (!sessionId) {
+      renderAttachments([]);
+      setAttachmentStatus('No active session.', true);
+      return [];
+    }
+    const result = await fetchJson('/chat/sessions/' + sessionId + '/attachments');
+    const attachments = Array.isArray(result.attachments) ? result.attachments : [];
+    renderAttachments(attachments);
+    setAttachmentStatus(String(attachments.length) + ' attachment refs loaded.', false);
+    return attachments;
+  }
+
   function renderSubagents(subagents, artifacts, session) {
     if (isCockpitEmptyShellMode()) return; // Cleanup requirement
     const runs = Array.isArray(subagents) ? subagents : [];
@@ -2667,6 +2741,7 @@ function renderThread(detail) {
     renderSubagents(detail.subagents || [], detail.artifacts || [], session);
     renderCurrentRun(session, detail.subagents || []);
     renderDrawerArtifacts(detail.artifacts || []);
+    await loadAttachments(sessionId);
   }
 
   async function refreshSessions() {
@@ -2832,6 +2907,43 @@ function renderThread(detail) {
     renderMemorySearch(result.memory_atoms || [], query);
   }
 
+  async function addAttachment() {
+    if (!state.currentSessionId) {
+      setAttachmentStatus('Select or create a session first.', true);
+      setWarning('Select or create a session first.');
+      return;
+    }
+    const summary = attachmentSummary && attachmentSummary.value ? attachmentSummary.value.trim() : '';
+    if (!summary) {
+      setAttachmentStatus('Attachment summary is required.', true);
+      return;
+    }
+    const payload = {
+      kind: attachmentKind && attachmentKind.value ? attachmentKind.value : 'operator_note',
+      raw_ref: attachmentRawRef && attachmentRawRef.value ? attachmentRawRef.value.trim().slice(0, 1024) : '',
+      summary: summary.slice(0, 2000),
+      source_refs: parseAttachmentSourceRefs(),
+      include_in_prompt: attachmentIncludePrompt ? !!attachmentIncludePrompt.checked : true,
+      created_by: 'operator-ui',
+    };
+    const created = await fetchJson('/chat/sessions/' + state.currentSessionId + '/attachments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (attachmentSummary) {
+      attachmentSummary.value = '';
+    }
+    if (attachmentRawRef) {
+      attachmentRawRef.value = '';
+    }
+    if (attachmentSourceRefs) {
+      attachmentSourceRefs.value = '';
+    }
+    setAttachmentStatus('Attachment saved: ' + String(created.kind || payload.kind), false);
+    await loadAttachments(state.currentSessionId);
+  }
+
   async function spawnScout() {
     if (!state.currentSessionId) {
       setWarning('Select a session first.');
@@ -2899,6 +3011,19 @@ function renderThread(detail) {
   }
   if (searchMemoryBtn) {
     searchMemoryBtn.addEventListener('click', function () { searchMemory().catch(function (error) { setWarning(error.message || 'Memory search failed.'); }); });
+  }
+  if (attachmentAddBtn) {
+    attachmentAddBtn.addEventListener('click', function () { addAttachment().catch(function (error) { setAttachmentStatus(error.message || 'Attachment save failed.', true); setWarning(error.message || 'Attachment save failed.'); }); });
+  }
+  if (attachmentReloadBtn) {
+    attachmentReloadBtn.addEventListener('click', function () {
+      if (!state.currentSessionId) {
+        setAttachmentStatus('Select or create a session first.', true);
+        setWarning('Select or create a session first.');
+        return;
+      }
+      loadAttachments(state.currentSessionId).catch(function (error) { setAttachmentStatus(error.message || 'Attachment refresh failed.', true); setWarning(error.message || 'Attachment refresh failed.'); });
+    });
   }
   if (spawnScoutBtn) {
     spawnScoutBtn.addEventListener('click', function () { spawnScout().catch(function (error) { setWarning(error.message || 'Subagent spawn failed.'); }); });

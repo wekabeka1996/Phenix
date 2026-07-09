@@ -875,6 +875,46 @@
                   </div>
                 </section>
 
+                <section class="card collapsible-card is-open" id="attachments-panel" data-collapsible-section>
+                  <div class="section-head">
+                    <div>
+                      <h2>Attachments</h2>
+                      <p class="section-note">Session notes, refs, screenshots and market context summaries.</p>
+                    </div>
+                    <div class="section-head-actions">
+                      <span class="badge badge-muted" id="attachment-count">0 refs</span>
+                      <button type="button" class="section-toggle" data-collapse-target="attachments-card-body" aria-expanded="true" title="Collapse section">▾</button>
+                    </div>
+                  </div>
+                  <div class="card-body" id="attachments-card-body">
+                    <div class="form-stack compact-stack">
+                      <div class="split-fields">
+                        <select id="attachment-kind">
+                          <option value="operator_note">operator_note</option>
+                          <option value="pasted_text">pasted_text</option>
+                          <option value="news_summary">news_summary</option>
+                          <option value="image_ref">image_ref</option>
+                          <option value="chart_snapshot">chart_snapshot</option>
+                          <option value="market_screenshot">market_screenshot</option>
+                          <option value="file_ref">file_ref</option>
+                        </select>
+                        <button type="button" class="btn-ghost" id="attachment-add-btn">Add</button>
+                      </div>
+                      <input id="attachment-summary" type="text" placeholder="Bounded summary">
+                      <input id="attachment-raw-ref" type="text" placeholder="Reference or path">
+                      <input id="attachment-source-refs" type="text" placeholder="Source refs, comma separated">
+                      <label class="field-label inline-field-label">
+                        <input type="checkbox" id="attachment-include-prompt" checked> Include in prompt
+                      </label>
+                    </div>
+                    <div class="quick-buttons">
+                      <button type="button" class="btn-ghost" id="attachment-reload-btn">Refresh</button>
+                      <span class="status-label" id="attachment-status">No attachment action yet.</span>
+                    </div>
+                    <div class="mini-list" id="attachment-list"><div class="mini-empty">No attachments yet.</div></div>
+                  </div>
+                </section>
+
                 <section class="card collapsible-card is-open" id="memory-patches-panel" data-collapsible-section>
                   <div class="section-head">
                     <div>
