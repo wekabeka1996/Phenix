@@ -801,6 +801,54 @@ registry:
   status: active
   schema: apps/reference/domains/agent_bridge/schemas/agent_session_stopped_v1.json
   since: '2026-07-06'
+- op: CMD
+  verb: AGENT_ARENA_COMMAND_REQUESTED
+  owner: agent_bridge
+  status: active
+  schema: null
+  since: '2026-07-09'
+- op: EVT
+  verb: AGENT_ARENA_COMMAND_REJECTED
+  owner: agent_bridge
+  status: active
+  schema: null
+  since: '2026-07-09'
+- op: EVT
+  verb: AGENT_ARENA_COMMAND_ACCEPTED
+  owner: agent_bridge
+  status: active
+  schema: null
+  since: '2026-07-09'
+- op: CMD
+  verb: AGENT_TESTNET_ORDER_REQUESTED
+  owner: agent_bridge
+  status: active
+  schema: null
+  since: '2026-07-09'
+- op: CMD
+  verb: AGENT_TESTNET_CANCEL_REQUESTED
+  owner: agent_bridge
+  status: active
+  schema: null
+  since: '2026-07-09'
+- op: CMD
+  verb: AGENT_TESTNET_CLOSE_REQUESTED
+  owner: agent_bridge
+  status: active
+  schema: null
+  since: '2026-07-09'
+- op: EVT
+  verb: AGENT_ARENA_RATIONALE_RECORDED
+  owner: agent_bridge
+  status: active
+  schema: null
+  since: '2026-07-09'
+- op: EVT
+  verb: AGENT_ARENA_SOS_EMITTED
+  owner: agent_bridge
+  status: active
+  schema: null
+  since: '2026-07-09'
 policies:
   wildcard:
     UPD: true
