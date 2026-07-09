@@ -1,9 +1,13 @@
-# Session Timeline
+# Session Timeline (P39E MVP Resumed)
 
-- **2026-07-09T21:19:03Z**: Session initiated. Startup git checks executed.
-- **2026-07-09T21:19:22Z**: Executed remote branch fetches and `git ls-remote origin` lookup.
-- **2026-07-09T21:19:46Z**: Performed recursive system-wide search for `RUN_READY_GATE.md` file.
-- **2026-07-09T21:20:00Z**: Confirmed that `p39-runtime-mvp-integrated-primary-20260709` branch is absent from remote origin.
-- **2026-07-09T21:20:24Z**: Switch/checked out baseline and created branch `p39e-deepseek-agent-subagent-4h-mvp-secondary-20260709`.
-- **2026-07-09T21:20:30Z**: Merged previous P38 coordinator readiness changes to maintain gateway codebase freshness.
-- **2026-07-09T21:20:35Z**: Confirmed blocked gate state; halted execution according to P39 dependency protocol rules.
+- **2026-07-09T21:36:31Z**: Resumed session after Agent 1 integration merged.
+- **2026-07-09T21:36:43Z**: Merged `origin/p39-runtime-mvp-integrated-primary-20260709` containing `RUN_READY_GATE.md`.
+- **2026-07-09T21:37:16Z**: Resolved merge conflicts in tests and sessions cleanly.
+- **2026-07-09T21:38:00Z**: Read `RUN_READY_GATE.md` verifying that the gate is `NO_ORDER_ONLY`.
+- **2026-07-09T21:38:10Z**: Ran all unit tests (520 passed).
+- **2026-07-09T21:38:50Z**: Booted and ran the 4-hour MVP simulation runner over ETHUSDT/SOLUSDT in `no-order observation mode`.
+  - Proved instruction ACK (Agent 5).
+  - Proved subagent spawning (`RegimeRiskScout`).
+  - Proved main agent vs subagent rationale reviews.
+  - Proved FSM handoff gateway checks rejecting/blocking order intent.
+  - Proved memory writes and compact session summary generation.

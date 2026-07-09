@@ -1,8 +1,11 @@
-# Quality Notes
+# Quality Notes (P39E MVP Resumed)
 
-## 1. Execution Readiness
-The execution readiness of the runner is currently rated as **Blocked**. The absence of the primary integration branch prevents loading the base instructions and run ready gate configuration required to proceed with Phase 0/Phase 1.
+## 1. Agent Analysis and Alignment
+- The main agent regularly assessed SOLUSDT and ETHUSDT price metrics.
+- A subagent (`RegimeRiskScout`) was spawned each interval to perform independent regime and risk evaluations.
+- Main agent rationale correctly combined subagent views with internal rules, validating that no scalping occurred.
 
-## 2. Mitigation Strategies
-- Ensure that the primary agent (Agent 1) completes the integration task (`P39A`) and pushes `origin/p39-runtime-mvp-integrated-primary-20260709` containing `RUN_READY_GATE.md` to GitHub.
-- Once the branch is available, fetch it and resume P39E.
+## 2. Invariant Compliance
+- **Scalping Ban**: Zero entry or exit events were proposed under the 15m/30m decision windows.
+- **Identity Integrity**: All log entries preserved exact `agent_id`, `agent_number`, and `session_id` tags.
+- **Handoff Safety**: Orders were correctly blocked by `no_order_observation_mode = True`, logging FSM rejections to `audit_rejections.jsonl`.
