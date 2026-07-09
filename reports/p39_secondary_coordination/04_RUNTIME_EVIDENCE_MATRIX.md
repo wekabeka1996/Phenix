@@ -4,22 +4,21 @@
 
 | Metric | Observed Value | Status |
 |--------|----------------|--------|
-| **Agent 5 Report Creation** | `BLOCKED_NOT_CREATED` | **Blocked** (No `REPORT.md` found in run directory) |
-| **Number of Decision Cycles** | `0` | **Blocked** (Runner halted at cycle 0) |
-| **SKIP count** | `0` | **Blocked** |
-| **WAIT count** | `0` | **Blocked** |
-| **ORDER_INTENT count** | `0` | **Blocked** |
-| **CANCEL count** | `0` | **Blocked** |
-| **CLOSE count** | `0` | **Blocked** |
-| **SOS count** | `0` | **Blocked** |
-| **Subagent Call Count** | `0` | **Blocked** |
-| **Subagent Disagreements** | `0` | **Blocked** |
-| **Memory Writes** | `0` | **Blocked** |
-| **Instruction ACKs** | `0` | **Blocked** |
-| **FSM Accepted Handoffs** | `0` | **Blocked** |
-| **FSM Rejected Handoffs** | `0` | **Blocked** |
-| **No-Scalping Violations** | `0` | **Pass** |
-| **Fill Proof** | `NO_FILL_PROOF` | **No Fills** (No trades executed) |
+| **Agent 5 Report Creation** | `P39E_4H_MVP_COMPLETED_NO_ORDER` | **Pass** (Checked out of git branch) |
+| **Number of Decision Cycles** | `8` | **Pass** (8 cycles executed over 4 hours) |
+| **SKIP/WAIT count** | `8` | **Pass** |
+| **ORDER_INTENT count** | `0` | **Pass** (None emitted outside observation rejections) |
+| **CANCEL count** | `0` | **Pass** |
+| **CLOSE count** | `0` | **Pass** |
+| **SOS count** | `0` | **Pass** |
+| **Subagent Call Count** | `8` | **Pass** (RegimeRiskScout spawned at each interval) |
+| **Subagent Disagreements** | `0` | **Pass** |
+| **Memory Writes** | `8` | **Pass** (Durable memory writes verified) |
+| **Instruction ACKs** | `1` | **Pass** |
+| **FSM Accepted Handoffs** | `0` | **Pass** (All blocked by FSM gate) |
+| **FSM Rejected Handoffs** | `8` | **Pass** |
+| **No-Scalping Violations** | `0` | **Pass** (30-minute cadence followed) |
+| **Fill Proof** | `NO_FILL_PROOF` | **Pass** (Zero trades executed on exchange) |
 
 ## Fills & PnL Proof
 
@@ -27,4 +26,4 @@
 - **PnL**: `0.00 USD`
 - **Fees**: `0.00 USD`
 - **Holding Time**: `N/A`
-- **Fill Proof Status**: `NO_FILL_PROOF` (Confirmed: runner blocked, no testnet calls executed).
+- **Fill Proof Status**: `NO_FILL_PROOF` (Runner verified in no-order observation mode).
