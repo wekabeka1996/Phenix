@@ -26,6 +26,12 @@ from fastapi.templating import Jinja2Templates
 from ..config import Settings, load_settings
 from ..deepseek_client import DeepSeekAPIError, DeepSeekTimeoutError
 from ..logging_utils import redact
+from ..sessions.agent_proposals import (
+    AgentProposalStore,
+    ProposalKind,
+    ProposalStatus,
+    validate_no_forbidden_proposal_fields,
+)
 from ..sessions.approval_queue import ApprovalQueue
 from ..sessions.artifacts import ArtifactStore
 from ..sessions.attachments import AttachmentKind, AttachmentStore
@@ -38,7 +44,7 @@ from ..sessions.evidence_bundle import EvidenceBundleStore
 from ..sessions.memory_atoms import MemoryAtom, MemoryAtomStore
 from ..sessions.memory_patch import MemoryPatchStore
 from ..sessions.model_registry import ModelRegistry
-from ..sessions.models import ModelProfile
+from ..sessions.models import ModelProfile, SessionEvent
 from ..sessions.playbooks import PlaybookRegistry
 from ..sessions.project_capsule import ProjectCapsuleStore
 from ..sessions.report_center import ReportCenter
@@ -65,6 +71,7 @@ _model_registry: Optional[ModelRegistry] = None
 _memory_store: Optional[MemoryAtomStore] = None
 _artifact_store: Optional[ArtifactStore] = None
 _attachment_store: Optional[AttachmentStore] = None
+_agent_proposal_store: Optional[AgentProposalStore] = None
 _context_builder: Optional[ContextBuilder] = None
 _context_inspector: Optional[ContextInspector] = None
 _compressor: Optional[ContextCompressor] = None
@@ -150,6 +157,14 @@ def _get_attachment_store() -> AttachmentStore:
         _attachment_store = AttachmentStore(
             _get_settings(), root_dir=_get_root_dir())
     return _attachment_store
+
+
+def _get_agent_proposal_store() -> AgentProposalStore:
+    global _agent_proposal_store
+    if _agent_proposal_store is None:
+        _agent_proposal_store = AgentProposalStore(
+            _get_settings(), root_dir=_get_root_dir())
+    return _agent_proposal_store
 
 
 def _get_context_builder() -> ContextBuilder:
@@ -399,6 +414,14 @@ def _session_attachments(session_id: str) -> list[dict[str, Any]]:
     ]
 
 
+def _session_agent_proposals(session_id: str) -> list[dict[str, Any]]:
+    _get_session_store().get_session(session_id)
+    return [
+        proposal.model_dump()
+        for proposal in _get_agent_proposal_store().list_proposals(session_id=session_id)
+    ]
+
+
 def _payload_bool(payload: dict[str, Any], key: str, default: bool) -> bool:
     value = payload.get(key, default)
     if isinstance(value, bool):
@@ -426,6 +449,38 @@ def _reject_raw_attachment_blob_fields(payload: dict[str, Any]) -> None:
         raise ValueError(
             f"Raw attachment bytes are not accepted by this metadata route: {', '.join(present)}."
         )
+
+
+def _payload_required_int(payload: dict[str, Any], key: str) -> int:
+    if key not in payload:
+        raise ValueError(f"{key} is required.")
+    return int(payload[key])
+
+
+def _payload_optional_float(payload: dict[str, Any], key: str) -> Optional[float]:
+    if key not in payload or payload.get(key) in (None, ""):
+        return None
+    return float(payload[key])
+
+
+def _append_agent_proposal_event(session_id: str, proposal: Any) -> None:
+    _get_session_store().append_event(
+        session_id,
+        SessionEvent(
+            event_id=f"event-{proposal.proposal_id}",
+            session_id=session_id,
+            event_type="agent_proposal_submitted",
+            message=f"Agent proposal submitted: {proposal.kind}",
+            metadata={
+                "proposal_id": proposal.proposal_id,
+                "agent_id": proposal.agent_id,
+                "agent_number": proposal.agent_number,
+                "kind": proposal.kind,
+                "status": proposal.status,
+                "execution_authority": False,
+            },
+        ),
+    )
 
 
 def _search_session_memory(session_id: str, query: str) -> list[dict[str, Any]]:
@@ -457,6 +512,7 @@ def _session_detail(session_id: str) -> dict[str, Any]:
         "memory_atoms": _session_memory_atoms(session_id),
         "artifacts": _session_artifacts(session_id),
         "attachments": _session_attachments(session_id),
+        "agent_proposals": _session_agent_proposals(session_id),
         "subagents": _get_subagent_manager().list_subagents(session_id),
     }
 
@@ -820,6 +876,52 @@ async def chat_attachment_detail(attachment_id: str) -> JSONResponse:
     except (KeyError, FileNotFoundError, ValueError):
         return _json_error(f"Attachment '{attachment_id}' not found.", status_code=404)
     return JSONResponse(attachment.model_dump())
+
+
+@app.post("/chat/sessions/{session_id}/agent-proposals")
+async def chat_create_agent_proposal(session_id: str, request: Request) -> JSONResponse:
+    payload = await _extract_payload(request)
+    try:
+        _get_session_store().get_session(session_id)
+        validate_no_forbidden_proposal_fields(payload, path="request")
+        proposal_payload = payload.get("payload") or {}
+        if not isinstance(proposal_payload, dict):
+            raise ValueError("payload must be an object.")
+        proposal = _get_agent_proposal_store().create_proposal(
+            session_id=session_id,
+            agent_id=str(payload.get("agent_id") or "").strip(),
+            agent_number=_payload_required_int(payload, "agent_number"),
+            kind=cast(ProposalKind, str(payload.get("kind") or "")),
+            rationale=str(payload.get("rationale") or "").strip(),
+            source_refs=_payload_source_refs(payload),
+            confidence=_payload_optional_float(payload, "confidence"),
+            status=cast(ProposalStatus, str(payload.get("status") or "pending")),
+            payload=proposal_payload,
+        )
+        _append_agent_proposal_event(session_id, proposal)
+    except (KeyError, FileNotFoundError):
+        return _json_error(f"Session '{session_id}' not found.", status_code=404)
+    except (TypeError, ValueError) as exc:
+        return _json_error(str(exc), status_code=400)
+    return JSONResponse(proposal.model_dump(), status_code=201)
+
+
+@app.get("/chat/sessions/{session_id}/agent-proposals")
+async def chat_list_agent_proposals(session_id: str) -> JSONResponse:
+    try:
+        return JSONResponse({"agent_proposals": _session_agent_proposals(session_id)})
+    except (KeyError, FileNotFoundError, ValueError):
+        return _json_error(f"Session '{session_id}' not found.", status_code=404)
+
+
+@app.get("/chat/agent-proposals/{proposal_id}")
+async def chat_agent_proposal_detail(proposal_id: str) -> JSONResponse:
+    try:
+        proposal = _get_agent_proposal_store().get_proposal(proposal_id)
+        _get_session_store().get_session(proposal.session_id)
+    except (KeyError, FileNotFoundError, ValueError):
+        return _json_error(f"Agent proposal '{proposal_id}' not found.", status_code=404)
+    return JSONResponse(proposal.model_dump())
 
 
 @app.post("/chat/sessions/{session_id}/context")
