@@ -22,6 +22,9 @@ agents:
       max_notional: 50.0
     startup_stagger_sec: 5
     shutdown_behavior: "graceful"
+    cli_command: null
+    cli_working_dir: null
+    approved_session_paths: []
 
   cli_agent_01:
     agent_id: "cli_agent_01"
@@ -46,3 +49,6 @@ agents:
       max_notional: 50.0
     startup_stagger_sec: 5
     shutdown_behavior: "graceful"
+    cli_command: null
+    cli_working_dir: null
+    approved_session_paths: []
