@@ -34,6 +34,9 @@ deepseek-agent-dashboard = "deepseek_terminal_agent.dashboard.app:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+deepseek_terminal_agent = ["sessions/*.yaml"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
