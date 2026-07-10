@@ -531,6 +531,12 @@ class DualAgentRuntimeRunner:
 
     def _persist_session_state(self) -> None:
         """Saves current runner details to standard location."""
+        col_state = None
+        try:
+            col_state = self.collective_store.get_state(self.session_id)
+        except Exception:
+            pass
+
         state = {
             "session_id": self.session_id,
             "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -541,6 +547,34 @@ class DualAgentRuntimeRunner:
                 }
                 for agent_id in self.config.agents
             },
+            # P43A cockpit metrics:
+            "collective_state_version": col_state.version if col_state else 0,
+            "symbol_leases": {
+                sym: lease.model_dump()
+                for sym, lease in col_state.symbol_leases.items()
+            } if col_state else {},
+            "publication_cursors": {
+                agent: cursor.model_dump()
+                for agent, cursor in col_state.publication_cursors.items()
+            } if col_state else {},
+            "last_checkpoint_id": col_state.last_checkpoint_id if col_state else None,
+            "pending_commands": {
+                cmd_id: cmd.model_dump()
+                for cmd_id, cmd in col_state.pending_commands.items()
+            } if col_state else {},
+            "recovery_state": col_state.recovery_state if col_state else "not_recovered",
+            "compression_statistics": col_state.compression_statistics.model_dump() if col_state and col_state.compression_statistics else None,
+            "private_memory_status": {
+                agent_id: {
+                    "reflection_count": len(self.collective_store.read_private_reflections(
+                        session_id=self.session_id,
+                        actor_agent_id=agent_id,
+                        actor_agent_number=cfg.agent_number,
+                        target_agent_id=agent_id
+                    ))
+                }
+                for agent_id, cfg in self.config.agents.items()
+            } if col_state else {},
         }
         try:
             target_dir = self.root_dir / ".agent_memory"
