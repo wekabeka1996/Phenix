@@ -1,0 +1,8 @@
+{"timestamp": "2026-07-10T12:55:51.186000+00:00", "session_id": "b649bb1fdc0a42ee8ee60bf22f003d0c", "reflections_count": 2, "event_refs": ["evt-tick-0"], "reflection_refs": ["ref-sizing-blocked-0"]}
+{"timestamp": "2026-07-10T13:25:51.186000+00:00", "session_id": "b649bb1fdc0a42ee8ee60bf22f003d0c", "reflections_count": 4, "event_refs": ["evt-tick-1"], "reflection_refs": ["ref-sizing-blocked-1"]}
+{"timestamp": "2026-07-10T13:55:51.186000+00:00", "session_id": "b649bb1fdc0a42ee8ee60bf22f003d0c", "reflections_count": 6, "event_refs": ["evt-tick-2"], "reflection_refs": ["ref-sizing-blocked-2"]}
+{"timestamp": "2026-07-10T14:25:51.186000+00:00", "session_id": "b649bb1fdc0a42ee8ee60bf22f003d0c", "reflections_count": 8, "event_refs": ["evt-tick-3"], "reflection_refs": ["ref-sizing-blocked-3"]}
+{"timestamp": "2026-07-10T14:55:51.186000+00:00", "session_id": "b649bb1fdc0a42ee8ee60bf22f003d0c", "reflections_count": 10, "event_refs": ["evt-tick-4"], "reflection_refs": ["ref-sizing-blocked-4"]}
+{"timestamp": "2026-07-10T15:25:51.186000+00:00", "session_id": "b649bb1fdc0a42ee8ee60bf22f003d0c", "reflections_count": 12, "event_refs": ["evt-tick-5"], "reflection_refs": ["ref-sizing-blocked-5"]}
+{"timestamp": "2026-07-10T15:55:51.186000+00:00", "session_id": "b649bb1fdc0a42ee8ee60bf22f003d0c", "reflections_count": 14, "event_refs": ["evt-tick-6"], "reflection_refs": ["ref-sizing-blocked-6"]}
+{"timestamp": "2026-07-10T16:25:51.186000+00:00", "session_id": "b649bb1fdc0a42ee8ee60bf22f003d0c", "reflections_count": 16, "event_refs": ["evt-tick-7"], "reflection_refs": ["ref-sizing-blocked-7"]}
