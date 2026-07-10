@@ -84,6 +84,15 @@ class SharedRuntimeView(BaseModel):
     collective_publication_stream: list[dict[str, Any]]
     current_integration_sha: str
     exchange_evidence: EvidenceClass
+    
+    # P43A collective memory fields
+    collective_state_version: int = 0
+    symbol_leases: dict[str, Any] = Field(default_factory=dict)
+    publication_cursors: dict[str, Any] = Field(default_factory=dict)
+    last_checkpoint_id: Optional[str] = None
+    recovery_state: str = "not_recovered"
+    compression_statistics: Optional[dict[str, Any]] = None
+    private_memory_status: dict[str, Any] = Field(default_factory=dict)
 
 
 class ArenaRuntimeView(BaseModel):
@@ -244,6 +253,13 @@ class ArenaRuntimeViewService:
                 collective_publication_stream=collective[-20:],
                 current_integration_sha=_integration_sha(self.root_dir),
                 exchange_evidence=shared_evidence,
+                collective_state_version=int(state.get("collective_state_version", 0)),
+                symbol_leases=dict(state.get("symbol_leases", {})),
+                publication_cursors=dict(state.get("publication_cursors", {})),
+                last_checkpoint_id=state.get("last_checkpoint_id"),
+                recovery_state=str(state.get("recovery_state", "not_recovered")),
+                compression_statistics=state.get("compression_statistics"),
+                private_memory_status=dict(state.get("private_memory_status", {})),
             ),
         )
 
