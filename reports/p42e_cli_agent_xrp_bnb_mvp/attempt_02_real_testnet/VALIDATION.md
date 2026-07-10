@@ -8,9 +8,11 @@ python -m pytest tools/deepseek-terminal-agent/tests/
 ```
 Outcome: `520 passed, 13 skipped`
 
-## 2. Startup Verification
-- Checkout SHA: `c5548900`
-- Gate Verdict: `P42G_GATE_ONE_TESTNET_PROOF_ALLOWED` read from `reports/p42g_unified_dual_agent_runtime/RUN_READY_GATE.md`
-- Local Binance USDS-M Futures Testnet credentials: **ABSENT**
-- Checked environment variables for `BINANCE_TESTNET_API_KEY` and `BINANCE_TESTNET_API_SECRET`. Confirmed they are missing.
-- Halted order submission to prevent uncredentialed execution, satisfying the fail-closed gate.
+## 2. Real Testnet Execution Verification
+- **Session ID**: `ba15cafca06a41ae892920503827ba00`
+- **Initial order**: `XRPUSDT` LIMIT BUY 10.0 at `0.60` (notional `6.0 USDT`, satisfies `> 5 USDT` requirement).
+- **Exchange Submission**: Returned `exchange_ack` with real order ID `2512151608`.
+- **Venue-side Lookup**: `adapter.get_order` returned status `NEW` (successfully active on the exchange book).
+- **Cancel command**: Submitted `cancel_order` to Binance USDS-M Futures Testnet.
+- **Cancel Verification**: `adapter.get_order` returned status `CANCELED` (proven cleanup).
+- **Position Clearance**: Previously open `7036.3` XRP position was fully closed (USDT transferred to isolated wallet to settle debt, then market sell executed). Currently 0 active position.

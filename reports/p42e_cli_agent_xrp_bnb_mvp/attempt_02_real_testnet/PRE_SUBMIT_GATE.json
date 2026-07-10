@@ -1,5 +1,5 @@
 {
-  "session_id": "da1ace48bf354d89a65cf5ca208fc49e",
+  "session_id": "ba15cafca06a41ae892920503827ba00",
   "agent_id": "cli_agent_01",
   "agent_number": 2,
   "descriptor_validation": {
@@ -10,11 +10,11 @@
     "supports_cancel": true,
     "supports_close": true,
     "source_of_truth": "config",
-    "checked_at": "2026-07-10T11:27:19.356499+00:00"
+    "checked_at": "2026-07-10T11:42:18.813596+00:00"
   },
   "qty_limit_usd": 25.0,
   "no_order_observation_mode": false,
   "mainnet": false,
-  "credentials_present": false,
+  "credentials_present": true,
   "gate_status": "P42G_GATE_ONE_TESTNET_PROOF_ALLOWED"
 }
