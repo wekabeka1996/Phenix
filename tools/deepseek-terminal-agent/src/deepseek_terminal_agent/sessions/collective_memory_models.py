@@ -321,10 +321,25 @@ class RecoveryReport(BaseModel):
     created_at: str = Field(default_factory=utc_now_iso)
 
 
+class FSMDispatchResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    accepted: bool
+    reason: str = Field(..., min_length=1)
+    source_refs: list[SourceReference] = Field(default_factory=list)
+
+
+class CommandDispatchResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    command: PendingCommand
+    fsm_result: Optional[FSMDispatchResult] = None
+    deduplicated: bool
+
+
 class WriteResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event: ArenaEvidenceEvent
     state: CollectiveStateSnapshot
     deduplicated: bool = False
-
