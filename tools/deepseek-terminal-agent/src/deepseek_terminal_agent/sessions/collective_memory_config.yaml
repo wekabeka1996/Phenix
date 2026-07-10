@@ -1,0 +1,126 @@
+schema_version: 1
+environment: testnet
+
+agents:
+  - agent_id: api_agent_01
+    agent_number: 1
+    interface: api
+    symbols: [ETHUSDT, SOLUSDT]
+  - agent_id: cli_agent_01
+    agent_number: 2
+    interface: cli
+    symbols: [XRPUSDT, BNBUSDT]
+
+symbol_leases:
+  ttl_seconds: 600
+  heartbeat_expiry_seconds: 120
+
+timers:
+  market_refresh_seconds: 30
+  agent_heartbeat_seconds: 30
+  collective_sync_seconds: 60
+  tactical_analysis_seconds: 300
+  decision_review_seconds: 900
+  portfolio_reconciliation_seconds: 60
+  reflection_seconds: 1800
+  memory_checkpoint_seconds: 1800
+  instruction_manifest_refresh_seconds: 300
+  event_wakeups:
+    instruction_change: [instruction_manifest_refresh, collective_sync]
+    order_position_lifecycle_change: [portfolio_reconciliation, collective_sync]
+    peer_publication: [collective_sync]
+    risk_warning: [collective_sync, decision_review]
+    regime_change: [tactical_analysis, decision_review]
+    exchange_error: [portfolio_reconciliation, decision_review]
+
+memory:
+  max_active_publications: 200
+  active_context_token_limit: 12000
+  checkpoint_event_threshold: 500
+  segment_size_events: 100
+  max_summary_chars: 1200
+  token_estimate_chars_per_token: 4
+  lock_timeout_seconds: 5.0
+  lock_stale_seconds: 60.0
+  max_private_reflections: 10000
+  critical_event_types:
+    - ORDER_REQUESTED
+    - CANCEL_REQUESTED
+    - CLOSE_REQUESTED
+    - FSM_DECISION
+    - EXCHANGE_RESPONSE
+    - LIFECYCLE_EVENT
+    - RISK_WARNING_PUBLISHED
+    - SOS_EMITTED
+    - INSTRUCTIONS_ACKED
+
+tool_permissions:
+  GET_MARKET_CONTEXT: &read_owned
+    allowed_agents: [api_agent_01, cli_agent_01]
+    symbol_scope: owned
+    timeout_seconds: 5
+    retry: {max_attempts: 2, backoff_ms: 100}
+    idempotency: read_only
+    permission: read
+  GET_FEATURES: *read_owned
+  GET_PORTFOLIO_STATE: &read_all
+    allowed_agents: [api_agent_01, cli_agent_01]
+    symbol_scope: all
+    timeout_seconds: 5
+    retry: {max_attempts: 2, backoff_ms: 100}
+    idempotency: read_only
+    permission: read
+  GET_OWN_POSITIONS: *read_owned
+  GET_PEER_PUBLICATIONS: *read_all
+  READ_COLLECTIVE_MEMORY: *read_all
+  PUBLISH_OBSERVATION: &publish_owned
+    allowed_agents: [api_agent_01, cli_agent_01]
+    symbol_scope: owned
+    timeout_seconds: 5
+    retry: {max_attempts: 3, backoff_ms: 100}
+    idempotency: required
+    permission: publish
+  PUBLISH_RISK_WARNING: *publish_owned
+  WRITE_PRIVATE_REFLECTION:
+    allowed_agents: [api_agent_01, cli_agent_01]
+    symbol_scope: none
+    timeout_seconds: 5
+    retry: {max_attempts: 3, backoff_ms: 100}
+    idempotency: required
+    permission: private_write
+  ASK_SUBAGENT:
+    allowed_agents: [api_agent_01, cli_agent_01]
+    symbol_scope: owned
+    timeout_seconds: 30
+    retry: {max_attempts: 1, backoff_ms: 0}
+    idempotency: required
+    permission: publish
+  REQUEST_ORDER: &command_owned
+    allowed_agents: [api_agent_01, cli_agent_01]
+    symbol_scope: owned
+    timeout_seconds: 5
+    retry: {max_attempts: 1, backoff_ms: 0}
+    idempotency: required
+    permission: command
+  REQUEST_CANCEL: *command_owned
+  REQUEST_CLOSE: *command_owned
+  EMIT_SOS: *publish_owned
+  ACK_INSTRUCTIONS:
+    allowed_agents: [api_agent_01, cli_agent_01]
+    symbol_scope: none
+    timeout_seconds: 5
+    retry: {max_attempts: 3, backoff_ms: 100}
+    idempotency: required
+    permission: ack
+
+portfolio_limits:
+  max_total_margin_usage: 100.0
+  max_total_directional_exposure: 200.0
+  max_correlated_exposure: 150.0
+  max_global_drawdown_pct: 5.0
+  emergency_stop_fails_closed: true
+
+recovery:
+  reacquire_expired_symbol_leases: false
+  require_exchange_reconciliation_for_dispatch_in_doubt: true
+  duplicate_submit_prevention_required: true
