@@ -1254,6 +1254,16 @@ class SystemMetaConfig(BaseModel):
     runtime: Optional[SystemRuntimeMeta] = Field(default=None)
 
 
+class AgentArenaConfig(BaseModel):
+    """Configuration for agent_arena mode."""
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(default=False, description="Enable agent arena mode")
+    external_agents_enabled: bool = Field(default=False, description="Enable external agents")
+    internal_strategy_decision_authority: bool = Field(default=True, description="Enable internal strategy decision authority")
+    execution_environment: Literal['testnet', 'sandbox', 'mainnet', 'unknown'] = Field(default='testnet', description="Execution environment")
+
+
 class AuroraConfig(BaseModel):
     """
     Root configuration model for AuroraTrader.
@@ -1264,6 +1274,7 @@ class AuroraConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
     # Core app configs
+    agent_arena: Optional[AgentArenaConfig] = Field(default=None, description="Agent arena mode configuration")
     trading_mode: str = Field(
         ..., description='Trading mode: testnet | production | live')
     trading: TradingConfig = Field(...)

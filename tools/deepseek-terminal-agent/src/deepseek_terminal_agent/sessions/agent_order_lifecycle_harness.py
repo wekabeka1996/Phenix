@@ -4,8 +4,10 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import asyncio
+import concurrent.futures
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -39,11 +41,66 @@ class OrderLifecycleTrace(BaseModel):
     memory_ref: str
 
 
+class EXTERNAL_ACK(OrderLifecycleTrace):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+    status: str = "ACK"
+
+
+class EXTERNAL_REJECT(OrderLifecycleTrace):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+    reason: str
+    status: str = "REJECT"
+
+
+class EXTERNAL_FILL(OrderLifecycleTrace):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+    filled_qty: float
+    price: float
+    status: str = "FILL"
+
+
+class BLOCKED_CONFIG(OrderLifecycleTrace):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+    reason: str
+    status: str = "BLOCKED_CONFIG"
+
+
+class BLOCKED_POLICY(OrderLifecycleTrace):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+    reason: str
+    status: str = "BLOCKED_POLICY"
+
+
+class BLOCKED_DUPLICATE(OrderLifecycleTrace):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+    reason: str
+    status: str = "BLOCKED_DUPLICATE"
+
+
+class BLOCKED_ENVIRONMENT(OrderLifecycleTrace):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+    reason: str
+    status: str = "BLOCKED_ENVIRONMENT"
+
+
 class AgentOrderLifecycleHarness:
     def __init__(self, settings: Settings, *, root_dir: str | Path = ".") -> None:
         self.settings = settings
         self.root_dir = pathlib.Path(root_dir)
         self.memory_lifecycle = AgentMemoryLifecycle(settings, root_dir=root_dir)
+
+    def _run_async_sync(self, coro):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is not None and loop.is_running():
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, coro)
+                return future.result()
+        else:
+            return asyncio.run(coro)
 
     def run_lifecycle_trace(
         self,
@@ -85,7 +142,27 @@ class AgentOrderLifecycleHarness:
             "memory_ref": "none",
         }
 
-        # 1. FSM Handoff Validation
+        # 1. Duplicate command ID check
+        is_duplicate = False
+        try:
+            global_log_path = self.root_dir / ".agent_memory" / "order_lifecycle_traces.jsonl"
+            if global_log_path.exists():
+                with open(global_log_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.strip():
+                            data = json.loads(line)
+                            if data.get("command_id") == command.command_id:
+                                is_duplicate = True
+                                break
+        except Exception:
+            pass
+
+        if is_duplicate:
+            trace_data["adapter_status"] = "blocked_duplicate"
+            response = BLOCKED_DUPLICATE(**trace_data, reason="Duplicate command ID detected")
+            return self._finalize_trace_and_reflect(command, trace_data, "Blocked: duplicate command ID", response)
+
+        # 2. FSM Handoff Validation
         try:
             verify_handoff_safety(command, descriptor, no_order_observation_mode, base_url)
             trace_data["fsm_status"] = command.status
@@ -93,22 +170,76 @@ class AgentOrderLifecycleHarness:
             reason = str(err)
             trace_data["fsm_status"] = command.status
             trace_data["adapter_status"] = "blocked_guard"
-            return self._finalize_trace_and_reflect(command, trace_data, f"FSM blocked handoff safety check: {reason}")
+            response = BLOCKED_ENVIRONMENT(**trace_data, reason=reason)
+            return self._finalize_trace_and_reflect(command, trace_data, f"FSM blocked handoff safety check: {reason}", response)
 
-        # 2. Check configuration details
+        # 3. Check configuration details
         if not descriptor or not descriptor.adapter_id:
             trace_data["adapter_status"] = "blocked_missing_config"
-            return self._finalize_trace_and_reflect(command, trace_data, "Capability descriptor missing key configuration")
+            response = BLOCKED_CONFIG(**trace_data, reason="Capability descriptor missing key configuration")
+            return self._finalize_trace_and_reflect(command, trace_data, "Capability descriptor missing key configuration", response)
 
-        # 3. Dry-Run / No-Order checks
+        if descriptor.adapter_id.strip().lower() in ("stub", "shadow", "mock", "exchange_acl") or descriptor.no_order_observation_mode:
+            trace_data["adapter_status"] = "blocked_missing_config"
+            response = BLOCKED_CONFIG(**trace_data, reason="Stub or shadow-only adapter rejected under real testnet requirements")
+            return self._finalize_trace_and_reflect(command, trace_data, "Stub or shadow-only adapter rejected", response)
+
+        # 4. Symbol Ownership Check
+        try:
+            from .coordination_config import load_coordination_config
+            coord_cfg = load_coordination_config()
+            owner = coord_cfg.owner_for_symbol(symbol)
+            if owner.agent_id != command.agent_id or owner.agent_number != command.agent_number:
+                trace_data["adapter_status"] = "blocked_policy"
+                reason = f"Wrong symbol owner: {symbol} is owned by {owner.agent_id} (agent_number={owner.agent_number})"
+                response = BLOCKED_POLICY(**trace_data, reason=reason)
+                return self._finalize_trace_and_reflect(command, trace_data, f"Policy block: {reason}", response)
+        except Exception as e:
+            trace_data["adapter_status"] = "blocked_policy"
+            response = BLOCKED_POLICY(**trace_data, reason=f"Symbol ownership resolution failed: {e}")
+            return self._finalize_trace_and_reflect(command, trace_data, f"Policy block: {e}", response)
+
+        # 5. Agent 1 places external order restriction
+        if command.agent_number == 1 and p40a_gate_allow_order_submit and descriptor.environment == "testnet":
+            trace_data["adapter_status"] = "blocked_policy"
+            reason = "Agent 1 is prohibited from placing external orders"
+            response = BLOCKED_POLICY(**trace_data, reason=reason)
+            return self._finalize_trace_and_reflect(command, trace_data, f"Policy block: {reason}", response)
+
+        # 6. Dry-Run / No-Order checks
         if not p40a_gate_allow_order_submit:
             trace_data["adapter_status"] = "blocked_no_order"
-            return self._finalize_trace_and_reflect(command, trace_data, "Blocked: P40A order submission gate is not allowed")
+            response = BLOCKED_POLICY(**trace_data, reason="Blocked: P40A order submission gate is not allowed")
+            return self._finalize_trace_and_reflect(command, trace_data, "Blocked: P40A order submission gate is not allowed", response)
 
-        # 4. Exchange Submission
+        # 7. Check credentials
+        api_key = os.environ.get("BINANCE_TESTNET_API_KEY")
+        api_secret = os.environ.get("BINANCE_TESTNET_API_SECRET")
+        
         try:
-            from vfoundation.adapters.exchange.acl import ExchangeACL
-            from vfoundation.core.protocol import Message
+            from apps.reference.config_loader import ConfigLoader
+            config = ConfigLoader().load_config()
+            if config.binance_api and config.binance_api.testnet:
+                if not api_key or api_key.startswith("$"):
+                    api_key = config.binance_api.testnet.api_key
+                if not api_secret or api_secret.startswith("$"):
+                    api_secret = config.binance_api.testnet.api_secret
+        except Exception:
+            pass
+            
+        if api_key and (api_key.startswith("$") or api_key.strip() == ""):
+            api_key = None
+        if api_secret and (api_secret.startswith("$") or api_secret.strip() == ""):
+            api_secret = None
+
+        if not api_key or not api_secret:
+            trace_data["adapter_status"] = "blocked_missing_config"
+            response = BLOCKED_CONFIG(**trace_data, reason="Missing testnet API credentials")
+            return self._finalize_trace_and_reflect(command, trace_data, "Missing testnet API credentials", response)
+
+        # 8. Exchange Submission (Real Binance Futures Testnet Adapter)
+        try:
+            from apps.reference.adapters.binance_adapter import BinanceAdapter
             
             raw_rationale = (
                 command.payload.get("rationale")
@@ -119,46 +250,75 @@ class AgentOrderLifecycleHarness:
             )
             why_str = str(raw_rationale)[:80]
 
-            acl = ExchangeACL(shadow_mode=True)
-            msg = Message(
-                op="CMD",
-                verb="OPEN",
-                src="agent",
-                dst="exchange_acl",
-                rid=command.command_id,
-                why=why_str,
-                pld={
-                    "symbol": symbol,
-                    "side": side,
-                    "qty": float(payload.get("qty") or payload.get("quantity") or payload.get("notional") or 0.0),
-                    "price": payload.get("price"),
-                }
+            adapter = BinanceAdapter(
+                api_key=api_key,
+                api_secret=api_secret,
+                rest_url=descriptor.environment == "testnet" and "https://testnet.binancefuture.com" or base_url or "https://testnet.binancefuture.com",
             )
             
-            response = acl.submit(msg)
+            qty = str(payload.get("qty") or payload.get("quantity") or payload.get("notional") or 0.0)
+            price = payload.get("price")
+            if price is not None:
+                price = str(price)
+
+            if order_type == "LIMIT":
+                coro = adapter.place_limit_entry(
+                    symbol=symbol,
+                    side=side,
+                    price=price,
+                    quantity=qty,
+                    time_in_force=payload.get("time_in_force", "GTC"),
+                    new_client_order_id=command.command_id,
+                )
+            else:
+                coro = adapter.place_market_entry(
+                    symbol=symbol,
+                    side=side,
+                    quantity=qty,
+                    new_client_order_id=command.command_id,
+                )
+            
+            result = self._run_async_sync(coro)
             trace_data["adapter_status"] = "submitted_testnet"
             
-            if response.op == "EVT" and response.verb == "ORDER_PLACED":
-                order_id = response.pld.get("order_id") or f"stub-{command.command_id}"
+            if isinstance(result, dict) and "orderId" in result:
+                order_id = str(result["orderId"])
+                status = result.get("status")
                 trace_data["exchange_status"] = "exchange_ack"
                 trace_data["lifecycle_ref"] = order_id
+                
+                if status == "FILLED":
+                    filled_qty = float(result.get("executedQty") or qty)
+                    avg_price = float(result.get("avgPrice") or price or 0.0)
+                    response = EXTERNAL_FILL(**trace_data, filled_qty=filled_qty, price=avg_price)
+                else:
+                    response = EXTERNAL_ACK(**trace_data, order_id=order_id)
             else:
                 trace_data["exchange_status"] = "exchange_reject"
                 trace_data["lifecycle_ref"] = "none"
+                response = EXTERNAL_REJECT(**trace_data, reason=str(result))
                 
         except Exception as exc:
-            trace_data["adapter_status"] = "blocked_missing_config"
-            return self._finalize_trace_and_reflect(command, trace_data, f"Adapter submission exception: {exc}")
+            trace_data["adapter_status"] = "submitted_testnet"
+            trace_data["exchange_status"] = "exchange_reject"
+            response = EXTERNAL_REJECT(**trace_data, reason=f"Adapter exception: {exc}")
+            return self._finalize_trace_and_reflect(command, trace_data, f"Adapter submission exception: {exc}", response)
 
-        return self._finalize_trace_and_reflect(command, trace_data, f"Order successfully routed to exchange. ACK status: {trace_data['exchange_status']}")
+        return self._finalize_trace_and_reflect(command, trace_data, f"Order successfully routed to exchange. ACK status: {trace_data['exchange_status']}", response)
 
-    def _finalize_trace_and_reflect(self, command: AgentActionCommand, trace_data: dict, reflection_msg: str) -> OrderLifecycleTrace:
+    def _finalize_trace_and_reflect(
+        self,
+        command: AgentActionCommand,
+        trace_data: dict,
+        reflection_msg: str,
+        response: OrderLifecycleTrace,
+    ) -> OrderLifecycleTrace:
         session_id = command.session_id
         agent_id = command.agent_id
         
-        # 1. Save reflection in durable trading memory
         reflection_id = f"trace-review-{uuid4().hex}"
         trace_data["memory_ref"] = reflection_id
+        response.memory_ref = reflection_id
         
         try:
             memory = self.memory_lifecycle.load_or_create(
@@ -183,7 +343,6 @@ class AgentOrderLifecycleHarness:
         except Exception:
             pass
             
-        # 2. Save trace log file
         try:
             session_dir = self.root_dir / self.settings.sessions.root_dir / session_id
             session_dir.mkdir(parents=True, exist_ok=True)
@@ -193,7 +352,6 @@ class AgentOrderLifecycleHarness:
         except Exception:
             pass
 
-        # 3. Global trace log file
         try:
             global_dir = self.root_dir / ".agent_memory"
             global_dir.mkdir(parents=True, exist_ok=True)
@@ -203,4 +361,4 @@ class AgentOrderLifecycleHarness:
         except Exception:
             pass
             
-        return OrderLifecycleTrace(**trace_data)
+        return response

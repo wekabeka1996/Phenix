@@ -94,3 +94,9 @@ hardening:
   wal:
     integrity_check_enabled: true
     hash_algorithm: sha256
+
+agent_arena:
+  enabled: true
+  external_agents_enabled: true
+  internal_strategy_decision_authority: false
+  execution_environment: testnet
