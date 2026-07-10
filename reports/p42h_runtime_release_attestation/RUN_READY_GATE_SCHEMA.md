@@ -8,7 +8,7 @@ This document details the configuration schema fields for the release gate and t
 
 The `reports/p42g_unified_dual_agent_runtime/RUN_READY_GATE.md` file defines:
 
-- **runtime_code_sha**: The code-complete commit SHA (`e82ceff877ba83f7affdb8659b2ba2b38d76e09c`).
+- **runtime_code_sha**: The code-complete commit SHA (`c55489003d891bf8e0b223fa4e12391452f6eda1`).
 - **release_branch**: The target git branch (`p42-dual-agent-runtime-integrated-primary-20260710`).
 - **gate_schema_version**: Schema version (`2.0.0`).
 - **allowed_post_runtime_paths**: List of directories or files allowed to change after `runtime_code_sha` (defaults to `reports/**` and `PRE_SUBMIT_GATE.json`).
@@ -30,7 +30,7 @@ When `verify_preflight` executes successfully, the runner outputs `PRE_SUBMIT_GA
 {
   "schema_version": "2.0.0",
   "checkout_sha": "c55489003d891bf8e0b223fa4e12391452f6eda1",
-  "runtime_code_sha": "e82ceff877ba83f7affdb8659b2ba2b38d76e09c",
+  "runtime_code_sha": "c55489003d891bf8e0b223fa4e12391452f6eda1",
   "verified_at": "2026-07-10T11:25:00.000000Z"
 }
 ```

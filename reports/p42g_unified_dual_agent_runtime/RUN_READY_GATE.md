@@ -6,7 +6,7 @@ This document defines the operational gate status and allowed execution permissi
 
 ## 1. Gate Specification
 
-- **Integration SHA**: `e82ceff877ba83f7affdb8659b2ba2b38d76e09c`
+- **Integration SHA**: `c55489003d891bf8e0b223fa4e12391452f6eda1`
 - **Integration Branch**: `p42-dual-agent-runtime-integrated-primary-20260710`
 - **Allowed Agents**:
   - `api_agent_01` (Agent 1): Excluded from placing external testnet orders.
