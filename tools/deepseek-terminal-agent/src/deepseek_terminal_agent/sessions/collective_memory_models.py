@@ -287,6 +287,7 @@ class CarryoverBundle(BaseModel):
     instruction_versions: dict[str, str] = Field(default_factory=dict)
     pending_command_ids: list[str] = Field(default_factory=list)
     source_refs: list[SourceReference] = Field(default_factory=list)
+    semantic_facts: list["SemanticFact"] = Field(default_factory=list)
     created_at: str = Field(default_factory=utc_now_iso)
 
 
@@ -315,6 +316,7 @@ class RecoveryReport(BaseModel):
     expired_symbol_leases: list[str] = Field(default_factory=list)
     pending_command_ids: list[str] = Field(default_factory=list)
     dispatch_in_doubt_command_ids: list[str] = Field(default_factory=list)
+    reconciled_command_ids: list[str] = Field(default_factory=list)
     exchange_reconciliation_status: str
     duplicate_submit_prevention_active: bool
     ready: bool
@@ -327,6 +329,35 @@ class FSMDispatchResult(BaseModel):
     accepted: bool
     reason: str = Field(..., min_length=1)
     source_refs: list[SourceReference] = Field(default_factory=list)
+
+
+class DispatchReconciliationResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["not_submitted", "externally_submitted", "ambiguous"]
+    reason: str = Field(..., min_length=1)
+    source_refs: list[SourceReference] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def external_submission_requires_source(self) -> "DispatchReconciliationResult":
+        if self.status == "externally_submitted" and not self.source_refs:
+            raise ValueError("externally_submitted reconciliation requires source_refs")
+        return self
+
+
+class SemanticFact(BaseModel):
+    """Deterministic factual recall unit bound to immutable evidence."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    fact_key: str = Field(..., min_length=1)
+    category: str = Field(..., min_length=1)
+    value: dict[str, Any]
+    sequence: int = Field(..., ge=1)
+    critical: bool
+    agent_id: Optional[str] = None
+    symbol: Optional[str] = None
+    source_refs: list[SourceReference] = Field(..., min_length=1)
 
 
 class CommandDispatchResult(BaseModel):

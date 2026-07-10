@@ -22,6 +22,7 @@ from .collective_memory_models import (
     CommandDispatchResult,
     CompressionManifest,
     CompressionStatistics,
+    DispatchReconciliationResult,
     FeatureTrustState,
     FeatureTrustUpdate,
     FSMDispatchResult,
@@ -33,13 +34,19 @@ from .collective_memory_models import (
     PortfolioState,
     PublicationRecord,
     RecoveryReport,
+    SemanticFact,
     SourceReference,
     SymbolLease,
     WriteResult,
     utc_now_iso,
 )
 from .coordination_config import CoordinationConfig, load_coordination_config
-from .persistence import append_jsonl_record, read_jsonl_records, write_json_atomic
+from .persistence import (
+    append_jsonl_record,
+    quarantine_jsonl_issue,
+    read_jsonl_records,
+    write_json_atomic,
+)
 from .store import SessionStore
 
 
@@ -87,6 +94,7 @@ class CollectiveMemoryStore:
         root_dir: str | Path = ".",
         config: Optional[CoordinationConfig] = None,
         session_store: Optional[SessionStore] = None,
+        failure_injector: Optional[Callable[[str, dict[str, Any]], None]] = None,
     ) -> None:
         self.settings = settings
         self.config = config or load_coordination_config()
@@ -94,6 +102,7 @@ class CollectiveMemoryStore:
         self.sessions_root = self.root_dir / settings.sessions.root_dir
         self.session_store = session_store or SessionStore(settings, root_dir=root_dir)
         self.quarantine_root = self.root_dir / ".agent_memory" / "quarantine"
+        self.failure_injector = failure_injector
 
     def discover_sessions(self) -> list[str]:
         discovered: list[str] = []
@@ -740,10 +749,12 @@ class CollectiveMemoryStore:
             raw_text = self._canonical_json([event.model_dump() for event in events])
             raw_tokens, token_kind = self._count_tokens(raw_text)
             segments = self._build_segments(events)
+            semantic_facts = self.extract_semantic_facts(events)
             active_payload = self._active_context_payload(
                 state=state,
                 segments=segments,
                 checkpoint_id=checkpoint_id,
+                semantic_facts=semantic_facts,
             )
             active_tokens, active_kind = self._count_tokens(self._canonical_json(active_payload))
             if token_kind != active_kind:
@@ -776,6 +787,7 @@ class CollectiveMemoryStore:
                 instruction_versions={key: value.manifest_version for key, value in state.instruction_versions.items()},
                 pending_command_ids=sorted(state.pending_commands),
                 source_refs=refs,
+                semantic_facts=semantic_facts,
             )
             checkpoint = MemoryCheckpoint(
                 checkpoint_id=checkpoint_id,
@@ -797,6 +809,10 @@ class CollectiveMemoryStore:
             )
             checkpoint.snapshot.compression_statistics = stats
             checkpoint_path = self._checkpoint_path(session_id, checkpoint_id)
+            self._inject_failure(
+                "before_checkpoint_publish",
+                {"session_id": session_id, "checkpoint_id": checkpoint_id, "path": str(checkpoint_path)},
+            )
             write_json_atomic(checkpoint_path, checkpoint.model_dump())
             for _ in range(2):
                 actual_bytes = checkpoint_path.stat().st_size
@@ -805,6 +821,10 @@ class CollectiveMemoryStore:
                 stats.checkpoint_bytes = actual_bytes
                 checkpoint.snapshot.compression_statistics = stats
                 write_json_atomic(checkpoint_path, checkpoint.model_dump())
+            self._inject_failure(
+                "after_checkpoint_publish",
+                {"session_id": session_id, "checkpoint_id": checkpoint_id, "path": str(checkpoint_path)},
+            )
             checkpoint_ref = SourceReference(
                 source_id=checkpoint_id,
                 source_type="compression_manifest",
@@ -879,15 +899,52 @@ class CollectiveMemoryStore:
         pending = list(state.pending_commands.values())
         in_doubt = [command for command in pending if command.dispatch_state == "dispatch_started"]
         reconciliation_status = "not_required"
+        reconciled_command_ids: list[str] = []
         ready = not expired_leases
         if in_doubt and self.config.recovery.require_exchange_reconciliation_for_dispatch_in_doubt:
             if exchange_reconciler is None:
                 reconciliation_status = "required_hook_missing"
                 ready = False
             else:
-                result = exchange_reconciler([command.model_copy(deep=True) for command in in_doubt])
-                reconciliation_status = str(result.get("status") or "completed")
-                ready = ready and reconciliation_status in {"completed", "reconciled", "no_external_order"}
+                raw_results = exchange_reconciler(
+                    [command.model_copy(deep=True) for command in in_doubt]
+                )
+                results = self._normalize_reconciliation_results(in_doubt, raw_results)
+                statuses: list[str] = []
+                for command in in_doubt:
+                    reconciliation = results[command.command_id]
+                    statuses.append(reconciliation.status)
+                    self.append_evidence(
+                        session_id=session_id,
+                        event_type="DISPATCH_RECONCILED",
+                        category="recovery",
+                        agent_id=command.agent_id,
+                        agent_number=command.agent_number,
+                        command_id=command.command_id,
+                        idempotency_key=(
+                            f"dispatch-reconciled:{command.command_id}:{reconciliation.status}:"
+                            f"{','.join(ref.source_id for ref in reconciliation.source_refs)}"
+                        ),
+                        source_refs=reconciliation.source_refs,
+                        critical=True,
+                        payload={
+                            "command_id": command.command_id,
+                            "status": reconciliation.status,
+                            "reason": reconciliation.reason,
+                            "source_refs": [
+                                ref.model_dump() for ref in reconciliation.source_refs
+                            ],
+                        },
+                    )
+                    if reconciliation.status != "ambiguous":
+                        reconciled_command_ids.append(command.command_id)
+                    else:
+                        ready = False
+                unique_statuses = sorted(set(statuses))
+                reconciliation_status = (
+                    unique_statuses[0] if len(unique_statuses) == 1 else "mixed"
+                )
+                state = self.get_state(session_id)
         report = RecoveryReport(
             session_id=session_id,
             checkpoint_id=checkpoint_id,
@@ -899,6 +956,7 @@ class CollectiveMemoryStore:
             expired_symbol_leases=expired_leases,
             pending_command_ids=sorted(state.pending_commands),
             dispatch_in_doubt_command_ids=sorted(command.command_id for command in in_doubt),
+            reconciled_command_ids=sorted(reconciled_command_ids),
             exchange_reconciliation_status=reconciliation_status,
             duplicate_submit_prevention_active=self.config.recovery.duplicate_submit_prevention_required,
             ready=ready,
@@ -1053,9 +1111,25 @@ class CollectiveMemoryStore:
             payload=payload,
             source_refs=source_refs or [],
         )
+        self._inject_failure(
+            "before_evidence_append",
+            {"session_id": state.session_id, "event_id": event.event_id, "sequence": event.sequence},
+        )
         append_jsonl_record(self._events_path(state.session_id), event.model_dump())
+        self._inject_failure(
+            "after_evidence_append",
+            {"session_id": state.session_id, "event_id": event.event_id, "sequence": event.sequence},
+        )
         self._apply_event(state, event)
+        self._inject_failure(
+            "before_state_publish",
+            {"session_id": state.session_id, "event_id": event.event_id, "sequence": event.sequence},
+        )
         write_json_atomic(self._state_path(state.session_id), state.model_dump())
+        self._inject_failure(
+            "after_state_publish",
+            {"session_id": state.session_id, "event_id": event.event_id, "sequence": event.sequence},
+        )
         return WriteResult(event=event, state=state.model_copy(deep=True), deduplicated=False)
 
     def _apply_event(self, state: CollectiveStateSnapshot, event: ArenaEvidenceEvent) -> None:
@@ -1134,6 +1208,27 @@ class CollectiveMemoryStore:
                     "resolution_refs": refs,
                 }
             )
+        elif event_type == "DISPATCH_RECONCILED":
+            command = state.pending_commands[payload["command_id"]]
+            refs = [SourceReference.model_validate(item) for item in payload.get("source_refs", [])]
+            status = payload["status"]
+            if status == "not_submitted":
+                state.pending_commands[command.command_id] = command.model_copy(
+                    update={
+                        "status": "pending_fsm",
+                        "dispatch_state": "not_dispatched",
+                        "dispatch_started_at": None,
+                        "resolution_refs": refs,
+                    }
+                )
+            elif status == "externally_submitted":
+                state.pending_commands[command.command_id] = command.model_copy(
+                    update={
+                        "status": "accepted_by_fsm",
+                        "dispatch_state": "fsm_accepted",
+                        "resolution_refs": refs,
+                    }
+                )
         elif event_type == "COMMAND_RESOLVED":
             command = state.pending_commands[payload["command_id"]]
             state.pending_commands[command.command_id] = command.model_copy(
@@ -1245,12 +1340,116 @@ class CollectiveMemoryStore:
         if normalized not in identity.symbols:
             raise SymbolAuthorityError(f"{agent_id} cannot publish for unowned symbol {normalized}")
 
+    def active_context_for_checkpoint(self, checkpoint: MemoryCheckpoint) -> dict[str, Any]:
+        return self._active_context_payload(
+            state=checkpoint.snapshot,
+            segments=checkpoint.segments,
+            checkpoint_id=checkpoint.checkpoint_id,
+            semantic_facts=checkpoint.carryover.semantic_facts,
+        )
+
+    def extract_semantic_facts(
+        self, events: list[ArenaEvidenceEvent]
+    ) -> list[SemanticFact]:
+        """Extract deterministic facts; every fact is bound to its evidence event."""
+        facts: list[SemanticFact] = []
+        for event in events:
+            raw_fact = event.payload.get("semantic_fact")
+            fact_payload: Optional[dict[str, Any]] = None
+            if isinstance(raw_fact, dict):
+                fact_payload = dict(raw_fact)
+            elif event.event_type == "RISK_WARNING_PUBLISHED":
+                fact_payload = {
+                    "fact_key": f"risk_warning:{event.payload['publication_id']}",
+                    "category": "risk_warning",
+                    "value": {"summary": event.payload["summary"]},
+                    "symbol": event.payload.get("symbol"),
+                }
+            elif event.event_type == "INSTRUCTIONS_ACKED":
+                instruction = event.payload["instruction"]
+                fact_payload = {
+                    "fact_key": f"instruction:{instruction['agent_id']}",
+                    "category": "instruction_version",
+                    "value": {"manifest_version": instruction["manifest_version"]},
+                    "agent_id": instruction["agent_id"],
+                }
+            elif event.event_type == "FEATURE_TRUST_UPDATED":
+                feature = event.payload["feature_trust_state"]
+                fact_payload = {
+                    "fact_key": f"feature_trust:{event.payload['key']}:v{feature['version']}",
+                    "category": "feature_trust",
+                    "value": {
+                        "feature_name": feature["feature_name"],
+                        "trust": feature["current_trust"],
+                        "version": feature["version"],
+                    },
+                    "agent_id": feature.get("agent_id"),
+                }
+            elif event.event_type in {"ORDER_REQUESTED", "CANCEL_REQUESTED", "CLOSE_REQUESTED"}:
+                command = event.payload["command"]
+                fact_payload = {
+                    "fact_key": f"command_intent:{command['command_id']}",
+                    "category": "command_intent",
+                    "value": {
+                        "command_kind": command["command_kind"],
+                        "intent_ref": command["intent_ref"],
+                        "status": command["status"],
+                    },
+                    "agent_id": command["agent_id"],
+                    "symbol": command["symbol"],
+                }
+            elif event.event_type == "FSM_DECISION":
+                fact_payload = {
+                    "fact_key": f"fsm_decision:{event.payload['command_id']}",
+                    "category": "fsm_decision",
+                    "value": {
+                        "accepted": bool(event.payload["accepted"]),
+                        "reason": event.payload["reason"],
+                    },
+                    "agent_id": event.agent_id,
+                }
+            elif event.event_type == "COMMAND_DISPATCH_STARTED":
+                fact_payload = {
+                    "fact_key": f"dispatch_in_doubt:{event.payload['command_id']}",
+                    "category": "dispatch_state",
+                    "value": {"dispatch_state": "dispatch_started"},
+                    "agent_id": event.agent_id,
+                }
+            elif event.event_type == "DISPATCH_RECONCILED":
+                fact_payload = {
+                    "fact_key": f"dispatch_reconciliation:{event.payload['command_id']}",
+                    "category": "recovery_resolution",
+                    "value": {
+                        "status": event.payload["status"],
+                        "reason": event.payload["reason"],
+                    },
+                    "agent_id": event.agent_id,
+                }
+            if fact_payload is None:
+                continue
+            source_refs = [self._source_ref(event), *event.source_refs]
+            deduplicated_refs = list({ref.source_id: ref for ref in source_refs}.values())
+            facts.append(
+                SemanticFact(
+                    fact_key=fact_payload["fact_key"],
+                    category=fact_payload["category"],
+                    value=fact_payload["value"],
+                    sequence=event.sequence,
+                    critical=event.critical,
+                    agent_id=fact_payload.get("agent_id", event.agent_id),
+                    symbol=fact_payload.get("symbol"),
+                    source_refs=deduplicated_refs,
+                )
+            )
+        return facts
+
     def _active_context_payload(
         self,
         *,
         state: CollectiveStateSnapshot,
         segments: list[MemorySegment],
         checkpoint_id: str,
+        semantic_facts: Optional[list[SemanticFact]] = None,
     ) -> dict[str, Any]:
         """Build a bounded prompt view without weakening checkpoint evidence."""
         feature_trust = {
@@ -1307,7 +1506,9 @@ class CollectiveMemoryStore:
             "checkpoint_id": checkpoint_id,
             "snapshot": snapshot_view,
             "segments": segment_views,
+            "semantic_facts": [fact.model_dump() for fact in (semantic_facts or [])],
             "omitted_active_segments": [],
+            "omitted_semantic_fact_refs": [],
             "full_source_manifest_ref": f"checkpoint://{checkpoint_id}/manifest",
         }
         limit = self.config.memory.active_context_token_limit
@@ -1322,7 +1523,50 @@ class CollectiveMemoryStore:
                 }
             )
             tokens, _ = self._count_tokens(self._canonical_json(payload))
+        while tokens > limit and len(payload["semantic_facts"]) > 1:
+            omitted_fact = payload["semantic_facts"].pop(0)
+            payload["omitted_semantic_fact_refs"].append(
+                {
+                    "fact_key": omitted_fact["fact_key"],
+                    "source_ids": [
+                        ref["source_id"] for ref in omitted_fact["source_refs"]
+                    ],
+                    "reason": "active_context_budget",
+                }
+            )
+            tokens, _ = self._count_tokens(self._canonical_json(payload))
         return payload
+
+    def _normalize_reconciliation_results(
+        self,
+        commands: list[PendingCommand],
+        raw_results: dict[str, Any],
+    ) -> dict[str, DispatchReconciliationResult]:
+        if len(commands) == 1 and "status" in raw_results:
+            raw_results = {commands[0].command_id: raw_results}
+        normalized: dict[str, DispatchReconciliationResult] = {}
+        for command in commands:
+            candidate = raw_results.get(command.command_id)
+            if not isinstance(candidate, dict):
+                normalized[command.command_id] = DispatchReconciliationResult(
+                    status="ambiguous",
+                    reason="reconciliation result missing for command",
+                )
+                continue
+            try:
+                normalized[command.command_id] = DispatchReconciliationResult.model_validate(
+                    candidate
+                )
+            except Exception as exc:
+                normalized[command.command_id] = DispatchReconciliationResult(
+                    status="ambiguous",
+                    reason=f"invalid reconciliation result: {exc}",
+                )
+        return normalized
+
+    def _inject_failure(self, stage: str, context: dict[str, Any]) -> None:
+        if self.failure_injector is not None:
+            self.failure_injector(stage, context)
 
     def _validate_agent(self, agent_id: str, agent_number: Optional[int]):
         identity = self.config.agent(str(agent_id or "").strip())
@@ -1334,8 +1578,43 @@ class CollectiveMemoryStore:
         self.session_store.get_session(session_id)
 
     def _read_events_locked(self, session_id: str) -> list[ArenaEvidenceEvent]:
-        records = read_jsonl_records(self._events_path(session_id), quarantine_root=self.quarantine_root)
+        path = self._events_path(session_id)
+        self._repair_partial_jsonl_tail_locked(path)
+        records = read_jsonl_records(path, quarantine_root=self.quarantine_root)
         return [ArenaEvidenceEvent.model_validate(record) for _, record in records]
+
+    def _repair_partial_jsonl_tail_locked(self, path: Path) -> None:
+        if not path.exists():
+            return
+        raw = path.read_bytes()
+        if not raw or raw.endswith(b"\n"):
+            return
+        boundary = raw.rfind(b"\n")
+        prefix_end = boundary + 1
+        tail = raw[prefix_end:]
+        try:
+            decoded = tail.decode("utf-8")
+            candidate = json.loads(decoded)
+            if not isinstance(candidate, dict):
+                raise ValueError("final JSONL record must be an object")
+            ArenaEvidenceEvent.model_validate(candidate)
+        except Exception as exc:
+            quarantine_jsonl_issue(
+                source_path=path,
+                quarantine_root=self.quarantine_root,
+                line_number=raw.count(b"\n") + 1,
+                raw_line=tail.decode("utf-8", errors="replace"),
+                error=f"partial_final_jsonl_line: {exc}",
+            )
+            with path.open("r+b") as handle:
+                handle.truncate(prefix_end)
+                handle.flush()
+                os.fsync(handle.fileno())
+            return
+        with path.open("ab") as handle:
+            handle.write(b"\n")
+            handle.flush()
+            os.fsync(handle.fileno())
 
     def _read_private_reflections_locked(
         self, session_id: str, agent_id: str
@@ -1429,8 +1708,13 @@ class CollectiveMemoryStore:
                 try:
                     age = time.time() - lock_path.stat().st_mtime
                     if age > self.config.memory.lock_stale_seconds:
-                        lock_path.unlink(missing_ok=True)
-                        continue
+                        try:
+                            lock_path.unlink(missing_ok=True)
+                            continue
+                        except PermissionError:
+                            # Windows keeps a live owner's lock file open. Treat
+                            # this as contention even when the age threshold is low.
+                            pass
                 except FileNotFoundError:
                     continue
                 if time.monotonic() >= deadline:
@@ -1439,6 +1723,10 @@ class CollectiveMemoryStore:
         try:
             os.write(fd, f"pid={os.getpid()} acquired={utc_now_iso()}".encode("utf-8"))
             os.fsync(fd)
+            self._inject_failure(
+                "lock_acquired",
+                {"session_id": session_id, "lock_path": str(lock_path)},
+            )
             yield
         finally:
             os.close(fd)
