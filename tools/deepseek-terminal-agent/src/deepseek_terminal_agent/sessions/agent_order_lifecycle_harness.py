@@ -200,7 +200,16 @@ class AgentOrderLifecycleHarness:
             return self._finalize_trace_and_reflect(command, trace_data, f"Policy block: {e}", response)
 
         # 5. Agent 1 places external order restriction
-        if command.agent_number == 1 and p40a_gate_allow_order_submit and descriptor.environment == "testnet":
+        api_agent_allowed = False
+        try:
+            from apps.reference.config_loader import ConfigLoader
+            config = ConfigLoader().load_config()
+            if getattr(config, "agent_arena", None) and getattr(config.agent_arena, "api_agent_order_submit_enabled", False):
+                api_agent_allowed = True
+        except Exception:
+            pass
+
+        if command.agent_number == 1 and not api_agent_allowed and p40a_gate_allow_order_submit and descriptor.environment == "testnet":
             trace_data["adapter_status"] = "blocked_policy"
             reason = "Agent 1 is prohibited from placing external orders"
             response = BLOCKED_POLICY(**trace_data, reason=reason)

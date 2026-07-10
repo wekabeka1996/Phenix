@@ -1262,6 +1262,7 @@ class AgentArenaConfig(BaseModel):
     external_agents_enabled: bool = Field(default=False, description="Enable external agents")
     internal_strategy_decision_authority: bool = Field(default=True, description="Enable internal strategy decision authority")
     execution_environment: Literal['testnet', 'sandbox', 'mainnet', 'unknown'] = Field(default='testnet', description="Execution environment")
+    api_agent_order_submit_enabled: bool = Field(default=False, description="Allow api_agent_01 to submit testnet orders")
 
 
 class AuroraConfig(BaseModel):
