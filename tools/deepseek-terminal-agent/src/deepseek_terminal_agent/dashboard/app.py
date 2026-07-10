@@ -33,6 +33,7 @@ from ..sessions.agent_events import (
     validate_no_forbidden_arena_fields,
 )
 from ..sessions.agent_memory_lifecycle import AgentMemoryLifecycle
+from ..sessions.agent_tool_runtime import AgentToolRuntime
 from ..sessions.agent_proposals import (
     AgentProposalStore,
     ProposalKind,
@@ -43,9 +44,11 @@ from ..sessions.approval_queue import ApprovalQueue
 from ..sessions.artifacts import ArtifactStore
 from ..sessions.attachments import AttachmentKind, AttachmentStore
 from ..sessions.chat_runtime import SessionChatRuntime
+from ..sessions.collective_memory import CollectiveMemoryStore
 from ..sessions.compressor import ContextCompressor
 from ..sessions.context_builder import ContextBuilder
 from ..sessions.context_inspector import ContextInspector
+from ..sessions.coordination_config import load_coordination_config
 from ..sessions.decision_ledger import DecisionLedger
 from ..sessions.evidence_bundle import EvidenceBundleStore
 from ..sessions.memory_atoms import MemoryAtom, MemoryAtomStore
@@ -93,6 +96,8 @@ _decision_ledger: Optional[DecisionLedger] = None
 _memory_patch_store: Optional[MemoryPatchStore] = None
 _evidence_bundle_store: Optional[EvidenceBundleStore] = None
 _agent_memory_lifecycle: Optional[AgentMemoryLifecycle] = None
+_collective_memory_store: Optional[CollectiveMemoryStore] = None
+_agent_tool_runtime: Optional[AgentToolRuntime] = None
 
 
 def _get_settings() -> Settings:
@@ -350,6 +355,32 @@ def _get_agent_memory_lifecycle() -> AgentMemoryLifecycle:
         _agent_memory_lifecycle = AgentMemoryLifecycle(
             _get_settings(), root_dir=_get_root_dir())
     return _agent_memory_lifecycle
+
+
+def _get_collective_memory_store() -> CollectiveMemoryStore:
+    global _collective_memory_store
+    root_dir = _get_root_dir()
+    session_store = _get_session_store()
+    if (
+        _collective_memory_store is None
+        or _collective_memory_store.root_dir.resolve() != root_dir.resolve()
+        or _collective_memory_store.session_store is not session_store
+    ):
+        _collective_memory_store = CollectiveMemoryStore(
+            _get_settings(),
+            root_dir=root_dir,
+            config=load_coordination_config(),
+            session_store=session_store,
+        )
+    return _collective_memory_store
+
+
+def _get_agent_tool_runtime() -> AgentToolRuntime:
+    global _agent_tool_runtime
+    store = _get_collective_memory_store()
+    if _agent_tool_runtime is None or _agent_tool_runtime.store is not store:
+        _agent_tool_runtime = AgentToolRuntime(store.config, store)
+    return _agent_tool_runtime
 
 
 def _default_profiles() -> list[ModelProfile]:
@@ -620,6 +651,7 @@ def _session_detail(session_id: str) -> dict[str, Any]:
         "attachments": _session_attachments(session_id),
         "agent_proposals": _session_agent_proposals(session_id),
         "agent_events": _session_agent_arena_events(session_id),
+        "coordination": _get_collective_memory_store().cockpit_status(session_id),
         "subagents": _get_subagent_manager().list_subagents(session_id),
     }
 
@@ -1211,6 +1243,41 @@ async def chat_list_agent_events(session_id: str) -> JSONResponse:
         return JSONResponse({"agent_events": _session_agent_arena_events(session_id)})
     except (KeyError, FileNotFoundError, ValueError):
         return _json_error(f"Session '{session_id}' not found.", status_code=404)
+
+
+@app.get("/chat/sessions/{session_id}/coordination")
+async def chat_collective_coordination_status(session_id: str) -> JSONResponse:
+    try:
+        return JSONResponse(_get_collective_memory_store().cockpit_status(session_id))
+    except (KeyError, FileNotFoundError, ValueError):
+        return _json_error(f"Session '{session_id}' not found.", status_code=404)
+    except RuntimeError as exc:
+        return _json_error(str(exc), status_code=503)
+
+
+@app.get("/chat/agent-tools")
+async def chat_agent_tool_contracts() -> JSONResponse:
+    contracts = [contract.model_dump() for contract in _get_agent_tool_runtime().contracts()]
+    return JSONResponse({"agent_tools": contracts})
+
+
+@app.post("/chat/sessions/{session_id}/agent-tools/{tool_name}")
+async def chat_invoke_agent_tool(session_id: str, tool_name: str, request: Request) -> JSONResponse:
+    payload = await _extract_payload(request)
+    payload["session_id"] = session_id
+    normalized = str(tool_name or "").strip().upper()
+    try:
+        _get_session_store().get_session(session_id)
+        result = _get_agent_tool_runtime().invoke(normalized, payload)
+    except (KeyError, FileNotFoundError):
+        return _json_error(f"Session '{session_id}' not found.", status_code=404)
+    except PermissionError as exc:
+        return _json_error(str(exc), status_code=403)
+    except (TypeError, ValueError) as exc:
+        return _json_error(str(exc), status_code=400)
+    except RuntimeError as exc:
+        return _json_error(str(exc), status_code=503)
+    return JSONResponse(result.model_dump(), status_code=201 if result.status in {"recorded", "pending_fsm", "acknowledged"} else 200)
 
 
 @app.post("/chat/sessions/{session_id}/context")
