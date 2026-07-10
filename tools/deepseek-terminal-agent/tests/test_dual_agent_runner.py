@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+import json
 import os
 import pathlib
 import pytest
@@ -265,3 +266,71 @@ def test_event_driven_wakeup_works(temp_config_and_instructions, monkeypatch):
     # Emit instructions refreshed event
     fsm.emit("EVT:INSTRUCTIONS_REFRESHED", {"agent_id": "api_agent_01"})
     assert runner.wakeup_events["api_agent_01"].is_set()
+
+
+def test_preflight_attestation_validation(temp_config_and_instructions, monkeypatch):
+    config_file, root_dir = temp_config_and_instructions
+    monkeypatch.chdir(root_dir)
+    monkeypatch.setenv("TRADING_ENV", "testnet")
+    monkeypatch.setenv("RUN_READY_GATE", "true")
+
+    # 1. Write the gate md file with an Integration SHA
+    gate_dir = root_dir / "reports" / "p42g_unified_dual_agent_runtime"
+    gate_dir.mkdir(parents=True, exist_ok=True)
+    gate_dir.joinpath("RUN_READY_GATE.md").write_text("- **Integration SHA**: e82ceff877ba83f7affdb8659b2ba2b38d76e09c", encoding="utf-8")
+
+    config = load_dual_agent_config(config_file)
+    settings = Settings()
+    fsm = MockFSM()
+    store = SessionStore(settings, root_dir=root_dir)
+
+    # 2. Case A: HEAD matches Integration SHA (0 diffs, ancestor)
+    monkeypatch.setenv("P42_MOCK_CHECKOUT_SHA", "e82ceff877ba83f7affdb8659b2ba2b38d76e09c")
+    runner = DualAgentRuntimeRunner(config, settings, "session-p42", root_dir=root_dir, session_store=store, fsm_override=fsm)
+    runner.verify_preflight(bypass_network_check=True)
+
+    # Check PRE_SUBMIT_GATE.json was written
+    gate_json_path = root_dir / "PRE_SUBMIT_GATE.json"
+    assert gate_json_path.exists()
+    gate_data = json.loads(gate_json_path.read_text(encoding="utf-8"))
+    assert gate_data["checkout_sha"] == "e82ceff877ba83f7affdb8659b2ba2b38d76e09c"
+    assert gate_data["runtime_code_sha"] == "e82ceff877ba83f7affdb8659b2ba2b38d76e09c"
+
+    # 3. Case B: HEAD is different, but git check mocks it as ancestor with reports changes
+    import subprocess
+    monkeypatch.setenv("P42_MOCK_CHECKOUT_SHA", "c55489003d891bf8e0b223fa4e12391452f6eda1")
+
+    # Mock subprocess to simulate ancestor success and allowed diff files
+    def mock_check_call(*args, **kwargs):
+        return 0
+
+    def mock_check_output(cmd, *args, **kwargs):
+        if "rev-parse" in cmd:
+            return b"c55489003d891bf8e0b223fa4e12391452f6eda1\n"
+        if "diff" in cmd:
+            return b"reports/p42g_unified_dual_agent_runtime/RUN_READY_GATE.md\n"
+        return b""
+
+    monkeypatch.setattr(subprocess, "check_call", mock_check_call)
+    monkeypatch.setattr(subprocess, "check_output", mock_check_output)
+
+    runner2 = DualAgentRuntimeRunner(config, settings, "session-p42-2", root_dir=root_dir, session_store=store, fsm_override=fsm)
+    runner2.verify_preflight(bypass_network_check=True)
+
+    gate_data2 = json.loads(gate_json_path.read_text(encoding="utf-8"))
+    assert gate_data2["checkout_sha"] == "c55489003d891bf8e0b223fa4e12391452f6eda1"
+
+    # 4. Case C: Disallowed source diff files exist -> raises ValueError
+    def mock_check_output_disallowed(cmd, *args, **kwargs):
+        if "rev-parse" in cmd:
+            return b"c55489003d891bf8e0b223fa4e12391452f6eda1\n"
+        if "diff" in cmd:
+            # Contains source files!
+            return b"apps/reference/main.py\n"
+        return b""
+
+    monkeypatch.setattr(subprocess, "check_output", mock_check_output_disallowed)
+    runner3 = DualAgentRuntimeRunner(config, settings, "session-p42-3", root_dir=root_dir, session_store=store, fsm_override=fsm)
+    with pytest.raises(ValueError, match="source difference detected in disallowed path"):
+        runner3.verify_preflight(bypass_network_check=True)
+
