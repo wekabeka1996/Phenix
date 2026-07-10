@@ -201,13 +201,16 @@ class AgentOrderLifecycleHarness:
 
         # 5. Agent 1 places external order restriction
         api_agent_allowed = False
-        try:
-            from apps.reference.config_loader import ConfigLoader
-            config = ConfigLoader().load_config()
-            if getattr(config, "agent_arena", None) and getattr(config.agent_arena, "api_agent_order_submit_enabled", False):
-                api_agent_allowed = True
-        except Exception:
-            pass
+        if os.environ.get("API_AGENT_ORDER_SUBMIT_ENABLED") == "true":
+            api_agent_allowed = True
+        else:
+            try:
+                from apps.reference.config_loader import ConfigLoader
+                config = ConfigLoader().load_config()
+                if getattr(config, "agent_arena", None) and getattr(config.agent_arena, "api_agent_order_submit_enabled", False):
+                    api_agent_allowed = True
+            except Exception:
+                pass
 
         if command.agent_number == 1 and not api_agent_allowed and p40a_gate_allow_order_submit and descriptor.environment == "testnet":
             trace_data["adapter_status"] = "blocked_policy"

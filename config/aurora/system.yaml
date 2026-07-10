@@ -100,4 +100,4 @@ agent_arena:
   external_agents_enabled: true
   internal_strategy_decision_authority: false
   execution_environment: testnet
-  api_agent_order_submit_enabled: true
+  api_agent_order_submit_enabled: false
