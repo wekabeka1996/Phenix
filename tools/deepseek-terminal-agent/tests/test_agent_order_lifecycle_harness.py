@@ -25,7 +25,9 @@ def get_base_command() -> dict:
         "command_kind": "ENTRY",
         "testnet_only": True,
         "payload": {"ticker": "SOLUSDT", "qty": 0.5},
+        "rationale": "test validation rationale",
     }
+
 
 
 def test_harness_blocked_guard_rejections(tmp_path, monkeypatch):
@@ -50,8 +52,10 @@ def test_harness_blocked_guard_rejections(tmp_path, monkeypatch):
     desc = AdapterCapabilityDescriptor(
         adapter_id="binance_acl",
         environment="mainnet",
-        supports_order_submit=True,
-        supports_no_order_observation=False,
+        order_submit_enabled=True,
+        no_order_observation_mode=False,
+        supports_cancel=True,
+        supports_close=True,
         source_of_truth="config",
         checked_at="2026-07-09T18:00:00Z",
     )
@@ -75,8 +79,10 @@ def test_harness_blocked_missing_config(tmp_path, monkeypatch):
     desc = AdapterCapabilityDescriptor.model_construct(
         adapter_id="",  # Missing adapter_id
         environment="testnet",
-        supports_order_submit=True,
-        supports_no_order_observation=False,
+        order_submit_enabled=True,
+        no_order_observation_mode=False,
+        supports_cancel=True,
+        supports_close=True,
         source_of_truth="config",
         checked_at="2026-07-09T18:00:00Z",
     )
@@ -98,8 +104,10 @@ def test_harness_blocked_no_order(tmp_path, monkeypatch):
     desc = AdapterCapabilityDescriptor(
         adapter_id="binance_acl",
         environment="testnet",
-        supports_order_submit=True,
-        supports_no_order_observation=False,
+        order_submit_enabled=True,
+        no_order_observation_mode=False,
+        supports_cancel=True,
+        supports_close=True,
         source_of_truth="config",
         checked_at="2026-07-09T18:00:00Z",
     )
@@ -124,8 +132,10 @@ def test_harness_testnet_proof_ack(tmp_path, monkeypatch):
     desc = AdapterCapabilityDescriptor(
         adapter_id="binance_acl",
         environment="testnet",
-        supports_order_submit=True,
-        supports_no_order_observation=False,
+        order_submit_enabled=True,
+        no_order_observation_mode=False,
+        supports_cancel=True,
+        supports_close=True,
         source_of_truth="config",
         checked_at="2026-07-09T18:00:00Z",
     )
@@ -152,8 +162,10 @@ def test_harness_url_double_guard_rejects(tmp_path, monkeypatch):
     desc = AdapterCapabilityDescriptor(
         adapter_id="binance_acl",
         environment="testnet",
-        supports_order_submit=True,
-        supports_no_order_observation=False,
+        order_submit_enabled=True,
+        no_order_observation_mode=False,
+        supports_cancel=True,
+        supports_close=True,
         source_of_truth="config",
         checked_at="2026-07-09T18:00:00Z",
     )
