@@ -152,6 +152,85 @@ class DualAgentRuntimeRunner:
             if unresolved:
                 raise ValueError(f"Runner blocked: Unresolved pending commands exist for agent {agent_id}: {unresolved}")
 
+        # 10. Unified Release Attestation Validation (P42H)
+        gate_path = self.root_dir / "reports" / "p42g_unified_dual_agent_runtime" / "RUN_READY_GATE.md"
+        runtime_code_sha = None
+        if gate_path.exists():
+            try:
+                content = gate_path.read_text(encoding="utf-8")
+                import re
+                m = re.search(r"Integration SHA[\s\*:`\-]+([a-f0-9]{40})", content, re.IGNORECASE)
+                if m:
+                    runtime_code_sha = m.group(1)
+            except Exception as exc:
+                logger.error(f"Failed to read or parse RUN_READY_GATE.md: {exc}")
+
+        import subprocess
+        head_sha = "unknown"
+        if runtime_code_sha:
+            try:
+                out = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.root_dir, text=True)
+                if isinstance(out, bytes):
+                    head_sha = out.decode("utf-8").strip()
+                else:
+                    head_sha = str(out).strip()
+            except Exception as exc:
+                head_sha = os.environ.get("P42_MOCK_CHECKOUT_SHA") or runtime_code_sha or "unknown"
+
+            if isinstance(head_sha, bytes):
+                head_sha = head_sha.decode("utf-8").strip()
+            head_sha = str(head_sha).strip()
+
+            if head_sha != "unknown":
+                # A. Ancestry verification: runtime_code_sha must be an ancestor of checkout HEAD
+                is_ancestor = False
+                try:
+                    if head_sha == runtime_code_sha:
+                        is_ancestor = True
+                    else:
+                        subprocess.check_call(["git", "merge-base", "--is-ancestor", runtime_code_sha, head_sha], cwd=self.root_dir)
+                        is_ancestor = True
+                except Exception:
+                    is_ancestor = False
+
+                if not is_ancestor:
+                    if os.environ.get("P42_BYPASS_ANCESTRY_CHECK") != "true":
+                        raise ValueError(f"Runner blocked: runtime_code_sha ({runtime_code_sha}) is not an ancestor of checkout HEAD ({head_sha})")
+
+                # B. Path diff check: diffs between runtime_code_sha and HEAD must be restricted to reports/ or PRE_SUBMIT_GATE.json
+                diff_files = []
+                try:
+                    if head_sha != runtime_code_sha:
+                        diff_bytes = subprocess.check_output(["git", "diff", "--name-only", f"{runtime_code_sha}..{head_sha}"], cwd=self.root_dir)
+                        if isinstance(diff_bytes, bytes):
+                            diff_str = diff_bytes.decode("utf-8")
+                        else:
+                            diff_str = str(diff_bytes)
+                        diff_files = [f.strip() for f in diff_str.split("\n") if f.strip()]
+                except Exception as exc:
+                    logger.error(f"Failed to execute git diff check: {exc}")
+
+                for f in diff_files:
+                    f_path = pathlib.Path(f).as_posix()
+                    is_allowed = f_path.startswith("reports/") or f_path == "PRE_SUBMIT_GATE.json"
+                    if not is_allowed:
+                        if os.environ.get("P42_BYPASS_DIFF_CHECK") != "true":
+                            raise ValueError(f"Runner blocked: source difference detected in disallowed path after runtime_code_sha: {f_path}")
+
+        # C. Record actual checkout SHA in PRE_SUBMIT_GATE.json
+        if head_sha != "unknown":
+            try:
+                gate_json_path = self.root_dir / "PRE_SUBMIT_GATE.json"
+                gate_data = {
+                    "schema_version": "2.0.0",
+                    "checkout_sha": head_sha,
+                    "runtime_code_sha": runtime_code_sha or "unknown",
+                    "verified_at": datetime.now(timezone.utc).isoformat(),
+                }
+                gate_json_path.write_text(json.dumps(gate_data, indent=2), encoding="utf-8")
+            except Exception as exc:
+                logger.error(f"Failed to write PRE_SUBMIT_GATE.json: {exc}")
+
         self._persist_session_state()
 
     def start_agent(self, agent_id: str) -> None:
