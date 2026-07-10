@@ -1,0 +1,18 @@
+{
+  "session_id": "79595529a77c434ea304e69db6e1652a",
+  "agent_id": "secondary-p40r-testnet-order-runner",
+  "agent_number": 5,
+  "descriptor_validation": {
+    "adapter_id": "binance_acl",
+    "environment": "testnet",
+    "order_submit_enabled": true,
+    "no_order_observation_mode": false,
+    "supports_cancel": true,
+    "supports_close": true,
+    "source_of_truth": "config",
+    "checked_at": "2026-07-10T08:40:24.976884+00:00"
+  },
+  "qty_limit_usd": 25.0,
+  "no_order_observation_mode": false,
+  "mainnet": false
+}
