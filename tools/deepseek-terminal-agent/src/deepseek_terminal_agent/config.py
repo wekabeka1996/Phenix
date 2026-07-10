@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import os
 import sys
+import ipaddress
 from pathlib import Path
 from typing import Literal, Optional
+from urllib.parse import urlparse
 
 import yaml
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 ThinkingType = Literal["enabled", "disabled"]
 ReasoningEffort = Literal["high", "max"]
@@ -294,6 +296,22 @@ class DashboardConfig(BaseModel):
 
     host: str = "127.0.0.1"
     port: int = 8787
+    private_lan_enabled: bool = False
+    container_internal_bind: bool = False
+    allowed_hosts: list[str] = Field(
+        default_factory=lambda: ["127.0.0.1", "localhost", "testserver"]
+    )
+    allowed_origins: list[str] = Field(
+        default_factory=lambda: [
+            "http://127.0.0.1:8787",
+            "http://localhost:8787",
+        ]
+    )
+    environment_label: str = "BINANCE_FUTURES_TESTNET"
+    startup_health_url: str = "http://127.0.0.1:8787/health"
+    arena_config_path: str = "config/p42_dual_agent_mvp.yaml"
+    arena_state_path: str = ".agent_memory/active_dual_agent_session.json"
+    heartbeat_stale_after_sec: int = 30
     max_prompt_chars: int = 12000
     max_output_chars: int = 30000
     recent_runs_limit: int = 20
@@ -317,12 +335,91 @@ class DashboardConfig(BaseModel):
             raise ValueError(f"port must be 1–65535, got {value}")
         return value
 
+    @field_validator("allowed_hosts", "allowed_origins")
+    @classmethod
+    def non_empty_access_lists(cls, value: list[str]) -> list[str]:
+        cleaned = [str(item).strip() for item in value if str(item).strip()]
+        if not cleaned:
+            raise ValueError("must contain at least one explicit entry")
+        if "*" in cleaned:
+            raise ValueError("wildcard access entries are not allowed")
+        return cleaned
+
+    @field_validator("environment_label")
+    @classmethod
+    def environment_label_non_empty(cls, value: str) -> str:
+        text = str(value or "").strip()
+        if not text:
+            raise ValueError("environment_label must be non-empty")
+        return text
+
+    @field_validator("arena_config_path", "arena_state_path")
+    @classmethod
+    def arena_paths_safe(cls, value: str) -> str:
+        return _validate_relative_local_path(value)
+
+    @field_validator("startup_health_url")
+    @classmethod
+    def health_url_is_local_or_private(cls, value: str) -> str:
+        parsed = urlparse(str(value or "").strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("startup_health_url must be an HTTP URL")
+        if not _is_local_or_private_host(parsed.hostname):
+            raise ValueError("startup_health_url must target localhost or a private address")
+        return parsed.geturl()
+
+    @field_validator("heartbeat_stale_after_sec")
+    @classmethod
+    def heartbeat_threshold_positive(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("heartbeat_stale_after_sec must be > 0")
+        return value
+
+    @model_validator(mode="after")
+    def require_explicit_private_lan_opt_in(self) -> "DashboardConfig":
+        if (
+            not _is_loopback_host(self.host)
+            and not self.private_lan_enabled
+            and not self.container_internal_bind
+        ):
+            raise ValueError(
+                "non-loopback dashboard bind requires private_lan_enabled=true"
+            )
+        if self.private_lan_enabled and "private-lan" not in self.allowed_hosts:
+            raise ValueError(
+                "private LAN mode requires allowed_hosts to include 'private-lan'"
+            )
+        if self.private_lan_enabled and not _is_local_or_private_host(self.host):
+            raise ValueError("private LAN mode cannot bind to a public address")
+        return self
+
     @field_validator("max_prompt_chars", "max_output_chars", "recent_runs_limit")
     @classmethod
     def positive(cls, value: int) -> int:
         if value <= 0:
             raise ValueError("must be > 0")
         return value
+
+
+def _is_loopback_host(host: str) -> bool:
+    text = str(host or "").strip().lower()
+    if text == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(text).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_local_or_private_host(host: str) -> bool:
+    text = str(host or "").strip().lower()
+    if text in {"localhost", "0.0.0.0"}:
+        return True
+    try:
+        address = ipaddress.ip_address(text)
+    except ValueError:
+        return text.endswith(".local")
+    return address.is_loopback or address.is_private or address.is_unspecified
 
 
 class ProjectCapsuleConfig(BaseModel):
@@ -440,6 +537,24 @@ def load_settings(
     return settings
 
 
+def load_dashboard_config(
+    config_path: str = "config/agent.yaml",
+    env_file: Optional[str] = ".env",
+) -> DashboardConfig:
+    """Load only dashboard configuration without requiring an API credential."""
+    if env_file is not None and Path(env_file).exists():
+        from dotenv import load_dotenv
+
+        load_dotenv(env_file, override=True)
+    raw: dict = {}
+    path = Path(config_path)
+    if path.exists():
+        with path.open(encoding="utf-8") as file_handle:
+            raw = dict((yaml.safe_load(file_handle) or {}).get("dashboard", {}))
+    _apply_dashboard_env(raw)
+    return DashboardConfig(**raw)
+
+
 def _apply_env_to_dicts(
     deepseek: dict,
     terminal: dict,
@@ -483,10 +598,33 @@ def _apply_env_to_dicts(
     if value := env_get("AGENT_MAX_ITERATIONS"):
         agent["max_iterations"] = int(value)
 
+    _apply_dashboard_env(dashboard)
+
+
+def _apply_dashboard_env(dashboard: dict) -> None:
+    env_get = os.environ.get
     if value := env_get("DASHBOARD_HOST"):
         dashboard["host"] = value
     if value := env_get("DASHBOARD_PORT"):
         dashboard["port"] = int(value)
+    if value := env_get("DASHBOARD_PRIVATE_LAN_ENABLED"):
+        dashboard["private_lan_enabled"] = value.lower() in ("1", "true", "yes")
+    if value := env_get("DASHBOARD_CONTAINER_INTERNAL_BIND"):
+        dashboard["container_internal_bind"] = value.lower() in ("1", "true", "yes")
+    if value := env_get("DASHBOARD_ALLOWED_HOSTS"):
+        dashboard["allowed_hosts"] = [item.strip() for item in value.split(",") if item.strip()]
+    if value := env_get("DASHBOARD_ALLOWED_ORIGINS"):
+        dashboard["allowed_origins"] = [item.strip() for item in value.split(",") if item.strip()]
+    if value := env_get("DASHBOARD_ENVIRONMENT_LABEL"):
+        dashboard["environment_label"] = value
+    if value := env_get("DASHBOARD_STARTUP_HEALTH_URL"):
+        dashboard["startup_health_url"] = value
+    if value := env_get("P42_ARENA_CONFIG_PATH"):
+        dashboard["arena_config_path"] = value
+    if value := env_get("P42_ARENA_STATE_PATH"):
+        dashboard["arena_state_path"] = value
+    if value := env_get("P42_HEARTBEAT_STALE_AFTER_SEC"):
+        dashboard["heartbeat_stale_after_sec"] = int(value)
 
 
 def _validate_required(settings: Settings) -> None:

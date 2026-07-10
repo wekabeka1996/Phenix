@@ -14,8 +14,11 @@ Routes:
 from __future__ import annotations
 
 import os
+import ipaddress
+import socket
 from pathlib import Path
 from typing import Any, Optional, cast
+from urllib.parse import urlparse
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -23,7 +26,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from ..config import Settings, load_settings
+from ..config import DashboardConfig, Settings, load_dashboard_config, load_settings
 from ..deepseek_client import DeepSeekAPIError, DeepSeekTimeoutError
 from ..logging_utils import redact
 from ..sessions.agent_events import (
@@ -33,6 +36,10 @@ from ..sessions.agent_events import (
     validate_no_forbidden_arena_fields,
 )
 from ..sessions.agent_memory_lifecycle import AgentMemoryLifecycle
+from ..sessions.arena_runtime_view import (
+    ArenaControlRequest,
+    ArenaRuntimeViewService,
+)
 from ..sessions.agent_proposals import (
     AgentProposalStore,
     ProposalKind,
@@ -93,6 +100,78 @@ _decision_ledger: Optional[DecisionLedger] = None
 _memory_patch_store: Optional[MemoryPatchStore] = None
 _evidence_bundle_store: Optional[EvidenceBundleStore] = None
 _agent_memory_lifecycle: Optional[AgentMemoryLifecycle] = None
+_dashboard_config: Optional[DashboardConfig] = None
+_arena_runtime_view_service: Optional[ArenaRuntimeViewService] = None
+
+
+def _get_dashboard_config() -> DashboardConfig:
+    global _dashboard_config
+    if _dashboard_config is None:
+        _dashboard_config = load_dashboard_config()
+    return _dashboard_config
+
+
+def _get_arena_runtime_view_service() -> ArenaRuntimeViewService:
+    global _arena_runtime_view_service
+    if _arena_runtime_view_service is None:
+        config = _get_dashboard_config()
+        _arena_runtime_view_service = ArenaRuntimeViewService(
+            root_dir=_get_root_dir(),
+            config_path=config.arena_config_path,
+            state_path=config.arena_state_path,
+            environment_label=config.environment_label,
+            heartbeat_stale_after_sec=config.heartbeat_stale_after_sec,
+        )
+    return _arena_runtime_view_service
+
+
+def _private_lan_host(value: str) -> bool:
+    text = str(value or "").strip().lower()
+    if text == "localhost" or text.endswith(".local"):
+        return True
+    try:
+        address = ipaddress.ip_address(text)
+    except ValueError:
+        return False
+    return address.is_private or address.is_loopback
+
+
+def _request_host_allowed(host: str, config: DashboardConfig) -> bool:
+    if host in config.allowed_hosts:
+        return True
+    return (
+        config.private_lan_enabled
+        and "private-lan" in config.allowed_hosts
+        and _private_lan_host(host)
+    )
+
+
+def _request_origin_allowed(origin: str, config: DashboardConfig) -> bool:
+    if origin in config.allowed_origins:
+        return True
+    parsed = urlparse(origin)
+    return (
+        config.private_lan_enabled
+        and "private-lan" in config.allowed_origins
+        and bool(parsed.hostname)
+        and _private_lan_host(parsed.hostname or "")
+    )
+
+
+@app.middleware("http")
+async def enforce_dashboard_lan_boundary(request: Request, call_next: Any) -> Any:
+    config = _get_dashboard_config()
+    host = request.url.hostname or ""
+    if not _request_host_allowed(host, config):
+        return JSONResponse({"error": "Host is not allowed by dashboard configuration."}, status_code=400)
+    origin = request.headers.get("origin")
+    if origin and not _request_origin_allowed(origin, config):
+        return JSONResponse({"error": "Origin is not allowed by dashboard configuration."}, status_code=403)
+    response = await call_next(request)
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
+    return response
 
 
 def _get_settings() -> Settings:
@@ -552,6 +631,12 @@ def _create_agent_arena_event(session_id: str, action: AgentArenaAction, payload
         payload=command_payload,
         event_id=str(payload.get("event_id") or "").strip() or None,
         command_id=str(payload.get("command_id") or "").strip() or None,
+        created_at=str(payload.get("created_at") or "").strip() or None,
+        symbol=str(payload.get("symbol") or "").strip() or None,
+        instruction_version=str(payload.get("instruction_version") or "").strip() or None,
+        collective_state_version=(
+            str(payload.get("collective_state_version") or "").strip() or None
+        ),
     )
     event = SessionEvent(
         event_id=command.event_id,
@@ -581,6 +666,9 @@ def _create_agent_arena_event(session_id: str, action: AgentArenaAction, payload
         "event_type": command.event_type,
         "created_at": command.created_at,
         "rationale": command.rationale,
+        "symbol": command.symbol,
+        "instruction_version": command.instruction_version,
+        "collective_state_version": command.collective_state_version,
         "status": command.status,
         "environment": command.environment,
         "payload": command.payload,
@@ -629,12 +717,21 @@ def _session_detail(session_id: str) -> dict[str, Any]:
 
 @app.get("/health")
 async def health() -> JSONResponse:
-    return JSONResponse({"ok": True, "service": "deepseek-terminal-agent-dashboard"})
+    config = _get_dashboard_config()
+    return JSONResponse(
+        {
+            "ok": True,
+            "service": "deepseek-terminal-agent-dashboard",
+            "environment_label": config.environment_label,
+            "private_lan_enabled": config.private_lan_enabled,
+        }
+    )
 
 
 @app.get("/config-status")
 async def config_status() -> JSONResponse:
     s = _get_settings()
+    dashboard = _get_dashboard_config()
     return JSONResponse(
         {
             "model": s.deepseek.model,
@@ -642,9 +739,77 @@ async def config_status() -> JSONResponse:
             "workspace_root": s.terminal.workspace_root,
             "reasoning_enabled": s.deepseek.reasoning_enabled,
             "api_key_present": bool(s.deepseek.api_key),
+            "dashboard_host": dashboard.host,
+            "dashboard_port": dashboard.port,
+            "private_lan_enabled": dashboard.private_lan_enabled,
+            "environment_label": dashboard.environment_label,
+            "startup_health_url": dashboard.startup_health_url,
             # api_key itself is intentionally NOT included
         }
     )
+
+
+@app.get("/arena", response_class=HTMLResponse)
+async def arena_home(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "arena.html",
+        {"environment_label": _get_dashboard_config().environment_label},
+    )
+
+
+@app.get("/arena/runtime")
+async def arena_runtime() -> JSONResponse:
+    service = _get_arena_runtime_view_service()
+    view = service.build()
+    session_id = view.shared.active_session
+    if session_id:
+        try:
+            events = _get_session_store().list_events(session_id)
+            view = service.build(events=events)
+        except (KeyError, FileNotFoundError, ValueError):
+            pass
+    return JSONResponse(view.model_dump())
+
+
+_ARENA_CONTROL_ACTIONS = {
+    "pause_agent",
+    "resume_agent",
+    "stop_agent",
+    "stop_session",
+    "trigger_analysis",
+    "request_instruction_refresh",
+    "emergency_stop",
+}
+
+
+@app.post("/arena/commands/{action}")
+async def arena_control_command(action: str, request: Request) -> JSONResponse:
+    if action not in _ARENA_CONTROL_ACTIONS:
+        return _json_error("Unknown registered arena control action.", status_code=404)
+    payload = await _extract_payload(request)
+    try:
+        control = ArenaControlRequest(**payload)
+        event = _create_agent_arena_event(
+            control.session_id,
+            cast(AgentArenaAction, action),
+            {
+                **control.model_dump(),
+                "payload": {
+                    "symbol": control.symbol,
+                    "instruction_version": control.instruction_version,
+                    "collective_state_version": control.collective_state_version,
+                    "control_only": True,
+                },
+            },
+        )
+    except (KeyError, FileNotFoundError):
+        return _json_error(f"Session '{payload.get('session_id')}' not found.", status_code=404)
+    except RuntimeError as exc:
+        return _json_error(str(exc), status_code=503)
+    except (TypeError, ValueError) as exc:
+        return _json_error(str(exc), status_code=400)
+    return JSONResponse(event, status_code=202)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -1596,12 +1761,31 @@ async def scan_evidence_bundle(request: Request) -> JSONResponse:
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 
+def _detect_private_lan_ip() -> Optional[str]:
+    try:
+        addresses = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
+    except OSError:
+        return None
+    for address in addresses:
+        candidate = address[4][0]
+        if _private_lan_host(candidate) and not ipaddress.ip_address(candidate).is_loopback:
+            return candidate
+    return None
+
+
 def main() -> None:
     """Console script entry point: deepseek-agent-dashboard."""
-    s = _get_settings()
-    host = os.environ.get("DASHBOARD_HOST", s.dashboard.host)
-    port = int(os.environ.get("DASHBOARD_PORT", s.dashboard.port))
+    config = _get_dashboard_config()
+    host = os.environ.get("DASHBOARD_HOST", config.host)
+    port = int(os.environ.get("DASHBOARD_PORT", config.port))
     print(f"[DASHBOARD] Starting on http://{host}:{port}", flush=True)
+    print(f"[DASHBOARD] Health: {config.startup_health_url}", flush=True)
+    if config.private_lan_enabled:
+        lan_ip = _detect_private_lan_ip()
+        if lan_ip:
+            print(f"[DASHBOARD] LAN: http://{lan_ip}:{port}/arena", flush=True)
+        else:
+            print("[DASHBOARD] LAN URL unavailable: no private IPv4 detected", flush=True)
     uvicorn.run(
         "deepseek_terminal_agent.dashboard.app:app",
         host=host,

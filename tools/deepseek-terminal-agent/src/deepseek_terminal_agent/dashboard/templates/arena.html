@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phenix Agent Arena</title>
+  <link rel="stylesheet" href="/static/arena.css">
+</head>
+<body>
+  <header class="arena-header">
+    <div>
+      <p class="eyebrow">Aurora / Phenix</p>
+      <h1>Dual-Agent Runtime</h1>
+      <p class="subtitle">Read-only runtime truth with registered control requests.</p>
+    </div>
+    <div class="header-status">
+      <span class="environment">{{ environment_label }}</span>
+      <span id="connection-status" class="badge UNKNOWN">UNKNOWN</span>
+    </div>
+  </header>
+
+  <main>
+    <section id="blocked-panel" class="blocked-panel hidden"></section>
+
+    <section class="shared-panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Shared control plane</p>
+          <h2>Session &amp; portfolio</h2>
+        </div>
+        <span id="shared-evidence" class="badge UNKNOWN">UNKNOWN</span>
+      </div>
+      <div id="shared-grid" class="metric-grid"></div>
+      <div class="shared-actions">
+        <button data-shared-action="stop_session" disabled>Stop session</button>
+        <button data-shared-action="emergency_stop" class="danger" disabled>Emergency stop</button>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Attributable actors</p>
+          <h2>Agent lanes</h2>
+        </div>
+        <button id="refresh-view" class="secondary">Refresh</button>
+      </div>
+      <div id="agent-grid" class="agent-grid"></div>
+    </section>
+
+    <section class="stream-panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Collective state</p>
+          <h2>Publication stream</h2>
+        </div>
+      </div>
+      <div id="publication-stream" class="stream"></div>
+    </section>
+  </main>
+
+  <template id="agent-card-template">
+    <article class="agent-card">
+      <div class="agent-card-head">
+        <div>
+          <p class="agent-kind"></p>
+          <h3 class="agent-id"></h3>
+        </div>
+        <span class="agent-evidence badge UNKNOWN">UNKNOWN</span>
+      </div>
+      <div class="agent-state-row">
+        <span class="agent-state"></span>
+        <span class="heartbeat"></span>
+      </div>
+      <div class="symbols"></div>
+      <dl class="agent-details"></dl>
+      <div class="agent-actions">
+        <button data-action="pause_agent">Pause</button>
+        <button data-action="resume_agent">Resume</button>
+        <button data-action="stop_agent">Stop</button>
+        <button data-action="trigger_analysis">Analyze</button>
+        <button data-action="request_instruction_refresh">Refresh instructions</button>
+      </div>
+      <p class="control-result"></p>
+    </article>
+  </template>
+
+  <script src="/static/arena.js"></script>
+</body>
+</html>

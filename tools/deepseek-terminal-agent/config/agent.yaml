@@ -69,6 +69,15 @@ agent:
 dashboard:
   host: "127.0.0.1"
   port: 8787
+  private_lan_enabled: false
+  container_internal_bind: false
+  allowed_hosts: ["127.0.0.1", "localhost", "testserver"]
+  allowed_origins: ["http://127.0.0.1:8787", "http://localhost:8787"]
+  environment_label: "BINANCE_FUTURES_TESTNET"
+  startup_health_url: "http://127.0.0.1:8787/health"
+  arena_config_path: "config/p42_dual_agent_mvp.yaml"
+  arena_state_path: ".agent_memory/active_dual_agent_session.json"
+  heartbeat_stale_after_sec: 30
   max_prompt_chars: 12000
   max_output_chars: 30000
   recent_runs_limit: 20

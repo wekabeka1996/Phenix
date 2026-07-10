@@ -15,3 +15,24 @@ events:
   testnet_close_request:
     event_type: agent_arena.testnet_close_requested
     default_status: pending_fsm
+  pause_agent:
+    event_type: agent_arena.pause_agent_requested
+    default_status: recorded
+  resume_agent:
+    event_type: agent_arena.resume_agent_requested
+    default_status: recorded
+  stop_agent:
+    event_type: agent_arena.stop_agent_requested
+    default_status: recorded
+  stop_session:
+    event_type: agent_arena.stop_session_requested
+    default_status: pending_fsm
+  trigger_analysis:
+    event_type: agent_arena.analysis_requested
+    default_status: recorded
+  request_instruction_refresh:
+    event_type: agent_arena.instruction_refresh_requested
+    default_status: recorded
+  emergency_stop:
+    event_type: agent_arena.emergency_stop_requested
+    default_status: pending_fsm

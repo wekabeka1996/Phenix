@@ -9,7 +9,11 @@
 param(
     [switch]$Update,
     [switch]$CleanContainers,
-    [switch]$VerifyOnly
+    [switch]$VerifyOnly,
+    [switch]$PrivateLan,
+    [ValidateRange(1, 65535)]
+    [int]$Port = 8787,
+    [string]$EnvironmentLabel = "BINANCE_FUTURES_TESTNET"
 )
 
 # Do NOT set ErrorActionPreference = Stop — it interferes with native docker calls
@@ -33,13 +37,49 @@ function Invoke-LocalScript {
 
 function Test-DashboardReady {
     try {
-        $health = Invoke-RestMethod "http://127.0.0.1:8787/health" -TimeoutSec 2 -ErrorAction Stop
-        $null = Invoke-RestMethod "http://127.0.0.1:8787/config-status" -TimeoutSec 2 -ErrorAction Stop
-        $null = Invoke-RestMethod "http://127.0.0.1:8787/models" -TimeoutSec 2 -ErrorAction Stop
-        $chat = Invoke-WebRequest "http://127.0.0.1:8787/chat" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+        $health = Invoke-RestMethod $StartupHealthUrl -TimeoutSec 2 -ErrorAction Stop
+        $null = Invoke-RestMethod "$LocalBaseUrl/config-status" -TimeoutSec 2 -ErrorAction Stop
+        $null = Invoke-RestMethod "$LocalBaseUrl/models" -TimeoutSec 2 -ErrorAction Stop
+        $chat = Invoke-WebRequest "$LocalBaseUrl/chat" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
         return ($health.ok -eq $true) -and ($chat.StatusCode -eq 200)
     } catch {
         return $false
+    }
+}
+
+function Test-PrivateIPv4 {
+    param([string]$Address)
+    $parsed = $null
+    if (-not [System.Net.IPAddress]::TryParse($Address, [ref]$parsed)) { return $false }
+    $bytes = $parsed.GetAddressBytes()
+    if ($bytes.Length -ne 4) { return $false }
+    return (
+        $bytes[0] -eq 10 -or
+        ($bytes[0] -eq 172 -and $bytes[1] -ge 16 -and $bytes[1] -le 31) -or
+        ($bytes[0] -eq 192 -and $bytes[1] -eq 168)
+    )
+}
+
+function Get-PrivateLanAddress {
+    $addresses = [System.Net.Dns]::GetHostAddresses([System.Net.Dns]::GetHostName())
+    return $addresses |
+        Where-Object { Test-PrivateIPv4 $_.IPAddressToString } |
+        Select-Object -First 1 -ExpandProperty IPAddressToString
+}
+
+function Write-AccessUrls {
+    Write-Host "DASHBOARD_READY"
+    Write-Host "Health: $StartupHealthUrl"
+    Write-Host "Local: $LocalBaseUrl/arena"
+    if ($PrivateLan) {
+        $lanAddress = Get-PrivateLanAddress
+        if ($lanAddress) {
+            Write-Host "LAN: http://${lanAddress}:$Port/arena"
+        } else {
+            Write-Warn "No RFC1918 IPv4 address was detected; LAN URL is unavailable."
+        }
+        Write-Host "Windows Firewall guidance (run as administrator only if needed):"
+        Write-Host "New-NetFirewallRule -DisplayName 'Phenix Cockpit $Port' -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -Profile Private"
     }
 }
 
@@ -50,6 +90,23 @@ $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $ScriptDir
 Write-Step "Project root: $ProjectRoot"
 Set-Location $ProjectRoot
+
+$LocalBaseUrl = "http://127.0.0.1:$Port"
+$StartupHealthUrl = "$LocalBaseUrl/health"
+$env:DASHBOARD_PORT = "$Port"
+$env:DASHBOARD_ENVIRONMENT_LABEL = $EnvironmentLabel
+$env:DASHBOARD_STARTUP_HEALTH_URL = $StartupHealthUrl
+if ($PrivateLan) {
+    $env:DASHBOARD_BIND_ADDRESS = "0.0.0.0"
+    $env:DASHBOARD_PRIVATE_LAN_ENABLED = "true"
+    $env:DASHBOARD_ALLOWED_HOSTS = "127.0.0.1,localhost,testserver,private-lan"
+    $env:DASHBOARD_ALLOWED_ORIGINS = "http://127.0.0.1:$Port,http://localhost:$Port,private-lan"
+} else {
+    $env:DASHBOARD_BIND_ADDRESS = "127.0.0.1"
+    $env:DASHBOARD_PRIVATE_LAN_ENABLED = "false"
+    $env:DASHBOARD_ALLOWED_HOSTS = "127.0.0.1,localhost,testserver"
+    $env:DASHBOARD_ALLOWED_ORIGINS = "http://127.0.0.1:$Port,http://localhost:$Port"
+}
 
 if ($Update) {
     $CleanContainers = $true
@@ -134,8 +191,7 @@ if ($VerifyOnly) {
     Write-Step "Checking dashboard endpoints..."
     if (Test-DashboardReady) {
         Write-Ok "Dashboard endpoints are healthy."
-        Write-Host "DASHBOARD_READY"
-        Write-Host "Open: http://127.0.0.1:8787/chat"
+        Write-AccessUrls
         exit 0
     }
     Write-Fail "Dashboard is not ready. Start it first or rerun without -VerifyOnly."
@@ -216,5 +272,4 @@ if ($ready) {
     Write-Host "  Check: docker compose logs --tail=50 dashboard" -ForegroundColor Yellow
     exit 1
 }
-Write-Host "DASHBOARD_READY"
-Write-Host "Open: http://127.0.0.1:8787/chat"
+Write-AccessUrls

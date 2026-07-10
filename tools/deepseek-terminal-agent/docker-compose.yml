@@ -24,14 +24,21 @@ services:
       - ./.env
     environment:
       # Bind to all interfaces inside the container so Docker port-forwarding works.
-      # Host-side exposure is restricted by the ports mapping below (127.0.0.1 only).
+      # Host-side exposure is controlled separately by DASHBOARD_BIND_ADDRESS.
       DASHBOARD_HOST: "0.0.0.0"
+      DASHBOARD_PORT: "${DASHBOARD_PORT:-8787}"
+      DASHBOARD_CONTAINER_INTERNAL_BIND: "true"
+      DASHBOARD_PRIVATE_LAN_ENABLED: "${DASHBOARD_PRIVATE_LAN_ENABLED:-false}"
+      DASHBOARD_ALLOWED_HOSTS: "${DASHBOARD_ALLOWED_HOSTS:-127.0.0.1,localhost,testserver}"
+      DASHBOARD_ALLOWED_ORIGINS: "${DASHBOARD_ALLOWED_ORIGINS:-http://127.0.0.1:8787,http://localhost:8787}"
+      DASHBOARD_ENVIRONMENT_LABEL: "${DASHBOARD_ENVIRONMENT_LABEL:-BINANCE_FUTURES_TESTNET}"
+      DASHBOARD_STARTUP_HEALTH_URL: "${DASHBOARD_STARTUP_HEALTH_URL:-http://127.0.0.1:8787/health}"
     volumes:
       # Mount the Phenix repo root so dashboard runs can see repo files and logs.
       - ../../:/workspace/project
     working_dir: /workspace/project/tools/deepseek-terminal-agent
     ports:
-      - "127.0.0.1:8787:8787"
+      - "${DASHBOARD_BIND_ADDRESS:-127.0.0.1}:${DASHBOARD_PORT:-8787}:${DASHBOARD_PORT:-8787}"
     tty: true
     stdin_open: true
     # Dashboard bound to localhost only — do NOT change to 0.0.0.0 without adding auth

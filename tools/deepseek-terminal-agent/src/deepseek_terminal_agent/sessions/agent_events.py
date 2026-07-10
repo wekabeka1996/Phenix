@@ -17,6 +17,13 @@ AgentArenaAction = Literal[
     "testnet_order_request",
     "testnet_cancel_request",
     "testnet_close_request",
+    "pause_agent",
+    "resume_agent",
+    "stop_agent",
+    "stop_session",
+    "trigger_analysis",
+    "request_instruction_refresh",
+    "emergency_stop",
 ]
 AgentArenaCommandStatus = Literal["recorded", "rejected", "pending_fsm"]
 
@@ -65,6 +72,13 @@ def ensure_agent_arena_registry_available() -> None:
         "testnet_order_request",
         "testnet_cancel_request",
         "testnet_close_request",
+        "pause_agent",
+        "resume_agent",
+        "stop_agent",
+        "stop_session",
+        "trigger_analysis",
+        "request_instruction_refresh",
+        "emergency_stop",
     }
     missing = required.difference(AGENT_ARENA_EVENT_REGISTRY.events)
     if missing:
@@ -97,6 +111,9 @@ class AgentArenaEventCommand(BaseModel):
     event_type: str = Field(..., min_length=1)
     created_at: str = Field(default_factory=utc_now_iso)
     rationale: str = Field(..., min_length=1)
+    symbol: Optional[str] = None
+    instruction_version: Optional[str] = None
+    collective_state_version: Optional[str] = None
     status: AgentArenaCommandStatus
     environment: Literal["testnet"] = "testnet"
     payload: dict[str, Any] = Field(default_factory=dict)
@@ -140,6 +157,10 @@ def build_agent_arena_event_command(
     payload: Optional[dict[str, Any]] = None,
     event_id: Optional[str] = None,
     command_id: Optional[str] = None,
+    created_at: Optional[str] = None,
+    symbol: Optional[str] = None,
+    instruction_version: Optional[str] = None,
+    collective_state_version: Optional[str] = None,
 ) -> AgentArenaEventCommand:
     ensure_agent_arena_registry_available()
     if action not in AGENT_ARENA_EVENT_REGISTRY.events:
@@ -150,12 +171,16 @@ def build_agent_arena_event_command(
     return AgentArenaEventCommand(
         event_id=event_id or f"event-{uuid4().hex}",
         command_id=command_id or f"command-{uuid4().hex}",
+        created_at=created_at or utc_now_iso(),
         session_id=session_id,
         agent_id=agent_id,
         agent_number=agent_number,
         action=action,
         event_type=registry.event_type,
         rationale=rationale,
+        symbol=symbol,
+        instruction_version=instruction_version,
+        collective_state_version=collective_state_version,
         status=registry.default_status,
         payload=candidate_payload,
     )
