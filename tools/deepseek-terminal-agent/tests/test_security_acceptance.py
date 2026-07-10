@@ -170,11 +170,16 @@ def test_dashboard_host_default_is_localhost():
 
 
 def test_dashboard_env_warning_for_public_host(monkeypatch):
-    """Dashboard should not accept 0.0.0.0 as a safe host in default config."""
+    """Dashboard requires explicit private-LAN opt-in for wildcard binds."""
     from deepseek_terminal_agent.config import DashboardConfig
-    cfg = DashboardConfig(host="0.0.0.0")
-    # The config itself allows it (operator may set it deliberately)
-    # but we verify it's NOT the default
+    with pytest.raises(ValueError, match="private_lan_enabled"):
+        DashboardConfig(host="0.0.0.0")
+    cfg = DashboardConfig(
+        host="0.0.0.0",
+        private_lan_enabled=True,
+        allowed_hosts=["127.0.0.1", "localhost", "testserver", "private-lan"],
+        allowed_origins=["http://127.0.0.1:8787", "private-lan"],
+    )
     assert cfg.host == "0.0.0.0"
 
     default = DashboardConfig()

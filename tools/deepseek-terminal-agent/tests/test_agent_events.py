@@ -17,6 +17,13 @@ def test_registry_contains_required_agent_event_actions():
         "testnet_order_request",
         "testnet_cancel_request",
         "testnet_close_request",
+        "pause_agent",
+        "resume_agent",
+        "stop_agent",
+        "stop_session",
+        "trigger_analysis",
+        "request_instruction_refresh",
+        "emergency_stop",
     }
     assert AGENT_ARENA_EVENT_REGISTRY.events["rationale"].default_status == "recorded"
     assert AGENT_ARENA_EVENT_REGISTRY.events["testnet_order_request"].default_status == "pending_fsm"
