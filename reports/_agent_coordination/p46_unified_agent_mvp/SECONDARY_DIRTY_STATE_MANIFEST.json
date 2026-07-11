@@ -1,0 +1,452 @@
+{
+  ".agent_memory\\audit_rejections.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\.agent_memory/audit_rejections.jsonl",
+    "sha256": "5a320d3dc14b7d28fbd4f263d718bd41b653640b34ec8696175ebd87a7c67883",
+    "size": 2493
+  },
+  ".agent_memory\\order_lifecycle_traces.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/order_lifecycle_traces.jsonl",
+    "sha256": "f10a437c792c802e5771fd84779cdd33745a665365f9ac74923e91e37a53f6b1",
+    "size": 4574
+  },
+  ".agent_memory\\sessions\\0682172c7b0d4e9a90d0e98d7ceea09f\\events.dsctx.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\.agent_memory/sessions\\0682172c7b0d4e9a90d0e98d7ceea09f\\events.dsctx.jsonl",
+    "sha256": "46aa6899be30107dc1b49dd7f214583977f5e1e810de3282d22314b7a62faec3",
+    "size": 995
+  },
+  ".agent_memory\\sessions\\0682172c7b0d4e9a90d0e98d7ceea09f\\order_lifecycle_traces.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\.agent_memory/sessions\\0682172c7b0d4e9a90d0e98d7ceea09f\\order_lifecycle_traces.jsonl",
+    "sha256": "b6551d2831bba61904a8f95a657b73845bd7f68efc53d7e12615901f3373f55d",
+    "size": 524
+  },
+  ".agent_memory\\sessions\\0682172c7b0d4e9a90d0e98d7ceea09f\\session.dsstate.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\.agent_memory/sessions\\0682172c7b0d4e9a90d0e98d7ceea09f\\session.dsstate.json",
+    "sha256": "7da13f9e5bb52d803bc981a9c1c3bf2aea8fcdbcbb3007af3c1d31954311b72a",
+    "size": 945
+  },
+  ".agent_memory\\sessions\\0682172c7b0d4e9a90d0e98d7ceea09f\\agent_trading_memory\\secondary-p40r-testnet-order-runner\\agent_trading_memory.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\.agent_memory/sessions\\0682172c7b0d4e9a90d0e98d7ceea09f\\agent_trading_memory\\secondary-p40r-testnet-order-runner\\agent_trading_memory.json",
+    "sha256": "2d2cb6e28c48863d0be36919eeeddc264d10f943fd86ac72ad05eba2dd6de4a5",
+    "size": 2164
+  },
+  ".agent_memory\\sessions\\763c6e4934ae45d6956de45235115f25\\events.dsctx.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\.agent_memory/sessions\\763c6e4934ae45d6956de45235115f25\\events.dsctx.jsonl",
+    "sha256": "59fe4d841179ef218605c90fd5f93a72456c76f95cb51502b957b1b5f3c75a89",
+    "size": 8152
+  },
+  ".agent_memory\\sessions\\763c6e4934ae45d6956de45235115f25\\session.dsstate.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\.agent_memory/sessions\\763c6e4934ae45d6956de45235115f25\\session.dsstate.json",
+    "sha256": "5fb60afa9425cc161780ab4a3d07f944aa2e5587e8cc8392127f7424d15f2142",
+    "size": 942
+  },
+  ".agent_memory\\sessions\\763c6e4934ae45d6956de45235115f25\\agent_trading_memory\\secondary-deepseek-agent-subagent-mvp-runner\\agent_trading_memory.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\.agent_memory/sessions\\763c6e4934ae45d6956de45235115f25\\agent_trading_memory\\secondary-deepseek-agent-subagent-mvp-runner\\agent_trading_memory.json",
+    "sha256": "619eb2edc396046a66c2f21a7f5ba395c7122c8402dee95fde6741afa92ee9f0",
+    "size": 13096
+  },
+  ".agent_memory\\sessions\\763c6e4934ae45d6956de45235115f25\\agent_trading_memory\\secondary-deepseek-agent-subagent-mvp-runner\\agent_trading_memory.summary.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\.agent_memory/sessions\\763c6e4934ae45d6956de45235115f25\\agent_trading_memory\\secondary-deepseek-agent-subagent-mvp-runner\\agent_trading_memory.summary.json",
+    "sha256": "2eb4ace53220e13a6fa4ee9f951987ff893a38a93e8799ca0e2cdd7ca4948866",
+    "size": 644
+  },
+  ".agent_memory\\sessions\\763c6e4934ae45d6956de45235115f25\\agent_trading_memory\\secondary-deepseek-agent-subagent-mvp-runner\\agent_trading_session_carryover.md": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\.agent_memory/sessions\\763c6e4934ae45d6956de45235115f25\\agent_trading_memory\\secondary-deepseek-agent-subagent-mvp-runner\\agent_trading_session_carryover.md",
+    "sha256": "77254a1b4c088e78c14945ddd404de103aa033cb812d270c1fea0131ae3548d5",
+    "size": 1356
+  },
+  ".agent_memory\\sessions\\79595529a77c434ea304e69db6e1652a\\events.dsctx.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\.agent_memory/sessions\\79595529a77c434ea304e69db6e1652a\\events.dsctx.jsonl",
+    "sha256": "2c22f31640170830984481fdd266c8b072e8e8cc0c5d58e184470c84ff9640c3",
+    "size": 995
+  },
+  ".agent_memory\\sessions\\79595529a77c434ea304e69db6e1652a\\order_lifecycle_traces.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\.agent_memory/sessions\\79595529a77c434ea304e69db6e1652a\\order_lifecycle_traces.jsonl",
+    "sha256": "2b2a4cc323cf6a74ba49841b143d20f98070eeb28755573fde7834d5256a7b52",
+    "size": 540
+  },
+  ".agent_memory\\sessions\\79595529a77c434ea304e69db6e1652a\\session.dsstate.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\.agent_memory/sessions\\79595529a77c434ea304e69db6e1652a\\session.dsstate.json",
+    "sha256": "8cd1f42c90edf12312f10a5cf2a656cf2390289352a0c4bad93cd3335642f462",
+    "size": 945
+  },
+  ".agent_memory\\sessions\\79595529a77c434ea304e69db6e1652a\\agent_trading_memory\\secondary-p40r-testnet-order-runner\\agent_trading_memory.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\.agent_memory/sessions\\79595529a77c434ea304e69db6e1652a\\agent_trading_memory\\secondary-p40r-testnet-order-runner\\agent_trading_memory.json",
+    "sha256": "25f242e7a63e81c6abb2ddc78cc5cdac723b419b3f664ea137386ebc9b60edfd",
+    "size": 2171
+  },
+  ".agent_memory\\sessions\\session-xyz\\audit_rejections.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\.agent_memory/sessions\\session-xyz\\audit_rejections.jsonl",
+    "sha256": "5a320d3dc14b7d28fbd4f263d718bd41b653640b34ec8696175ebd87a7c67883",
+    "size": 2493
+  },
+  "tools/deepseek-terminal-agent/scripts/generate_report.py": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\tools/deepseek-terminal-agent/scripts/generate_report.py",
+    "sha256": "fcae3563fc52389a581dc5c1e246a5c32c4839a9cb2d979c3f9f5c23183a4573",
+    "size": 8663
+  },
+  "tools/deepseek-terminal-agent/scripts/run_p39_mvp.py": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\tools/deepseek-terminal-agent/scripts/run_p39_mvp.py",
+    "sha256": "9f6174981ccf7c98d29b4add3fc8c367ec95471b12bd20eb1e76cceba3f6f898",
+    "size": 7412
+  },
+  "tools/deepseek-terminal-agent/scripts/run_p40r_proof.py": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\tools/deepseek-terminal-agent/scripts/run_p40r_proof.py",
+    "sha256": "7f7a715129cbd10c6f2612cb20596cb21892cc49e7933fad191079247c1bec5f",
+    "size": 7726
+  },
+  "tools/deepseek-terminal-agent/scripts/truth_inventory.py": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\tools/deepseek-terminal-agent/scripts/truth_inventory.py",
+    "sha256": "39166a08fbc26ea74d83f26909e53a330a8e08693107edeeb4c6f88873969c9b",
+    "size": 11296
+  },
+  "truth_inventory.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\Phenix",
+    "abs_path": "C:\\Users\\user\\Phenix\\Phenix\\truth_inventory.json",
+    "sha256": "339e8e231c60ace93476759420b83cec5d328ff3aaf9497efbe2908d66ac1b7b",
+    "size": 97730
+  },
+  ".agent_memory\\active_dual_agent_session.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42d-api-agent-eth-sol",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42d-api-agent-eth-sol\\.agent_memory/active_dual_agent_session.json",
+    "sha256": "396d036e7ca96fcff222ce45af545f0da2899fc12cb810e754d1de3fd53286a9",
+    "size": 356
+  },
+  ".agent_memory\\dual_agent_session_session-p42n-17ef11d9.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42d-api-agent-eth-sol",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42d-api-agent-eth-sol\\.agent_memory/dual_agent_session_session-p42n-17ef11d9.json",
+    "sha256": "5c9415132d4e41d07601f816a233bd9dfa82743fb50d04ecce5db1d48eba7f4f",
+    "size": 356
+  },
+  ".agent_memory\\dual_agent_session_session-p42n-f2cd3874.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42d-api-agent-eth-sol",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42d-api-agent-eth-sol\\.agent_memory/dual_agent_session_session-p42n-f2cd3874.json",
+    "sha256": "396d036e7ca96fcff222ce45af545f0da2899fc12cb810e754d1de3fd53286a9",
+    "size": 356
+  },
+  ".agent_memory\\sessions\\session-p42n-17ef11d9\\events.dsctx.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42d-api-agent-eth-sol",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42d-api-agent-eth-sol\\.agent_memory/sessions\\session-p42n-17ef11d9\\events.dsctx.jsonl",
+    "sha256": "c75e91e96f582ebf14a060e53265b6452ed80f0db32c6f609b60d1431af46422",
+    "size": 1856
+  },
+  ".agent_memory\\sessions\\session-p42n-17ef11d9\\session.dsstate.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42d-api-agent-eth-sol",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42d-api-agent-eth-sol\\.agent_memory/sessions\\session-p42n-17ef11d9\\session.dsstate.json",
+    "sha256": "bde5848ddd9709a4ab20dbcc5f5da0f604b950febc16d97f7bc0a72bd7379802",
+    "size": 919
+  },
+  ".agent_memory\\sessions\\session-p42n-f2cd3874\\events.dsctx.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42d-api-agent-eth-sol",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42d-api-agent-eth-sol\\.agent_memory/sessions\\session-p42n-f2cd3874\\events.dsctx.jsonl",
+    "sha256": "dc853b41e5304d6ef5376afdcc6153179ae751a688657431f98e2c2219385285",
+    "size": 65692
+  },
+  ".agent_memory\\sessions\\session-p42n-f2cd3874\\session.dsstate.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42d-api-agent-eth-sol",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42d-api-agent-eth-sol\\.agent_memory/sessions\\session-p42n-f2cd3874\\session.dsstate.json",
+    "sha256": "e0d84a8cea1fe90cf6153c29c71283988259079ced0f818a31595a90e3dde970",
+    "size": 919
+  },
+  "PRE_SUBMIT_GATE.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42d-api-agent-eth-sol",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42d-api-agent-eth-sol\\PRE_SUBMIT_GATE.json",
+    "sha256": "978c0a8700a62551ccda3d2c38615f70e48359374e1cfacac023a70d33f0093b",
+    "size": 217
+  },
+  ".agent_memory\\sessions\\041f0e61d7564782ad1aae487ffb57cc\\events.dsctx.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\041f0e61d7564782ad1aae487ffb57cc\\events.dsctx.jsonl",
+    "sha256": "c25e096eeb707c776945370977636a8423d25bcac859c575628c555325c894ac",
+    "size": 1003
+  },
+  ".agent_memory\\sessions\\041f0e61d7564782ad1aae487ffb57cc\\order_lifecycle_traces.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\041f0e61d7564782ad1aae487ffb57cc\\order_lifecycle_traces.jsonl",
+    "sha256": "d1ba06cfce3489a135e95fe23233eff02bc75bc1fb12cb26bb80929cf1d1a85c",
+    "size": 509
+  },
+  ".agent_memory\\sessions\\041f0e61d7564782ad1aae487ffb57cc\\session.dsstate.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\041f0e61d7564782ad1aae487ffb57cc\\session.dsstate.json",
+    "sha256": "39e8ed2cfdb36a709e0bf2e3bfb58c11b6e537678ab8cb8c887cc2a3f3eb9b6b",
+    "size": 945
+  },
+  ".agent_memory\\sessions\\041f0e61d7564782ad1aae487ffb57cc\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\041f0e61d7564782ad1aae487ffb57cc\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json",
+    "sha256": "dad83e4782bde45802d754ce9ac55b8ecbc5c207fe4f7c24b6a375a3b4e6ffde",
+    "size": 2054
+  },
+  ".agent_memory\\sessions\\4d0558f593294dfd88e252184d361cef\\events.dsctx.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\4d0558f593294dfd88e252184d361cef\\events.dsctx.jsonl",
+    "sha256": "cea2ef288e88f57dbc6152066a3d3c1d4a255b8db9b89075f8c5a355f725bfbc",
+    "size": 1003
+  },
+  ".agent_memory\\sessions\\4d0558f593294dfd88e252184d361cef\\order_lifecycle_traces.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\4d0558f593294dfd88e252184d361cef\\order_lifecycle_traces.jsonl",
+    "sha256": "9793ee12e6af604df1ba4d59a9d9f8d3e347173fd7539d5949e779b6f86a04ea",
+    "size": 510
+  },
+  ".agent_memory\\sessions\\4d0558f593294dfd88e252184d361cef\\session.dsstate.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\4d0558f593294dfd88e252184d361cef\\session.dsstate.json",
+    "sha256": "02c55c00c7e69a39875ea69ae673c5027637eb3c37432b6b96d90340854b629e",
+    "size": 945
+  },
+  ".agent_memory\\sessions\\4d0558f593294dfd88e252184d361cef\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\4d0558f593294dfd88e252184d361cef\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json",
+    "sha256": "e348fa6b971a995c51fd5b26514593b3cbaff6af90c28ba12e557e5165aa07b2",
+    "size": 2054
+  },
+  ".agent_memory\\sessions\\60dd4e93b7c14add861e536d42bad62e\\events.dsctx.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\60dd4e93b7c14add861e536d42bad62e\\events.dsctx.jsonl",
+    "sha256": "602485aa509f3a1f0ef9e592bd9422e0049d0c48c1a1cc0daf0b7ae51c7107dc",
+    "size": 1003
+  },
+  ".agent_memory\\sessions\\60dd4e93b7c14add861e536d42bad62e\\order_lifecycle_traces.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\60dd4e93b7c14add861e536d42bad62e\\order_lifecycle_traces.jsonl",
+    "sha256": "7d85ae135d37b04c2af58199d1493aea1b11cbdd0f5c96ba7ed21135629a568b",
+    "size": 507
+  },
+  ".agent_memory\\sessions\\60dd4e93b7c14add861e536d42bad62e\\session.dsstate.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\60dd4e93b7c14add861e536d42bad62e\\session.dsstate.json",
+    "sha256": "c92fc42f067780ab99448aadfce19fa6c7002915dfed7d92ffe8cc6fe10de337",
+    "size": 945
+  },
+  ".agent_memory\\sessions\\60dd4e93b7c14add861e536d42bad62e\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\60dd4e93b7c14add861e536d42bad62e\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json",
+    "sha256": "8082dad2bf3c475857bd6300d2d5fd81113df1706aceb115cf2047bab0737666",
+    "size": 2064
+  },
+  ".agent_memory\\sessions\\8f1413b8195043e99ff08008d40e27be\\events.dsctx.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\8f1413b8195043e99ff08008d40e27be\\events.dsctx.jsonl",
+    "sha256": "aaa2074b5e40ec5fb720b696c13e01317460f99f84979c86e9652e496fdc5498",
+    "size": 1003
+  },
+  ".agent_memory\\sessions\\8f1413b8195043e99ff08008d40e27be\\order_lifecycle_traces.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\8f1413b8195043e99ff08008d40e27be\\order_lifecycle_traces.jsonl",
+    "sha256": "97f8856f79a4780cfd32e5095df66428439de1e73bcbc5f74c411cf2e050c1d9",
+    "size": 510
+  },
+  ".agent_memory\\sessions\\8f1413b8195043e99ff08008d40e27be\\session.dsstate.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\8f1413b8195043e99ff08008d40e27be\\session.dsstate.json",
+    "sha256": "60531ba4e3734522638387355ae199251fd74ec817ad55c433b219200a5684f0",
+    "size": 945
+  },
+  ".agent_memory\\sessions\\8f1413b8195043e99ff08008d40e27be\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\8f1413b8195043e99ff08008d40e27be\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json",
+    "sha256": "50a4c7b5b8135a8709b8d8331a1c7ddf1e2508defa7e94f12d0848f205fb0a29",
+    "size": 2054
+  },
+  ".agent_memory\\sessions\\a29af06824324487921ae3646847000d\\events.dsctx.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\a29af06824324487921ae3646847000d\\events.dsctx.jsonl",
+    "sha256": "ddbe00f6e70e953d64079f989af9a4141c9b9845b7801f1c325dee1ab9153c3e",
+    "size": 1003
+  },
+  ".agent_memory\\sessions\\a29af06824324487921ae3646847000d\\order_lifecycle_traces.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\a29af06824324487921ae3646847000d\\order_lifecycle_traces.jsonl",
+    "sha256": "3992b9fccec976024f523475d2304bb649990aaa80c4e91068a421c225347243",
+    "size": 509
+  },
+  ".agent_memory\\sessions\\a29af06824324487921ae3646847000d\\session.dsstate.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\a29af06824324487921ae3646847000d\\session.dsstate.json",
+    "sha256": "323ba37dd97f106c31ef6db080fe20b14112d34b9180b6b6d30bc312daaca032",
+    "size": 945
+  },
+  ".agent_memory\\sessions\\a29af06824324487921ae3646847000d\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\a29af06824324487921ae3646847000d\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json",
+    "sha256": "f5074272bdc5f23d0c76db89c6ead4b7e0784f7c848fdd49336fc57a6da22ceb",
+    "size": 2054
+  },
+  ".agent_memory\\sessions\\ba15cafca06a41ae892920503827ba00\\events.dsctx.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\ba15cafca06a41ae892920503827ba00\\events.dsctx.jsonl",
+    "sha256": "b91c26a03d867278ab9f02e61daeaa1617336c4c91e89bdef355d59c553ed606",
+    "size": 1003
+  },
+  ".agent_memory\\sessions\\ba15cafca06a41ae892920503827ba00\\order_lifecycle_traces.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\ba15cafca06a41ae892920503827ba00\\order_lifecycle_traces.jsonl",
+    "sha256": "80f7b93f2a6c3cdbdc96b06b889bee0e09e0f10ef835ccf823303a71c950248b",
+    "size": 509
+  },
+  ".agent_memory\\sessions\\ba15cafca06a41ae892920503827ba00\\session.dsstate.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\ba15cafca06a41ae892920503827ba00\\session.dsstate.json",
+    "sha256": "3924126ddd50c1b2ce1de8b86b463dca8e14ccf39a4ba990f496407e48ec6d6d",
+    "size": 945
+  },
+  ".agent_memory\\sessions\\ba15cafca06a41ae892920503827ba00\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\ba15cafca06a41ae892920503827ba00\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json",
+    "sha256": "af5af03bd7f6366a143df3d049abedeb6208e09a1ef09dc7394425d01c109c94",
+    "size": 2054
+  },
+  ".agent_memory\\sessions\\cffc65fe7a76476cadbfed4124bea9c4\\events.dsctx.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\cffc65fe7a76476cadbfed4124bea9c4\\events.dsctx.jsonl",
+    "sha256": "5a5e8c55482ffbd0e21044133b10697485ce5fef3d8779143d0e70aaf3e6903a",
+    "size": 1003
+  },
+  ".agent_memory\\sessions\\cffc65fe7a76476cadbfed4124bea9c4\\order_lifecycle_traces.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\cffc65fe7a76476cadbfed4124bea9c4\\order_lifecycle_traces.jsonl",
+    "sha256": "8212938fe52df7b231aad90ae7960c20ee16cd1d105f643d5125cb8c693116cf",
+    "size": 507
+  },
+  ".agent_memory\\sessions\\cffc65fe7a76476cadbfed4124bea9c4\\session.dsstate.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\cffc65fe7a76476cadbfed4124bea9c4\\session.dsstate.json",
+    "sha256": "15853cbc1053f82c28195e1dac6fc110ec42f94f19f839941d4f8ca759552fe6",
+    "size": 945
+  },
+  ".agent_memory\\sessions\\cffc65fe7a76476cadbfed4124bea9c4\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\cffc65fe7a76476cadbfed4124bea9c4\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json",
+    "sha256": "dc7ff15ae9817c69adadbbe47b59809c26bc3d39295365a2cadbf9d068933b50",
+    "size": 2116
+  },
+  ".agent_memory\\sessions\\da1ace48bf354d89a65cf5ca208fc49e\\events.dsctx.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\da1ace48bf354d89a65cf5ca208fc49e\\events.dsctx.jsonl",
+    "sha256": "601163ab67963b509032c7133104a67b24ad24c189189a102c0fbe5f44e3f5e1",
+    "size": 1003
+  },
+  ".agent_memory\\sessions\\da1ace48bf354d89a65cf5ca208fc49e\\session.dsstate.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\da1ace48bf354d89a65cf5ca208fc49e\\session.dsstate.json",
+    "sha256": "45c8f7283c5992f657e8ffbea10f49a9b62576d66e4b52381668d49b98921641",
+    "size": 945
+  },
+  ".agent_memory\\sessions\\da1ace48bf354d89a65cf5ca208fc49e\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\da1ace48bf354d89a65cf5ca208fc49e\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json",
+    "sha256": "739a84e75330f756a4e103b9c31acd0035d2bd6924cddf52f288df2b4ee101c9",
+    "size": 1326
+  },
+  ".agent_memory\\sessions\\fdd22d603e43421f840a45e84b3a800d\\events.dsctx.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\fdd22d603e43421f840a45e84b3a800d\\events.dsctx.jsonl",
+    "sha256": "462337f5767a2f91d1a274f6b08e79f4f7c5dd1bf23970d5ffdbe38daa08ad54",
+    "size": 1003
+  },
+  ".agent_memory\\sessions\\fdd22d603e43421f840a45e84b3a800d\\order_lifecycle_traces.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\fdd22d603e43421f840a45e84b3a800d\\order_lifecycle_traces.jsonl",
+    "sha256": "c3a98e6d1a00e668eceb69ae8874a5f36cab9a30711368135c69634be8308cab",
+    "size": 507
+  },
+  ".agent_memory\\sessions\\fdd22d603e43421f840a45e84b3a800d\\session.dsstate.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\fdd22d603e43421f840a45e84b3a800d\\session.dsstate.json",
+    "sha256": "a348e366cf09fbe81338dba618827d10dcbf127eaf7cddbd8e3eb2479da41482",
+    "size": 945
+  },
+  ".agent_memory\\sessions\\fdd22d603e43421f840a45e84b3a800d\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\fdd22d603e43421f840a45e84b3a800d\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json",
+    "sha256": "68494b16ab8b883d56755f41536413752af5b913555034eb47ffff906b8bdc48",
+    "size": 2064
+  },
+  ".agent_memory\\sessions\\fee09ac610844a3e829a1bbd53682c7f\\events.dsctx.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\fee09ac610844a3e829a1bbd53682c7f\\events.dsctx.jsonl",
+    "sha256": "f32b5777c72a49151f867185221ae4c31e6e3f4efea467212cb4fb8a50815b87",
+    "size": 1003
+  },
+  ".agent_memory\\sessions\\fee09ac610844a3e829a1bbd53682c7f\\order_lifecycle_traces.jsonl": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\fee09ac610844a3e829a1bbd53682c7f\\order_lifecycle_traces.jsonl",
+    "sha256": "412cc2dd6788086d39df3469c16af4958d7973c0b89ee7f88a2193db19bba2f9",
+    "size": 506
+  },
+  ".agent_memory\\sessions\\fee09ac610844a3e829a1bbd53682c7f\\session.dsstate.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\fee09ac610844a3e829a1bbd53682c7f\\session.dsstate.json",
+    "sha256": "c8b7a8168dd400565f2febfe6c45c2cfe88cf24c379e16e86ec8b4c0c21da4db",
+    "size": 945
+  },
+  ".agent_memory\\sessions\\fee09ac610844a3e829a1bbd53682c7f\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\.agent_memory/sessions\\fee09ac610844a3e829a1bbd53682c7f\\agent_trading_memory\\cli_agent_01\\agent_trading_memory.json",
+    "sha256": "0b62245a0ec8c6879d8939a12b29ff15862e67f1e3bb944f0503d4cf73d0ca0e",
+    "size": 2064
+  },
+  "tools/deepseek-terminal-agent/scripts/check_positions.py": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\tools/deepseek-terminal-agent/scripts/check_positions.py",
+    "sha256": "589713af767960a7dd8afc2d374ce4a292df395eb3df66508fbade606554b0bd",
+    "size": 1244
+  },
+  "tools/deepseek-terminal-agent/scripts/close_position.py": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\tools/deepseek-terminal-agent/scripts/close_position.py",
+    "sha256": "55a55fbb81141032449848bfcb747b6634ad10b65cdf07a229672efbc2e4eec9",
+    "size": 1802
+  },
+  "tools/deepseek-terminal-agent/scripts/print_balance.py": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\tools/deepseek-terminal-agent/scripts/print_balance.py",
+    "sha256": "729fa6acf2ffad75b8f1f9dff32e050dd8a34bb7be10ef1248dce8b5f916369e",
+    "size": 1042
+  },
+  "tools/deepseek-terminal-agent/scripts/run_p42j_proof.py": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\tools/deepseek-terminal-agent/scripts/run_p42j_proof.py",
+    "sha256": "49ae28ac8642215a26e406a65aa169bd333b8588a01b15289eae7bd82306bcf7",
+    "size": 14308
+  },
+  "tools/deepseek-terminal-agent/scripts/set_crossed.py": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\tools/deepseek-terminal-agent/scripts/set_crossed.py",
+    "sha256": "15e98862e74281082c6be9d5ff451726284e9eca8c042b7598221df25a57e7dd",
+    "size": 1180
+  },
+  "tools/deepseek-terminal-agent/scripts/set_leverage.py": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\tools/deepseek-terminal-agent/scripts/set_leverage.py",
+    "sha256": "d7eef842168dbe14d1b3081f27d6b525e76cda4b77c0fb033e03ba2c7b6c23a8",
+    "size": 1160
+  },
+  "tools/deepseek-terminal-agent/scripts/transfer_margin.py": {
+    "worktree": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb",
+    "abs_path": "C:\\Users\\user\\Phenix\\p42e-cli-agent-xrp-bnb\\tools/deepseek-terminal-agent/scripts/transfer_margin.py",
+    "sha256": "a69215634befe3abd6c11d8a7456c1224f6c0c75f263109c1da63ec93030e92a",
+    "size": 1383
+  }
+}
