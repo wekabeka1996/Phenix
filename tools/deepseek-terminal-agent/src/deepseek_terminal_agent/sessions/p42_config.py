@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pathlib
-from typing import Dict, List, Literal
+from typing import Dict, List, Literal, Optional
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -34,6 +34,9 @@ class AgentRuntimeConfig(BaseModel):
     testnet_order_limits: TestnetOrderLimits
     startup_stagger_sec: int = Field(..., ge=0)
     shutdown_behavior: Literal["graceful", "immediate"]
+    cli_command: Optional[List[str]] = None
+    cli_working_dir: Optional[str] = None
+    approved_session_paths: List[str] = Field(default_factory=list)
 
 class DualAgentMVPConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
