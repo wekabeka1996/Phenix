@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def utc_now_iso() -> str:
@@ -29,6 +29,52 @@ class SourceReference(BaseModel):
     sequence: Optional[int] = Field(default=None, ge=1)
     event_id: Optional[str] = None
     created_at: str = Field(default_factory=utc_now_iso)
+
+
+CanonicalMemoryKind = Literal["decision", "reflection", "instruction_ack"]
+
+
+class CanonicalMemoryRecord(BaseModel):
+    """Immutable agent/session memory record written by the canonical kernel."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    record_id: str = Field(..., min_length=1)
+    session_id: str = Field(..., min_length=1)
+    agent_id: str = Field(..., min_length=1)
+    agent_number: int = Field(..., ge=1)
+    sequence: int = Field(..., ge=1)
+    kind: CanonicalMemoryKind
+    created_at: str = Field(..., min_length=1)
+    content: str = Field(..., min_length=1)
+    instruction_version: str = Field(..., min_length=1)
+    event_ids: list[str] = Field(default_factory=list)
+    command_ids: list[str] = Field(default_factory=list)
+    source_refs: list[SourceReference] = Field(default_factory=list)
+
+    @field_validator("event_ids", "command_ids")
+    @classmethod
+    def references_are_non_empty_and_unique(cls, value: list[str]) -> list[str]:
+        cleaned = [str(item).strip() for item in value]
+        if any(not item for item in cleaned):
+            raise ValueError("references must be non-empty")
+        if len(cleaned) != len(set(cleaned)):
+            raise ValueError("references must be unique")
+        return cleaned
+
+
+class CanonicalMemorySummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str = Field(..., min_length=1)
+    record_count: int = Field(..., ge=0)
+    first_sequence: Optional[int] = Field(default=None, ge=1)
+    last_sequence: Optional[int] = Field(default=None, ge=1)
+    record_ids: list[str] = Field(default_factory=list)
+    instruction_versions: dict[str, str] = Field(default_factory=dict)
+    event_ids: list[str] = Field(default_factory=list)
+    command_ids: list[str] = Field(default_factory=list)
+    source_refs: list[SourceReference] = Field(default_factory=list)
 
 
 class ArenaEvidenceEvent(BaseModel):
