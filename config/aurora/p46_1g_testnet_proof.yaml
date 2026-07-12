@@ -1,0 +1,27 @@
+schema_version: 1
+enabled: true
+environment: binance_futures_testnet
+endpoint: https://testnet.binancefuture.com
+symbol_selection:
+  allowed_symbols:
+  - DOGEUSDT
+  - BTCUSDT
+  - ETHUSDT
+  - XRPUSDT
+  - BNBUSDT
+  - SOLUSDT
+  preferred_symbol: SOLUSDT
+exposure:
+  target_notional_quote: "10.0"
+  operator_max_notional_quote: "20.0"
+timeouts:
+  submit_ack_timeout_sec: 10
+  venue_query_timeout_sec: 10
+  cancel_timeout_sec: 15
+  flatten_timeout_sec: 30
+  total_proof_timeout_sec: 120
+cleanup:
+  cancel_unfilled: true
+  close_if_filled: true
+  require_final_flat: true
+  require_no_related_open_orders: true
