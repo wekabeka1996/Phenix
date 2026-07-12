@@ -41,6 +41,10 @@ from apps.reference.domains.shadow_telemetry.contracts import (
     compute_close_idempotency_key,
     compute_idempotency_key,
 )
+from apps.reference.domains.shadow_telemetry.agent_trade_intent_v2 import (
+    AgentIntentAcceptedResponseV2,
+    AgentTradeIntentV2,
+)
 from apps.reference.domains.shadow_telemetry.ipc import (
     JsonlTcpQueueClient,
     JsonlTcpServer,
@@ -308,6 +312,7 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
 
     bearer = HTTPBearer(auto_error=False)
     write_endpoint = str(write_cfg.intents_endpoint or "/intents/llm/v1")
+    v2_write_endpoint = str(write_cfg.agent_intents_v2_endpoint)
 
     app.state.shadow_cfg = shadow_cfg
     app.state.write_endpoint = write_endpoint
@@ -896,6 +901,106 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
             429: {"description": "Rate limit / policy throttle"},
             503: {"description": "IPC unavailable or fail-closed"},
         },
+        tags=["shadow-telemetry"],
+    )
+
+    async def post_agent_trade_intent_v2(
+        intent: AgentTradeIntentV2,
+        request: Request,
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
+    ) -> JSONResponse:
+        request_id = str(request.headers.get("x-request-id") or f"req-{uuid.uuid4()}")
+        auth_subject = _authorize_or_reject(app, request_id, request, credentials)
+        now_ms = _now_ms()
+        idempotency_key = intent.client_intent_id
+        payload_hash = canonical_payload_hash(intent.model_dump(mode="json"))
+
+        with app.state.state_lock:
+            existing = app.state.idempotency_records.get(idempotency_key)
+            if existing is not None:
+                if existing["payload_hash"] == payload_hash:
+                    return JSONResponse(
+                        status_code=status.HTTP_202_ACCEPTED,
+                        content=dict(existing["response"]),
+                    )
+                _emit_audit_event(
+                    app,
+                    "EVT:AGENT_TRADE_INTENT_V2_REJECTED",
+                    {
+                        "client_intent_id": intent.client_intent_id,
+                        "session_id": intent.session_id,
+                        "participant_id": intent.participant_id,
+                        "agent_id": intent.agent_id,
+                        "reason_code": "IDEMPOTENCY_CONFLICT",
+                        "request_id": request_id,
+                    },
+                    "agent_trade_intent_v2_idempotency_conflict",
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={"reason_code": "IDEMPOTENCY_CONFLICT"},
+                )
+
+        _emit_audit_event(
+            app,
+            "EVT:AGENT_TRADE_INTENT_V2_RECEIVED",
+            {
+                "client_intent_id": intent.client_intent_id,
+                "session_id": intent.session_id,
+                "participant_id": intent.participant_id,
+                "agent_id": intent.agent_id,
+                "symbol": intent.symbol,
+                "request_id": request_id,
+                "auth_subject": auth_subject,
+            },
+            "agent_trade_intent_v2_received",
+        )
+        ipc_endpoint = str(app.state.shadow_cfg.egress_to_main.ipc_commands_endpoint)
+        if not _probe_ipc_endpoint(ipc_endpoint):
+            _emit_audit_event(
+                app,
+                "EVT:AGENT_TRADE_INTENT_V2_REJECTED",
+                {
+                    "client_intent_id": intent.client_intent_id,
+                    "session_id": intent.session_id,
+                    "reason_code": "IPC_UNAVAILABLE",
+                    "request_id": request_id,
+                },
+                "agent_trade_intent_v2_ipc_unavailable",
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"reason_code": "IPC_UNAVAILABLE"},
+            )
+        command_payload = {
+            "request_kind": "agent_trade_intent_v2",
+            "request_id": request_id,
+            **intent.model_dump(mode="json"),
+        }
+        if not bool(app.state.command_client.enqueue(command_payload)):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"reason_code": "IPC_QUEUE_FULL"},
+            )
+        response = AgentIntentAcceptedResponseV2(
+            client_intent_id=intent.client_intent_id,
+            request_id=request_id,
+        ).model_dump(mode="json")
+        with app.state.state_lock:
+            app.state.idempotency_records[idempotency_key] = {
+                "payload_hash": payload_hash,
+                "response": response,
+                "ts_ms": now_ms,
+            }
+        return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=response)
+
+    app.add_api_route(
+        path=v2_write_endpoint,
+        endpoint=post_agent_trade_intent_v2,
+        methods=["POST"],
+        response_model=AgentIntentAcceptedResponseV2,
+        status_code=status.HTTP_202_ACCEPTED,
+        openapi_extra={"x-openai-isConsequential": bool(write_cfg.consequential)},
         tags=["shadow-telemetry"],
     )
 

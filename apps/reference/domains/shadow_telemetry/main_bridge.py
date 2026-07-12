@@ -19,6 +19,10 @@ from apps.reference.domains.shadow_telemetry.contracts import (
     CmdLlmIntentSubmitV1,
     CmdLlmPositionCloseV1,
 )
+from apps.reference.domains.shadow_telemetry.agent_trade_intent_v2 import (
+    AgentTradeIntentV2,
+    AgentTradeIntentV2Processor,
+)
 from apps.reference.domains.shadow_telemetry.ipc import (
     JsonlTcpQueueClient,
     JsonlTcpServer,
@@ -368,10 +372,17 @@ class ShadowEventTapPublisher:
 class LLMIntentIngressBridge:
     """Main-process command ingress that receives LLM intents from shadow API via IPC."""
 
-    def __init__(self, fsm: Any, config: Any, logger: Optional[logging.Logger] = None) -> None:
+    def __init__(
+        self,
+        fsm: Any,
+        config: Any,
+        logger: Optional[logging.Logger] = None,
+        v2_processor: Optional[AgentTradeIntentV2Processor] = None,
+    ) -> None:
         self.fsm = fsm
         self.config = config
         self.logger = logger or logging.getLogger(__name__)
+        self.v2_processor = v2_processor
 
         shadow_cfg = getattr(
             getattr(config, "domains", None), "shadow_telemetry", None)
@@ -508,6 +519,89 @@ class LLMIntentIngressBridge:
             or f"llm-{int(time.time() * 1000)}"
         )
         mode, symbols_llm, allow = self._runtime_allowlist()
+
+        if request_kind == "agent_trade_intent_v2":
+            normalized = dict(payload)
+            normalized.pop("request_kind", None)
+            normalized.pop("request_id", None)
+            try:
+                intent = AgentTradeIntentV2.model_validate(normalized)
+            except Exception as exc:
+                self._emit_bridge_reject(
+                    event_name="EVT:AGENT_TRADE_INTENT_V2_REJECTED",
+                    rid=rid,
+                    payload={
+                        "client_intent_id": payload.get("client_intent_id"),
+                        "session_id": payload.get("session_id"),
+                        "participant_id": payload.get("participant_id"),
+                        "agent_id": payload.get("agent_id"),
+                        "reason_code": "SCHEMA_INVALID",
+                        "reason": str(exc),
+                        "request_id": request_id,
+                    },
+                    why="agent_trade_intent_v2_schema_invalid",
+                )
+                return
+            self.fsm.emit(
+                "EVT:AGENT_TRADE_INTENT_V2_RECEIVED",
+                {
+                    "client_intent_id": intent.client_intent_id,
+                    "session_id": intent.session_id,
+                    "participant_id": intent.participant_id,
+                    "agent_id": intent.agent_id,
+                    "symbol": intent.symbol,
+                    "request_id": request_id,
+                },
+                "agent_trade_intent_v2_received_main",
+            )
+            if self.v2_processor is None:
+                self._emit_bridge_reject(
+                    event_name="EVT:AGENT_TRADE_INTENT_V2_REJECTED",
+                    rid=intent.client_intent_id,
+                    payload={
+                        "client_intent_id": intent.client_intent_id,
+                        "session_id": intent.session_id,
+                        "participant_id": intent.participant_id,
+                        "agent_id": intent.agent_id,
+                        "reason_code": "SIZING_AUTHORITY_UNAVAILABLE",
+                        "request_id": request_id,
+                    },
+                    why="agent_trade_intent_v2_sizing_authority_unavailable",
+                )
+                return
+            result = self.v2_processor.process(intent)
+            if not result.sizing.approved or result.downstream_command is None:
+                reason_code = (
+                    result.sizing.rejection_reasons[0]
+                    if result.sizing.rejection_reasons
+                    else "RISK_REJECTED"
+                )
+                self._emit_bridge_reject(
+                    event_name="EVT:AGENT_TRADE_INTENT_V2_REJECTED",
+                    rid=intent.client_intent_id,
+                    payload={
+                        "client_intent_id": intent.client_intent_id,
+                        "session_id": intent.session_id,
+                        "participant_id": intent.participant_id,
+                        "agent_id": intent.agent_id,
+                        "sizing_decision_id": result.sizing.sizing_decision_id,
+                        "reason_code": reason_code,
+                        "request_id": request_id,
+                    },
+                    why="agent_trade_intent_v2_rejected",
+                )
+                return
+            self.fsm.emit(
+                "EVT:AGENT_TRADE_INTENT_V2_SIZED",
+                result.sizing.model_dump(mode="json"),
+                "agent_trade_intent_v2_sized",
+            )
+            self.fsm.emit(
+                "CMD:EXTERNAL_OPEN_REQUEST_V1",
+                payload=result.downstream_command,
+                why="agent_trade_intent_v2_external_open_request",
+            )
+            return
 
         if request_kind in {"close_position", "eze_close_position"}:
             normalized_payload = dict(payload)
