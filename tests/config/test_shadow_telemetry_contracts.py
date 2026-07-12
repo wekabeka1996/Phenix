@@ -150,6 +150,7 @@ def test_shadow_telemetry_extraction_preserves_field_contract() -> None:
         required={
             "enabled",
             "intents_endpoint",
+            "agent_intents_v2_endpoint",
             "rate_limit_per_min",
             "max_body_kb",
             "symbol_allowlist",

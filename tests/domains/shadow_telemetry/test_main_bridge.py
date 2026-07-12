@@ -117,6 +117,7 @@ def _configure_shadow_llm(cfg_dir: Path, *, mode: str) -> None:
             "write": {
                 "enabled": True,
                 "intents_endpoint": "/intents/llm/v1",
+                "agent_intents_v2_endpoint": "/intents/llm/v2",
                 "rate_limit_per_min": 30,
                 "max_body_kb": 64,
                 "symbol_allowlist": ["BNBUSDT"],
