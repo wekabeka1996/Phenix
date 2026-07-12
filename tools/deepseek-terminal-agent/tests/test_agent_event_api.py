@@ -3,13 +3,16 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from deepseek_terminal_agent.config import DeepSeekConfig, Settings
+from deepseek_terminal_agent.config import DeepSeekConfig, MemoryConfig, Settings
 from deepseek_terminal_agent.dashboard import app as dashboard_app
 from deepseek_terminal_agent.sessions.models import ModelProfile
 
 
 def make_settings() -> Settings:
-    return Settings(deepseek=DeepSeekConfig(api_key="sk-test-key"))
+    return Settings(
+        deepseek=DeepSeekConfig(api_key="sk-test-key"),
+        memory=MemoryConfig(canonical_sessions_root=".agent_memory/sessions"),
+    )
 
 
 def make_profile() -> ModelProfile:
@@ -58,9 +61,11 @@ def reset_dashboard(tmp_path, monkeypatch) -> TestClient:
         "_decision_ledger",
         "_memory_patch_store",
         "_evidence_bundle_store",
+        "_canonical_memory_runtime",
     ):
         setattr(dashboard_app, name, None)
     dashboard_app._settings = make_settings()
+    dashboard_app._settings.bind_config_project_root(tmp_path.resolve())
     return TestClient(dashboard_app.app)
 
 
@@ -71,8 +76,9 @@ def create_session() -> str:
 
 def base_payload() -> dict:
     return {
-        "agent_id": "primary-cockpit-agent-event-buttons-builder",
-        "agent_number": 3,
+        "agent_id": "api_agent_01",
+        "agent_number": 1,
+        "instruction_version": "manifest-p46-1c",
         "rationale": "Record agent command for FSM review.",
         "payload": {"symbol": "BTCUSDT", "side_bias": "long"},
     }
@@ -98,8 +104,8 @@ def test_create_and_list_all_agent_event_buttons(tmp_path, monkeypatch):
         assert body["command_id"].startswith("command-")
         assert body["created_at"]
         assert body["session_id"] == session_id
-        assert body["agent_id"] == "primary-cockpit-agent-event-buttons-builder"
-        assert body["agent_number"] == 3
+        assert body["agent_id"] == "api_agent_01"
+        assert body["agent_number"] == 1
         assert body["status"] == expected_status
         assert body["environment"] == "testnet"
         assert body["exchange_submitted"] is False
