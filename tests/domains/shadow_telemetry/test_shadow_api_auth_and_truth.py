@@ -76,6 +76,15 @@ def _set_shadow_auth_mode(cfg_dir: Path, auth_mode: str) -> None:
     )
 
 
+def _enable_legacy_execution_routes(cfg_dir: Path) -> None:
+    domains_path = cfg_dir / "domains.yaml"
+    domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
+    domains["shadow_telemetry"]["api"]["write"]["legacy_execution_routes_enabled"] = True
+    domains_path.write_text(
+        yaml.safe_dump(domains, sort_keys=False, allow_unicode=True), encoding="utf-8"
+    )
+
+
 def test_shadow_api_starts_without_bearer_token_in_loopback_optional_mode(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -140,6 +149,7 @@ def test_eze_direct_open_route_accepts_symbol_outside_guarded_allowlist(
 ) -> None:
     cfg_dir = _copy_config(tmp_path)
     _set_shadow_auth_mode(cfg_dir, "loopback_optional_bearer")
+    _enable_legacy_execution_routes(cfg_dir)
     config = ConfigLoader(config_dir=cfg_dir).load_config()
 
     holder: dict[str, _CapturingClient] = {}

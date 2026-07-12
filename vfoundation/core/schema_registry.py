@@ -29,6 +29,7 @@ class VerbSchemaRegistry:
         self.project_root = Path(project_root)
         self._validators: Dict[Tuple[str, str], Draft7Validator] = {}
         self._unsupported_verbs: set[Tuple[str, str]] = set()
+        self._registered_verbs: set[Tuple[str, str]] = set()
         self._dir_stores: Dict[Path, Dict[str, Any]] = {}
         self._project_stores: Dict[Path, Dict[str, Any]] = {}
 
@@ -139,6 +140,9 @@ class VerbSchemaRegistry:
                 continue
 
             key = (op, verb)
+            if key in self._registered_verbs:
+                raise ValueError(f"duplicate verb registry entry: {op}:{verb}")
+            self._registered_verbs.add(key)
 
             if schema_rel_path is None:
                 self._unsupported_verbs.add(key)
@@ -198,6 +202,9 @@ class VerbSchemaRegistry:
         (Used for targeted DeprecationWarnings).
         """
         return (op, verb) in self._unsupported_verbs
+
+    def is_registered(self, op: str, verb: str) -> bool:
+        return (op, verb) in self._registered_verbs
 
     @property
     def total_validators(self) -> int:

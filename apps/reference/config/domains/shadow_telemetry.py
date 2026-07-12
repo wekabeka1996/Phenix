@@ -32,6 +32,7 @@ class ShadowTelemetryApiWriteConfig(BaseModel):
     require_snapshot_ref: bool = Field(...)
     idempotency_ttl_sec: int = Field(..., ge=1)
     consequential: bool = Field(...)
+    legacy_execution_routes_enabled: bool = Field(...)
 
 
 class ShadowTelemetryApiConfig(BaseModel):

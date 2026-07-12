@@ -174,6 +174,7 @@ def test_shadow_telemetry_extraction_preserves_field_contract() -> None:
             "require_snapshot_ref",
             "idempotency_ttl_sec",
             "consequential",
+            "legacy_execution_routes_enabled",
         },
         defaults={},
         class_factories={},

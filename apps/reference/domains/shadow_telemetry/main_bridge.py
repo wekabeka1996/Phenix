@@ -384,6 +384,9 @@ class LLMIntentIngressBridge:
         self.logger = logger or logging.getLogger(__name__)
         self.v2_processor = v2_processor
         self._v2_emitted_intent_ids: set[str] = set()
+        self.command_envelope_count = 0
+        self.v2_handler_count = 0
+        self.last_command_request_id: Optional[str] = None
 
         shadow_cfg = getattr(
             getattr(config, "domains", None), "shadow_telemetry", None)
@@ -507,8 +510,20 @@ class LLMIntentIngressBridge:
         return False
 
     def _on_command(self, payload: Dict[str, Any]) -> None:
+        self.command_envelope_count += 1
         request_id = str(payload.get("request_id") or "")
+        self.last_command_request_id = request_id or None
         request_kind = str(payload.get("request_kind") or "")
+        shadow_cfg = self.config.domains.shadow_telemetry
+        if (
+            request_kind != "agent_trade_intent_v2"
+            and not shadow_cfg.api.write.legacy_execution_routes_enabled
+        ):
+            self.logger.warning(
+                "Legacy execution IPC envelope rejected by canonical V2 policy: %s",
+                request_kind or "missing",
+            )
+            return
         is_eze_open = request_kind == "eze_open"
         is_eze_close = request_kind == "eze_close_position"
         is_eze_amend = request_kind == "eze_amend_brackets"
@@ -522,6 +537,7 @@ class LLMIntentIngressBridge:
         mode, symbols_llm, allow = self._runtime_allowlist()
 
         if request_kind == "agent_trade_intent_v2":
+            self.v2_handler_count += 1
             normalized = dict(payload)
             normalized.pop("request_kind", None)
             normalized.pop("request_id", None)

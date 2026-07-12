@@ -121,6 +121,10 @@ class FSMCore:
                     validator = registry.get_validator(op, verb)
                     if validator:
                         validator.validate(payload)
+                    elif op == "CMD" and not registry.is_registered(op, verb):
+                        raise InvalidMessagePayloadError(
+                            f"Unregistered command rejected: {op}:{verb}"
+                        )
                     elif registry.is_schema_missing(op, verb):
                         self.logger.warning(
                             "DEPRECATION: Emitting %s without JSON Schema validation. "
@@ -128,6 +132,8 @@ class FSMCore:
                         )
         except Exception as e:
             from jsonschema.exceptions import ValidationError
+            if isinstance(e, InvalidMessagePayloadError):
+                raise
             if isinstance(e, ValidationError):
                 self.logger.error("Payload validation failed for %s: %s", event_name, e.message)
                 raise InvalidMessagePayloadError(f"Payload validation failed for {event_name}: {e.message}") from e

@@ -125,6 +125,7 @@ def _configure_shadow_llm(cfg_dir: Path, *, mode: str) -> None:
                 "require_snapshot_ref": True,
                 "idempotency_ttl_sec": 300,
                 "consequential": True,
+                "legacy_execution_routes_enabled": True,
             },
         },
         "egress_to_main": {

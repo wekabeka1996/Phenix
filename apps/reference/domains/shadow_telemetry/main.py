@@ -884,25 +884,26 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
 
         return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=response_payload)
 
-    app.add_api_route(
-        path=write_endpoint,
-        endpoint=post_llm_intent,
-        methods=["POST"],
-        response_model=IntentAcceptedResponseV1,
-        status_code=status.HTTP_202_ACCEPTED,
-        openapi_extra={
-            "x-openai-isConsequential": bool(write_cfg.consequential)},
-        responses={
-            202: {"description": "Accepted (queued for async processing)"},
-            400: {"description": "Schema or policy violation"},
-            401: {"description": "Unauthorized"},
-            403: {"description": "Forbidden"},
-            409: {"description": "Idempotency conflict"},
-            429: {"description": "Rate limit / policy throttle"},
-            503: {"description": "IPC unavailable or fail-closed"},
-        },
-        tags=["shadow-telemetry"],
-    )
+    if write_cfg.legacy_execution_routes_enabled:
+        app.add_api_route(
+            path=write_endpoint,
+            endpoint=post_llm_intent,
+            methods=["POST"],
+            response_model=IntentAcceptedResponseV1,
+            status_code=status.HTTP_202_ACCEPTED,
+            openapi_extra={
+                "x-openai-isConsequential": bool(write_cfg.consequential)},
+            responses={
+                202: {"description": "Accepted (queued for async processing)"},
+                400: {"description": "Schema or policy violation"},
+                401: {"description": "Unauthorized"},
+                403: {"description": "Forbidden"},
+                409: {"description": "Idempotency conflict"},
+                429: {"description": "Rate limit / policy throttle"},
+                503: {"description": "IPC unavailable or fail-closed"},
+            },
+            tags=["shadow-telemetry"],
+        )
 
     async def post_agent_trade_intent_v2(
         intent: AgentTradeIntentV2,
@@ -1601,46 +1602,47 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
             app.state.position_action_status[str(cmd.action_id)] = response_payload
         return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=response_payload)
 
-    app.add_api_route(
-        path="/positions/{lifecycle_id}/close",
-        endpoint=post_position_close,
-        methods=["POST"],
-        response_model=PositionActionAcceptedResponseV1,
-        status_code=status.HTTP_202_ACCEPTED,
-        tags=["shadow-telemetry"],
-    )
-    app.add_api_route(
-        path="/positions/{lifecycle_id}/brackets",
-        endpoint=patch_position_brackets,
-        methods=["PATCH"],
-        response_model=PositionActionAcceptedResponseV1,
-        status_code=status.HTTP_202_ACCEPTED,
-        tags=["shadow-telemetry"],
-    )
-    app.add_api_route(
-        path="/execution/eze/intents/v1",
-        endpoint=post_eze_execution_intent,
-        methods=["POST"],
-        response_model=IntentAcceptedResponseV1,
-        status_code=status.HTTP_202_ACCEPTED,
-        tags=["shadow-telemetry"],
-    )
-    app.add_api_route(
-        path="/execution/eze/positions/{lifecycle_id}/close",
-        endpoint=post_eze_position_close,
-        methods=["POST"],
-        response_model=PositionActionAcceptedResponseV1,
-        status_code=status.HTTP_202_ACCEPTED,
-        tags=["shadow-telemetry"],
-    )
-    app.add_api_route(
-        path="/execution/eze/positions/{lifecycle_id}/brackets",
-        endpoint=patch_eze_position_brackets,
-        methods=["PATCH"],
-        response_model=PositionActionAcceptedResponseV1,
-        status_code=status.HTTP_202_ACCEPTED,
-        tags=["shadow-telemetry"],
-    )
+    if write_cfg.legacy_execution_routes_enabled:
+        app.add_api_route(
+            path="/positions/{lifecycle_id}/close",
+            endpoint=post_position_close,
+            methods=["POST"],
+            response_model=PositionActionAcceptedResponseV1,
+            status_code=status.HTTP_202_ACCEPTED,
+            tags=["shadow-telemetry"],
+        )
+        app.add_api_route(
+            path="/positions/{lifecycle_id}/brackets",
+            endpoint=patch_position_brackets,
+            methods=["PATCH"],
+            response_model=PositionActionAcceptedResponseV1,
+            status_code=status.HTTP_202_ACCEPTED,
+            tags=["shadow-telemetry"],
+        )
+        app.add_api_route(
+            path="/execution/eze/intents/v1",
+            endpoint=post_eze_execution_intent,
+            methods=["POST"],
+            response_model=IntentAcceptedResponseV1,
+            status_code=status.HTTP_202_ACCEPTED,
+            tags=["shadow-telemetry"],
+        )
+        app.add_api_route(
+            path="/execution/eze/positions/{lifecycle_id}/close",
+            endpoint=post_eze_position_close,
+            methods=["POST"],
+            response_model=PositionActionAcceptedResponseV1,
+            status_code=status.HTTP_202_ACCEPTED,
+            tags=["shadow-telemetry"],
+        )
+        app.add_api_route(
+            path="/execution/eze/positions/{lifecycle_id}/brackets",
+            endpoint=patch_eze_position_brackets,
+            methods=["PATCH"],
+            response_model=PositionActionAcceptedResponseV1,
+            status_code=status.HTTP_202_ACCEPTED,
+            tags=["shadow-telemetry"],
+        )
 
     def _custom_openapi() -> Dict[str, Any]:
         if app.openapi_schema:

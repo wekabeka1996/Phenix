@@ -759,6 +759,7 @@ shadow_telemetry:
       require_snapshot_ref: true
       idempotency_ttl_sec: 300
       consequential: true
+      legacy_execution_routes_enabled: false
   egress_to_main:
     mode: ipc
     ipc_commands_endpoint: tcp://127.0.0.1:7102
