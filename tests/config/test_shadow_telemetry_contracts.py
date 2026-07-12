@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from apps.reference.config_loader import ConfigLoader
 from apps.reference.config.domains.shadow_telemetry import (
+    AgentAuthorityPolicyConfig,
     ShadowTelemetryApiConfig as DomainShadowTelemetryApiConfig,
     ShadowTelemetryApiWriteConfig as DomainShadowTelemetryApiWriteConfig,
     ShadowTelemetryDomainConfig as DomainShadowTelemetryDomainConfig,
@@ -117,6 +118,8 @@ def test_current_aurora_config_loads_shadow_telemetry_contract() -> None:
     assert st.ledger.enqueue_timeout_ms == 5
     assert st.ledger.shutdown_timeout_ms == 2000
     assert st.lifecycle.stop_timeout_ms == 2000
+    assert st.agent_authority.config_version == "p46-1e-v1"
+    assert st.agent_authority.execution_capable_participant_types == ["MAIN_AGENT"]
     assert st.snapshot.trigger_event == "EVT:FEATURES_CALCULATED"
     assert st.snapshot.tf_policy.tick_snapshots_mode == "sampled"
     assert st.snapshot.tf_policy.tick_sample_every_n == 20
@@ -137,6 +140,20 @@ def test_shadow_telemetry_facade_reexports_are_exact_identity() -> None:
 
 
 def test_shadow_telemetry_extraction_preserves_field_contract() -> None:
+    _assert_field_contract(
+        AgentAuthorityPolicyConfig,
+        required={
+            "config_version", "supported_session_statuses", "allowed_participant_types",
+            "execution_capable_participant_types", "lease_ttl_sec",
+            "renewal_requires_owner", "expiry_behavior", "conflict_behavior",
+            "session_instrument_universe", "max_position_horizon_sec", "intent_ttl_sec",
+            "execution_order_type", "execution_time_in_force", "execution_valid_for_ms",
+            "context_ack_policy",
+        },
+        defaults={},
+        class_factories={},
+        dynamic_factories={},
+    )
     _assert_field_contract(
         ShadowTelemetryIngestConfig,
         required={"source", "ipc_endpoint", "allowlist_events",
@@ -209,8 +226,8 @@ def test_shadow_telemetry_extraction_preserves_field_contract() -> None:
     )
     _assert_field_contract(
         ShadowTelemetryDomainConfig,
-        required={"enabled", "required_for_mode",
-                  "ingest", "api", "egress_to_main", "ledger", "lifecycle", "snapshot"},
+        required={"enabled", "required_for_mode", "ingest", "api", "egress_to_main",
+                  "ledger", "lifecycle", "agent_authority", "snapshot"},
         defaults={},
         class_factories={},
         dynamic_factories={},

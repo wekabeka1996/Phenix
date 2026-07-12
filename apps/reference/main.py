@@ -57,7 +57,7 @@ from apps.reference.domains.position_tracking.position_tracking import PositionT
 from apps.reference.domains.risk_management.risk_management import RiskManagement
 from apps.reference.domains.regime_detector.regime_detector import RegimeDetector
 from apps.reference.domains.system_stress.system_stress_overlay import SystemStressOverlay
-from apps.reference.core.time.clock import MockClock, set_clock, reset_clock
+from apps.reference.core.time.clock import MockClock, get_clock, set_clock, reset_clock
 from apps.reference.domains.feature_engineering.feature_engineering import (
     FeatureEngineering,
 )
@@ -89,6 +89,14 @@ from apps.reference.domains.shadow_telemetry.main_bridge import (
     register_llm_command_mapper,
 )
 from apps.reference.domains.shadow_telemetry.ledger_writer import ShadowTelemetrySink
+from apps.reference.domains.shadow_telemetry.agent_trade_intent_v2 import (
+    AgentTradeIntentV2Processor,
+    PositionQueriesSizingAdapterV2,
+)
+from apps.reference.domains.shadow_telemetry.trading_session_authority import (
+    CanonicalV2AuthorityProvider,
+    TradingSessionAuthorityStore,
+)
 from vfoundation.dr.wal_gc import WALGarbageCollector
 from apps.reference.telemetry.alerts import AlertManager, AlertLevel, AlertType
 from apps.reference.telemetry.order_logger import order_logger
@@ -100,6 +108,7 @@ import logging
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 import asyncio
 
@@ -954,10 +963,23 @@ def main() -> None:
                 )
                 shadow_telemetry_sink.start()
                 shadow_telemetry_sink.register(fsm)
+                authority_store = TradingSessionAuthorityStore(
+                    policy=shadow_cfg.agent_authority,
+                    clock=lambda: datetime.fromtimestamp(
+                        get_clock().now_sec(), tz=timezone.utc
+                    ),
+                )
+                v2_processor = AgentTradeIntentV2Processor(
+                    authority_provider=CanonicalV2AuthorityProvider(
+                        authority_store, decision_making
+                    ),
+                    sizing_adapter=PositionQueriesSizingAdapterV2(decision_making._pos),
+                )
                 llm_intent_ingress_bridge = LLMIntentIngressBridge(
                     fsm=fsm,
                     config=config,
                     logger=LOG.getChild("shadow_telemetry"),
+                    v2_processor=v2_processor,
                 )
                 llm_intent_ingress_bridge.start()
                 register_llm_command_mapper(

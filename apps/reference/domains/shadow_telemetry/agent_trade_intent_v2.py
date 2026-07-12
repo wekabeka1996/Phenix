@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
+from threading import RLock
 from typing import Any, Callable, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -137,6 +138,13 @@ class AgentIntentAcceptedResponseV2(BaseModel):
 AuthorityProviderV2 = Callable[[AgentTradeIntentV2], AgentIntentAuthoritySnapshotV2]
 
 
+class AuthorityProviderRejectedV2(RuntimeError):
+    def __init__(self, reason: str, observed_at: datetime) -> None:
+        self.reason = reason
+        self.observed_at = observed_at
+        super().__init__(reason)
+
+
 class PositionQueriesSizingAdapterV2:
     """Adapts the existing PositionQueries sizing owner without duplicating it."""
 
@@ -214,9 +222,55 @@ class AgentTradeIntentV2Processor:
     ) -> None:
         self.authority_provider = authority_provider
         self.sizing_adapter = sizing_adapter
+        self._processed_intents: dict[str, AgentTradeIntentV2] = {}
+        self._processed_results: dict[str, AgentIntentProcessingResultV2] = {}
+        self._lock = RLock()
 
     def process(self, intent: AgentTradeIntentV2) -> AgentIntentProcessingResultV2:
-        snapshot = self.authority_provider(intent)
+        with self._lock:
+            prior = self._processed_intents.get(intent.client_intent_id)
+            if prior is not None:
+                if prior == intent:
+                    return self._processed_results[intent.client_intent_id]
+                reason = "INTENT_ID_CONFLICT"
+                return AgentIntentProcessingResultV2(
+                    intent=intent,
+                    sizing=AgentIntentSizingDecisionV2(
+                        intent_id=intent.client_intent_id,
+                        sizing_decision_id=f"sizing:{intent.client_intent_id}",
+                        symbol=intent.symbol,
+                        approved=False,
+                        derived_quantity=None,
+                        reference_price=None,
+                        account_snapshot_ref=None,
+                        market_snapshot_ref=None,
+                        config_version=None,
+                        risk_checks=[],
+                        rejection_reasons=[reason],
+                        created_at=intent.created_at,
+                    ),
+                )
+            self._processed_intents[intent.client_intent_id] = intent
+        try:
+            snapshot = self.authority_provider(intent)
+        except AuthorityProviderRejectedV2 as exc:
+            sizing = AgentIntentSizingDecisionV2(
+                intent_id=intent.client_intent_id,
+                sizing_decision_id=f"sizing:{intent.client_intent_id}",
+                symbol=intent.symbol,
+                approved=False,
+                derived_quantity=None,
+                reference_price=None,
+                account_snapshot_ref=None,
+                market_snapshot_ref=None,
+                config_version=None,
+                risk_checks=[],
+                rejection_reasons=[exc.reason],
+                created_at=exc.observed_at,
+            )
+            result = AgentIntentProcessingResultV2(intent=intent, sizing=sizing)
+            self._processed_results[intent.client_intent_id] = result
+            return result
         rejection = self._validate_authority(intent, snapshot)
         if rejection:
             sizing = AgentIntentSizingDecisionV2(
@@ -233,10 +287,14 @@ class AgentTradeIntentV2Processor:
                 rejection_reasons=[rejection],
                 created_at=datetime.now(timezone.utc),
             )
-            return AgentIntentProcessingResultV2(intent=intent, sizing=sizing)
+            result = AgentIntentProcessingResultV2(intent=intent, sizing=sizing)
+            self._processed_results[intent.client_intent_id] = result
+            return result
         sizing = self.sizing_adapter.size(intent, snapshot)
         if not sizing.approved or sizing.derived_quantity is None:
-            return AgentIntentProcessingResultV2(intent=intent, sizing=sizing)
+            result = AgentIntentProcessingResultV2(intent=intent, sizing=sizing)
+            self._processed_results[intent.client_intent_id] = result
+            return result
         downstream = {
             "rid": intent.client_intent_id,
             "intent_id": intent.client_intent_id,
@@ -260,11 +318,13 @@ class AgentTradeIntentV2Processor:
             "participant_id": intent.participant_id,
             "agent_id": intent.agent_id,
         }
-        return AgentIntentProcessingResultV2(
+        result = AgentIntentProcessingResultV2(
             intent=intent,
             sizing=sizing,
             downstream_command=downstream,
         )
+        self._processed_results[intent.client_intent_id] = result
+        return result
 
     @staticmethod
     def _validate_authority(

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ShadowTelemetryIngestConfig(BaseModel):
@@ -77,6 +77,56 @@ class ShadowTelemetryLifecycleConfig(BaseModel):
     stop_timeout_ms: int = Field(..., ge=1)
 
 
+class AgentAuthorityPolicyConfig(BaseModel):
+    """Static policy for the single-process V2 session authority."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    config_version: str = Field(..., min_length=1)
+    supported_session_statuses: List[Literal[
+        "CREATED", "ACTIVE", "PAUSED", "CLOSED", "EXPIRED"
+    ]] = Field(..., min_length=5, max_length=5)
+    allowed_participant_types: List[Literal[
+        "MAIN_AGENT", "SUBAGENT", "OPERATOR"
+    ]] = Field(..., min_length=3, max_length=3)
+    execution_capable_participant_types: List[Literal["MAIN_AGENT"]] = Field(
+        ..., min_length=1, max_length=1
+    )
+    lease_ttl_sec: int = Field(..., ge=1)
+    renewal_requires_owner: Literal[True] = Field(...)
+    expiry_behavior: Literal["reject"] = Field(...)
+    conflict_behavior: Literal["reject"] = Field(...)
+    session_instrument_universe: List[str] = Field(..., min_length=1)
+    max_position_horizon_sec: int = Field(..., ge=1)
+    intent_ttl_sec: int = Field(..., ge=1)
+    execution_order_type: Literal["LIMIT"] = Field(...)
+    execution_time_in_force: Literal["GTC", "GTX", "IOC", "FOK"] = Field(...)
+    execution_valid_for_ms: int = Field(..., ge=1000)
+    context_ack_policy: Literal["defer_unavailable"] = Field(...)
+
+    @field_validator("session_instrument_universe")
+    @classmethod
+    def normalize_universe(cls, value: List[str]) -> List[str]:
+        normalized = [str(symbol).strip().upper() for symbol in value]
+        if any(not symbol or not symbol.isalnum() for symbol in normalized):
+            raise ValueError("session instrument symbols must be non-empty alphanumeric values")
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("session instrument symbols must be unique")
+        return normalized
+
+    @model_validator(mode="after")
+    def exact_policy_sets(self) -> "AgentAuthorityPolicyConfig":
+        if set(self.supported_session_statuses) != {
+            "CREATED", "ACTIVE", "PAUSED", "CLOSED", "EXPIRED"
+        }:
+            raise ValueError("supported_session_statuses must declare the complete authority state set")
+        if set(self.allowed_participant_types) != {"MAIN_AGENT", "SUBAGENT", "OPERATOR"}:
+            raise ValueError("allowed_participant_types must declare the complete participant set")
+        if self.execution_capable_participant_types != ["MAIN_AGENT"]:
+            raise ValueError("only MAIN_AGENT may be execution-capable")
+        return self
+
+
 class ShadowTelemetryTfPolicyConfig(BaseModel):
     """TF policy for snapshot generation."""
     model_config = ConfigDict(extra='forbid')
@@ -114,5 +164,6 @@ class ShadowTelemetryDomainConfig(BaseModel):
         ...)
     lifecycle: ShadowTelemetryLifecycleConfig = Field(
         ...)
+    agent_authority: AgentAuthorityPolicyConfig = Field(...)
     snapshot: ShadowTelemetrySnapshotConfig = Field(
         ...)

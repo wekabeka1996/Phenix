@@ -383,6 +383,7 @@ class LLMIntentIngressBridge:
         self.config = config
         self.logger = logger or logging.getLogger(__name__)
         self.v2_processor = v2_processor
+        self._v2_emitted_intent_ids: set[str] = set()
 
         shadow_cfg = getattr(
             getattr(config, "domains", None), "shadow_telemetry", None)
@@ -591,6 +592,22 @@ class LLMIntentIngressBridge:
                     why="agent_trade_intent_v2_rejected",
                 )
                 return
+            if intent.client_intent_id in self._v2_emitted_intent_ids:
+                self._emit_bridge_reject(
+                    event_name="EVT:AGENT_TRADE_INTENT_V2_REJECTED",
+                    rid=intent.client_intent_id,
+                    payload={
+                        "client_intent_id": intent.client_intent_id,
+                        "session_id": intent.session_id,
+                        "participant_id": intent.participant_id,
+                        "agent_id": intent.agent_id,
+                        "reason_code": "DUPLICATE_INTENT",
+                        "request_id": request_id,
+                    },
+                    why="agent_trade_intent_v2_duplicate_suppressed",
+                )
+                return
+            self._v2_emitted_intent_ids.add(intent.client_intent_id)
             self.fsm.emit(
                 "EVT:AGENT_TRADE_INTENT_V2_SIZED",
                 result.sizing.model_dump(mode="json"),
