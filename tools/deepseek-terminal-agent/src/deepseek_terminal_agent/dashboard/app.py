@@ -35,7 +35,9 @@ from ..sessions.agent_events import (
     ensure_agent_arena_registry_available,
     validate_no_forbidden_arena_fields,
 )
-from ..sessions.agent_memory_lifecycle import AgentMemoryLifecycle
+from ..sessions.canonical_memory_runtime import CanonicalMemoryRuntime
+from ..sessions.collective_memory import CanonicalMemoryStore
+from ..sessions.coordination_config import load_coordination_config
 from ..sessions.arena_runtime_view import (
     ArenaControlRequest,
     ArenaRuntimeViewService,
@@ -99,7 +101,7 @@ _report_center: Optional[ReportCenter] = None
 _decision_ledger: Optional[DecisionLedger] = None
 _memory_patch_store: Optional[MemoryPatchStore] = None
 _evidence_bundle_store: Optional[EvidenceBundleStore] = None
-_agent_memory_lifecycle: Optional[AgentMemoryLifecycle] = None
+_canonical_memory_runtime: Optional[CanonicalMemoryRuntime] = None
 _dashboard_config: Optional[DashboardConfig] = None
 _arena_runtime_view_service: Optional[ArenaRuntimeViewService] = None
 
@@ -423,12 +425,17 @@ def _get_evidence_bundle_store() -> EvidenceBundleStore:
     return _evidence_bundle_store
 
 
-def _get_agent_memory_lifecycle() -> AgentMemoryLifecycle:
-    global _agent_memory_lifecycle
-    if _agent_memory_lifecycle is None:
-        _agent_memory_lifecycle = AgentMemoryLifecycle(
-            _get_settings(), root_dir=_get_root_dir())
-    return _agent_memory_lifecycle
+def _get_canonical_memory_runtime() -> CanonicalMemoryRuntime:
+    global _canonical_memory_runtime
+    if _canonical_memory_runtime is None:
+        settings = _get_settings()
+        _canonical_memory_runtime = CanonicalMemoryRuntime(
+            store=CanonicalMemoryStore(
+                storage_root=settings.canonical_memory_root(),
+                config=load_coordination_config(),
+            )
+        )
+    return _canonical_memory_runtime
 
 
 def _default_profiles() -> list[ModelProfile]:
@@ -638,6 +645,8 @@ def _create_agent_arena_event(session_id: str, action: AgentArenaAction, payload
             str(payload.get("collective_state_version") or "").strip() or None
         ),
     )
+    if action == "rationale" and not command.instruction_version:
+        raise ValueError("instruction_version is required for rationale memory")
     event = SessionEvent(
         event_id=command.event_id,
         session_id=session_id,
@@ -648,13 +657,15 @@ def _create_agent_arena_event(session_id: str, action: AgentArenaAction, payload
     )
     _get_session_store().append_event(session_id, event)
     if action == "rationale":
-        _get_agent_memory_lifecycle().append_rationale_event(
+        _get_canonical_memory_runtime().append_rationale_event(
             session_id=session_id,
             agent_id=command.agent_id,
             agent_number=command.agent_number,
             event_id=command.event_id,
             command_id=command.command_id,
             rationale=command.rationale,
+            instruction_version=command.instruction_version,
+            created_at=command.created_at,
         )
     return {
         "event_id": command.event_id,
@@ -1059,18 +1070,22 @@ async def chat_agent_memory_identity(session_id: str, request: Request) -> JSONR
     try:
         _get_session_store().get_session(session_id)
         agent_id, agent_number = _agent_identity_from_payload(payload)
-        memory = _get_agent_memory_lifecycle().attach_identity(
+        instruction_version = str(
+            payload.get("instruction_manifest_version") or ""
+        ).strip()
+        memory = _get_canonical_memory_runtime().attach_identity(
             session_id=session_id,
             agent_id=agent_id,
             agent_number=agent_number,
-            instruction_manifest_version=str(
-                payload.get("instruction_manifest_version") or "p39d-runtime-v1"),
+            instruction_version=instruction_version,
         )
     except (TypeError, ValueError) as exc:
         return _json_error(str(exc), status_code=400)
+    except RuntimeError as exc:
+        return _json_error(f"Canonical memory unavailable: {exc}", status_code=503)
     except (KeyError, FileNotFoundError):
         return _json_error(f"Session '{session_id}' not found.", status_code=404)
-    return JSONResponse({"memory": memory.model_dump(mode="json")}, status_code=201)
+    return JSONResponse({"memory": memory}, status_code=201)
 
 
 @app.get("/chat/sessions/{session_id}/agent-memory")
@@ -1082,13 +1097,15 @@ async def chat_agent_memory(session_id: str, request: Request) -> JSONResponse:
     try:
         _get_session_store().get_session(session_id)
         agent_id, agent_number = _agent_identity_from_payload(payload)
-        return JSONResponse(_get_agent_memory_lifecycle().read_memory(
+        return JSONResponse({"memory": _get_canonical_memory_runtime().read_memory(
             session_id=session_id,
             agent_id=agent_id,
             agent_number=agent_number,
-        ))
+        )})
     except (TypeError, ValueError) as exc:
         return _json_error(str(exc), status_code=400)
+    except RuntimeError as exc:
+        return _json_error(f"Canonical memory unavailable: {exc}", status_code=503)
     except (KeyError, FileNotFoundError):
         return _json_error(f"Session '{session_id}' not found.", status_code=404)
 
@@ -1102,19 +1119,25 @@ async def chat_agent_memory_instruction_ack(session_id: str, request: Request) -
         event_id = str(payload.get("event_id") or "").strip()
         if not event_id:
             raise ValueError("event_id is required.")
-        memory = _get_agent_memory_lifecycle().append_instruction_ack(
+        created_at = str(payload.get("created_at") or "").strip()
+        instruction_version = str(
+            payload.get("instruction_manifest_version") or ""
+        ).strip()
+        memory = _get_canonical_memory_runtime().append_instruction_ack(
             session_id=session_id,
             agent_id=agent_id,
             agent_number=agent_number,
             event_id=event_id,
-            instruction_manifest_version=str(
-                payload.get("instruction_manifest_version") or "p39d-runtime-v1"),
+            instruction_version=instruction_version,
+            created_at=created_at,
         )
     except (TypeError, ValueError) as exc:
         return _json_error(str(exc), status_code=400)
+    except RuntimeError as exc:
+        return _json_error(f"Canonical memory unavailable: {exc}", status_code=503)
     except (KeyError, FileNotFoundError):
         return _json_error(f"Session '{session_id}' not found.", status_code=404)
-    return JSONResponse({"memory": memory.model_dump(mode="json")})
+    return JSONResponse({"memory": memory})
 
 
 @app.post("/chat/sessions/{session_id}/agent-memory/fsm-decision")
@@ -1123,7 +1146,7 @@ async def chat_agent_memory_fsm_decision(session_id: str, request: Request) -> J
     try:
         _get_session_store().get_session(session_id)
         agent_id, agent_number = _agent_identity_from_payload(payload)
-        memory = _get_agent_memory_lifecycle().append_fsm_decision(
+        memory = _get_canonical_memory_runtime().append_fsm_decision(
             session_id=session_id,
             agent_id=agent_id,
             agent_number=agent_number,
@@ -1131,13 +1154,16 @@ async def chat_agent_memory_fsm_decision(session_id: str, request: Request) -> J
             command_id=str(payload.get("command_id") or "").strip(),
             accepted=_payload_bool(payload, "accepted", False),
             reason=str(payload.get("reason") or payload.get("rationale") or "").strip(),
-            reflection_id=str(payload.get("reflection_id") or "").strip() or None,
+            instruction_version=str(payload.get("instruction_manifest_version") or "").strip(),
+            created_at=str(payload.get("created_at") or "").strip(),
         )
     except (TypeError, ValueError) as exc:
         return _json_error(str(exc), status_code=400)
+    except RuntimeError as exc:
+        return _json_error(f"Canonical memory unavailable: {exc}", status_code=503)
     except (KeyError, FileNotFoundError):
         return _json_error(f"Session '{session_id}' not found.", status_code=404)
-    return JSONResponse({"memory": memory.model_dump(mode="json")})
+    return JSONResponse({"memory": memory})
 
 
 @app.post("/chat/sessions/{session_id}/agent-memory/end")
@@ -1146,13 +1172,15 @@ async def chat_agent_memory_end(session_id: str, request: Request) -> JSONRespon
     try:
         _get_session_store().get_session(session_id)
         agent_id, agent_number = _agent_identity_from_payload(payload)
-        return JSONResponse(_get_agent_memory_lifecycle().finalize_session(
+        return JSONResponse(_get_canonical_memory_runtime().finalize_session(
             session_id=session_id,
             agent_id=agent_id,
             agent_number=agent_number,
         ))
     except (TypeError, ValueError) as exc:
         return _json_error(str(exc), status_code=400)
+    except RuntimeError as exc:
+        return _json_error(f"Canonical memory unavailable: {exc}", status_code=503)
     except (KeyError, FileNotFoundError):
         return _json_error(f"Session '{session_id}' not found.", status_code=404)
 

@@ -8,7 +8,6 @@ import asyncio
 import concurrent.futures
 from datetime import datetime, timezone
 from typing import Any, Optional, Dict
-from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from .agent_action_audit import (
@@ -16,8 +15,9 @@ from .agent_action_audit import (
     AdapterCapabilityDescriptor,
     verify_handoff_safety,
 )
-from .agent_memory_lifecycle import AgentMemoryLifecycle
-from .agent_trading_memory import ReflectionEntry
+from .canonical_memory_runtime import CanonicalMemoryRuntime
+from .collective_memory import CanonicalMemoryStore
+from .coordination_config import CoordinationConfig
 from ..config import Settings
 
 
@@ -84,10 +84,29 @@ class BLOCKED_ENVIRONMENT(OrderLifecycleTrace):
 
 
 class AgentOrderLifecycleHarness:
-    def __init__(self, settings: Settings, *, root_dir: str | Path = ".") -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        root_dir: str | Path,
+        coordination_config: CoordinationConfig,
+        instruction_version: str,
+    ) -> None:
         self.settings = settings
         self.root_dir = pathlib.Path(root_dir)
-        self.memory_lifecycle = AgentMemoryLifecycle(settings, root_dir=root_dir)
+        if not self.root_dir.is_absolute():
+            raise ValueError("root_dir must be absolute")
+        self.instruction_version = str(instruction_version or "").strip()
+        if not self.instruction_version:
+            raise ValueError("instruction_version is required")
+        self.memory_runtime = CanonicalMemoryRuntime(
+            store=CanonicalMemoryStore(
+                storage_root=settings.canonical_memory_root(
+                    project_root=self.root_dir
+                ),
+                config=coordination_config,
+            )
+        )
 
     def _run_async_sync(self, coro):
         try:
@@ -316,32 +335,26 @@ class AgentOrderLifecycleHarness:
         session_id = command.session_id
         agent_id = command.agent_id
         
-        reflection_id = f"trace-review-{uuid4().hex}"
+        reflection_id = f"fsm-decision:{agent_id}:{command.event_id}:{command.command_id}"
         trace_data["memory_ref"] = reflection_id
         response.memory_ref = reflection_id
         
-        try:
-            memory = self.memory_lifecycle.load_or_create(
+        if not isinstance(response, BLOCKED_DUPLICATE):
+            self.memory_runtime.append_fsm_decision(
                 session_id=session_id,
                 agent_id=agent_id,
                 agent_number=command.agent_number,
-            )
-            memory.append_event_ref(command.event_id)
-            memory.append_reflection(
-                ReflectionEntry(
-                    reflection_id=reflection_id,
-                    session_id=session_id,
-                    agent_id=agent_id,
-                    kind="decision_review",
-                    related_event_ids=[command.event_id],
-                    related_command_ids=[command.command_id],
-                    content=f"Order Lifecycle Trace ({trace_data['adapter_status']}/{trace_data['exchange_status']}): {reflection_msg}",
+                event_id=command.event_id,
+                command_id=command.command_id,
+                accepted=isinstance(response, (EXTERNAL_ACK, EXTERNAL_FILL)),
+                reason=(
+                    f"Order Lifecycle Trace "
+                    f"({trace_data['adapter_status']}/{trace_data['exchange_status']}): "
+                    f"{reflection_msg}"
                 ),
-                token_estimate=max(1, len(reflection_msg.split()) + 10)
+                instruction_version=self.instruction_version,
+                created_at=command.created_at.isoformat(),
             )
-            self.memory_lifecycle._write_memory(memory)
-        except Exception:
-            pass
             
         try:
             session_dir = self.root_dir / self.settings.sessions.root_dir / session_id
