@@ -14,6 +14,10 @@ from deepseek_terminal_agent.sessions.collective_memory import (
 from deepseek_terminal_agent.sessions.coordination_config import (
     load_coordination_config,
 )
+from deepseek_terminal_agent.sessions.agent_memory_lifecycle import (
+    LegacyAgentMemoryReader,
+)
+from deepseek_terminal_agent.config import MemoryConfig, Settings
 
 
 def _runtime(tmp_path: Path) -> CanonicalMemoryRuntime:
@@ -179,3 +183,17 @@ def test_active_runtime_sources_do_not_construct_legacy_writer() -> None:
         text = path.read_text(encoding="utf-8")
         assert "AgentMemoryLifecycle(" not in text
         assert "agent_trading_memory.json" not in text
+
+
+def test_legacy_compatibility_surface_is_read_only(tmp_path: Path) -> None:
+    reader = LegacyAgentMemoryReader(
+        Settings(
+            memory=MemoryConfig(canonical_sessions_root=".agent_memory/sessions")
+        ),
+        root_dir=tmp_path.resolve(),
+    )
+    assert not hasattr(reader, "append_rationale_event")
+    assert not hasattr(reader, "append_instruction_ack")
+    assert not hasattr(reader, "append_fsm_decision")
+    assert not hasattr(reader, "finalize_session")
+    assert not hasattr(reader, "_write_memory")
