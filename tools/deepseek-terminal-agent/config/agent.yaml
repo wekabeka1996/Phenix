@@ -23,6 +23,7 @@ sessions:
 memory:
   enabled: true
   path: ".agent_memory/memory_atoms.dsmem.jsonl"
+  canonical_sessions_root: ".agent_memory/sessions"
   retrieval_top_k: 8
   max_atom_chars: 1000
 

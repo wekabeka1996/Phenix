@@ -11,11 +11,12 @@ from typing import Iterable
 
 from .collective_memory_models import (
     CanonicalMemoryRecord,
+    CanonicalMemoryRecovery,
     CanonicalMemorySummary,
     SourceReference,
 )
 from .coordination_config import CoordinationConfig
-from .persistence import append_jsonl_record
+from .persistence import append_jsonl_record, write_text_atomic
 
 
 class DuplicateMemoryRecordError(ValueError):
@@ -45,8 +46,15 @@ class CanonicalMemoryStore:
         self._validate_identity(record.agent_id, record.agent_number)
         path = self._records_path(record.session_id)
         existing = self.read(record.session_id)
-        if any(item.record_id == record.record_id for item in existing):
-            raise DuplicateMemoryRecordError(f"duplicate record_id: {record.record_id}")
+        duplicate = next(
+            (item for item in existing if item.record_id == record.record_id), None
+        )
+        if duplicate is not None:
+            if duplicate == record:
+                return duplicate
+            raise DuplicateMemoryRecordError(
+                f"conflicting duplicate record_id: {record.record_id}"
+            )
         expected_sequence = len(existing) + 1
         if record.sequence != expected_sequence:
             raise MemoryIntegrityError(
@@ -56,21 +64,60 @@ class CanonicalMemoryStore:
         return record
 
     def read(self, session_id: str) -> list[CanonicalMemoryRecord]:
+        records, _ = self._read(session_id, repair_truncated_tail=False)
+        return records
+
+    def recover(self, session_id: str) -> CanonicalMemoryRecovery:
+        records, recovery = self._read(session_id, repair_truncated_tail=True)
+        return CanonicalMemoryRecovery(
+            session_id=self._validate_session_id(session_id),
+            recovered_record_count=len(records),
+            last_sequence=records[-1].sequence if records else 0,
+            **recovery,
+        )
+
+    def _read(
+        self, session_id: str, *, repair_truncated_tail: bool
+    ) -> tuple[list[CanonicalMemoryRecord], dict[str, object]]:
         normalized_session = self._validate_session_id(session_id)
         path = self._records_path(normalized_session)
         if not path.exists():
-            return []
+            return [], {
+                "truncated_tail_detected": False,
+                "truncated_bytes_removed": 0,
+                "repaired": False,
+            }
+        raw_bytes = path.read_bytes()
+        raw_lines = raw_bytes.splitlines(keepends=True)
         records: list[CanonicalMemoryRecord] = []
         seen_ids: set[str] = set()
-        for line_number, raw_line in enumerate(
-            path.read_text(encoding="utf-8").splitlines(), start=1
-        ):
+        valid_prefix_bytes = 0
+        truncated_bytes = 0
+        truncated_tail = False
+        for line_number, raw_line_bytes in enumerate(raw_lines, start=1):
+            try:
+                raw_line = raw_line_bytes.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                is_final_truncated = line_number == len(raw_lines) and not raw_bytes.endswith(b"\n")
+                if is_final_truncated:
+                    truncated_tail = True
+                    truncated_bytes = len(raw_line_bytes)
+                    break
+                raise MemoryIntegrityError(
+                    f"invalid canonical memory encoding at line {line_number}: {exc}"
+                ) from exc
             if not raw_line.strip():
+                valid_prefix_bytes += len(raw_line_bytes)
                 continue
             try:
                 payload = json.loads(raw_line)
                 record = CanonicalMemoryRecord.model_validate(payload)
             except (json.JSONDecodeError, ValueError) as exc:
+                is_final_truncated = line_number == len(raw_lines) and not raw_bytes.endswith(b"\n")
+                if is_final_truncated:
+                    truncated_tail = True
+                    truncated_bytes = len(raw_line_bytes)
+                    break
                 raise MemoryIntegrityError(
                     f"invalid canonical memory record at line {line_number}: {exc}"
                 ) from exc
@@ -91,7 +138,23 @@ class CanonicalMemoryStore:
                 )
             seen_ids.add(record.record_id)
             records.append(record)
-        return records
+            valid_prefix_bytes += len(raw_line_bytes)
+        repaired = False
+        if truncated_tail and repair_truncated_tail:
+            write_text_atomic(
+                path,
+                raw_bytes[:valid_prefix_bytes].decode("utf-8"),
+            )
+            repaired = True
+        elif truncated_tail:
+            raise MemoryIntegrityError(
+                "truncated final canonical memory record; call recover() before reading"
+            )
+        return records, {
+            "truncated_tail_detected": truncated_tail,
+            "truncated_bytes_removed": truncated_bytes,
+            "repaired": repaired,
+        }
 
     def summarize(self, session_id: str) -> CanonicalMemorySummary:
         records = self.read(session_id)
@@ -147,6 +210,9 @@ class CanonicalMemoryStore:
         configured = self.config.agent(normalized_agent)
         if configured.agent_number != agent_number:
             raise ValueError("agent_number does not match configured identity")
+
+    def validate_identity(self, agent_id: str, agent_number: int) -> None:
+        self._validate_identity(agent_id, agent_number)
 
     @staticmethod
     def _validate_session_id(session_id: str) -> str:

@@ -9,7 +9,7 @@ from typing import Literal, Optional
 from urllib.parse import urlparse
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, field_validator, model_validator
 
 ThinkingType = Literal["enabled", "disabled"]
 ReasoningEffort = Literal["high", "max"]
@@ -127,12 +127,20 @@ class MemoryConfig(BaseModel):
 
     enabled: bool = True
     path: str = ".agent_memory/memory_atoms.dsmem.jsonl"
+    canonical_sessions_root: Optional[str] = None
     retrieval_top_k: int = 8
     max_atom_chars: int = 1000
 
     @field_validator("path")
     @classmethod
     def memory_path_safe(cls, value: str) -> str:
+        return _validate_relative_local_path(value)
+
+    @field_validator("canonical_sessions_root")
+    @classmethod
+    def canonical_sessions_root_safe(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
         return _validate_relative_local_path(value)
 
     @field_validator("retrieval_top_k", "max_atom_chars")
@@ -471,6 +479,24 @@ class Settings(BaseModel):
     project_capsule: ProjectCapsuleConfig = ProjectCapsuleConfig()
     playbooks: PlaybooksConfig = PlaybooksConfig()
     tool_registry: ToolRegistryConfig = ToolRegistryConfig()
+    _config_project_root: Optional[Path] = PrivateAttr(default=None)
+
+    def bind_config_project_root(self, project_root: str | Path) -> None:
+        resolved = Path(project_root)
+        if not resolved.is_absolute():
+            raise ValueError("config project root must be absolute")
+        self._config_project_root = resolved.resolve()
+
+    def canonical_memory_root(self, *, project_root: str | Path | None = None) -> Path:
+        configured = self.memory.canonical_sessions_root
+        if configured is None:
+            raise RuntimeError("memory.canonical_sessions_root is required")
+        anchor = Path(project_root) if project_root is not None else self._config_project_root
+        if anchor is None:
+            raise RuntimeError("canonical memory project root is not bound")
+        if not anchor.is_absolute():
+            raise ValueError("canonical memory project root must be absolute")
+        return (anchor.resolve() / configured).resolve()
 
 
 def load_settings(
@@ -533,6 +559,9 @@ def load_settings(
     except ValidationError as exc:
         _die(f"Invalid config: {exc}")
 
+    config_parent = cfg_path.resolve().parent
+    project_root = config_parent.parent if config_parent.name == "config" else config_parent
+    settings.bind_config_project_root(project_root)
     _validate_required(settings)
     return settings
 

@@ -52,6 +52,17 @@ class CanonicalMemoryRecord(BaseModel):
     command_ids: list[str] = Field(default_factory=list)
     source_refs: list[SourceReference] = Field(default_factory=list)
 
+    @field_validator("created_at")
+    @classmethod
+    def created_at_is_timezone_aware(cls, value: str) -> str:
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("created_at must be an ISO-8601 timestamp") from exc
+        if parsed.tzinfo is None:
+            raise ValueError("created_at must include a timezone")
+        return value
+
     @field_validator("event_ids", "command_ids")
     @classmethod
     def references_are_non_empty_and_unique(cls, value: list[str]) -> list[str]:
@@ -75,6 +86,17 @@ class CanonicalMemorySummary(BaseModel):
     event_ids: list[str] = Field(default_factory=list)
     command_ids: list[str] = Field(default_factory=list)
     source_refs: list[SourceReference] = Field(default_factory=list)
+
+
+class CanonicalMemoryRecovery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str = Field(..., min_length=1)
+    recovered_record_count: int = Field(..., ge=0)
+    last_sequence: int = Field(..., ge=0)
+    truncated_tail_detected: bool
+    truncated_bytes_removed: int = Field(..., ge=0)
+    repaired: bool
 
 
 class ArenaEvidenceEvent(BaseModel):
