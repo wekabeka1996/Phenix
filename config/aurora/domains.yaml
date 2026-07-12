@@ -746,6 +746,7 @@ shadow_telemetry:
     write:
       enabled: true
       intents_endpoint: /intents/llm/v1
+      agent_intents_v2_endpoint: /intents/llm/v2
       rate_limit_per_min: 30
       max_body_kb: 64
       symbol_allowlist:

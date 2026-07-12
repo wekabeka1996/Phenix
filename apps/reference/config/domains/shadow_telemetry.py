@@ -24,6 +24,7 @@ class ShadowTelemetryApiWriteConfig(BaseModel):
 
     enabled: bool = Field(...)
     intents_endpoint: str = Field(...)
+    agent_intents_v2_endpoint: str = Field(...)
     rate_limit_per_min: int = Field(..., ge=1)
     max_body_kb: int = Field(..., ge=1)
     symbol_allowlist: List[str] = Field(

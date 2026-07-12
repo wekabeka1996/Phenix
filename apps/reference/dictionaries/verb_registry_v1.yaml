@@ -649,6 +649,24 @@ registry:
   schema: null
   since: '2026-03-14'
 - op: EVT
+  verb: AGENT_TRADE_INTENT_V2_RECEIVED
+  owner: shadow_telemetry
+  status: experimental
+  schema: null
+  since: '2026-07-12'
+- op: EVT
+  verb: AGENT_TRADE_INTENT_V2_REJECTED
+  owner: shadow_telemetry
+  status: experimental
+  schema: null
+  since: '2026-07-12'
+- op: EVT
+  verb: AGENT_TRADE_INTENT_V2_SIZED
+  owner: shadow_telemetry
+  status: experimental
+  schema: null
+  since: '2026-07-12'
+- op: EVT
   verb: LLM_INTENT_ACCEPTED_V1
   owner: shadow_telemetry
   status: experimental
