@@ -149,7 +149,10 @@ def test_loads_new_workbench_sections(tmp_path, monkeypatch):
         {
             "models": {"registry_cache_path": ".agent_memory/custom.dsmodels.json"},
             "sessions": {"root_dir": ".agent_memory/custom_sessions"},
-            "memory": {"path": ".agent_memory/custom_memory.dsmem.jsonl"},
+            "memory": {
+                "path": ".agent_memory/custom_memory.dsmem.jsonl",
+                "canonical_sessions_root": ".agent_memory/canonical_sessions",
+            },
             "compression": {"model_id": "deepseek-v4-flash"},
             "subagents": {"default_tool_policy": "read_only"},
             "dashboard": {"chat_enabled": True},
@@ -163,6 +166,9 @@ def test_loads_new_workbench_sections(tmp_path, monkeypatch):
     assert settings.models.registry_cache_path == ".agent_memory/custom.dsmodels.json"
     assert settings.sessions.root_dir == ".agent_memory/custom_sessions"
     assert settings.memory.path == ".agent_memory/custom_memory.dsmem.jsonl"
+    assert settings.canonical_memory_root() == (
+        tmp_path / ".agent_memory" / "canonical_sessions"
+    ).resolve()
     assert settings.compression.model_id == "deepseek-v4-flash"
     assert settings.subagents.default_tool_policy == "read_only"
     assert settings.dashboard.chat_enabled is True
@@ -181,6 +187,17 @@ def test_unsafe_local_storage_path_fails(tmp_path, monkeypatch):
 
     with pytest.raises(SystemExit):
         load_settings(config_path=cfg_file, env_file=None)
+
+
+def test_canonical_memory_config_fails_closed_when_missing_or_malformed(tmp_path):
+    from deepseek_terminal_agent.config import MemoryConfig, Settings
+
+    settings = Settings()
+    settings.bind_config_project_root(tmp_path.resolve())
+    with pytest.raises(RuntimeError, match="canonical_sessions_root"):
+        settings.canonical_memory_root()
+    with pytest.raises(ValueError):
+        MemoryConfig(canonical_sessions_root="../escape")
 
 
 def test_gitignore_contains_agent_memory():

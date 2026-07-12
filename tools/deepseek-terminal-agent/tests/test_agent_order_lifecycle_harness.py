@@ -4,7 +4,7 @@ import pathlib
 import pytest
 from pydantic import ValidationError
 
-from deepseek_terminal_agent.config import Settings
+from deepseek_terminal_agent.config import MemoryConfig, Settings
 from deepseek_terminal_agent.sessions.agent_action_audit import (
     AgentActionCommand,
     AdapterCapabilityDescriptor,
@@ -20,6 +20,7 @@ from deepseek_terminal_agent.sessions.agent_order_lifecycle_harness import (
     BLOCKED_DUPLICATE,
     BLOCKED_ENVIRONMENT,
 )
+from deepseek_terminal_agent.sessions.coordination_config import load_coordination_config
 
 
 def get_base_command(agent_number=2, agent_id="cli_agent_01", symbol="XRPUSDT", command_id="cmd-5678") -> dict:
@@ -36,10 +37,21 @@ def get_base_command(agent_number=2, agent_id="cli_agent_01", symbol="XRPUSDT", 
     }
 
 
+def make_harness(tmp_path):
+    settings = Settings(
+        memory=MemoryConfig(canonical_sessions_root=".agent_memory/sessions")
+    )
+    return AgentOrderLifecycleHarness(
+        settings,
+        root_dir=tmp_path.resolve(),
+        coordination_config=load_coordination_config(),
+        instruction_version="manifest-p46-1c",
+    )
+
+
 def test_harness_blocked_guard_rejections(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    settings = Settings()
-    harness = AgentOrderLifecycleHarness(settings, root_dir=tmp_path)
+    harness = make_harness(tmp_path)
 
     # 1. Blocked due to missing capability descriptor
     cmd = AgentActionCommand(**get_base_command(command_id="cmd-1"))
@@ -79,8 +91,7 @@ def test_harness_blocked_guard_rejections(tmp_path, monkeypatch):
 
 def test_harness_blocked_missing_config(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    settings = Settings()
-    harness = AgentOrderLifecycleHarness(settings, root_dir=tmp_path)
+    harness = make_harness(tmp_path)
     cmd = AgentActionCommand(**get_base_command(command_id="cmd-3"))
 
     desc = AdapterCapabilityDescriptor.model_construct(
@@ -105,8 +116,7 @@ def test_harness_blocked_missing_config(tmp_path, monkeypatch):
 
 def test_harness_blocked_no_order(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    settings = Settings()
-    harness = AgentOrderLifecycleHarness(settings, root_dir=tmp_path)
+    harness = make_harness(tmp_path)
     cmd = AgentActionCommand(**get_base_command(command_id="cmd-4"))
 
     desc = AdapterCapabilityDescriptor(
@@ -133,8 +143,7 @@ def test_harness_blocked_no_order(tmp_path, monkeypatch):
 
 def test_harness_testnet_proof_ack(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    settings = Settings()
-    harness = AgentOrderLifecycleHarness(settings, root_dir=tmp_path)
+    harness = make_harness(tmp_path)
     cmd = AgentActionCommand(**get_base_command(agent_number=2, agent_id="cli_agent_01", symbol="XRPUSDT", command_id="cmd-5"))
 
     desc = AdapterCapabilityDescriptor(
@@ -182,8 +191,7 @@ def test_harness_testnet_proof_ack(tmp_path, monkeypatch):
 
 def test_harness_url_double_guard_rejects(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    settings = Settings()
-    harness = AgentOrderLifecycleHarness(settings, root_dir=tmp_path)
+    harness = make_harness(tmp_path)
     cmd = AgentActionCommand(**get_base_command(command_id="cmd-6"))
 
     desc = AdapterCapabilityDescriptor(
@@ -211,8 +219,7 @@ def test_harness_url_double_guard_rejects(tmp_path, monkeypatch):
 
 def test_harness_agent_1_blocked(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    settings = Settings()
-    harness = AgentOrderLifecycleHarness(settings, root_dir=tmp_path)
+    harness = make_harness(tmp_path)
     cmd = AgentActionCommand(**get_base_command(agent_number=1, agent_id="api_agent_01", symbol="SOLUSDT", command_id="cmd-7"))
 
     desc = AdapterCapabilityDescriptor(
@@ -241,8 +248,7 @@ def test_harness_agent_1_blocked(tmp_path, monkeypatch):
 
 def test_harness_wrong_symbol_owner(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    settings = Settings()
-    harness = AgentOrderLifecycleHarness(settings, root_dir=tmp_path)
+    harness = make_harness(tmp_path)
     # CLI Agent 2 tries to trade SOLUSDT (owned by Agent 1)
     cmd = AgentActionCommand(**get_base_command(agent_number=2, agent_id="cli_agent_01", symbol="SOLUSDT", command_id="cmd-8"))
 
@@ -269,8 +275,7 @@ def test_harness_wrong_symbol_owner(tmp_path, monkeypatch):
 
 def test_harness_duplicate_command_id(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    settings = Settings()
-    harness = AgentOrderLifecycleHarness(settings, root_dir=tmp_path)
+    harness = make_harness(tmp_path)
     
     desc = AdapterCapabilityDescriptor(
         adapter_id="binance_acl",

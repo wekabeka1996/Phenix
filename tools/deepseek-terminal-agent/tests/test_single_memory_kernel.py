@@ -67,9 +67,13 @@ def test_append_and_ordered_read_preserve_event_and_command_refs(tmp_path: Path)
     assert records[1].command_ids == ["command-2"]
 
 
-def test_duplicate_id_is_rejected(tmp_path: Path) -> None:
+def test_identical_duplicate_is_suppressed_and_conflict_is_rejected(tmp_path: Path) -> None:
     store = _store(tmp_path)
-    store.append(_record("record-1", 1))
+    original = _record("record-1", 1)
+    store.append(original)
+
+    assert store.append(original) == original
+    assert len(store.read("session-1")) == 1
 
     with pytest.raises(DuplicateMemoryRecordError):
         store.append(_record("record-1", 2))
@@ -89,6 +93,39 @@ def test_restart_reopens_authoritative_ledger(tmp_path: Path) -> None:
     reopened = _store(tmp_path)
 
     assert reopened.read("session-1") == first.read("session-1")
+
+
+def test_truncated_tail_recovery_preserves_prefix_and_allows_append(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.append(_record("record-1", 1))
+    path = tmp_path / "session-1" / "canonical_memory" / "records.jsonl"
+    with path.open("ab") as handle:
+        handle.write(b'{"record_id":"partial"')
+
+    with pytest.raises(RuntimeError, match="truncated final"):
+        store.read("session-1")
+
+    recovery = store.recover("session-1")
+    assert recovery.truncated_tail_detected is True
+    assert recovery.repaired is True
+    assert recovery.recovered_record_count == 1
+    store.append(_record("record-2", 2))
+    assert [item.record_id for item in store.read("session-1")] == [
+        "record-1",
+        "record-2",
+    ]
+
+
+def test_corrupt_middle_record_fails_closed(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.append(_record("record-1", 1))
+    path = tmp_path / "session-1" / "canonical_memory" / "records.jsonl"
+    with path.open("ab") as handle:
+        handle.write(b"not-json\n")
+        handle.write(b'{"record_id":"partial"')
+
+    with pytest.raises(RuntimeError, match="line 2"):
+        store.recover("session-1")
 
 
 def test_summary_and_carryover_are_deterministic(tmp_path: Path) -> None:

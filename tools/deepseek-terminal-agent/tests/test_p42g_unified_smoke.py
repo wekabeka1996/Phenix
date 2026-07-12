@@ -6,7 +6,7 @@ import pathlib
 import pytest
 import yaml
 
-from deepseek_terminal_agent.config import Settings
+from deepseek_terminal_agent.config import MemoryConfig, Settings
 from deepseek_terminal_agent.sessions.store import SessionStore
 from deepseek_terminal_agent.sessions.p42_config import load_dual_agent_config
 from deepseek_terminal_agent.sessions.dual_agent_runner import DualAgentRuntimeRunner
@@ -17,6 +17,7 @@ from deepseek_terminal_agent.sessions.agent_order_lifecycle_harness import (
 )
 from deepseek_terminal_agent.sessions.agent_action_audit import AgentActionCommand, AdapterCapabilityDescriptor
 from deepseek_terminal_agent.sessions.arena_runtime_view import ArenaRuntimeViewService, classify_exchange_evidence
+from deepseek_terminal_agent.sessions.coordination_config import load_coordination_config
 
 
 class MockFSM:
@@ -106,7 +107,9 @@ def test_p42g_unified_runtime_smoke(smoke_setup, monkeypatch):
     monkeypatch.setenv("RUN_READY_GATE", "true")
 
     config = load_dual_agent_config(config_file)
-    settings = Settings()
+    settings = Settings(
+        memory=MemoryConfig(canonical_sessions_root=".agent_memory/sessions")
+    )
     fsm = MockFSM()
     store = SessionStore(settings, root_dir=root_dir)
     
@@ -193,7 +196,12 @@ def test_p42g_unified_runtime_smoke(smoke_setup, monkeypatch):
     assert "unauthorized symbol" in failures[0]["metadata"]["details"]
 
     # 7. Verify duplicate command is rejected by harness
-    harness = AgentOrderLifecycleHarness(settings, root_dir=root_dir)
+    harness = AgentOrderLifecycleHarness(
+        settings,
+        root_dir=root_dir.resolve(),
+        coordination_config=load_coordination_config(),
+        instruction_version="manifest-p46-1c",
+    )
     
     # Write a mock trace to traces file first
     trace_path = root_dir / ".agent_memory" / "order_lifecycle_traces.jsonl"
