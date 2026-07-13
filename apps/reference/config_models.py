@@ -57,6 +57,7 @@ from apps.reference.config.domains.position_tracking import (
     PositionTrackingDomainConfig,
 )
 from apps.reference.config.domains.shadow_telemetry import (
+    AuthorityQueryBridgeConfig,
     ShadowTelemetryApiConfig,
     ShadowTelemetryReadModelConfig,
     ProposalDryRunApiConfig,

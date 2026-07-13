@@ -87,6 +87,26 @@ class ShadowTelemetryEgressToMainConfig(BaseModel):
                              "drop_oldest"] = Field(...)
 
 
+class AuthorityQueryBridgeConfig(BaseModel):
+    """Typed request/reply policy on the existing edge-to-main IPC endpoint."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(...)
+    ipc_endpoint: str = Field(...)
+    request_schema_version: Literal["p46.authority-query.v1"] = Field(...)
+    response_schema_version: Literal["p46.authority-query-response.v1"] = Field(...)
+    supported_query_kinds: List[Literal[
+        "QUERY:AUTHORITY_COMPATIBILITY_V1",
+        "QUERY:READ_MODEL_SESSION_V1",
+        "QUERY:PROPOSAL_DRY_RUN_V1",
+        "QUERY:PROPOSAL_DRY_RUN_RESULT_V1",
+    ]] = Field(..., min_length=4, max_length=4)
+    timeout_ms: int = Field(..., ge=100, le=30_000)
+    max_payload_kb: int = Field(..., ge=4, le=256)
+    max_idempotency_entries: int = Field(..., ge=16, le=10_000)
+
+
 class ShadowTelemetryLedgerConfig(BaseModel):
     """Active decision outcome ledger queue controls."""
 
@@ -191,6 +211,7 @@ class ShadowTelemetryDomainConfig(BaseModel):
         ...)
     egress_to_main: ShadowTelemetryEgressToMainConfig = Field(
         ...)
+    authority_query_bridge: AuthorityQueryBridgeConfig = Field(...)
     ledger: ShadowTelemetryLedgerConfig = Field(
         ...)
     lifecycle: ShadowTelemetryLifecycleConfig = Field(
@@ -198,3 +219,11 @@ class ShadowTelemetryDomainConfig(BaseModel):
     agent_authority: AgentAuthorityPolicyConfig = Field(...)
     snapshot: ShadowTelemetrySnapshotConfig = Field(
         ...)
+
+    @model_validator(mode="after")
+    def query_bridge_reuses_canonical_endpoint(self) -> "ShadowTelemetryDomainConfig":
+        if self.authority_query_bridge.ipc_endpoint != self.egress_to_main.ipc_commands_endpoint:
+            raise ValueError("authority query bridge must reuse the canonical edge-to-main endpoint")
+        if len(set(self.authority_query_bridge.supported_query_kinds)) != 4:
+            raise ValueError("authority query kinds must be unique and complete")
+        return self

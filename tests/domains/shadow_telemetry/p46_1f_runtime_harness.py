@@ -155,7 +155,9 @@ class P46RuntimeHarness:
         domains = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
         shadow = domains["shadow_telemetry"]
         shadow["ingest"]["ipc_endpoint"] = f"tcp://127.0.0.1:{_free_port()}"
-        shadow["egress_to_main"]["ipc_commands_endpoint"] = f"tcp://127.0.0.1:{_free_port()}"
+        command_endpoint = f"tcp://127.0.0.1:{_free_port()}"
+        shadow["egress_to_main"]["ipc_commands_endpoint"] = command_endpoint
+        shadow["authority_query_bridge"]["ipc_endpoint"] = command_endpoint
         shadow["snapshot"]["output_dir"] = str(self.root_dir / "snapshots")
         shadow["api"]["auth_mode"] = "bearer"
         domains_path.write_text(

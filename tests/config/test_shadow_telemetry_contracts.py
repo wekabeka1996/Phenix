@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from apps.reference.config_loader import ConfigLoader
 from apps.reference.config.domains.shadow_telemetry import (
     AgentAuthorityPolicyConfig,
+    AuthorityQueryBridgeConfig as DomainAuthorityQueryBridgeConfig,
     ProposalDryRunApiConfig as DomainProposalDryRunApiConfig,
     ShadowTelemetryApiConfig as DomainShadowTelemetryApiConfig,
     ShadowTelemetryReadModelConfig as DomainShadowTelemetryReadModelConfig,
@@ -22,6 +23,7 @@ from apps.reference.config.domains.shadow_telemetry import (
     ShadowTelemetryTfPolicyConfig as DomainShadowTelemetryTfPolicyConfig,
 )
 from apps.reference.config_models import (
+    AuthorityQueryBridgeConfig,
     ProposalDryRunApiConfig,
     ShadowTelemetryApiConfig,
     ShadowTelemetryReadModelConfig,
@@ -117,6 +119,8 @@ def test_current_aurora_config_loads_shadow_telemetry_contract() -> None:
     assert st.api.write.require_snapshot_ref is True
     assert st.egress_to_main.mode == "ipc"
     assert st.egress_to_main.ipc_commands_endpoint == "tcp://127.0.0.1:7102"
+    assert st.authority_query_bridge.ipc_endpoint == "tcp://127.0.0.1:7102"
+    assert st.authority_query_bridge.request_schema_version == "p46.authority-query.v1"
     assert st.ledger.queue_maxsize == 50000
     assert st.ledger.overflow_policy == "fail_closed"
     assert st.ledger.enqueue_timeout_ms == 5
@@ -141,6 +145,18 @@ def test_shadow_telemetry_facade_reexports_are_exact_identity() -> None:
     assert ShadowTelemetryLifecycleConfig is DomainShadowTelemetryLifecycleConfig
     assert ShadowTelemetrySnapshotConfig is DomainShadowTelemetrySnapshotConfig
     assert ShadowTelemetryDomainConfig is DomainShadowTelemetryDomainConfig
+    assert AuthorityQueryBridgeConfig is DomainAuthorityQueryBridgeConfig
+    _assert_field_contract(
+        AuthorityQueryBridgeConfig,
+        required={
+            "enabled", "ipc_endpoint", "request_schema_version",
+            "response_schema_version", "supported_query_kinds", "timeout_ms",
+            "max_payload_kb", "max_idempotency_entries",
+        },
+        defaults={},
+        class_factories={},
+        dynamic_factories={},
+    )
 
 
 def test_shadow_telemetry_extraction_preserves_field_contract() -> None:
@@ -250,6 +266,7 @@ def test_shadow_telemetry_extraction_preserves_field_contract() -> None:
     _assert_field_contract(
         ShadowTelemetryDomainConfig,
         required={"enabled", "required_for_mode", "ingest", "api", "egress_to_main",
+                  "authority_query_bridge",
                   "ledger", "lifecycle", "agent_authority", "snapshot"},
         defaults={},
         class_factories={},

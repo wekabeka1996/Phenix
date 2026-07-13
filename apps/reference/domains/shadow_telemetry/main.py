@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hashlib
 import hmac
 import ipaddress
@@ -49,20 +50,24 @@ from apps.reference.domains.shadow_telemetry.agent_trade_intent_v2 import (
 )
 from apps.reference.domains.shadow_telemetry.ipc import (
     JsonlTcpQueueClient,
+    JsonlTcpRequestError,
+    JsonlTcpRequestReplyClient,
     JsonlTcpServer,
     parse_tcp_endpoint,
 )
 from apps.reference.domains.shadow_telemetry.snapshot_store import SnapshotStore
-from apps.reference.domains.shadow_telemetry.read_model_contract import ReadModelHealth
+from apps.reference.domains.shadow_telemetry.read_model_contract import PhenixRuntimeReadModel, ReadModelHealth
 from apps.reference.domains.shadow_telemetry.read_model_service import (
     PhenixReadModelService,
     ReadModelUnavailableError,
 )
 from apps.reference.domains.shadow_telemetry.proposal_dry_run import (
+    ProposalDryRunResult,
     ProposalDryRunService,
     ProposalValidationError,
     validate_proposal_payload,
 )
+from apps.reference.domains.shadow_telemetry.authority_query import MainProcessAuthorityQueryClient
 from vfoundation.core.protocol import Message, truncate_why
 from vfoundation.dr import wal
 
@@ -315,6 +320,7 @@ def create_shadow_telemetry_app(
     *,
     read_model_service: Optional[PhenixReadModelService] = None,
     proposal_dry_run_service: Optional[ProposalDryRunService] = None,
+    authority_query_client: Optional[MainProcessAuthorityQueryClient] = None,
 ) -> FastAPI:
     shadow_cfg = config.domains.shadow_telemetry
     write_cfg = shadow_cfg.api.write
@@ -369,6 +375,9 @@ def create_shadow_telemetry_app(
     app.state.auth_tokens = _load_bearer_tokens()
     app.state.read_model_service = read_model_service
     app.state.proposal_dry_run_service = proposal_dry_run_service
+    app.state.authority_query_client = authority_query_client
+    app.state.authority_query_compatibility = None
+    app.state.authority_query_error = None
     app.state.read_model_config = shadow_cfg.api.read_model
 
     @app.on_event("startup")
@@ -406,6 +415,14 @@ def create_shadow_telemetry_app(
             name="shadow_telemetry_command_client",
         )
         app.state.command_client.start()
+
+        if app.state.authority_query_client is not None:
+            try:
+                app.state.authority_query_compatibility = await asyncio.to_thread(
+                    app.state.authority_query_client.handshake
+                )
+            except JsonlTcpRequestError as exc:
+                app.state.authority_query_error = exc.reason
 
         if bool(write_cfg.enabled) and app.state.auth_mode == "bearer" and not app.state.auth_tokens:
             raise RuntimeError(
@@ -523,7 +540,10 @@ def create_shadow_telemetry_app(
             environment=policy.environment,
             generated_at=datetime.now(timezone.utc),
             configured=bool(policy.enabled),
-            authority_available=app.state.read_model_service is not None,
+            authority_available=(
+                app.state.authority_query_compatibility is not None
+                or app.state.read_model_service is not None
+            ),
             source_references=("phenix://shadow-telemetry/read-model",),
         ).model_dump(mode="json")
 
@@ -533,9 +553,24 @@ def create_shadow_telemetry_app(
         credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
     ) -> Response:
         _read_model_authorize(request, credentials)
-        return Response(status_code=200 if app.state.read_model_service is not None else 503)
+        return Response(status_code=200 if (
+            app.state.authority_query_compatibility is not None
+            or app.state.read_model_service is not None
+        ) else 503)
 
-    def _read_model_snapshot(session_id: str) -> Dict[str, Any]:
+    async def _read_model_snapshot(session_id: str) -> Dict[str, Any]:
+        query_client = app.state.authority_query_client
+        if query_client is not None:
+            try:
+                if query_client.runtime_generation is None:
+                    app.state.authority_query_compatibility = await asyncio.to_thread(query_client.handshake)
+                raw = await asyncio.to_thread(query_client.read_model, session_id)
+                return PhenixRuntimeReadModel.model_validate(raw).model_dump(mode="json")
+            except JsonlTcpRequestError as exc:
+                http_status = status.HTTP_504_GATEWAY_TIMEOUT if exc.reason == "IPC_QUERY_TIMEOUT" else status.HTTP_503_SERVICE_UNAVAILABLE
+                raise HTTPException(status_code=http_status, detail={"reason_code": exc.reason}) from exc
+            except Exception as exc:
+                raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail={"reason_code": "IPC_REPLY_INVALID"}) from exc
         service = app.state.read_model_service
         if service is None:
             raise HTTPException(
@@ -556,7 +591,7 @@ def create_shadow_telemetry_app(
         focus: Optional[str] = None,
     ) -> Dict[str, Any]:
         _read_model_authorize(request, credentials)
-        snapshot = _read_model_snapshot(session_id)
+        snapshot = await _read_model_snapshot(session_id)
         if focus is None:
             return snapshot
         common_keys = {
@@ -618,6 +653,20 @@ def create_shadow_telemetry_app(
             raise HTTPException(status_code=400, detail={"reason_code": "PROPOSAL_SCHEMA_INVALID"}) from exc
         if proposal.phenix_session_id != session_id:
             raise HTTPException(status_code=409, detail={"reason_code": "SESSION_ID_MISMATCH"})
+        query_client = app.state.authority_query_client
+        if query_client is not None:
+            try:
+                if query_client.runtime_generation is None:
+                    app.state.authority_query_compatibility = await asyncio.to_thread(query_client.handshake)
+                raw_result = await asyncio.to_thread(
+                    query_client.dry_run, session_id, proposal.model_dump(mode="json")
+                )
+                return ProposalDryRunResult.model_validate(raw_result).model_dump(mode="json")
+            except JsonlTcpRequestError as exc:
+                http_status = status.HTTP_504_GATEWAY_TIMEOUT if exc.reason == "IPC_QUERY_TIMEOUT" else status.HTTP_503_SERVICE_UNAVAILABLE
+                raise HTTPException(status_code=http_status, detail={"reason_code": exc.reason}) from exc
+            except Exception as exc:
+                raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail={"reason_code": "IPC_REPLY_INVALID"}) from exc
         result = _proposal_service().evaluate(proposal)
         return result.model_dump(mode="json")
 
@@ -628,6 +677,14 @@ def create_shadow_telemetry_app(
         credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
     ) -> Dict[str, Any]:
         _read_model_authorize(request, credentials)
+        query_client = app.state.authority_query_client
+        if query_client is not None:
+            try:
+                raw_result = await asyncio.to_thread(query_client.dry_run_result, proposal_id)
+                return ProposalDryRunResult.model_validate(raw_result).model_dump(mode="json")
+            except JsonlTcpRequestError as exc:
+                http_status = status.HTTP_504_GATEWAY_TIMEOUT if exc.reason == "IPC_QUERY_TIMEOUT" else status.HTTP_503_SERVICE_UNAVAILABLE
+                raise HTTPException(status_code=http_status, detail={"reason_code": exc.reason}) from exc
         try:
             return _proposal_service().get(proposal_id).model_dump(mode="json")
         except ProposalValidationError as exc:
@@ -1861,7 +1918,21 @@ def main() -> None:
         cfg_dir = (project_root / cfg_dir).resolve()
 
     config = ConfigLoader(config_dir=cfg_dir).load_config()
-    app = create_shadow_telemetry_app(config)
+    query_cfg = config.domains.shadow_telemetry.authority_query_bridge
+    query_client = None
+    if query_cfg.enabled:
+        query_client = MainProcessAuthorityQueryClient(
+            JsonlTcpRequestReplyClient(
+                query_cfg.ipc_endpoint,
+                timeout_ms=query_cfg.timeout_ms,
+                max_payload_kb=query_cfg.max_payload_kb,
+            ),
+            runtime_id=config.domains.shadow_telemetry.api.read_model.runtime_id,
+            environment=config.domains.shadow_telemetry.api.read_model.environment,
+            timeout_ms=query_cfg.timeout_ms,
+            clock=lambda: datetime.now(timezone.utc),
+        )
+    app = create_shadow_telemetry_app(config, authority_query_client=query_client)
 
     shadow_cfg = config.domains.shadow_telemetry
     host = str(args.host or shadow_cfg.api.host)

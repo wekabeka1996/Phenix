@@ -4,7 +4,8 @@ import threading
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, Optional
 
 from vfoundation.core.protocol import Message, truncate_why
 from vfoundation.dr import wal
@@ -378,14 +379,17 @@ class LLMIntentIngressBridge:
         config: Any,
         logger: Optional[logging.Logger] = None,
         v2_processor: Optional[AgentTradeIntentV2Processor] = None,
+        authority_query_handler: Optional[Callable[[dict[str, Any]], dict[str, Any]]] = None,
     ) -> None:
         self.fsm = fsm
         self.config = config
         self.logger = logger or logging.getLogger(__name__)
         self.v2_processor = v2_processor
+        self.authority_query_handler = authority_query_handler
         self._v2_emitted_intent_ids: set[str] = set()
         self.command_envelope_count = 0
         self.v2_handler_count = 0
+        self.authority_query_count = 0
         self.last_command_request_id: Optional[str] = None
 
         shadow_cfg = getattr(
@@ -509,11 +513,29 @@ class LLMIntentIngressBridge:
             return True
         return False
 
-    def _on_command(self, payload: Dict[str, Any]) -> None:
-        self.command_envelope_count += 1
+    def _on_command(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         request_id = str(payload.get("request_id") or "")
         self.last_command_request_id = request_id or None
         request_kind = str(payload.get("request_kind") or "")
+        if request_kind.startswith("QUERY:"):
+            self.authority_query_count += 1
+            if self.authority_query_handler is not None:
+                return self.authority_query_handler(payload)
+            now = datetime.now(timezone.utc).isoformat()
+            return {
+                "schema_version": "p46.authority-query-response.v1",
+                "request_id": request_id or "invalid-request",
+                "correlation_id": str(payload.get("correlation_id") or "invalid-correlation"),
+                "status": "UNAVAILABLE",
+                "generated_at": now,
+                "source_runtime_id": str(self.config.domains.shadow_telemetry.api.read_model.runtime_id),
+                "environment": str(self.config.domains.shadow_telemetry.api.read_model.environment),
+                "runtime_generation": "unavailable",
+                "source_versions": {},
+                "payload": None,
+                "error_code": "QUERY_HANDLER_UNAVAILABLE",
+            }
+        self.command_envelope_count += 1
         shadow_cfg = self.config.domains.shadow_telemetry
         if (
             request_kind != "agent_trade_intent_v2"
@@ -523,7 +545,7 @@ class LLMIntentIngressBridge:
                 "Legacy execution IPC envelope rejected by canonical V2 policy: %s",
                 request_kind or "missing",
             )
-            return
+            return None
         is_eze_open = request_kind == "eze_open"
         is_eze_close = request_kind == "eze_close_position"
         is_eze_amend = request_kind == "eze_amend_brackets"

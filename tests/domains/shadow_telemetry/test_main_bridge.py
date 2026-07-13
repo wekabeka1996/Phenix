@@ -101,6 +101,7 @@ def _configure_shadow_llm(cfg_dir: Path, *, mode: str) -> None:
     authority_policy = domains_data["shadow_telemetry"]["agent_authority"]
     read_model_policy = domains_data["shadow_telemetry"]["api"]["read_model"]
     proposal_dry_run_policy = domains_data["shadow_telemetry"]["api"]["proposal_dry_run"]
+    authority_query_policy = domains_data["shadow_telemetry"]["authority_query_bridge"]
     domains_data["shadow_telemetry"] = {
         "enabled": True,
         "required_for_mode": False,
@@ -138,6 +139,7 @@ def _configure_shadow_llm(cfg_dir: Path, *, mode: str) -> None:
             "queue_maxsize": 100,
             "overflow_policy": "fail_closed",
         },
+        "authority_query_bridge": authority_query_policy,
         "ledger": {
             "queue_maxsize": 100,
             "overflow_policy": "fail_closed",
@@ -370,6 +372,48 @@ def test_llm_ingress_bridge_maps_amend_request_to_external_bracket_amend_request
     assert payload["tp_price"] == "101.5"
     assert payload["sl_price"] == "99.2"
     assert payload["source"] == "external_llm"
+
+
+def test_authority_query_uses_semantic_handler_without_command_or_fsm_effect(tmp_path: Path) -> None:
+    cfg_dir = _copy_config_to_tmp(tmp_path)
+    _configure_shadow_llm(cfg_dir, mode="hybrid_advisory")
+    config = ConfigLoader(config_dir=cfg_dir).load_config()
+    fsm = _StubFSM()
+    calls: list[dict[str, Any]] = []
+
+    def query_handler(payload: dict[str, Any]) -> dict[str, Any]:
+        calls.append(payload)
+        return {
+            "schema_version": "p46.authority-query-response.v1",
+            "request_id": payload["request_id"],
+            "correlation_id": payload["correlation_id"],
+            "status": "OK",
+            "generated_at": "2026-07-13T12:00:00Z",
+            "source_runtime_id": "phenix-main",
+            "environment": "binance_futures_testnet",
+            "runtime_generation": "generation-1",
+            "source_versions": {},
+            "payload": {"compatible": True},
+            "error_code": None,
+        }
+
+    bridge = LLMIntentIngressBridge(
+        fsm=fsm,
+        config=config,
+        authority_query_handler=query_handler,
+    )
+    response = bridge._on_command({
+        "request_kind": "QUERY:AUTHORITY_COMPATIBILITY_V1",
+        "request_id": "request-0001",
+        "correlation_id": "correlation-0001",
+    })
+
+    assert response is not None and response["status"] == "OK"
+    assert len(calls) == 1
+    assert bridge.authority_query_count == 1
+    assert bridge.command_envelope_count == 0
+    assert bridge.v2_handler_count == 0
+    assert fsm.emitted == []
 
 
 def test_queue_client_stop_accounts_for_undrained_payloads() -> None:

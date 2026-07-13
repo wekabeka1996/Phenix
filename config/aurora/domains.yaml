@@ -779,6 +779,19 @@ shadow_telemetry:
     ipc_commands_endpoint: tcp://127.0.0.1:7102
     queue_maxsize: 50000
     overflow_policy: fail_closed
+  authority_query_bridge:
+    enabled: true
+    ipc_endpoint: tcp://127.0.0.1:7102
+    request_schema_version: p46.authority-query.v1
+    response_schema_version: p46.authority-query-response.v1
+    supported_query_kinds:
+    - QUERY:AUTHORITY_COMPATIBILITY_V1
+    - QUERY:READ_MODEL_SESSION_V1
+    - QUERY:PROPOSAL_DRY_RUN_V1
+    - QUERY:PROPOSAL_DRY_RUN_RESULT_V1
+    timeout_ms: 2000
+    max_payload_kb: 128
+    max_idempotency_entries: 1000
   ledger:
     queue_maxsize: 50000
     overflow_policy: fail_closed

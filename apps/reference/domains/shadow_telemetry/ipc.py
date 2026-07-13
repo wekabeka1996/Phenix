@@ -96,7 +96,7 @@ class JsonlTcpServer:
     def __init__(
         self,
         endpoint: str,
-        handler: Callable[[dict[str, Any]], None],
+        handler: Callable[[dict[str, Any]], Optional[dict[str, Any]]],
         *,
         stop_timeout_ms: int,
         logger: Optional[logging.Logger] = None,
@@ -296,7 +296,12 @@ class JsonlTcpServer:
                             continue
 
                         try:
-                            self.handler(payload)
+                            response = self.handler(payload)
+                            if response is not None:
+                                encoded = (json.dumps(
+                                    response, separators=(",", ":"), ensure_ascii=True
+                                ) + "\n").encode("utf-8")
+                                conn.sendall(encoded)
                         except Exception as exc:
                             record_failure_outcome(
                                 FailureOutcomeTaxonomy.DEGRADED_OBSERVABILITY,
@@ -600,3 +605,49 @@ class JsonlTcpQueueClient:
             except Exception:
                 pass
             self._sock = None
+
+
+class JsonlTcpRequestError(RuntimeError):
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)
+
+
+class JsonlTcpRequestReplyClient:
+    """Bounded one-request/one-reply client over the canonical JSONL endpoint."""
+
+    def __init__(self, endpoint: str, *, timeout_ms: int, max_payload_kb: int) -> None:
+        self.endpoint = endpoint
+        self.timeout_ms = int(timeout_ms)
+        self.max_payload_bytes = int(max_payload_kb) * 1024
+        if self.timeout_ms < 1 or self.max_payload_bytes < 1024:
+            raise ValueError("request/reply timeout and payload limit must be explicit")
+
+    def request(self, payload: dict[str, Any]) -> dict[str, Any]:
+        encoded = (json.dumps(payload, separators=(",", ":"), ensure_ascii=True) + "\n").encode("utf-8")
+        if len(encoded) > self.max_payload_bytes:
+            raise JsonlTcpRequestError("IPC_PAYLOAD_TOO_LARGE")
+        host, port = parse_tcp_endpoint(self.endpoint)
+        timeout_sec = self.timeout_ms / 1000.0
+        try:
+            with socket.create_connection((host, port), timeout=timeout_sec) as conn:
+                conn.settimeout(timeout_sec)
+                conn.sendall(encoded)
+                conn.shutdown(socket.SHUT_WR)
+                with conn.makefile("rb") as stream:
+                    line = stream.readline(self.max_payload_bytes + 1)
+        except socket.timeout as exc:
+            raise JsonlTcpRequestError("IPC_QUERY_TIMEOUT") from exc
+        except (ConnectionRefusedError, ConnectionResetError, BrokenPipeError, OSError) as exc:
+            raise JsonlTcpRequestError("IPC_QUERY_UNAVAILABLE") from exc
+        if not line:
+            raise JsonlTcpRequestError("IPC_QUERY_UNAVAILABLE")
+        if len(line) > self.max_payload_bytes or not line.endswith(b"\n"):
+            raise JsonlTcpRequestError("IPC_REPLY_INVALID")
+        try:
+            response = json.loads(line)
+        except (TypeError, ValueError) as exc:
+            raise JsonlTcpRequestError("IPC_REPLY_INVALID") from exc
+        if not isinstance(response, dict):
+            raise JsonlTcpRequestError("IPC_REPLY_INVALID")
+        return response
