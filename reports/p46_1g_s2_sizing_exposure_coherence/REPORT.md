@@ -4,6 +4,8 @@
 
 - Starting branch tip and remote: `5bd3c81b2020d917f0e4627261aae3ac35bf65ff`, divergence `0/0`.
 - Required ancestors `605d66c8` and `a68d8749` were present.
+- Commits: `4bf55d16` (SSOT/runtime coherence), `3848890e` (tests/harness), and `2caae9d3` (reports).
+- These commits were pushed successfully to `origin/p46-1b-canonical-integration-primary-20260711`; no source/test changes follow `3848890e`.
 - The pre-existing untracked forensic script remained unchanged at SHA256 `6b5a05ec066cfd1cef3f68ba731ae8c131250fff4b82b65267f05541d5499771`.
 - Primary root cause: `CONFIG_SSOT_INCOHERENCE`. The active sizing helper applied a hidden `0.001` fee buffer after the proof harness projected a pre-buffer `10.0` target.
 - The prior chain was reproduced deterministically: `10.0 → 9.99 → raw qty 138.365650... → qty 138 → 9.9636 USDT → SOFT_LIMIT_BELOW_CLIP_MIN`.
