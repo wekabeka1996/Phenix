@@ -3,6 +3,7 @@
 ## FACTS
 
 - Base: `fb4a1720813598de5e4d8dda6830b7b6ecf883d5`, branch `p46-1b-canonical-integration-primary-20260711`.
+- Runtime repair `605d66c8` and harness/report tip `a68d8749` were pushed to the canonical branch.
 - Canonical async loop readiness and cross-thread dispatch are repaired and deterministically validated.
 - Real Testnet preflight succeeded, but the single permitted V2 intent was rejected by the existing exposure guard with `SOFT_LIMIT_BELOW_CLIP_MIN` before adapter submit.
 - No venue order was created; final DOGEUSDT position and open-order count were both zero.
