@@ -115,7 +115,8 @@ class TestInstrumentSizingConfig:
 
     def test_valid_sizing_config(self):
         """Valid config should pass validation."""
-        config = InstrumentSizingConfig(margin_pct=0.1)
+        config = InstrumentSizingConfig(
+            margin_pct=0.1, fee_buffer_fraction="0.001")
         assert config.margin_pct == 0.1
 
     def test_margin_pct_must_be_positive(self):
@@ -136,7 +137,8 @@ class TestInstrumentSizingConfig:
 
     def test_margin_pct_valid_edge_case(self):
         """margin_pct=1.0 should be valid (edge case)."""
-        config = InstrumentSizingConfig(margin_pct=1.0)
+        config = InstrumentSizingConfig(
+            margin_pct=1.0, fee_buffer_fraction="0.001")
         assert config.margin_pct == 1.0
 
 
@@ -201,7 +203,8 @@ class TestInstrumentPrecisionSpec:
                 leverage_policy="verify_only",
                 max_notional_utilization=0.5
             ),
-            sizing=InstrumentSizingConfig(margin_pct=0.1),
+            sizing=InstrumentSizingConfig(
+                margin_pct=0.1, fee_buffer_fraction="0.001"),
             flip=FlipOrchestrationConfig(enabled=True, hysteresis_mult=1.3),
         )
         assert spec.symbol == "BTCUSDT"
@@ -223,7 +226,8 @@ class TestInstrumentPrecisionSpec:
                     leverage_policy="verify_only",
                     max_notional_utilization=0.5
                 ),
-                sizing=InstrumentSizingConfig(margin_pct=0.1),
+                sizing=InstrumentSizingConfig(
+                    margin_pct=0.1, fee_buffer_fraction="0.001"),
                 flip=FlipOrchestrationConfig(
                     enabled=True, hysteresis_mult=1.3),
             )
@@ -312,7 +316,8 @@ class TestDataTypeValidation:
     def test_numeric_string_coercion_for_float(self):
         """Numeric string '0.5' should be coerced to float (Pydantic behavior)."""
         # Pydantic V2 allows coercion of numeric strings by default
-        config = InstrumentSizingConfig(margin_pct="0.5")
+        config = InstrumentSizingConfig(
+            margin_pct="0.5", fee_buffer_fraction="0.001")
         assert config.margin_pct == 0.5
 
     def test_numeric_string_coercion_for_int(self):
@@ -345,6 +350,7 @@ class TestExtraForbidBehavior:
         with pytest.raises(ValidationError):
             InstrumentSizingConfig(
                 margin_pct=0.1,
+                fee_buffer_fraction="0.001",
                 extra_sizing_param=100
             )
 

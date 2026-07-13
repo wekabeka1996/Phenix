@@ -18,6 +18,7 @@ def test_margin_first_sizing_btc_x80_rounding_and_constraints_ok():
         margin_pct=margin_pct,
         leverage=leverage,
         notional_cap=None,
+        fee_buffer=Decimal("0.001"),
     )
 
     assert margin_usdt == Decimal("6.4393542")
@@ -59,6 +60,7 @@ def test_margin_first_sizing_can_fail_min_notional_due_to_step_floor():
         margin_pct=margin_pct,
         leverage=leverage,
         notional_cap=None,
+        fee_buffer=Decimal("0.001"),
     )
 
     _, rounded_qty = compute_qty(
@@ -84,16 +86,16 @@ def test_compute_notional_target_rejects_invalid_inputs():
 
     with pytest.raises(ValueError):
         compute_notional_target(equity=Decimal(
-            "0"), margin_pct=Decimal("0.1"), leverage=10)
+            "0"), margin_pct=Decimal("0.1"), leverage=10, fee_buffer=Decimal("0.001"))
     with pytest.raises(ValueError):
         compute_notional_target(equity=Decimal(
-            "10"), margin_pct=Decimal("0"), leverage=10)
+            "10"), margin_pct=Decimal("0"), leverage=10, fee_buffer=Decimal("0.001"))
     with pytest.raises(ValueError):
         compute_notional_target(equity=Decimal(
-            "10"), margin_pct=Decimal("1.1"), leverage=10)
+            "10"), margin_pct=Decimal("1.1"), leverage=10, fee_buffer=Decimal("0.001"))
     with pytest.raises(ValueError):
         compute_notional_target(equity=Decimal(
-            "10"), margin_pct=Decimal("0.1"), leverage=0)
+            "10"), margin_pct=Decimal("0.1"), leverage=0, fee_buffer=Decimal("0.001"))
 
 
 @pytest.mark.parametrize("bad_fee_buffer", [Decimal("-0.01"), Decimal("1")])

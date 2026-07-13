@@ -147,6 +147,7 @@ def test_shadow_telemetry_extraction_preserves_field_contract() -> None:
             "execution_capable_participant_types", "lease_ttl_sec",
             "renewal_requires_owner", "expiry_behavior", "conflict_behavior",
             "session_instrument_universe", "max_position_horizon_sec", "intent_ttl_sec",
+            "account_snapshot_max_age_sec", "market_snapshot_max_age_sec",
             "execution_order_type", "execution_time_in_force", "execution_valid_for_ms",
             "context_ack_policy",
         },

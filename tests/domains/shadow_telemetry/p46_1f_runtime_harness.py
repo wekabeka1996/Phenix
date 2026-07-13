@@ -111,10 +111,18 @@ class P46RuntimeHarness:
         )
         self._seed_authority()
         self.decision_fixture = SimpleNamespace(
-            latest_portfolio={"equity": "1000", "positions": []},
+            latest_portfolio={
+                "equity": "1000",
+                "positions": [],
+                "ts_ms": self.clock.now_ms(),
+            },
             latest_portfolio_ref="account:test:1",
             symbol_states={
-                "ETHUSDT": {"current_price": "2500", "snapshot_ref": "market:test:1"}
+                "ETHUSDT": {
+                    "current_price": "2500",
+                    "snapshot_ref": "market:test:1",
+                    "timestamp_ms": self.clock.now_ms(),
+                }
             },
         )
         sizing = PositionQueries(

@@ -53,6 +53,7 @@ def test_audit_01_fee_insolvency_margin_pct_1_has_no_fee_buffer() -> None:
         margin_pct=margin_pct,
         leverage=leverage,
         notional_cap=None,
+        fee_buffer=_d("0.001"),
     )
     _raw_qty, rounded_qty = compute_qty(
         notional_target=notional_target,

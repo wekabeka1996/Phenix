@@ -3,12 +3,18 @@ import logging
 from types import SimpleNamespace
 
 
-def _mk_instr(*, step_size, min_qty, min_notional, margin_pct, leverage):
+def _mk_instr(
+    *, step_size, min_qty, min_notional, margin_pct, leverage,
+    fee_buffer_fraction="0.001",
+):
     return SimpleNamespace(
         step_size=str(step_size),
         min_qty=str(min_qty),
         min_notional=str(min_notional),
-        sizing=SimpleNamespace(margin_pct=float(margin_pct)),
+        sizing=SimpleNamespace(
+            margin_pct=float(margin_pct),
+            fee_buffer_fraction=str(fee_buffer_fraction),
+        ),
         execution=SimpleNamespace(target_leverage=int(leverage)),
     )
 

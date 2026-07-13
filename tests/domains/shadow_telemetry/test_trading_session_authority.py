@@ -53,6 +53,8 @@ def policy(**updates):
         "session_instrument_universe": ["ETHUSDT", "SOLUSDT"],
         "max_position_horizon_sec": 10800,
         "intent_ttl_sec": 300,
+        "account_snapshot_max_age_sec": 15,
+        "market_snapshot_max_age_sec": 15,
         "execution_order_type": "LIMIT",
         "execution_time_in_force": "GTC",
         "execution_valid_for_ms": 900000,
@@ -252,12 +254,19 @@ def bridge_config():
 
 def processor(store, portfolio=None, price="2500"):
     dm = SimpleNamespace(
-        latest_portfolio=portfolio or {"equity": "1000", "positions": []},
+        latest_portfolio=portfolio or {
+            "equity": "1000", "positions": [], "ts_ms": int(NOW.timestamp() * 1000)
+        },
         latest_portfolio_ref="account-1",
-        symbol_states={"ETHUSDT": {"current_price": price, "snapshot_ref": "market-1"}},
+        symbol_states={"ETHUSDT": {
+            "current_price": price,
+            "snapshot_ref": "market-1",
+            "timestamp_ms": int(NOW.timestamp() * 1000),
+        }},
     )
     instrument = SimpleNamespace(
-        sizing=SimpleNamespace(margin_pct=0.10),
+        sizing=SimpleNamespace(
+            margin_pct=0.10, fee_buffer_fraction="0.001"),
         execution=SimpleNamespace(target_leverage=2),
         step_size=Decimal("0.01"),
         min_qty=Decimal("0.01"),

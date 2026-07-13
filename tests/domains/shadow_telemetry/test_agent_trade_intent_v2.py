@@ -55,7 +55,8 @@ def _intent_payload(**updates):
 
 def _position_queries(portfolio=None):
     instrument = SimpleNamespace(
-        sizing=SimpleNamespace(margin_pct=0.10),
+        sizing=SimpleNamespace(
+            margin_pct=0.10, fee_buffer_fraction="0.001"),
         execution=SimpleNamespace(target_leverage=2),
         step_size=Decimal("0.01"),
         min_qty=Decimal("0.01"),
@@ -88,8 +89,12 @@ def _snapshot(**updates):
         "lifecycle_allows_open": True,
         "portfolio": {"equity": "1000", "positions": []},
         "account_snapshot_ref": "account-1",
+        "account_snapshot_at": NOW,
+        "account_snapshot_max_age_sec": 15,
         "reference_price": Decimal("2500"),
         "market_snapshot_ref": "market-1",
+        "market_snapshot_at": NOW,
+        "market_snapshot_max_age_sec": 15,
         "config_version": "config-sha-1",
         "order_type": "LIMIT",
         "time_in_force": "GTC",

@@ -159,6 +159,7 @@ class TestSizingMarginFirstIntegration:
             leverage=2,
             price=Decimal("10"),
             step_size=Decimal("0.1"),
+            fee_buffer=Decimal("0.001"),
         )
         assert rounded == Decimal("99.9")
 
@@ -172,6 +173,7 @@ class TestSizingMarginFirstIntegration:
             leverage=2,
             price=Decimal("1"),
             step_size=Decimal("1"),
+            fee_buffer=Decimal("0.001"),
         )
         assert rounded == Decimal("100")
 

@@ -17,6 +17,9 @@ from typing import Any
 from apps.reference.adapters.binance_adapter import BinanceAdapter
 from apps.reference.bootstrap.async_runtime import AsyncLoopRuntime
 from apps.reference.config.testnet_proof import load_p46_testnet_proof_config
+from apps.reference.domains.execution_position.guards.leverage_service import (
+    LeverageService,
+)
 from scripts.p46_1g_r_canonical_venue_proof import (
     P46_1G_R_ProofHarness,
     ROOT,
@@ -44,6 +47,8 @@ class ObservedCanonicalHarness(P46_1G_R_ProofHarness):
         self._operator_cap = operator_cap
         self._adapter_submit_calls = 0
         self._async_dispatch_calls = 0
+        self._opening_async_dispatch_calls = 0
+        self._cleanup_async_dispatch_calls = 0
         self._adapter_cancel_calls = 0
         self._adapter_close_calls = 0
         self._opening_result: dict[str, Any] | None = None
@@ -51,10 +56,15 @@ class ObservedCanonicalHarness(P46_1G_R_ProofHarness):
         self.emergency_containment_used = False
         self._opening_done = threading.Event()
         self._cleanup_done = threading.Event()
+        self.execution_fsm.leverage_service = LeverageService(self.real_adapter)
+        self.execution_fsm.is_live_execution = True
 
         spec = self.config.instruments[symbol]
         leverage = Decimal(str(spec.execution.target_leverage))
-        margin_pct = target_notional / (authoritative_equity * leverage)
+        fee_buffer = Decimal(str(spec.sizing.fee_buffer_fraction))
+        margin_pct = target_notional / (
+            authoritative_equity * (Decimal("1") - fee_buffer) * leverage
+        )
         if margin_pct <= 0 or margin_pct > 1:
             raise RuntimeError("proof sizing margin_pct is outside (0, 1]")
         # Explicit test-only projection of p46_1g_testnet_proof.yaml into the
@@ -64,6 +74,7 @@ class ObservedCanonicalHarness(P46_1G_R_ProofHarness):
         self.decision_fixture.latest_portfolio = {
             "equity": str(authoritative_equity),
             "positions": [],
+            "ts_ms": int(time.time() * 1000),
         }
         self.decision_fixture.latest_portfolio_ref = (
             f"account:{proof_session_id}:testnet"
@@ -72,6 +83,7 @@ class ObservedCanonicalHarness(P46_1G_R_ProofHarness):
             symbol: {
                 "current_price": str(reference_price),
                 "snapshot_ref": f"market:{proof_session_id}:testnet",
+                "timestamp_ms": int(time.time() * 1000),
             }
         }
         self._seed_real_portfolio(authoritative_equity)
@@ -89,6 +101,12 @@ class ObservedCanonicalHarness(P46_1G_R_ProofHarness):
             code = getattr(coro, "cr_code", None)
             if code is not None and code.co_name == "_execute_decision":
                 self._async_dispatch_calls += 1
+                frame = getattr(coro, "cr_frame", None)
+                decision = frame.f_locals.get("decision") if frame is not None else None
+                if getattr(decision, "verb", None) == "OPEN":
+                    self._opening_async_dispatch_calls += 1
+                else:
+                    self._cleanup_async_dispatch_calls += 1
             return original_submit(coro, loop)
 
         self.execution_fsm._submit_async = observed_submit
@@ -289,7 +307,15 @@ async def read_preflight(proof_config) -> dict[str, Any]:
         }
         target = Decimal(str(proof_config.exposure.target_notional_quote))
         cap = Decimal(str(proof_config.exposure.operator_max_notional_quote))
-        for symbol in proof_config.symbol_selection.allowed_symbols:
+        ordered_symbols = [
+            proof_config.symbol_selection.preferred_symbol,
+            *(
+                symbol for symbol in proof_config.symbol_selection.allowed_symbols
+                if symbol != proof_config.symbol_selection.preferred_symbol
+            ),
+        ]
+        clip_min = load_clip_min_notional()
+        for symbol in ordered_symbols:
             if abs(positions.get(symbol, Decimal("0"))) > 0:
                 continue
             if await adapter.get_open_orders_raw(symbol):
@@ -300,6 +326,15 @@ async def read_preflight(proof_config) -> dict[str, Any]:
             min_notional = Decimal(str(spec["min_notional"]))
             if min_notional > target or min_notional > cap:
                 continue
+            step_size = Decimal(str(spec["step_size"]))
+            rounded_qty = (target / ask / step_size).to_integral_value(
+                rounding="ROUND_DOWN"
+            ) * step_size
+            rounded_notional = rounded_qty * ask
+            if rounded_qty < Decimal(str(spec["min_qty"])):
+                continue
+            if rounded_notional < max(min_notional, clip_min):
+                continue
             return {
                 "server_time_ms": server_time,
                 "symbol": symbol,
@@ -307,6 +342,9 @@ async def read_preflight(proof_config) -> dict[str, Any]:
                 "reference_price": ask,
                 "target": target,
                 "cap": cap,
+                "preflight_rounded_quantity": rounded_qty,
+                "preflight_rounded_notional": rounded_notional,
+                "clip_min_notional": clip_min,
             }
         raise RuntimeError("no clean configured symbol satisfies the proof cap")
     finally:
@@ -320,6 +358,17 @@ def load_instrument(symbol: str) -> dict[str, Any]:
         (ROOT / "config/aurora/instruments.yaml").read_text(encoding="utf-8")
     )
     return dict(data["instruments"][symbol])
+
+
+def load_clip_min_notional() -> Decimal:
+    import yaml
+
+    data = yaml.safe_load(
+        (ROOT / "config/aurora/trading.yaml").read_text(encoding="utf-8")
+    )
+    return Decimal(str(
+        data["trading"]["risk"]["soft_limits"]["clip_min_notional_usdt"]
+    ))
 
 
 def run() -> dict[str, Any]:
@@ -398,11 +447,25 @@ def run() -> dict[str, Any]:
             result.update({
                 "participant_id": f"{session_id}-main",
                 "client_intent_id": harness.evidence.client_intent_id,
+                "sizing_decision_id": command["sizing_decision_id"],
+                "exposure_decision_id": (
+                    command.get("exposure_decision_id")
+                    or f"exposure:{harness.evidence.client_intent_id}"
+                ),
+                "exposure_decision_id_reconstructed": (
+                    command.get("exposure_decision_id") is None
+                ),
+                "config_version": command["config_version"],
+                "reference_price": str(preflight["reference_price"]),
+                "target_notional": str(preflight["target"]),
+                "operator_cap": str(preflight["cap"]),
                 "derived_quantity": str(derived_qty),
                 "derived_notional": str(derived_notional),
                 "tcp_envelopes": harness.bridge.command_envelope_count,
                 "command_handler_calls": len(harness.command_emissions),
-                "async_dispatch_calls": harness._async_dispatch_calls,
+                "async_dispatch_calls": harness._opening_async_dispatch_calls,
+                "cleanup_async_dispatch_calls": harness._cleanup_async_dispatch_calls,
+                "total_async_dispatch_calls": harness._async_dispatch_calls,
                 "fsm_handle_calls": len(harness.fsm_ingress),
                 "adapter_submit_calls": harness._adapter_submit_calls,
                 "exchange_order_id": str(order_id),
