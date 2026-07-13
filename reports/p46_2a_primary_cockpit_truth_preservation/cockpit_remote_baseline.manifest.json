@@ -1,0 +1,2552 @@
+﻿{
+    "label":  "cockpit_remote_baseline",
+    "root":  "C:\\Users\\wekab\\Music\\deepseek-agent-os-p46-preserve",
+    "generated_at":  "2026-07-13T12:27:22.9950047+00:00",
+    "included":  [
+                     {
+                         "relative_path":  ".claude/settings.json",
+                         "sha256":  "f2ee4ca16bd8cbc2ced7101873b351f9f875030fe1f9c11a5376eb9969b2009a",
+                         "size":  96,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  ".env.example",
+                         "sha256":  "7cb483a2d806312a5c4ade79bdde4189b4103b314a9ed3d46406232bd6dd2c55",
+                         "size":  3027,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  ".gitignore",
+                         "sha256":  "4465f216fe53b7ca7d95e38820706700a239bc0be4f07937138ac9f6d5ce9781",
+                         "size":  102,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "AGENT_OS_E2E_VERIFICATION_AND_CONTEXT_PERSISTENCE_REPORT_V1.json",
+                         "sha256":  "344632b228892e49a146f21d32e62543ffd8180d4f9ca300052ac05224cf4105",
+                         "size":  3420,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "AUDIT_PLAN_src.md",
+                         "sha256":  "349961e340c0d20ba9905e1012b218183e582013e1150157c09318d3f4b48e19",
+                         "size":  2409,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "AUDIT_REPORT_PRODUCTION_PLAN_UPDATE.md",
+                         "sha256":  "531d335575301950aeea5b741aa19068406de66c0ae5cb0f56066fe1d8de7925",
+                         "size":  6199,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "AUDIT_REPORT_src_agent.md",
+                         "sha256":  "1579b71a06048a29a75278a6f75b5dafdb9323cc4cb327a81e3610f2f177059e",
+                         "size":  4571,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "AUDIT_REPORT_src_bridge-daemon.md",
+                         "sha256":  "237d26dc94d80d6eed10f9df3e5c8553157465c95b5aeb4e4ee9b1d123b68afd",
+                         "size":  3522,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "AUDIT_REPORT_src_cockpit.md",
+                         "sha256":  "7125a19baabcbc2f203bf9f9e1101859f1c11a4eb680b18a22d1725cf2aaef55",
+                         "size":  3472,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "AUDIT_REPORT_src_components.md",
+                         "sha256":  "e452663475f7cf90a4873f043f4be13976582b7737bc43ca855ec903466d7f67",
+                         "size":  2918,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "AUDIT_REPORT_src_lib_services.md",
+                         "sha256":  "e30e7728d20601e859b85c50fd047f68cbd717e3be1abb1c7a396d6992406bad",
+                         "size":  2456,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "AUDIT_REPORT_src_root.md",
+                         "sha256":  "56f8d9d5b53ecd65d6bd20f0f7c414b4e23ef99160a0427c2d2a25af50edb636",
+                         "size":  3622,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "BRIDGE_BOUNDED_ORDER_LOG_FINANCIAL_ANALYZER_REPORT_V1.md",
+                         "sha256":  "e6b253c5540cb831d8df6664b20bb05c3c3562910a6a6593353046893f95ac49",
+                         "size":  6229,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "BRIDGE_TOOL_SELECTION_AUTH_AND_PATH_VALIDATION_FIX_REPORT_V1.md",
+                         "sha256":  "022730082607274cc325a838d5bf99a47855d65a32efad4d8a1b87785a95063a",
+                         "size":  4800,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "COCKPIT_ARCHITECTURE_AND_OBSERVABILITY_BLUEPRINT_REPORT_V1.md",
+                         "sha256":  "9729906a58120f302b6d08ada850c6d5a0ea6c848731a17adad33be9f03d5314",
+                         "size":  5109,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "COCKPIT_FULL_FUNCTIONAL_AUDIT_AND_STABILIZATION_REPORT_V1.md",
+                         "sha256":  "c554cb1ae113fc24d7108be451794a5cf02cf4773b11e6a5d40eb9df130c8bd3",
+                         "size":  8338,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "COCKPIT_METRICS_EXPORTER_FOUNDATION_REPORT_V1.md",
+                         "sha256":  "5c0bd1249cd0b319a7a6770e26e29eac8795d0f51c09ebb037a9f0c3e7792716",
+                         "size":  4839,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "COMMAND_EXECUTION_ROUTER_AND_SANDBOX_RUNNER_REPORT_V1.json",
+                         "sha256":  "09fe800ecbc9b1b86b603be157dd21eb5112c4d0bba8f70e6430af598cb3dcc1",
+                         "size":  4952,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "config_loader.py",
+                         "sha256":  "7095d5737caf15cb990b1873c440112250ac9e8b69ff9f6ec7e7f2f228d9c74e",
+                         "size":  210,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "DEEPSEEK_STRICT_TOOL_SCHEMA_BUILDER_HARDENING_REPORT_V1.md",
+                         "sha256":  "53fbbdd91e021ddc8f60ffce4bfbef229b8eab79baa72677f1035e5fcc8699a2",
+                         "size":  5428,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "docs/cockpit_architecture_and_observability_blueprint.md",
+                         "sha256":  "0d329a740c1df52414dae6e1bf11fdce48b61dea0f4283ac89f0875ac60a3f89",
+                         "size":  4560,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "docs/LLM_MICROSTRUCTURE_IMPLEMENTATION_DEEP_DIVE.md",
+                         "sha256":  "d78667c3e0bfde01306cb8388d1d469740473b0dc70a3c128b7836d10d6fd506",
+                         "size":  51688,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "docs/llm_microstructure_strategy_passport.md",
+                         "sha256":  "167348d0bcac272fb4bbecd7b396ad576f67de50fac0416ce553fd4e64474d33",
+                         "size":  16266,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "docs/local_development_setup.md",
+                         "sha256":  "ffb38e906e8813f1226965e31d5e5fe01eceade2c32c953e1d2552b9e0033ae1",
+                         "size":  1507,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "docs/runtime_models.md",
+                         "sha256":  "0ca4a25bb65427d539bf72d617bcb66f557f8eb737fb1ef2ecfdf08451db39af",
+                         "size":  1866,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "docs/trace_and_economics_semantics.md",
+                         "sha256":  "c480cfa8529a17fc7f567a99878512767c1370a8f4e352b2ec55035062e1efdd",
+                         "size":  2043,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "docs/workspace_execution_bridge_contract.md",
+                         "sha256":  "796e5ccb2d90b5fb36754cc8dffb58ed14c32349906a9c2f9452b3e16e506ed9",
+                         "size":  2940,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "EXECUTION_ENVIRONMENT_CAPABILITY_AUDIT_REPORT_V1.json",
+                         "sha256":  "4e11aa9b4742b64772f797e93d930f2268e9907aa0c46aa560a700183ac04c94",
+                         "size":  7121,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "fix-imports.cjs",
+                         "sha256":  "73734127c400abb35a2fa0ffb4a47f3ba9bf3ef9e0a02beaf49c1be9e071e163",
+                         "size":  471,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "fix-imports2.cjs",
+                         "sha256":  "5a965ac0e680cf676cb35752a8d4e6b883bd002861c010e5b7e01b0c00ac383f",
+                         "size":  687,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "fix-refactor.ts",
+                         "sha256":  "1c0d9be195d82575981a9517a6cd6f7ea8fe7ebd2bd3cdbe34615db72c5bfffa",
+                         "size":  2931,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "GRAFANA_PROMETHEUS_PROVISIONING_REPORT_V1.md",
+                         "sha256":  "e82a3840a9b8d9f9f7a454600fad47b6ed05cb866227689b70a338983f107a8c",
+                         "size":  4993,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "index.html",
+                         "sha256":  "14b01fd6e63b0e4e24d9e9f294720c6569bd5efe01342eb1c1db04f2c60c3e1a",
+                         "size":  324,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "LLM_MICROSTRUCTURE_PHASE_A_READONLY_SNAPSHOT_BRIDGE_REPORT_V1.md",
+                         "sha256":  "aeedd8267715106fb8c512a2243a5ed7e416d158e48d55f160fae9b583ff442b",
+                         "size":  5762,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "LLM_MICROSTRUCTURE_UI_INTEGRATION_AUDIT_AND_CONTRACT_REPORT_V1.md",
+                         "sha256":  "fcc9e5f9c742f3ae7635bb322a01ed6aef11727cf7249225ef79a929c6262317",
+                         "size":  17865,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "main_core.py",
+                         "sha256":  "a683d60b5779f58478a7f95346550022ad63e0362884941691f89d7f1aaad42a",
+                         "size":  163,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "metadata.json",
+                         "sha256":  "48919c13b076c5162d10f03cee780c0bf796da7050861d7d9c2806a56dea0354",
+                         "size":  257,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "ops/observability/ANALYSIS_TAB_OPERATOR_UI_REPORT_V1.md",
+                         "sha256":  "8b6e5bbf7c1e294cc04d7c3bd0d3fc60efdfa061e8c148bb1e9308bea629b99b",
+                         "size":  3203,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "ops/observability/DATA_TAB_ARTIFACT_DATASET_BROWSER_REPORT_V1.md",
+                         "sha256":  "c7f4763b20b727c44db4c45509cd7168379e4f1fef1af319b4a598fa1f1a3ce3",
+                         "size":  3412,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "ops/observability/docker-compose.observability.yml",
+                         "sha256":  "ca0deec9a0e66491e7728a7d9df31400b9629529d2fd10652887936ac6937cc9",
+                         "size":  1135,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "ops/observability/grafana/dashboards/agent_os_overview.json",
+                         "sha256":  "197b392094dbf8b47dc91849085e29f64706196b736e158e4064ef51553cbadc",
+                         "size":  1341,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "ops/observability/grafana/dashboards/aurora_trading_future_contract.json",
+                         "sha256":  "2ad889b62ca8bdc3c24746efda1f9a8ce1447696764dff0b2864b27817ff7301",
+                         "size":  1065,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "ops/observability/grafana/dashboards/bridge_terminal_status.json",
+                         "sha256":  "b84ec59f44b73d4dddd7fc8fdc8363cec558ad6ca6f584a20ecddae2a2104854",
+                         "size":  1198,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "ops/observability/grafana/dashboards/cockpit_health.json",
+                         "sha256":  "ada7d7476734018cea339bb76c7c7b1f688cca9118021379c5284781a57bdbe8",
+                         "size":  756,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "ops/observability/grafana/dashboards/provider_tools_runtime.json",
+                         "sha256":  "31f3b9103a9576e896a16e05a02d5777089a6ba21b79d5fde1625a57d400a0f7",
+                         "size":  1037,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "ops/observability/grafana/provisioning/dashboards/dashboards.yml",
+                         "sha256":  "3b9c142db7c9077f55ea6b33dc50454172b0242ecae8d798ca0b4184fab80393",
+                         "size":  226,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "ops/observability/grafana/provisioning/datasources/prometheus.yml",
+                         "sha256":  "742817122a52434d8fb37879a9ba5d6e1c2f9b614730d2c0840f86964bb98e19",
+                         "size":  169,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "ops/observability/prometheus/prometheus.yml",
+                         "sha256":  "5962ff1b118459092da83b67e7b7bd534a2468ee8c25b45cb50349a9cc47c71b",
+                         "size":  485,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "ops/observability/prometheus/rules/agent_os_rules.yml",
+                         "sha256":  "cefe38266c7ac5e801e8bc3c467f31f7e8cb1f6fa43b533c6ebd8bf835855ffb",
+                         "size":  125,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "ops/observability/README.md",
+                         "sha256":  "4c6296864c546d00ff7a2df1782ff207cc2d7f67628fd006979420464a87c0f8",
+                         "size":  2828,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "ops/observability/README_cockpit_analysis_engine.md",
+                         "sha256":  "c774495a233731403864852a1eea76b6515b1e9d37b41bab5a0d2371f7f35469",
+                         "size":  2182,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "package.json",
+                         "sha256":  "0dbfa6e936b9976c0c74e2c0f302755ca3a202c3ac1a7824979cd7ec61ff6784",
+                         "size":  1292,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "package-lock.json",
+                         "sha256":  "142f267facd4fe91fa8c50aa52723316311a1d0ff01d520162c1024c6a17c944",
+                         "size":  207423,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "PHENIX_VENV_COMMAND_POLICY_REPORT_V1.md",
+                         "sha256":  "b8d595a97be1f1e50c1a0c77f009d6754911e74e35f9bbfd9560de2d0e567c3d",
+                         "size":  5158,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "PLAN_MODE_CARD_EXECUTION_STEPS_V2_REPORT.md",
+                         "sha256":  "2614cb22abbe9bd14b527e2dc0b210cb2f8557371f334ede95b2fc0551b691c0",
+                         "size":  4993,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "prompts/architect.json",
+                         "sha256":  "17fe09ff8440baf53eb931402d148f6766636e5626967f77b7f7185bb59aa32a",
+                         "size":  258,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "prompts/code_review.md",
+                         "sha256":  "dd5394a8147ae2d0c276ccf3a4387530154453b0786deed316f17cde8d359673",
+                         "size":  183,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "prompts/ui_design.md",
+                         "sha256":  "2c67eadbc6ab40c9e8694a9caa619ea2a6d96e34bd24fa5948167f95c6984c03",
+                         "size":  249,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "README.md",
+                         "sha256":  "7794ca1ee2a57cab6387ccf25d671b327b0bc653c24611490b56361291e37f97",
+                         "size":  570,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "refactor-bridges.ts",
+                         "sha256":  "25cd6b789709c587cda02ecbe73ce43184631516d2e6d8c11f5781dc755d854b",
+                         "size":  2320,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "reports/DEEPSEEK_PROVIDER_RUNTIME_COMPLIANCE_HARDENING_REPORT_V1.md",
+                         "sha256":  "fba78628d8fa1438134455d229ba628546f09101045ebb7a593e3e902bc5eabe",
+                         "size":  4541,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "reports/DEEPSEEK_PROVIDER_SETTINGS_TRACE_ECONOMICS_AUDIT_REPORT_V1.md",
+                         "sha256":  "93700a15917dff75b9b75a0610b01dec80cdf1bba6539b0b6187958c90a5468c",
+                         "size":  4280,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "reports/HOME_NAV_STATUS_AND_WIDGET_TRUTH_AUDIT_V1_REPORT.md",
+                         "sha256":  "f2e2948ab41dfece600c3d03509e1394e368f4fb4c00e01aca5a8f9daa27db18",
+                         "size":  2531,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "reports/LLM_MICROSTRUCTURE_PHASE_A_COCKPIT_STARTUP_REPORT_V1.md",
+                         "sha256":  "680fa3d92e03c5ca14bf5a403b248615a10e6b526bb9f98619e024009e9a30e6",
+                         "size":  2915,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "reports/LLM_MICROSTRUCTURE_PHASE_A_READONLY_SNAPSHOT_BRIDGE_REPORT_V1.md",
+                         "sha256":  "d2caf567d19de4ae82acbf09a9d28ddff77f466e33b4dce594ef3f85724b3f58",
+                         "size":  4737,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "reports/PHENIX_WAL_RESOLUTION_AND_LOCALIZATION_REPORT_V1.md",
+                         "sha256":  "397828133a3eaa2c21268b68db134fb4090a3440640541a21153f1f48c14ea61",
+                         "size":  3996,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/audit_execution_environment_v1.ts",
+                         "sha256":  "261c52c00ea30a4c9aa61a39df1d52534f42d4badbf94a3b2305d726f276272d",
+                         "size":  3076,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/test_agent_runtime_loop.ts",
+                         "sha256":  "862e77961f6627a69e18554b30d18289c53fb199b2efde381d35b20fe0a105cd",
+                         "size":  199,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_agent_os_e2e_v1.ts",
+                         "sha256":  "04458fbffbb95d26706e61f4e332d6cb1a9a9c9aa1301036951460e786d13fda",
+                         "size":  12379,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_analysis_tab_operator_ui_v1.ts",
+                         "sha256":  "32cc3bd33eb4fccd82afddb160b9bb8cf1b9ae0c3b4f60a0d599d5c78f57d94e",
+                         "size":  1940,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_approval_runtime_v1.ts",
+                         "sha256":  "d976e1a87fcc4576e848d7f660b7341d568544df2e030261864693feddcd6592",
+                         "size":  2368,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_attachment_context_pipeline_v1.ts",
+                         "sha256":  "4144889b9d591c638a39785c95f5e50d0adfa86a27ae196694117d2a5698d615",
+                         "size":  4596,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_bridge_bounded_order_log_financial_analyzer_v1.ts",
+                         "sha256":  "6857d92c1003d9716f71b7d38dadef28f7a122ce6710114d2811b291e16f4662",
+                         "size":  5452,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_bridge_readonly_project_diagnostics_v1.ts",
+                         "sha256":  "6a579db0308090bc5eb292a42d6d494cfc4fdb6a4cc68ff9bbf61f4e1dbf6723",
+                         "size":  1898,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_bridge_readonly_workspace_context_discovery_v1.ts",
+                         "sha256":  "488c05b8745a1418f1216c87a74000e7c95fdf3197b6a8b9f47516e4a723899e",
+                         "size":  6567,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_bridge_tool_selection_auth_and_path_validation_v1.ts",
+                         "sha256":  "e335f941d4ce26d728019d7448898a9767df9746b20e5ed34d2b3f85e46381e8",
+                         "size":  4558,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_chat_approval_command_visibility_and_scroll_control_v1.ts",
+                         "sha256":  "d88dca12215a455b6c225f07246abf20ce0e62008fdaf44721ecf544e76050ac",
+                         "size":  9133,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_chat_navigation_and_bridge_health_v1.ts",
+                         "sha256":  "09cee0d0e76acbba9fc46fc21edd22170c16be3c1e3eb360e294e29631699140",
+                         "size":  1949,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_cockpit_analysis_engine_v1.ts",
+                         "sha256":  "194682060fc2cace133e6f0acc59e38148bacad6c699e5154e9d0a3a56967081",
+                         "size":  1881,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_cockpit_blueprint_v1.ts",
+                         "sha256":  "05a216db59203aa3fcbee380098ffde06759fe93c3ff9cdbcbfcbf52d7197d8e",
+                         "size":  2362,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_cockpit_metrics_exporter_v1.ts",
+                         "sha256":  "abf58f344ed6f18c5a8a9ae038a73bb37bb62fb91396e5ce64a11296e1eb7f7c",
+                         "size":  2283,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_command_execution_router_v1.ts",
+                         "sha256":  "721ad64099cdbeecba6ec77a8e3b4557ac621ced69dbe895ff7a571409367b17",
+                         "size":  3048,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_data_tab_artifact_dataset_browser_v1.ts",
+                         "sha256":  "a3f23042eacb2f668727cb7dd9c94925acb4600af833b3799d2d2e433c76cf2f",
+                         "size":  2234,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_deepseek_provider_settings_trace_economics_audit_v1.ts",
+                         "sha256":  "9fa16b8735c7dd4d8960192f297a63b208a4d6c6a4aed87fdd51c2a7b2edc13e",
+                         "size":  2285,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_deepseek_runtime_compliance_hardening_v1.ts",
+                         "sha256":  "076f5a0e9798b41512dbbceda85c6204a534202dbee32f4c96c46fa7432a2e50",
+                         "size":  2626,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_deepseek_strict_tool_schema_builder_hardening_v1.ts",
+                         "sha256":  "3d82aa893ed12918919e15e695f887400948dc317ca0be20bf5cc589f4664fb9",
+                         "size":  5087,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_grafana_prometheus_provisioning_v1.ts",
+                         "sha256":  "4a62d1412afba30b3c62c84492205bd281bb8df96cd96bc0d8b55f716c1cab10",
+                         "size":  4084,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_home_nav_status_and_widget_truth_audit_v1.ts",
+                         "sha256":  "8e95127225c7ed7773097cc815a44d9747a082cb23767d97d0d05638f719f17d",
+                         "size":  1917,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_llm_microstructure_phase_a_snapshot_bridge_v1.ts",
+                         "sha256":  "9a25d630587bfa89b06bce2aa655989bb04388361d083d9631c155b33bb171ee",
+                         "size":  8486,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_llm_microstructure_ui_integration_audit_v1.ts",
+                         "sha256":  "eba37ddf82299fd06f37f175f701058a1ecc31dfab282546c76184e3c8cf14b4",
+                         "size":  13156,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_local_chat_runtime_persistence_tool_trace_and_final_response_v1.ts",
+                         "sha256":  "ae8dcda4b2cba4a2ba652e8a7093c9363ad28c98da0cd2eca0ae3adb7f0c205d",
+                         "size":  2755,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_memory_atoms_core_v1.ts",
+                         "sha256":  "a593869f265492f32e5cd617d2a33e25e49d8d75553fde874d63e2cb22931e97",
+                         "size":  4381,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_memory_patch_review_card_v1.ts",
+                         "sha256":  "55154484e21915d55cde986b75050defd7606fb9fe75b17f2bcf4c5ea1cd9c06",
+                         "size":  3083,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_minimal_local_workspace_bridge_daemon_v1.ts",
+                         "sha256":  "d00609b6a9fad0614db13c145579c476f6b03dcd3c9cb88fbb644c01fd1792eb",
+                         "size":  7618,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_model_environment_v1.ts",
+                         "sha256":  "4651a666187d1e9868cf6f758bd2c1eb2909c13aad33790a5867be3e001e9808",
+                         "size":  3175,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_operations_tab_bridge_ready_ui_v1.ts",
+                         "sha256":  "144ee094c3797fcfaa5b8ec97f75a7a493a71ec45cc849a599424543f6b0c506",
+                         "size":  1638,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_patch_proposal_and_diff_preview_v1.ts",
+                         "sha256":  "13f1360be04900d750aadc9f54cb73988e7823846a33f332dd82865590c5c040",
+                         "size":  2372,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_phenix_venv_command_policy_v1.ts",
+                         "sha256":  "09d7655ee06b86b27edb948d525540b9131a952b5d05b8d268fead638070fb28",
+                         "size":  4430,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_plan_mode_card_execution_steps_v2.ts",
+                         "sha256":  "f34c92b2fe8cdfbf0e056a2054ca8cd01ad9e1bf264d9e21729449c1e4ee9b3f",
+                         "size":  3097,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_rnd_workbench_alpha_neocortex_foundation_v1.ts",
+                         "sha256":  "e6884d0c83179cfb3de1b0b87f89130318574e374263514f7a815472134b3573",
+                         "size":  2077,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_runtime_kernel_v1.ts",
+                         "sha256":  "4f0c48b04638c1156ec68c10e568959ffea90eae3a1ca997f619d04d9cb1d307",
+                         "size":  2822,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_runtime_trace_operator_view_v2.ts",
+                         "sha256":  "71fcd7a97ab0fc5db96dc5216ac43dccd334e09e3f1687fd742ed13fe1e04347",
+                         "size":  3581,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_scenarios_runbooks_operator_ui_v1.ts",
+                         "sha256":  "3c5f798baf07b8cd03583f93fbd4aaab46eda80723d5472952121b7efb8fc0a2",
+                         "size":  1435,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_structured_tool_runtime_v1.ts",
+                         "sha256":  "40598c3c8d9309f068401498334d0841f302c184077b07f0183ae147302f3d44",
+                         "size":  3143,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_targeted_phenix_test_runner_readonly_v1.ts",
+                         "sha256":  "15b79539df35ef0e376e6b5882aaf8d6d5a21325c3f4a5774bcbaaa640d39054",
+                         "size":  4401,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_tool_result_rendering_and_file_tool_selection_repair_v1.ts",
+                         "sha256":  "70c0fba629c602e092d9088cd775d81a46b345ed1239740fb28187996a523bf0",
+                         "size":  1773,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_universal_workspace_search_and_file_access_v1.ts",
+                         "sha256":  "db5bd36cd5648d60930ea221501cfc6924f737083e09e1eb6109853218c4c6cd",
+                         "size":  4700,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_workspace_bridge_contract_v1.ts",
+                         "sha256":  "c27a5bdb5ade4a27e177eeddccc1aeb1e623312907025e50f75dd4bb97714c4b",
+                         "size":  4300,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "scripts/validate_workspace_context_ui_and_agent_binding_v1.ts",
+                         "sha256":  "624ab3d9a40cee9ae2a56b024e7345e137fd444534b49fd43d6ff747b61f42cd",
+                         "size":  3267,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "server.ts",
+                         "sha256":  "9a1362617f8ed9ba3c866b07b803aeda38bf61f53767bcad29ae79c6def0ee6f",
+                         "size":  59341,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/artifacts/ArtifactStore.ts",
+                         "sha256":  "177c3b2c909c6921cace900c61fdaa286329dd92a16b3b138973b6c51feeeb99",
+                         "size":  1343,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/artifacts/planParser.ts",
+                         "sha256":  "eefab749435236a02d98999589c82daae7e3ce04fde35df43e503841c5144a35",
+                         "size":  1800,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/attachments/AttachmentSafety.ts",
+                         "sha256":  "cef8857dde036d1da974a2b965a13ddf0408fc06aa5697acc117bcc2e59d4dff",
+                         "size":  972,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/attachments/AttachmentService.ts",
+                         "sha256":  "4fb5b5d4e7476d1a7bcfcf6278f9f19dc43b2f614cd64ac569a4d35b81dc60ad",
+                         "size":  2799,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/attachments/FileTextExtractor.ts",
+                         "sha256":  "6428c2144793f25c04aba1f0e53c2b4c80982a06ab5021b6a722716f001cb3f1",
+                         "size":  1665,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/context/ContextBuilder.ts",
+                         "sha256":  "4f53a349797dcd1183663826f99ffb80899e01d6ef9f5360e634a1af4d9c7ea1",
+                         "size":  6919,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/events/redact.ts",
+                         "sha256":  "56bd47144062e724a2e7021a97cf9110edd9f1277be49dd398810b0e14033cba",
+                         "size":  835,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/events/RuntimeEventStore.ts",
+                         "sha256":  "c287bfb8e4acc63d4f71608186dd9b88617ea673b170762293a7843024ea598a",
+                         "size":  2528,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/memory/MemoryCurator.ts",
+                         "sha256":  "776b2ea730e56e193e8bf38c53d6ea2ffecf60db08e4c6bf38a63d004c4a7841",
+                         "size":  2370,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/memory/MemoryStore.ts",
+                         "sha256":  "4fbaf228352607f449e7c4eb9352313e03651684832650e7298c12822ea53778",
+                         "size":  2850,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/patches/PatchProposalService.ts",
+                         "sha256":  "5294b3f0c1fc27ce1854a6c47db9a2df9e29b460871b5493dfb2f75e5fba22cc",
+                         "size":  6522,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/providers/adapters/AnthropicProviderAdapter.ts",
+                         "sha256":  "92c8a3ba8c6c8239cc1c2c56104abbc110bc5b0b666ac7684dcbb0cd9e8d0467",
+                         "size":  2889,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/providers/adapters/DeepSeekProviderAdapter.ts",
+                         "sha256":  "b3d7de75494db28b1fc3efe70975fdb98beed1b394b8a856fa2b527125aee715",
+                         "size":  7753,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/providers/adapters/GeminiProviderAdapter.ts",
+                         "sha256":  "b9bd061b8cd23f67bd52c2c06d8a2fc5d4fcdf2acd375cc402c838f12cfee5c2",
+                         "size":  2371,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/providers/adapters/OpenAIProviderAdapter.ts",
+                         "sha256":  "07ce2a7a981702934877c19879b4e5867bc957ec4763a169d6a64341541621d1",
+                         "size":  2852,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/providers/adapters/ProviderAdapter.ts",
+                         "sha256":  "5cb675fee945f949a70dfb970e189fa1318f37495efbd4e96078115723f0bf33",
+                         "size":  1720,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/providers/adapters/XAIProviderAdapter.ts",
+                         "sha256":  "91804e0148812157724d77791afd41cd440215bfc0661df53af91f426c23d583",
+                         "size":  2816,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/providers/circuitBreaker.ts",
+                         "sha256":  "8865ba78af009b63fbdac6e31908c163ef53f5de63fa809a05ca7d0fac9f5e78",
+                         "size":  2312,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/providers/deepseek/DeepSeekBetaModes.ts",
+                         "sha256":  "c0c523a7cdcf080231bac47a6a88fa026cd26b06bd61de95a25c174e8bdcf198",
+                         "size":  1825,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/providers/deepseek/DeepSeekJsonModeGuard.ts",
+                         "sha256":  "f34420ce98c3e6e4e5272d15e978536b95f68e2c5b43298d3d5f4c2b0008d120",
+                         "size":  1672,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/providers/deepseek/DeepSeekReasoningLedger.ts",
+                         "sha256":  "8ce07219d8ec439f624b88a82360868693023bad388ac28eb916fa7d295a8c12",
+                         "size":  1336,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/providers/deepseek/DeepSeekStrictToolSchema.ts",
+                         "sha256":  "426b302c43e60b3be88654bda8dbf235c88223a8ccf0813a74aa6948aea5f603",
+                         "size":  2708,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/providers/deepseek/DeepSeekUsageTelemetry.ts",
+                         "sha256":  "232be747357104c716604c04a88ec44ed9289faf7376bcfc55426f66507978f2",
+                         "size":  954,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/providers/fallbackPolicy.ts",
+                         "sha256":  "8fcb9a652f3643c6a90f06495afc664c16e019e3edf66e89bd98fbd810ec5477",
+                         "size":  1646,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/providers/ModelRouter.ts",
+                         "sha256":  "92238d253d60db2c60d3676aa87249d4dd51d657d0b446829849268c403c48c7",
+                         "size":  5063,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/providers/ProviderGateway.ts",
+                         "sha256":  "b45271180c0b321cc8d728dfd60f68b00d89f7f84b5dba21429fcfd6b8f9dd29",
+                         "size":  3517,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/providers/ProviderInternalStateStore.ts",
+                         "sha256":  "196627a3e0e438e9a979a91d38cec76725aebc72290b1f1834ccc9f753fcc0a1",
+                         "size":  532,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/providers/providerProfiles.ts",
+                         "sha256":  "d7a98c254787c7730577a3bbd7a4d005452d159d85924c2fd819eabff22d964f",
+                         "size":  6771,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/providers/ProviderReadinessService.ts",
+                         "sha256":  "bb5c6a017a00e09294df54a35bded9af347d72fe47813607ca0bc8fc6eef4184",
+                         "size":  2878,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/providers/retryPolicy.ts",
+                         "sha256":  "abc4a849af4dd746f841496bbfbb2b684eaa4922f9a358fd886bfadd7782b237",
+                         "size":  1736,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/risk/RiskAssessmentService.ts",
+                         "sha256":  "9b3d2a0d18a9278ffd2053f837a96dad78ad6d8ca8cebf0e6e6285fdc9189992",
+                         "size":  9010,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/runtime/AgentRuntime.ts",
+                         "sha256":  "a1f0a61e2bcae334f6d3cd852704b00e74376866bc88b87a710c7ce95ae6e222",
+                         "size":  5160,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/runtime/ApprovalCoordinator.ts",
+                         "sha256":  "e3f8a3780e43c4150267f3ae21a7af33fda6595d510bef4204fb6a4c6df7b0e2",
+                         "size":  6527,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/runtime/PlanModeService.ts",
+                         "sha256":  "13dcb8cf913d00237738e7b1a1857937ba4199848fb344838a5dcd6185df2160",
+                         "size":  3274,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/runtime/RunBootstrapService.ts",
+                         "sha256":  "eb3a4f4f43e0c08b2c264048822bf7835dc4e2f2b1da9985e6eb26094937623c",
+                         "size":  7170,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/runtime/RunRecoveryService.ts",
+                         "sha256":  "1d951ed7fc0bddc4cab07cb799756824002c54a0396bc08a71a2a782af7fc486",
+                         "size":  2946,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/runtime/RuntimeOrchestrationTypes.ts",
+                         "sha256":  "e03a12ee804291d7b435e3043951a69f438b6430ae09ad47367b26d4562e7052",
+                         "size":  760,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/runtime/TaskComplexityClassifier.ts",
+                         "sha256":  "0aeee3c5d7859c3053480898a5695c444e905e1d3af02a0b2c415c886c9591b1",
+                         "size":  7940,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/runtime/ToolLoopService.ts",
+                         "sha256":  "d14a7dff513b94bf30765bf7eef2128cb2c95f8d8dc8e143cc2c455235a0f293",
+                         "size":  8724,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/sessions/SessionStore.ts",
+                         "sha256":  "01a60773e2282ed7f50d15f60080c45d651a35bf4b38e2ef9db9124c61ee3031",
+                         "size":  8255,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/storage/RuntimeStorageAdapter.ts",
+                         "sha256":  "e4e7b1da684351ca6d6f649f07dd07033e3521baf4f569fc23bf7543d7c7a532",
+                         "size":  21067,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/storage/SqliteRuntimeStorageAdapter.ts",
+                         "sha256":  "af77cd56b12d89fa0e484bb6c9ad28e96657095bb762efcdf51dd36e52fac0a5",
+                         "size":  23476,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/subagents/NeuroSymbolicCompiler.ts",
+                         "sha256":  "0a871c11a98c016bb73f8d622fce7d651bf5c129c97a1ea58639a9d574474fcf",
+                         "size":  14752,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/subagents/SubAgentMemoryBus.ts",
+                         "sha256":  "9ac81c40e2b8c332392c25e4d15db17a2ecec7626fe6f07bfad404026d4abc5f",
+                         "size":  6081,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/subagents/SubAgentOrchestrator.ts",
+                         "sha256":  "4fb5f1bed3882f341c209e800fcfbc79211fcb4b18129d3469e30baf918f2430",
+                         "size":  31216,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/templates/TemplateRegistry.ts",
+                         "sha256":  "e51f09dbd2671ae79f31dcd71a42bcfcefa86747d0f1b098df02acf03a427605",
+                         "size":  1377,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/terminal/ApprovalPipeline.ts",
+                         "sha256":  "e13e01d3041fe41ac0329b413eb24b9a36e8e1d65c196cd85993baf2ca01f816",
+                         "size":  2970,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/terminal/CommandExecutionRouter.ts",
+                         "sha256":  "1cf39942db01c304cd65dd026f7260eb4e6a700896f5f68e7b0b90af5fdeea77",
+                         "size":  3247,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/terminal/CommandPolicy.ts",
+                         "sha256":  "9f5305629d17a9cb41bdcadbbce5b97390859940aa8b19e387a5404c74df8ae2",
+                         "size":  5830,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/terminal/SandboxCommandRunner.ts",
+                         "sha256":  "ecafc28609b8f7acdc4fd18e5157f1709066184c966db5175204fc027cf32bc7",
+                         "size":  3903,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/tools/DeepSeekToolSchemaBuilder.ts",
+                         "sha256":  "e81b8991e9605ddcad9349706fc2cf56bc4c6a7ba6c170d9de993bbce47146ad",
+                         "size":  9823,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/tools/ToolCallExtractor.ts",
+                         "sha256":  "63ce1b57eb3981271a63d8fc3e88b4e96e6ded259d25aa0c9e60a0f452f551d2",
+                         "size":  2372,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/tools/ToolCallValidator.ts",
+                         "sha256":  "6c603c3ef77ad680ce543440ac95f340420a7ecce073e9768ff4121abf6a4db4",
+                         "size":  2502,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/tools/ToolExecutor.ts",
+                         "sha256":  "c89206ea891aa2b73242adc9692db669c0b1cbd0725f5a6adbd827b1604e3014",
+                         "size":  28971,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/tools/ToolPolicy.ts",
+                         "sha256":  "4bcbc1c9482423deddfd9556977e7523f2b15af6e6b69b9a28e8d4f251001652",
+                         "size":  3327,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/tools/ToolRegistry.ts",
+                         "sha256":  "45eaa235679b90232798e33b94952959a194dbbcf1412d4f356f73039d6741de",
+                         "size":  24699,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/trading/ActiveInferenceController.ts",
+                         "sha256":  "5fdcf484a3e85b1d390898441984fb252eaca99776786341fde85aa65e565532",
+                         "size":  13174,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/trading/HomeostaticRegulator.ts",
+                         "sha256":  "a2bb1053bcf8178588de7fa6d2fc7d4a6ba9b8c38dbb4ab1e69ab1e2e813dd29",
+                         "size":  8801,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/trading/ManifoldRouter.ts",
+                         "sha256":  "91727821d0653560903a90c0044b796ebff4bc17aa34d966b16a30c9e13fd8ed",
+                         "size":  14144,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/trading/SinkhornCompressor.ts",
+                         "sha256":  "fc598f588e5de8aab5873c645381ceec93f3c1e3d9215e87e23fc9cd9810a74c",
+                         "size":  10540,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/trading/TradingCoreEngine.ts",
+                         "sha256":  "66ae8bf514a0af899f9a0acfadf50645426b8de6e8094e1b33e5c04459a46e33",
+                         "size":  7433,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/agent/types.ts",
+                         "sha256":  "0185a9272bbab1d97e01ece2aaf20e34ff2694cb6ab3306641335150ff0438c7",
+                         "size":  18643,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/App.tsx",
+                         "sha256":  "3a55cbe6e73d642056faa606a234d1826d7cd51548e9c0f8cb10ad560ac1166c",
+                         "size":  100719,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/auth/BridgeAuth.ts",
+                         "sha256":  "726c449302e7096c72728c1bf03f0eac5380a14f5aa5e5f2c0288e2c3a8d759c",
+                         "size":  1185,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/client/BridgeCommandClient.ts",
+                         "sha256":  "52dd31bb0b4963d92d7602783f737d830f0d8a06ba92cd220335dabe65030f57",
+                         "size":  17515,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/command/BridgeCommandPolicy.ts",
+                         "sha256":  "9d90ba0a3f9022e5a742598bd549a372b462b28a0321e00b57d00570a068022e",
+                         "size":  5572,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/command/BridgeCommandRunner.ts",
+                         "sha256":  "a67cb582092cb5c676ec3cbc56850260659384ba0047bdb448d4c369a4107f66",
+                         "size":  6247,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/config/BridgeConfig.ts",
+                         "sha256":  "943e4f3fbfac901a01ae530cfe77d1f7a338172082c108ab38559a2cd47d1b89",
+                         "size":  1336,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/context/BridgeContextDiscovery.ts",
+                         "sha256":  "6b96fc263a894c7d437ac7950d08ee2710b25aa9b7813ce490aabaf677b2c54a",
+                         "size":  9882,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/file/BridgeFileAccessPolicy.ts",
+                         "sha256":  "f906b8ec6bfc16ebed67c37e5c4b0546002215b5e65742841f8998e45138f328",
+                         "size":  2984,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/job/BridgeJobEventHub.ts",
+                         "sha256":  "b845d7d634692c920ad80170b682bf84cc4c492fabb0b8700b396434325c37f5",
+                         "size":  1085,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/job/BridgeJobStore.ts",
+                         "sha256":  "d98297927a964b430ef8395ece8b3bf864b558d052c3c102d2e66f86cf341caf",
+                         "size":  1023,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/log/PhenixLogBridge.ts",
+                         "sha256":  "7efc5c6c483c6bfd6bedf7dec80c66b3fbeff0d1532902b0d0f604a36f87a011",
+                         "size":  5162,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/microstructure/LlmMicrostructureMapper.ts",
+                         "sha256":  "475f4f9953b4d6a815cec931c30be2b68244f10b4fe045c0d7b221885898171c",
+                         "size":  8225,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/OrderLogAnalyzer.ts",
+                         "sha256":  "07bc4263d155104783ae86bebf2146d429661c333221186a43696ce79f6565f9",
+                         "size":  3876,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/security/BridgeRedactor.ts",
+                         "sha256":  "6ff90fdc7bf76368936ff94b02f53a5841b12d85261c33e82c3b1fd3daadbc07",
+                         "size":  771,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/server/BridgeDaemonServer.ts",
+                         "sha256":  "56fce510e476b9ed8b2c155c70742bcc16b46d231f9574fd3cb1e20d43700f80",
+                         "size":  17695,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/test/BridgeTestRunner.ts",
+                         "sha256":  "417ca08d7f2e038637490d9e328be71413ec3b8a7b339ff2a1378fdd114d4ea9",
+                         "size":  7307,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/types.ts",
+                         "sha256":  "cef7d550ea90ceee70e3c39f868aea47ac195e26150529c3e0b0f79161b42bc7",
+                         "size":  4243,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/ui/BridgeStatusCard.tsx",
+                         "sha256":  "adb1c30e1284cec132bbe17607adebedffb428fbb79fef772411e7e8bb3a6cf1",
+                         "size":  1847,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/venv/BridgeVenvValidator.ts",
+                         "sha256":  "6b8e05cd677bc6febfae7d9249512da058dc50ddb68da5d08f83d0b8dbf00b25",
+                         "size":  1780,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/workspace/BridgeWorkspaceSearch.ts",
+                         "sha256":  "1c57d329182749333a537dd7a94059571c22f7dea9e8be462a0db55a894f0d02",
+                         "size":  8800,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/bridge-daemon/workspace/BridgeWorkspaceValidator.ts",
+                         "sha256":  "0282b1fa00a9d1f6568c3453d56ab24635b92cdc864757f44763c519fba0e639",
+                         "size":  1648,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/client/api/agentOsClient.ts",
+                         "sha256":  "bc4f9fbddad45f8c1cd3dcfa24a90c4cc165d03bbd77ff7dfb94ee62e6fce593",
+                         "size":  21572,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/analysis/AnalysisRunStore.ts",
+                         "sha256":  "6ab87fc0df94153157ae572a9cb74af5608df5c2cbab160cd678a89368ad8927",
+                         "size":  3598,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/analysis/analysisScriptRegistry.ts",
+                         "sha256":  "6004eccdf9676f6e57186449d1cd1b5dc7a6f123d2390cab36cc4acc097002b5",
+                         "size":  7930,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/analysis/AnalysisScriptRuntime.ts",
+                         "sha256":  "bc73e7825812d9056286cb80f2f21677753f0273e1274342ec83f652cf32a703",
+                         "size":  6349,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/analysis/types.ts",
+                         "sha256":  "50ddf480eb8d623091dfb8b981b94ab79e4d6919533e05ac02ffd51397a578e3",
+                         "size":  3947,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/cockpitNavigation.ts",
+                         "sha256":  "d785be001f73e57719ba10a6ee930481300238ab2af1f5065cec038f1bf9564f",
+                         "size":  6536,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/data/DataBrowserService.ts",
+                         "sha256":  "7cdad3807d186d7bdd221ad11ac35d50881bab0ffccd8ad448de8883e3c4abcf",
+                         "size":  6063,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/diagnostics/ProjectDiagnosticsService.ts",
+                         "sha256":  "11961acf05a36fffc4fa2ca5a286da4548a9fbf549d488489813c3a1c1026656",
+                         "size":  11318,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/home/HomeSnapshotService.ts",
+                         "sha256":  "a99e78e774b7c3a74949b906dde7b67bb22a17b6ed64ac8ab49622d8b9a628bb",
+                         "size":  4618,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/home/homeWidgetRegistry.ts",
+                         "sha256":  "17e961e167ae0488f76f03be92c8056fc99483e5e9c770fbd1ef1ec90730e422",
+                         "size":  2183,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/home/types.ts",
+                         "sha256":  "eb2ac4c36203d62233f3f6b28fe059d3850f998a61c98c470f8eab71f1003ba5",
+                         "size":  1851,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/observability/metricsCatalog.ts",
+                         "sha256":  "9b66c98fb94025b5b462377670e2fec82efbd655d013006ebae68e30637a27b8",
+                         "size":  17007,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/observability/MetricsCollector.ts",
+                         "sha256":  "1a6af5b6c82e5dc79bcbf3f77ac80177ea9c932e4f33823361b653e9aa92ad3a",
+                         "size":  19212,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/operations/operationsActionRegistry.ts",
+                         "sha256":  "57fb10727a209f424811a5e37eb900bdbeb5491b46b62015197a4d1f1001a5ca",
+                         "size":  3486,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/operations/OperationsService.ts",
+                         "sha256":  "a5f108514f64c78bf980e05a8fb3048e6f37f13b486d2589262ffe332e260dca",
+                         "size":  4595,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/operations/ProjectTestRunnerService.ts",
+                         "sha256":  "a07d9da0015c116948b5610a997929fb6e3be7422f659990f0731ec31d6added",
+                         "size":  2316,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/operations/types.ts",
+                         "sha256":  "e0ce0689b832a5a707e3915881fd063bd544aa6739c65ad411a4b976ba1ca1af",
+                         "size":  2229,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/research/ExperimentStore.ts",
+                         "sha256":  "a737de4224b9dd711fd8a4b07917449c210186e25d789027a38b01deebce4b2e",
+                         "size":  2836,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/research/researchRegistry.ts",
+                         "sha256":  "4c838dd6fec1f680476f2d13132f4d09ede2d8e1deb78ec9105c1f52251e5902",
+                         "size":  4293,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/research/ResearchRuntime.ts",
+                         "sha256":  "aaa982e1bd04f9bf7ea06aa062cf5435d61d2f831558765c47d3a5913483091b",
+                         "size":  6454,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/research/types.ts",
+                         "sha256":  "b67b1ce1736a013a7988a4eb14a4326ae738d72981f2c69ddd46e3bb986f00a4",
+                         "size":  3458,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/scenarios/sandboxScenarioHandlers.ts",
+                         "sha256":  "449b62294a229cc355c4bf2e4a81d9bd2fb0072d1fc67ce2b1fda7dc8e39e602",
+                         "size":  10525,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/scenarios/scenarioRegistry.ts",
+                         "sha256":  "0c8d11f70822ed28fbd0c3cd11756bf7d6208e651c8d22d3007bfad23094d35f",
+                         "size":  15904,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/scenarios/ScenarioRunStore.ts",
+                         "sha256":  "f2dbd5c655462bda06e9b9a9837febc78b5357eedd1669dfc91333d71740fdae",
+                         "size":  1492,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/scenarios/ScenarioRuntime.ts",
+                         "sha256":  "513440f5e403ffe75c83cd620f7faf7d9a89424348eff7abf2d63f392ed5ad81",
+                         "size":  4551,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/scenarios/types.ts",
+                         "sha256":  "276b2e313baab97984402adf8bfef2a23a4a1453c067f92e44ae3f23f8a4abcd",
+                         "size":  4348,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/settings/deepseekCapabilityMatrix.ts",
+                         "sha256":  "29ab7ad4dda27da706fc859aba3f848e3c3368d489c9b070dbc39aa4c64cf4d1",
+                         "size":  5500,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/settings/SettingsService.ts",
+                         "sha256":  "a8823a18bfac3aaee6e1d6f4ee4136f79e3c479f1525d1cc9bed774ae0d9990e",
+                         "size":  3200,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/settings/settingsWidgetRegistry.ts",
+                         "sha256":  "332393909c4063cf923145a00c7f0ef71917c54e4ec3f81c66639bcd30e97116",
+                         "size":  2436,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/cockpit/settings/types.ts",
+                         "sha256":  "f8d84e9d4ceeea7ec6ea5d1e5a01fc548ee4b17b06aaf5a998fc22973f5c7fa5",
+                         "size":  3079,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/analysis/AnalysisOutputChips.tsx",
+                         "sha256":  "42609ef183bcb8e17fef78a9e8732aa8a50d05763faa847a7818ec8b7942c2ae",
+                         "size":  2384,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/analysis/AnalysisRunDetail.tsx",
+                         "sha256":  "786becac5036342df5de7b43639caea2c980b6f0e4db21cd555087b141ffa037",
+                         "size":  5628,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/analysis/AnalysisRunHistory.tsx",
+                         "sha256":  "eb2d9f9360e595e028a87073a37ef2ebb711d10e09e509a636249ff9afebdd00",
+                         "size":  3417,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/analysis/AnalysisScriptCard.tsx",
+                         "sha256":  "0fe585110ccecfa14076dc483cdf8949f0d91bccb7a5862df18e8bab771bc42c",
+                         "size":  3975,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/analysis/AnalysisScriptGrid.tsx",
+                         "sha256":  "25430b9b7356235acf2ef16aa1f5d54b02a3078f62fc5c85c35d016e7ad90e10",
+                         "size":  1659,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/analysis/AnalysisStatusBadge.tsx",
+                         "sha256":  "9da8ca3bb2186e7dcdd3dada32ae6ec86c18128fc6b168974023049a0e6e0795",
+                         "size":  5800,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/analysis/AnalysisTab.tsx",
+                         "sha256":  "78daf79af28a3d2edf5f59ab51a18b49b995331fcafd9d9cdbbc09bde3eb65e0",
+                         "size":  8793,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/analysis/analysisViewModel.ts",
+                         "sha256":  "169a850792b8d186f4913f479691f8116fb260bcd67383a33490607caff45cd3",
+                         "size":  2857,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/analysis/sanitizeAnalysisText.ts",
+                         "sha256":  "725f45b2ec24a3bdb666e6c139f6b0fc4fc8eaf5c9337227559f29a1c15149ec",
+                         "size":  1057,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/chat/AgentThoughtProcess.tsx",
+                         "sha256":  "5c822677d9be2ca232621729aa9d55e5f1e23bd836ba1a1f5960c792a939c43f",
+                         "size":  9259,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/chat/ApprovalCard.tsx",
+                         "sha256":  "2d3430b917996bd89d05a12106ee3edae882e430c1c4f579981611b05afb3fdc",
+                         "size":  11575,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/chat/derivePlanSteps.ts",
+                         "sha256":  "4cea023a3b2c60f49ce31c86386b1b3bee44f33149762ecb8413049200c44506",
+                         "size":  10286,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/chat/MemoryAtomCandidateRow.tsx",
+                         "sha256":  "fb8fc2ec01354cc9459eb8e30fa48e51b990f4dc345623adfd379d4830992197",
+                         "size":  7621,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/chat/MemoryGraphVisualizer.tsx",
+                         "sha256":  "5b2821442d06f308a3cde3950c17bcdce46c8bac10fc0b45962138f34e61d8a7",
+                         "size":  7205,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/chat/MemoryPatchCard.tsx",
+                         "sha256":  "54e832f8726882c6894b46a2c3cf4b86308fbd1a4ebf64cd64d049158f436643",
+                         "size":  7065,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/chat/MemoryPatchChip.tsx",
+                         "sha256":  "5a9e5b3bd2c0fa35feca588748607e6b13acafcc7bc6b13bc46ced4a47e78bdf",
+                         "size":  1743,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/chat/memoryPatchViewModel.ts",
+                         "sha256":  "0dc8b65bfde225cc24a8e6de3288b16daea4c69a0d4fedca1e6c920630275dbd",
+                         "size":  3590,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/chat/PlanModeCard.tsx",
+                         "sha256":  "0080d9f1384b89aa47a0214f9fd55c64f6bb6d4cb536d87ce091313f7b9ce702",
+                         "size":  11364,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/chat/planModeViewModel.ts",
+                         "sha256":  "8adaf74d0d8e37112d99e035e7970a5b22bd134019ab01ae5622151610ee117a",
+                         "size":  2199,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/chat/PlanStepRow.tsx",
+                         "sha256":  "6b5fa89555c2fa4d0df5b0b4ff3a63eab2e7d5c74a3643b85918d665cf18e6fc",
+                         "size":  7913,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/chat/RuntimeTraceEventRow.tsx",
+                         "sha256":  "f5507ccb27223f4350be07f5c48ef12e80a382b9a428461cce42446cd39a4c85",
+                         "size":  6145,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/chat/RuntimeTraceFilters.tsx",
+                         "sha256":  "05650f73d7be3ee18d6283dd44dffec73109dbe7f221d6460bd098b0903786ab",
+                         "size":  1303,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/chat/RuntimeTraceGroup.tsx",
+                         "sha256":  "a8cdd50b839f9cbe7896dc67e98944725dbcad9595442728820eabde4f63e34f",
+                         "size":  4525,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/chat/RuntimeTracePanel.tsx",
+                         "sha256":  "d0081304a1b5d44f9257d00720fbaecab7201bb94280a334526d6c56570daee3",
+                         "size":  3058,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/chat/runtimeTraceViewModel.ts",
+                         "sha256":  "8c79060c60a874fc48bcb1b02163ae442c38a0859087385934f99134dc22f2e8",
+                         "size":  7042,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/chat/sanitizeMemoryText.ts",
+                         "sha256":  "e4178eec99b1521948c1f196ec296b3c9b839027fd83855c8c688ec9eb6cad8a",
+                         "size":  2268,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/chat/sanitizePlanText.ts",
+                         "sha256":  "9cfad2715e18683cd140a624b104fd2ebd409f1436aadba5aabf563feb954cbf",
+                         "size":  1409,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/chat/sanitizeTraceText.ts",
+                         "sha256":  "f8faa727e876934cecc0bf9977e65c86874957adfd867b14e7791aa518beea42",
+                         "size":  1991,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/data/ArtifactPreview.tsx",
+                         "sha256":  "24a6ca41619c82f5695f3f9ea54f196d673a704f2649cc5206738fc0652568e8",
+                         "size":  1035,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/data/DataFilters.tsx",
+                         "sha256":  "17e5008a1a089b2e6b5dd585002b01d382445899e70f5794e28a598ea66cc695",
+                         "size":  2643,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/data/DataItemDetail.tsx",
+                         "sha256":  "bd465c263d131e86e7632088d605494950e4f226a5ea36f40e9197d15ac85b5f",
+                         "size":  4999,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/data/DataItemGrid.tsx",
+                         "sha256":  "b488f128d6b72e2dbcec3fb94e90a84abb05cffc44fe449a3264994e4c451278",
+                         "size":  2719,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/data/DatasetRefPreview.tsx",
+                         "sha256":  "9895718a50fcac564e621957eb54eb07bed0013a72e25801261d30c28cdef5de",
+                         "size":  2770,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/data/DataStatusBadge.tsx",
+                         "sha256":  "da8cd4805a69469f33f57b9d914ce1464e4d3db265062df23130b13baa4319da",
+                         "size":  3694,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/data/DataSummaryCards.tsx",
+                         "sha256":  "c24e0bc6983c26a165c619208f7ea987ef4bb306e5de04e15b55ba854f291d73",
+                         "size":  3509,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/data/DataTab.tsx",
+                         "sha256":  "5f00acb4aab8d0e004849287d6ae2aa33945cc8acdd7c8191ff180055017cf98",
+                         "size":  5596,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/data/dataViewModel.ts",
+                         "sha256":  "8de1ebfc4af13239968cad45e63e7ed5cbfc08573233de4f73a562c944681b17",
+                         "size":  508,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/data/MetricSnapshotPreview.tsx",
+                         "sha256":  "4d4dc499b089fbe9dc22a2e3d38388c70288b58b3e5562c8e478aae468f789e7",
+                         "size":  1864,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/data/sanitizeDataText.ts",
+                         "sha256":  "e2765093780b024b968f80a62e30caef93ac5b5ae697a415438d9db2e66ca7c3",
+                         "size":  1121,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/data/WorkspaceExplorer.tsx",
+                         "sha256":  "628742a3e54db0b2b38f7ed1947b3a4ebc0a735be133dfb8fb8aa9650eda6495",
+                         "size":  4483,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/ErrorBoundary.tsx",
+                         "sha256":  "b8da378a99193c8df7ab874c1585f792e9a47bdb56d73a3b3479ec70b272a3e7",
+                         "size":  1830,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/evolution/AgentEvolutionDashboard.tsx",
+                         "sha256":  "ff749b4ce191ca007667210a994c72c5a8097e7832044005afedaf7a9fd1cae1",
+                         "size":  62368,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/evolution/LlmMicrostructurePanel.tsx",
+                         "sha256":  "b4ce6aeb86c016e392f24bf9b845331b0e256e4c9e5da520e085403d06207251",
+                         "size":  34565,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/home/HomeActivityFeed.tsx",
+                         "sha256":  "457dd615ed0129f2b149c86ebfc2ee88d528311b2051ee2d199817f1d662cb7c",
+                         "size":  2857,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/home/HomeDashboard.tsx",
+                         "sha256":  "40be27e1686c349a33580c241f02cec89627f7b09ba55b895c71e97ab665c32e",
+                         "size":  4704,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/home/HomeModuleCard.tsx",
+                         "sha256":  "d5d36d2978514e202978f0e2e16530d94b1fe28a4b35650b8d634cbbc9d5b42f",
+                         "size":  3476,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/home/HomeModuleGrid.tsx",
+                         "sha256":  "22ecbf8ccda30d88789e52fc0a56267151d30d5581c32687848c677b35c0fce5",
+                         "size":  488,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/home/HomeStatusBadge.tsx",
+                         "sha256":  "5a53cf4b447048ef32215ccfefb2183fd7d1e10ef3e262e628c20cc641752146",
+                         "size":  2710,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/home/HomeSummaryCards.tsx",
+                         "sha256":  "2203dc738534aff395903c8c72a558ee94f76ad786772480970cf3c67670a6ab",
+                         "size":  2930,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/home/homeViewModel.ts",
+                         "sha256":  "4d1b88ec530d41de3528369abb797b2fb43971fff6dde0ee4adc42ed8e254c1c",
+                         "size":  262,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/home/ModelRuntimeHealthCard.tsx",
+                         "sha256":  "a039a38ad42c6b2f774c5f6b8b821131733ec50bbcc462d0fd0309cf576921cc",
+                         "size":  3596,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/home/sanitizeHomeText.ts",
+                         "sha256":  "a10b68a9e58795b69b2be95bde915faec77fb5ed0a27f1a417a9ac24acea0102",
+                         "size":  938,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/operations/AuroraRuntimeCard.tsx",
+                         "sha256":  "73699fa32f215f81b71a2d12a5b7d625ad492f58d7f75d7c3c0a16c5557d566f",
+                         "size":  2524,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/operations/OperationsActionCard.tsx",
+                         "sha256":  "9174e76eebf674c9d6af61b2d2e8998c85040e803ca1be0528335c44ab427172",
+                         "size":  3537,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/operations/OperationsActionGrid.tsx",
+                         "sha256":  "a6d45c98a5d4bf80a33bc617bae58f6def3c768c7a15bfe0cbb67c937dd58a1a",
+                         "size":  756,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/operations/OperationsSafetyPanel.tsx",
+                         "sha256":  "663e2cd3f1fafe206aef7453784689e1481a08872d797652501d9d1a137b8ea6",
+                         "size":  1055,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/operations/OperationsStatusOverview.tsx",
+                         "sha256":  "d7f0fa27ab52d94fbaacf5e346550e3aaddd1f5dec5debcd18565b1f1829f575",
+                         "size":  2006,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/operations/OperationsTab.tsx",
+                         "sha256":  "ca8836d178538a4f964c277b353cc199ac5405dc43d375272263632b7c9dd89b",
+                         "size":  5216,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/operations/operationsViewModel.ts",
+                         "sha256":  "62e68963027d5b26908026241e8e579f1e7b462fc754ba1eea69ab9caff91002",
+                         "size":  534,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/operations/ProjectDiagnosticsCard.tsx",
+                         "sha256":  "7639f3e2efa805880f53b4406de27d9a409109c3c0c6f0a07a22f45b3d2ca5da",
+                         "size":  6638,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/operations/ProjectTestRunnerCard.tsx",
+                         "sha256":  "62f1824d5cb5ca73fa22f0a41550f8aaec9814c788865f396381311ef7a06934",
+                         "size":  11072,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/operations/sanitizeOperationsText.ts",
+                         "sha256":  "d2e5d282e9073f62122b5205533bbf579002380fd9282a41236b36fb531796ac",
+                         "size":  1156,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/operations/TerminalJobsPanel.tsx",
+                         "sha256":  "3f055d7803fccc44a33082c8001db7088a1fd1b9eb59d4aa349b773fbb501467",
+                         "size":  2467,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/operations/WorkspaceManifestCard.tsx",
+                         "sha256":  "2447c3116d00b07ec0ce9d9486b1a489e8e06a82d34ab64594cfaff38b7b3a3a",
+                         "size":  5470,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/patches/PatchDiffViewer.tsx",
+                         "sha256":  "7f9a79288fad098827d7b24230da153b5f9766a69c93e2bf35b68677e7333186",
+                         "size":  1707,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/patches/PatchProposalCard.tsx",
+                         "sha256":  "1503586e40134560b765c19dcaa43eef602686206fe5fe26d8464038bd504222",
+                         "size":  4144,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/patches/PatchProposalDetail.tsx",
+                         "sha256":  "24a460586e0f32c01637290a61e76467b45038a31282aa22fc724826f02fdfe8",
+                         "size":  6980,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/patches/PatchRiskBadge.tsx",
+                         "sha256":  "d7990fb373642714d657822af2738df2e01d0139f80b4a41876865ab00763bae",
+                         "size":  989,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/research/CreateExperimentPanel.tsx",
+                         "sha256":  "88a7d6aedb99796d68e6970d8c3640b7aedcfedd95d6b66ee2f0dc3ae91836ab",
+                         "size":  5897,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/research/ExperimentDetail.tsx",
+                         "sha256":  "62e649aa724f54754c78a0db578a5c4e3342911c74af528abe7225a01fda99c9",
+                         "size":  8770,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/research/ExperimentList.tsx",
+                         "sha256":  "1b44aa80d55206ef9c0079619d33c3a2c888421e57ff165cf0a5a810bc746438",
+                         "size":  2910,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/research/ExperimentRunDetail.tsx",
+                         "sha256":  "f1bf57130f252a486553bfafa8451806da5a915ddd5db5e35bee368eb7c73790",
+                         "size":  4936,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/research/ExperimentRunHistory.tsx",
+                         "sha256":  "37adbe420d0d386796a82cd139c98dbc17c29619375e0108ec6098e6f1cbda11",
+                         "size":  2648,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/research/ResearchDomainCard.tsx",
+                         "sha256":  "6e4a033fa26f75b4f0766e93239bddda894fa951e7d66fc0c2aad87d6a75b2f7",
+                         "size":  2834,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/research/ResearchDomainCards.tsx",
+                         "sha256":  "2ef0e8fafdbacc2dd2e38fbce5737ab9caea9a2a8d38685c1319edde59a8d47f",
+                         "size":  883,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/research/ResearchStatusBadge.tsx",
+                         "sha256":  "e1718b4253ab0d186bd1951bad2473ce803a685191546193519f976ca30bb937",
+                         "size":  3761,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/research/ResearchTab.tsx",
+                         "sha256":  "67a510298a5d462a0159816933bed083d11750186e169530b683ed43dbbead05",
+                         "size":  7703,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/research/researchViewModel.ts",
+                         "sha256":  "d4e4393916b7a44c9d3450126fbabd7232167fe5f3dbc7752a2d5a899cdbddb1",
+                         "size":  1474,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/research/sanitizeResearchText.ts",
+                         "sha256":  "e803f1053c0a26a76ce2e76c943e043f50665912a4f43ec782dec1705a8c0dc1",
+                         "size":  1125,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/scenarios/sanitizeScenarioText.ts",
+                         "sha256":  "948b2147a72ea30d239811f6b891021fe1fcb046118dd3fd0654f1d9fc362371",
+                         "size":  944,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/scenarios/ScenarioCard.tsx",
+                         "sha256":  "db736c21626d1fd6967db2c361e4b9048cf22d593a6a694b1cbcb11b996d7bd4",
+                         "size":  3815,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/scenarios/ScenarioFilters.tsx",
+                         "sha256":  "4e1f9325f41e86b031568c9b63042f79d14b796d470ab7e57fb94eae43818653",
+                         "size":  1357,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/scenarios/ScenarioGrid.tsx",
+                         "sha256":  "608ea69758661d4bfb9bae8d6b21c712b37e74cc3eeb375bc01536da1d44c28c",
+                         "size":  540,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/scenarios/ScenarioRunDetail.tsx",
+                         "sha256":  "3a737a78fcecd44eb310cebaee69fdb28dd37d6d6f5708beb962706015156478",
+                         "size":  2745,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/scenarios/ScenarioRunHistory.tsx",
+                         "sha256":  "65350a3841376c0fee3b0a2f67c1b30b0fc5a63a18cd6d09ec83e35d5e0221eb",
+                         "size":  2510,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/scenarios/ScenariosTab.tsx",
+                         "sha256":  "3bdf19788c5e6def7b16da5779c6ad24c3f65306454c5b0b52832ecc4103a0e2",
+                         "size":  5544,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/scenarios/ScenarioStatusBadge.tsx",
+                         "sha256":  "edb07e9b33eca57fd38b65f4c9a836c36efbd0b31ea169399e9c44ef1ca0d597",
+                         "size":  3699,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/scenarios/ScenarioStepList.tsx",
+                         "sha256":  "30916c62d3058caff6e74569759b70dec80e5aef1aaa57a1fb660bc7cd16359d",
+                         "size":  3111,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/scenarios/scenarioViewModel.ts",
+                         "sha256":  "d5ac50f622f345d4273be678962f4cb2ab3a51167da726e9c238d8112d27a786",
+                         "size":  1548,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/settings/DeepSeekCapabilitiesPanel.tsx",
+                         "sha256":  "d0dc6ae73de7c22176c11ba3ef03c6f440795a190cb110dacec637a53559412c",
+                         "size":  2837,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/settings/SettingsTab.tsx",
+                         "sha256":  "b1e211cd66243b17006e045369f293dce897dd65e1812d4070f0c0ba9e04714d",
+                         "size":  4715,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/settings/settingsViewModel.ts",
+                         "sha256":  "d17e2cc70a2296151b4ba959834a51afdda707e3b849cf94e1465b0fadf1a1e0",
+                         "size":  282,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/components/trace/TracePlaceholder.tsx",
+                         "sha256":  "c5e5a04672227630fea01f951c007f1ff4e09687203d339f74e9651a529c64e1",
+                         "size":  10448,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/index.css",
+                         "sha256":  "2d01f0d5188e1193ab59dd7dfb05a07ca29f1833026f2db1fbee815080222357",
+                         "size":  1658,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/lib/i18n.tsx",
+                         "sha256":  "17e3ae442927cf66c99f9d7fc1d4a0c81c98e646797d8395ee70ae85393b5bbd",
+                         "size":  21137,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/lib/utils.ts",
+                         "sha256":  "9e45d6d21e0d57bf85930ba2bf6fdd9f5f0175d1129844356081a6050975deb1",
+                         "size":  175,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/main.tsx",
+                         "sha256":  "eec722ccc688e9a4dc16737a07c42c6706acf7ade220e45c337910e419134a85",
+                         "size":  434,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/server/analysis/InternalAnalysisHandlers.ts",
+                         "sha256":  "182507d6c9832f144681b847674be81ab01743616e8a9bb707bd82bcd28a6288",
+                         "size":  6764,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/server/phenix/analytics/OrderLogAnalyticsService.ts",
+                         "sha256":  "5aff3b5768a1382f3c4409d751a5bd5efc717cc192aab425fb99d4f4d6671e0c",
+                         "size":  6368,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/server/trading/PhenixApiClient.ts",
+                         "sha256":  "cf10bdd49d681dcc229da0e578e0b04e38348fc08ba8118f7b435283d0b02c49",
+                         "size":  11659,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/server/trading/PhenixTradingAgentService.ts",
+                         "sha256":  "875135136fe6d5769c3cc1a7fbc9398e055826958e52c5a23719b0bd010137d8",
+                         "size":  107688,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/server/trading/TradingAgentStore.ts",
+                         "sha256":  "e79ef240f5c468f9e2f78ab2a731edae84d72656162a8002d1fc033b0fbf1a54",
+                         "size":  14146,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/server/trading/TradingEngineService.ts",
+                         "sha256":  "fc9f0d32bbafd77e8204fa36b50d03cada2e83f360fce442e48ab60f39fcd1c0",
+                         "size":  2623,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/shared/contracts/bridge.ts",
+                         "sha256":  "e8e2d2e0cabbbdc10128e4d212eea6f718af1d39ce323ea5b91c76a032d00445",
+                         "size":  1402,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/shared/contracts/cockpit.ts",
+                         "sha256":  "99c2f8743f94c18b4e2491430328ae8717ab360ab563fc5499862e7337abd11e",
+                         "size":  1836,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/shared/contracts/economics.ts",
+                         "sha256":  "402f55962fd5b7dcdab83ea117ec0fc1c89221e8ce8cdc8da3a0d87f5cfddc64",
+                         "size":  1077,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/shared/contracts/index.ts",
+                         "sha256":  "758153f047676a215e985059049c81249a23c8954e501ddacb6c043de84fe582",
+                         "size":  180,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/shared/contracts/llm-microstructure.ts",
+                         "sha256":  "0f0ae891e53df3ae640122ac93bb5959c2f6349dc1c75535b32b9eccf636ff78",
+                         "size":  7613,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/shared/contracts/runtime.ts",
+                         "sha256":  "0b785d8efda59847e0318d6656281b5023af40eb147b4c7972714ea07d4f1f62",
+                         "size":  2624,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/shared/contracts/trading.ts",
+                         "sha256":  "ebe32aded6568da35e5c68a1811068f6b6842fd5c26fcbe40622e9e09edd602e",
+                         "size":  11113,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "src/shared/runtimeEnv.ts",
+                         "sha256":  "804c9e46d9493e453db461d2f41fe4733aebe4af21b5575ae2a05dc979b85669",
+                         "size":  3689,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "Start-PhenixCockpit.ps1",
+                         "sha256":  "174b8f98d307998275dc0a0b0b6edb86a26148f2d59a843e78eb0779349ecc16",
+                         "size":  6108,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "test_lla_core.ts",
+                         "sha256":  "0c2f33981407ca93494fd692764839fa750aba6176a6125be1f8fa8d14485704",
+                         "size":  1364,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "tests/quant_stress_test.ts",
+                         "sha256":  "014872e6056b9fc80a8439c33805b3d4e276646de16cfe82a9727f26e041ad87",
+                         "size":  4532,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "tests/trading-agent/PhenixApiClient.test.ts",
+                         "sha256":  "cb52c18ca75e434a806716c8b0281da4edd6cf094ec1831c2003538099a8c766",
+                         "size":  3818,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "tests/trading-agent/PhenixTradingAgentService.test.ts",
+                         "sha256":  "2bd6314a41fb3ca44a3f648b88563715f7a2f17c8e1f736ada1db6d1c3af7df5",
+                         "size":  36491,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "tests/trading-agent/runtimeEnv.test.ts",
+                         "sha256":  "cc08b5d958550149c974917d02b1f4b28864466cc3cf169eac3a9f90cbb6ac8f",
+                         "size":  2833,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "tests/trading-agent/server.trading-agent.test.ts",
+                         "sha256":  "1f269463806e256b3e878749fa5ec2ea17742e13579c15152a35c7cedc0a8b1b",
+                         "size":  8392,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "tests/trading-agent/TradingAgentStore.test.ts",
+                         "sha256":  "594294af7bca76756c908e51c28a97cf204193a38db524bc62e88b82b2dc676f",
+                         "size":  7098,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/.gitignore",
+                         "sha256":  "3d0de26e4d0cd11b3b43c07c7812e8adeddbd5761dcdc6f69525900ec524ba94",
+                         "size":  60,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/analyze_plan.py",
+                         "sha256":  "5de145dbe1cb44b022a1383a3ff326dc41a0ee16e3394749dd2107b1cd9e4a6f",
+                         "size":  7888,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/binance_histori.py",
+                         "sha256":  "e8235d1ebba73dc17862f77bd4cbebd8f12a76b57aa6a801014e62dde8e2be57",
+                         "size":  17066,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/check_btc_volatility.py",
+                         "sha256":  "da077b58e981d3cb1eb443e85fce3062ed7675a8554cf5217f7974cc6ce41059",
+                         "size":  2358,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/check_filters.py",
+                         "sha256":  "3d53e2a06f1f130ca1ec703b6c8f48c5214b7eff02636b8a32470dcf04511a61",
+                         "size":  4377,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/check_live_plan.py",
+                         "sha256":  "fb20eff3750ac8962d956276a9863f9319f6f6692e449dfde26bda7beced43f6",
+                         "size":  3751,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/check_real_balance.py",
+                         "sha256":  "43c346688d0d3d6eeb4a9e92319da064acfde4e7eed3dcf18aff187f8f155d8b",
+                         "size":  3065,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/config/trading.yaml",
+                         "sha256":  "4585689e214b6f95b6b3957b8c00a9fc8ba2bfb2dbac2319e02f855b71bc4fab",
+                         "size":  104,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/core/engine/preflight.py",
+                         "sha256":  "c5e507872363400b5679ede413576cf96ef6314e2ae599126ff6a420fb323c09",
+                         "size":  8949,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/core/engine/scheduler.py",
+                         "sha256":  "ebd3c50bb4df09ed7b7b50bd6632e28aebfde67e16b51578e37991249e68bb43",
+                         "size":  2631,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/core/exchange/execution.py",
+                         "sha256":  "169702d928a8a0abb8c91b3324ccbabdb239d1e62035b7cd2db63c575aa4ae9b",
+                         "size":  2475,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/core/exchange/mode_guard.py",
+                         "sha256":  "e92e4c78adf0f4cddaee72d31711c0347b98501291f7f9e99ee3a19a10a4cad7",
+                         "size":  2845,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/core/exchange/order_builder.py",
+                         "sha256":  "1f4cb28732214e7d89d9ad55aef4a56787a6cbac89db5ba63ddda4bccad50261",
+                         "size":  3569,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/core/risk/risk_manager.py",
+                         "sha256":  "f04c815b7470c66e19f9367de360b06f98637166a74c4452f8a036d91feeff57",
+                         "size":  3018,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/data/trading_plan.json",
+                         "sha256":  "819ed6de603a7e187affadc14569c5cda411fd95a5cc5d90e9f2a38118fc208d",
+                         "size":  2344,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/data/trading_plan_adapted.json",
+                         "sha256":  "b4c28faca1c52033c5ae6d0fbd4c6cae5739a93e52fe5f2e4b11f360003d14da",
+                         "size":  3142,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/data/trading_plan_template_min.json",
+                         "sha256":  "e9a3512b9315b7f88f268670be2e3574632f00fa59a2d9a1f8d716998eed0d41",
+                         "size":  2502,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/data/traidng_shablon.json",
+                         "sha256":  "3d1f7dedaac558022fed2b57539e1b9c4deeaafab8ccf45ac50bf67075d824a6",
+                         "size":  5973,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/demo_volatility_function.py",
+                         "sha256":  "98ef3fafcf2c1928e9b03489567f4b1c2fd05b10fdd685cab16ac916e533f77e",
+                         "size":  1976,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/docs/crypto_trading_schedule.md",
+                         "sha256":  "967227e0f7e5ba256b2989ea944dddaa54c09b6b09b852e3f6434bc3bf3e0cd4",
+                         "size":  4240,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/docs/Plan_06.08.md",
+                         "sha256":  "afc3424377040b276e1a38a599528671a9d5c97f769e820efea4c8276504f79a",
+                         "size":  95067,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/docs/plan_08.08.md",
+                         "sha256":  "ef8a8d7052afd8c616ff3985687e1ff60312639a6c45a2de89bf56fdcb625b7c",
+                         "size":  88151,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/docs/Plan_matematika.md",
+                         "sha256":  "680e50b1738816885b807e9fbed9a5f84c8352a318e44a8305d411fc2a3bb472",
+                         "size":  41678,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/docs/telegram_integration.md",
+                         "sha256":  "539f0ef43691e9384280cb0a24c75b16b56c620a140830889da5f928aa2ebb9f",
+                         "size":  3741,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/docs/TELEGRAM_SECURITY_REPORT.md",
+                         "sha256":  "9cc7dcd6d508e650363c729b9750d439821de53539a201908e3221856cae0473",
+                         "size":  10347,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/docs/Глибокий аналіз крипторинку_ стратегії.md",
+                         "sha256":  "bf1a297c61f5bf5ddf5564f950b34d47465162acf1d90f3e62b2aa8471027d56",
+                         "size":  69358,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/docs/Стар_Промт.md",
+                         "sha256":  "1f7e45d0815902b6725c251a4191a4fd4ac8747a66f1e2be9e3d4da8b15921b9",
+                         "size":  4033,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/docs/ШАБЛОН_ПЛАНУ.md",
+                         "sha256":  "4d6d374331fc9b8696d469c2219268dc3a6073672eb02c112649226932ea295e",
+                         "size":  9708,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/main.py",
+                         "sha256":  "ec60817fbd3738b4464fb67d50dbcab77d8e3ce164124e0bee90f54b45ec38b0",
+                         "size":  5951,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/MAINNET_SETUP.md",
+                         "sha256":  "a71a1e2db998286a69ef30403eb903fbdf1e5639b99826a9de4acbf867953fa8",
+                         "size":  3576,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/market_data_collector.py",
+                         "sha256":  "7bd9b03ae6f375eacd4c18aa880ddbb38830a3be134b653bd19397e59f5f4849",
+                         "size":  28767,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/NETWORK_RESILIENCE_REPORT.md",
+                         "sha256":  "ea33b52b17acc848054ee8ebe7905336ca24bf2d55907357b4d30885a7f91abe",
+                         "size":  3731,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/requirements.txt",
+                         "sha256":  "b2e51845059eb878fa4c1562d02e3f32f802ad04b3b31c67adf99e2e9b138a6b",
+                         "size":  480,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/scripts/analyze_income.py",
+                         "sha256":  "60a82bfd2cbf9ffc9f16c664983157a77daf035f9ed00845d89d63ee855e41c0",
+                         "size":  4992,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/scripts/check_positions.py",
+                         "sha256":  "8ad705859e9cfac67a558040601c1e553aa978992b2d4ac26d1c10fabead12fa",
+                         "size":  1255,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/scripts/prepare_testnet_plan.py",
+                         "sha256":  "d8c4897b550f344803728d97b0332b32dc35977514973b6208fc8bd461ab971d",
+                         "size":  7388,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/scripts/run_testnet_now.py",
+                         "sha256":  "fc7c54ada3c5a7029f48b9233e40051959ab0896c3c3cc0064dd619e3aafead2",
+                         "size":  1922,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/scripts/run_testnet_plan.py",
+                         "sha256":  "7c4bdd1278e5dceae488abe67b23cf7332f0872cece828bf7dce02db1b6b6c70",
+                         "size":  8218,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/scripts/setup_env.bat",
+                         "sha256":  "9094020e414f7c6ea7d0b6ecfc85dd24649a8697e30f3c3cd63324f32a132f41",
+                         "size":  241,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/scripts/setup_env.sh",
+                         "sha256":  "b391bb3f6cd424ce5eccafbaf010342d386b4f570edc335b49b8f1f2e5e0d3cf",
+                         "size":  253,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/show_changes.py",
+                         "sha256":  "eca75d26f523060be557d037fa26deba98d0224f8fe33dd33902d5286956819c",
+                         "size":  2567,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/tests/__init__.py",
+                         "sha256":  "f761f10a93f38b0a0d7268240bd7de5b54c928b2a944903b0eb61fa2aaa6517d",
+                         "size":  50,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/tests/test_api_filters.py",
+                         "sha256":  "1f6861a6ec5b3f116ab101eb8ecf5217ffac24a2040d7901041826b6f8eca231",
+                         "size":  2748,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/tests/test_execution.py",
+                         "sha256":  "0dfbdb652c0efd64440f8653cce7bea778953309d08a47e0a049b897f6a84c64",
+                         "size":  9612,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/tests/test_execution_autoretry_4061.py",
+                         "sha256":  "405163e5c9a17f55751d3c61ea0cd958a0dd968c9adc9c5234ee4cad1958036b",
+                         "size":  1254,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/tests/test_flash_drop.py",
+                         "sha256":  "8e5e521eecb0e8c28810d6c6e09a7fd03105dde2c9771ec0b2c00eb7b687c6d7",
+                         "size":  3646,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/tests/test_mode_guard.py",
+                         "sha256":  "fc34302360d0f61384c9a630532cee65d2c6ee19b081b219caa50340d0fdf049",
+                         "size":  1529,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/tests/test_network_resilience.py",
+                         "sha256":  "c2a22a9b5ee0bed1bf5ed1ecd7d2fb76fd03175b5ed8c2932cd4ca09c94c3f54",
+                         "size":  3572,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/tests/test_new_plan.py",
+                         "sha256":  "2d275fa3641259d4a2faa35bfec38045381f00f93f4d39aa0db14a0f39d8b2af",
+                         "size":  6118,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/tests/test_order_builder_modes.py",
+                         "sha256":  "01049f0fbd01ba923e9ed2b267713a862a3491bb76936226097dcaa1c2a63fd4",
+                         "size":  1142,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/tests/test_plan_4_0.py",
+                         "sha256":  "ba5b80bfe838cedac86a5643f1d5f4aa9b9bb44b0ffa65cf51a58c804667e304",
+                         "size":  1929,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/tests/test_plan_parser.py",
+                         "sha256":  "454d8b469da5ec44f8fe067814ecb2e39071b945ab47aa1f4d03b6e8b41e7191",
+                         "size":  3762,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/tests/test_plan_validation.py",
+                         "sha256":  "f8badb84a9a6433e9c1859961a2fc130b704e18f44e974671ce28b056ac09abc",
+                         "size":  5677,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/tests/test_preflight_4061.py",
+                         "sha256":  "c17301ed39049d72e632a1e3af3d903b6997c35f1305d74123984560d6fdd222",
+                         "size":  2544,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/tests/test_risk_manager.py",
+                         "sha256":  "567b47ca74e7e6e4ee9968a1f1fde07e604177106f77a01a35c930012318f78a",
+                         "size":  6550,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/tests/test_risk_manager_notional_and_risk.py",
+                         "sha256":  "24d460e19c3268cbfd342be5536837caf4188892a5843afa92852dcacd0fb89e",
+                         "size":  1621,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/tests/test_rounding.py",
+                         "sha256":  "5b238e51d77bbbb04c4138f838d2bdf23719a3067ca7004d615c5b59d0cac862",
+                         "size":  5328,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/tests/test_volatility_trigger.py",
+                         "sha256":  "00ceed2866f50307c042a5071c9296b18787ce3522e07c0e82748a1b11fe6edc",
+                         "size":  3199,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/trading_bot/__init__.py",
+                         "sha256":  "f4ae09e90f9f274f68e69926dfbe38b1b91d9c38323d57edbcc1b1a3b3eb06c4",
+                         "size":  186,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/trading_bot/engine.py",
+                         "sha256":  "b5b62cf2c6710b47631a717b00a2cbb5d013eba94307ecd483ba3f52159e0dd9",
+                         "size":  73412,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/trading_bot/exchange_connector.py",
+                         "sha256":  "f851548bfefb2f691a3f69f0841bd4fdfafc87fb9e4f9d0fcfb7653ca9bb1181",
+                         "size":  29804,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/trading_bot/journal.py",
+                         "sha256":  "a9fcf7ff499f55361d94793c0f06d2ef8d2ea9460aa9667bab1230de85378fdc",
+                         "size":  7713,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/trading_bot/logger_config.py",
+                         "sha256":  "581336e3770ef77fb63d1a654a858d4032b83407785a9183066e77612223cf07",
+                         "size":  5661,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/trading_bot/models.py",
+                         "sha256":  "221f6df6a1f71942af0a056360d12ac2f769d871ce2487aac3e6c2c40a975af3",
+                         "size":  146,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/trading_bot/notifications.py",
+                         "sha256":  "298d9409e4ae3089ba1e7f2b7fb5949313e60a46e4b3941a047b3a614d439cce",
+                         "size":  3794,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/trading_bot/plan_parser.py",
+                         "sha256":  "8f3e2279e8e7cafcb2e1f27db967e2ab8c7b21dc2d5f806274bb277f5abb142e",
+                         "size":  6417,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/trading_bot/risk_manager.py",
+                         "sha256":  "6f03d5024ada5d905b81b491923ff53a7f432a4bb7172697c8b0c722c6cc5419",
+                         "size":  19866,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/trading_bot/telegram_analytics.py",
+                         "sha256":  "91b0edd36da799a3592aaba55967f322ce8c8a9cc92d5e7becee1a41b2fd3447",
+                         "size":  5867,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/trading_bot/telegram_analytics_secure.py",
+                         "sha256":  "ea712f4561925b5a29ce7b9b379a8d0f125feffed52ab3524fef5e4a434e4fb5",
+                         "size":  10291,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/trading_bot/telegram_bot.py",
+                         "sha256":  "4c432e43399d0f8a483466f0df960705f9bfea0cdaf93c4aaf9b5d2d8251e01d",
+                         "size":  28613,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/trading_bot/telegram_bot_secure.py",
+                         "sha256":  "3fa16ae4963fd8252448ef7470976311e5e3f31571f92842bd8e77e1c6c1f3f9",
+                         "size":  41272,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/trading_bot/telegram_config.py",
+                         "sha256":  "17cad8c7a731edc2f4e71d90d03e950e3e35515b7946cbbadbea47c50f9e139a",
+                         "size":  1641,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/trading_bot/utils.py",
+                         "sha256":  "c72916f824f6c82cd945d2014cf2d1c14e8dfb3a191b89734f1153a40ce68681",
+                         "size":  2775,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/traidng_shablon.json",
+                         "sha256":  "e359057e24f5cc48b428ab6f9bbd878d8434203f1bd9f6866970226173f46405",
+                         "size":  3451,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/validate_json.py",
+                         "sha256":  "58a0a5a427feb57a3a58115dde58424c8891d6878bd387abcb2e48749583b03a",
+                         "size":  1948,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "trading_bot/validate_risk_fixes.py",
+                         "sha256":  "b5d5f81613cb4b771cfb872ee72d21514dcff4ee56cd9aa40fa41ceb50725d41",
+                         "size":  3967,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "tsconfig.json",
+                         "sha256":  "3c6abfb62d861145b657e37a6bbf96d1626752b6145e3bf9c218a0e66112cdd6",
+                         "size":  534,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "UNIVERSAL_WORKSPACE_SEARCH_AND_FILE_ACCESS_REPORT_V1.md",
+                         "sha256":  "060e97b4e9133dd32f481355b9b803cfe51c151f500f1024eb4adcb3942d217d",
+                         "size":  4934,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "vite.config.ts",
+                         "sha256":  "2dc676aa42ac356214e9ef5b0a065c99e84223d364a441e81b08194216c75e29",
+                         "size":  1347,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     },
+                     {
+                         "relative_path":  "WORKSPACE_EXECUTION_BRIDGE_CONTRACT_REPORT_V1.json",
+                         "sha256":  "c56a094f2b4130caf6f2bb546cabd1e3f81e953eadc7cfd58171b564ade508fe",
+                         "size":  3578,
+                         "classification":  "SOURCE_CONFIG_TEST_DOC"
+                     }
+                 ],
+    "excluded_summary":  [
+                             {
+                                 "classification":  "TEMPORARY_EXCLUDED",
+                                 "file_count":  2,
+                                 "total_bytes":  8072
+                             },
+                             {
+                                 "classification":  "GENERATED_OR_RUNTIME_EXCLUDED",
+                                 "file_count":  30,
+                                 "total_bytes":  2234715
+                             }
+                         ],
+    "excluded_content_hashed":  false
+}
