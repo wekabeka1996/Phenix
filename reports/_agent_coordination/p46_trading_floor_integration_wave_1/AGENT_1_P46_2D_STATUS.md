@@ -6,6 +6,7 @@
 - Contract, persistence, approval reuse, UI, authenticated dry-run route, and real local HTTP proof are validated.
 - Proof: one proposal, one dry-run POST, no caller quantity, review-only approval, stale invalidation, zero execution effects.
 - Phenix broad selected suite: `95 passed`; Cockpit focused: `30 passed`; lint/build passed; trading-agent baseline remains `44 passed, 1 known legacy EZE failure`.
+- Both P46-2D worker branches were pushed successfully; no canonical/default branch was merged.
 
 ## BLOCKER
 - Production FastAPI is not composed with the main-process session authority or canonical context/lifecycle readers.

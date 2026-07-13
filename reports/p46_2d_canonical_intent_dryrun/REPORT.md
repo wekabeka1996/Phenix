@@ -7,6 +7,7 @@ AGENT_IDENTITY: primary cross-repository integration agent; task `P46_2D_COCKPIT
 - Code/test commit `bebaa7d3` adds strict proposal/V2 mapping, authority/sizing/exposure preview service, strict config, and authenticated versioned API.
 - Dry-run calls `TradingSessionAuthorityStore`, `PositionQueriesSizingAdapterV2`, and an explicit pure exposure preview; it never invokes the full V2 processor or command path.
 - Local cross-repository proof produced one accepted result and zero command/FSM/adapter/exchange/provider effects.
+- Branch push to `origin/p46-2d-intent-dryrun-api-primary-20260713` succeeded.
 
 ## INFERENCES
 - Contract and no-side-effect boundary are suitable once production readers are composed.
