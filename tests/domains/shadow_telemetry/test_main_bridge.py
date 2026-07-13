@@ -99,6 +99,7 @@ def _configure_shadow_llm(cfg_dir: Path, *, mode: str) -> None:
     domains_path = cfg_dir / "domains.yaml"
     domains_data = yaml.safe_load(domains_path.read_text(encoding="utf-8"))
     authority_policy = domains_data["shadow_telemetry"]["agent_authority"]
+    read_model_policy = domains_data["shadow_telemetry"]["api"]["read_model"]
     domains_data["shadow_telemetry"] = {
         "enabled": True,
         "required_for_mode": False,
@@ -115,6 +116,7 @@ def _configure_shadow_llm(cfg_dir: Path, *, mode: str) -> None:
             "port": 8443,
             "tls": False,
             "auth_mode": "bearer",
+            "read_model": read_model_policy,
             "write": {
                 "enabled": True,
                 "intents_endpoint": "/intents/llm/v1",

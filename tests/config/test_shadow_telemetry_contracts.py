@@ -10,6 +10,7 @@ from apps.reference.config_loader import ConfigLoader
 from apps.reference.config.domains.shadow_telemetry import (
     AgentAuthorityPolicyConfig,
     ShadowTelemetryApiConfig as DomainShadowTelemetryApiConfig,
+    ShadowTelemetryReadModelConfig as DomainShadowTelemetryReadModelConfig,
     ShadowTelemetryApiWriteConfig as DomainShadowTelemetryApiWriteConfig,
     ShadowTelemetryDomainConfig as DomainShadowTelemetryDomainConfig,
     ShadowTelemetryEgressToMainConfig as DomainShadowTelemetryEgressToMainConfig,
@@ -21,6 +22,7 @@ from apps.reference.config.domains.shadow_telemetry import (
 )
 from apps.reference.config_models import (
     ShadowTelemetryApiConfig,
+    ShadowTelemetryReadModelConfig,
     ShadowTelemetryApiWriteConfig,
     ShadowTelemetryDomainConfig,
     ShadowTelemetryEgressToMainConfig,
@@ -182,8 +184,19 @@ def test_shadow_telemetry_extraction_preserves_field_contract() -> None:
         dynamic_factories={},
     )
     _assert_field_contract(
+        ShadowTelemetryReadModelConfig,
+        required={
+            "enabled", "schema_version", "runtime_id", "environment",
+            "context_stale_after_sec", "lifecycle_stale_after_sec", "max_items_per_section",
+        },
+        defaults={},
+        class_factories={},
+        dynamic_factories={},
+    )
+    assert ShadowTelemetryReadModelConfig is DomainShadowTelemetryReadModelConfig
+    _assert_field_contract(
         ShadowTelemetryApiConfig,
-        required={"enabled", "host", "port", "tls", "auth_mode", "write"},
+        required={"enabled", "host", "port", "tls", "auth_mode", "read_model", "write"},
         defaults={},
         class_factories={},
         dynamic_factories={},

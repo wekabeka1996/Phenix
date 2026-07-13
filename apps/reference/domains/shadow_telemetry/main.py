@@ -11,6 +11,7 @@ import threading
 import time
 import uuid
 from collections import defaultdict, deque
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Deque, Dict, Optional, Tuple
@@ -18,7 +19,7 @@ from typing import Any, Deque, Dict, Optional, Tuple
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from apps.reference.config_loader import ConfigLoader
@@ -51,6 +52,11 @@ from apps.reference.domains.shadow_telemetry.ipc import (
     parse_tcp_endpoint,
 )
 from apps.reference.domains.shadow_telemetry.snapshot_store import SnapshotStore
+from apps.reference.domains.shadow_telemetry.read_model_contract import ReadModelHealth
+from apps.reference.domains.shadow_telemetry.read_model_service import (
+    PhenixReadModelService,
+    ReadModelUnavailableError,
+)
 from vfoundation.core.protocol import Message, truncate_why
 from vfoundation.dr import wal
 
@@ -298,7 +304,11 @@ def _extract_reference_price(snapshot: Optional[Dict[str, Any]]) -> Optional[Dec
     return None
 
 
-def create_shadow_telemetry_app(config: Any) -> FastAPI:
+def create_shadow_telemetry_app(
+    config: Any,
+    *,
+    read_model_service: Optional[PhenixReadModelService] = None,
+) -> FastAPI:
     shadow_cfg = config.domains.shadow_telemetry
     write_cfg = shadow_cfg.api.write
     llm_cfg = config.trading.llm_orchestration
@@ -350,6 +360,8 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
     app.state.max_body_kb = int(write_cfg.max_body_kb)
     app.state.auth_mode = str(shadow_cfg.api.auth_mode or "bearer")
     app.state.auth_tokens = _load_bearer_tokens()
+    app.state.read_model_service = read_model_service
+    app.state.read_model_config = shadow_cfg.api.read_model
 
     @app.on_event("startup")
     async def _startup() -> None:
@@ -478,6 +490,96 @@ def create_shadow_telemetry_app(config: Any) -> FastAPI:
             # Backward-compatible alias.
             "commands_queue_depth": queue_depth,
         }
+
+    def _read_model_authorize(
+        request: Request,
+        credentials: Optional[HTTPAuthorizationCredentials],
+    ) -> None:
+        _authorize_or_reject(
+            app,
+            str(request.headers.get("x-request-id") or f"read-{uuid.uuid4()}"),
+            request,
+            credentials,
+        )
+
+    @app.get("/read-model/v1/health")
+    async def read_model_health(
+        request: Request,
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
+    ) -> Dict[str, Any]:
+        _read_model_authorize(request, credentials)
+        policy = app.state.read_model_config
+        return ReadModelHealth(
+            schema_version=policy.schema_version,
+            runtime_id=policy.runtime_id,
+            environment=policy.environment,
+            generated_at=datetime.now(timezone.utc),
+            configured=bool(policy.enabled),
+            authority_available=app.state.read_model_service is not None,
+            source_references=("phenix://shadow-telemetry/read-model",),
+        ).model_dump(mode="json")
+
+    @app.head("/read-model/v1/health")
+    async def read_model_health_head(
+        request: Request,
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
+    ) -> Response:
+        _read_model_authorize(request, credentials)
+        return Response(status_code=200 if app.state.read_model_service is not None else 503)
+
+    def _read_model_snapshot(session_id: str) -> Dict[str, Any]:
+        service = app.state.read_model_service
+        if service is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"reason_code": "READ_MODEL_AUTHORITY_UNAVAILABLE"},
+            )
+        try:
+            return service.snapshot(session_id).model_dump(mode="json")
+        except ReadModelUnavailableError as exc:
+            code = str(exc)
+            http_status = status.HTTP_404_NOT_FOUND if code == "SESSION_NOT_FOUND" else status.HTTP_503_SERVICE_UNAVAILABLE
+            raise HTTPException(status_code=http_status, detail={"reason_code": code}) from exc
+
+    async def _read_model_get(
+        session_id: str,
+        request: Request,
+        credentials: Optional[HTTPAuthorizationCredentials],
+        focus: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        _read_model_authorize(request, credentials)
+        snapshot = _read_model_snapshot(session_id)
+        if focus is None:
+            return snapshot
+        common_keys = {
+            "schema_version", "runtime_id", "environment", "generated_at", "config_version",
+            "session_id", "data_version", "source_timestamp", "freshness_state", "source_references",
+        }
+        return {key: value for key, value in snapshot.items() if key in common_keys or key == focus}
+
+    @app.get("/read-model/v1/sessions/{session_id}")
+    async def read_model_session(
+        session_id: str,
+        request: Request,
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
+    ) -> Dict[str, Any]:
+        return await _read_model_get(session_id, request, credentials)
+
+    @app.get("/read-model/v1/sessions/{session_id}/participants")
+    async def read_model_participants(session_id: str, request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer)) -> Dict[str, Any]:
+        return await _read_model_get(session_id, request, credentials, "participants")
+
+    @app.get("/read-model/v1/sessions/{session_id}/leases")
+    async def read_model_leases(session_id: str, request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer)) -> Dict[str, Any]:
+        return await _read_model_get(session_id, request, credentials, "leases")
+
+    @app.get("/read-model/v1/sessions/{session_id}/context")
+    async def read_model_context(session_id: str, request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer)) -> Dict[str, Any]:
+        return await _read_model_get(session_id, request, credentials, "context")
+
+    @app.get("/read-model/v1/sessions/{session_id}/lifecycle")
+    async def read_model_lifecycle(session_id: str, request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer)) -> Dict[str, Any]:
+        return await _read_model_get(session_id, request, credentials, "lifecycle")
 
     @app.get("/snapshots/latest")
     async def snapshots_latest(

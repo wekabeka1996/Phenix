@@ -305,6 +305,24 @@ class TradingSessionAuthorityStore:
     def decisions(self) -> list[AuthorityDecision]:
         return list(self._decisions)
 
+    def participants_for_session(self, session_id: str) -> list[Participant]:
+        self.read_session(session_id)
+        return sorted(
+            (item.model_copy(deep=True) for item in self._participants.values() if item.session_id == session_id),
+            key=lambda item: item.participant_id,
+        )
+
+    def leases_for_session(self, session_id: str) -> list[tuple[SymbolLease, bool]]:
+        self.read_session(session_id)
+        return sorted(
+            (
+                (item.model_copy(deep=True), item.lease_id in self._released_lease_ids)
+                for item in self._leases.values()
+                if item.session_id == session_id
+            ),
+            key=lambda item: (item[0].symbol, item[0].lease_id),
+        )
+
     def _lease_by_id(self, lease_id: str) -> SymbolLease:
         for lease in self._leases.values():
             if lease.lease_id == lease_id and lease_id not in self._released_lease_ids:

@@ -35,6 +35,20 @@ class ShadowTelemetryApiWriteConfig(BaseModel):
     legacy_execution_routes_enabled: bool = Field(...)
 
 
+class ShadowTelemetryReadModelConfig(BaseModel):
+    """Bounded, read-only runtime projection policy."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(...)
+    schema_version: Literal["p46.read-model.v1"] = Field(...)
+    runtime_id: str = Field(..., min_length=1)
+    environment: Literal["binance_futures_testnet"] = Field(...)
+    context_stale_after_sec: int = Field(..., ge=1)
+    lifecycle_stale_after_sec: int = Field(..., ge=1)
+    max_items_per_section: int = Field(..., ge=1, le=200)
+
+
 class ShadowTelemetryApiConfig(BaseModel):
     """Shadow Telemetry API server settings."""
     model_config = ConfigDict(extra='forbid')
@@ -44,6 +58,7 @@ class ShadowTelemetryApiConfig(BaseModel):
     port: int = Field(..., ge=1, le=65535)
     tls: bool = Field(...)
     auth_mode: Literal["bearer", "loopback_optional_bearer"] = Field(...)
+    read_model: ShadowTelemetryReadModelConfig = Field(...)
     write: ShadowTelemetryApiWriteConfig = Field(
         ...)
 

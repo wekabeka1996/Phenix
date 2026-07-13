@@ -743,6 +743,14 @@ shadow_telemetry:
     port: 8443
     tls: false
     auth_mode: loopback_optional_bearer
+    read_model:
+      enabled: true
+      schema_version: p46.read-model.v1
+      runtime_id: phenix-primary-testnet
+      environment: binance_futures_testnet
+      context_stale_after_sec: 300
+      lifecycle_stale_after_sec: 60
+      max_items_per_section: 100
     write:
       enabled: true
       intents_endpoint: /intents/llm/v1
