@@ -45,6 +45,7 @@
     },
     "why_short":      { "anyOf": [{"type": "string", "maxLength": 80}, {"type": "null"}] },
     "sizing_decision_id": { "type": "string", "minLength": 1 },
+    "config_version": { "type": "string", "minLength": 1 },
     "session_id": { "type": "string", "minLength": 1 },
     "participant_id": { "type": "string", "minLength": 1 },
     "agent_id": { "type": "string", "minLength": 1 }

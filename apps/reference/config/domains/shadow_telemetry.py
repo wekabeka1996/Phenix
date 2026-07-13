@@ -100,6 +100,8 @@ class AgentAuthorityPolicyConfig(BaseModel):
     session_instrument_universe: List[str] = Field(..., min_length=1)
     max_position_horizon_sec: int = Field(..., ge=1)
     intent_ttl_sec: int = Field(..., ge=1)
+    account_snapshot_max_age_sec: int = Field(..., ge=1)
+    market_snapshot_max_age_sec: int = Field(..., ge=1)
     execution_order_type: Literal["LIMIT"] = Field(...)
     execution_time_in_force: Literal["GTC", "GTX", "IOC", "FOK"] = Field(...)
     execution_valid_for_ms: int = Field(..., ge=1000)

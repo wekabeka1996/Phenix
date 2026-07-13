@@ -12,7 +12,7 @@ symbol_selection:
   - SOLUSDT
   preferred_symbol: SOLUSDT
 exposure:
-  target_notional_quote: "10.0"
+  target_notional_quote: "11.0"
   operator_max_notional_quote: "20.0"
 timeouts:
   submit_ack_timeout_sec: 10

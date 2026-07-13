@@ -166,6 +166,14 @@ class CmdOpenPayload(BaseModel):
         default=None, description="Canonical upstream decision identifier")
     intent_id: Optional[str] = Field(
         default=None, description="Canonical upstream financial intent identifier")
+    sizing_decision_id: Optional[str] = Field(
+        default=None, description="Phenix sizing decision identifier")
+    config_version: Optional[str] = Field(
+        default=None, description="Sizing and authority configuration version")
+    exposure_decision_id: Optional[str] = Field(
+        default=None, description="Canonical exposure decision identifier")
+    exposure_config_version: Optional[str] = Field(
+        default=None, description="Configuration version evaluated by exposure guard")
     regime_epoch_ref: Optional[str] = Field(
         default=None,
         description="Decision-making-owned stable regime epoch propagated additively to execution.",

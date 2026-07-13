@@ -799,6 +799,8 @@ shadow_telemetry:
     - SOLUSDT
     max_position_horizon_sec: 14400
     intent_ttl_sec: 300
+    account_snapshot_max_age_sec: 15
+    market_snapshot_max_age_sec: 15
     execution_order_type: LIMIT
     execution_time_in_force: GTC
     execution_valid_for_ms: 300000

@@ -65,6 +65,9 @@ class ExposureManager:
             reduce_only = bool(pld.get("reduce_only", False))
             reserve_key = pld.get(
                 "idempotent_key") or msg.rid or f"rid_{msg.rid}"
+            exposure_decision_id = f"exposure:{reserve_key}"
+            pld["exposure_decision_id"] = exposure_decision_id
+            pld["exposure_config_version"] = pld.get("config_version")
 
             # DEF-E06: Size-aware flip detection.
             # A "flip" (opposite-side order) should only free margin proportional to
@@ -120,6 +123,8 @@ class ExposureManager:
                         "side": side,
                         "idempotent_key": str(pld.get("idempotent_key") or ""),
                         "requested_notional": str(notional_signed),
+                        "exposure_decision_id": exposure_decision_id,
+                        "config_version": pld.get("config_version"),
                     },
                     why=f"exposure_fail_closed_{reason.lower()}",
                 )

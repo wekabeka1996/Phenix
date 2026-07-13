@@ -1,7 +1,7 @@
 """Canonical single-process session, participant, and symbol-lease authority."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from threading import RLock
 from typing import Any, Callable, Literal, Optional
@@ -17,6 +17,24 @@ from apps.reference.domains.shadow_telemetry.agent_trade_intent_v2 import (
 
 SessionStatus = Literal["CREATED", "ACTIVE", "PAUSED", "CLOSED", "EXPIRED"]
 ParticipantType = Literal["MAIN_AGENT", "SUBAGENT", "OPERATOR"]
+
+
+def _snapshot_time(value: Any) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else None
+    if value is None:
+        return None
+    try:
+        numeric = Decimal(str(value))
+    except Exception:
+        return None
+    if numeric <= 0:
+        return None
+    seconds = numeric / Decimal("1000") if numeric >= Decimal("100000000000") else numeric
+    try:
+        return datetime.fromtimestamp(float(seconds), tz=timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 def _aware(value: datetime, field: str) -> datetime:
@@ -349,8 +367,17 @@ class CanonicalV2AuthorityProvider:
             lifecycle_allows_open=True,
             portfolio=portfolio,
             account_snapshot_ref=getattr(self.decision_making, "latest_portfolio_ref", None),
+            account_snapshot_at=_snapshot_time(
+                portfolio.get("ts_ms") or portfolio.get("timestamp")
+                if isinstance(portfolio, dict) else None
+            ),
+            account_snapshot_max_age_sec=self.store.policy.account_snapshot_max_age_sec,
             reference_price=price,
             market_snapshot_ref=symbol_state.get("snapshot_ref"),
+            market_snapshot_at=_snapshot_time(
+                symbol_state.get("timestamp_ms") or symbol_state.get("timestamp")
+            ),
+            market_snapshot_max_age_sec=self.store.policy.market_snapshot_max_age_sec,
             config_version=self.store.policy.config_version,
             order_type=self.store.policy.execution_order_type,
             time_in_force=self.store.policy.execution_time_in_force,

@@ -93,8 +93,12 @@ class AgentIntentAuthoritySnapshotV2(BaseModel):
     lifecycle_allows_open: bool
     portfolio: Optional[dict[str, Any]]
     account_snapshot_ref: Optional[str]
+    account_snapshot_at: Optional[datetime]
+    account_snapshot_max_age_sec: int = Field(..., ge=1)
     reference_price: Optional[Decimal]
     market_snapshot_ref: Optional[str]
+    market_snapshot_at: Optional[datetime]
+    market_snapshot_max_age_sec: int = Field(..., ge=1)
     config_version: Optional[str]
     order_type: Optional[Literal["LIMIT"]]
     time_in_force: Optional[Literal["GTC", "GTX", "IOC", "FOK"]]
@@ -169,8 +173,24 @@ class PositionQueriesSizingAdapterV2:
         missing: list[str] = []
         if not isinstance(snapshot.portfolio, dict):
             missing.append("ACCOUNT_TRUTH_MISSING")
+        if snapshot.account_snapshot_at is None:
+            missing.append("ACCOUNT_SNAPSHOT_TIMESTAMP_MISSING")
+        elif not _snapshot_is_fresh(
+            snapshot.account_snapshot_at,
+            snapshot.observed_at,
+            snapshot.account_snapshot_max_age_sec,
+        ):
+            missing.append("ACCOUNT_SNAPSHOT_STALE")
         if snapshot.reference_price is None or snapshot.reference_price <= 0:
             missing.append("MARKET_PRICE_MISSING")
+        if snapshot.market_snapshot_at is None:
+            missing.append("MARKET_SNAPSHOT_TIMESTAMP_MISSING")
+        elif not _snapshot_is_fresh(
+            snapshot.market_snapshot_at,
+            snapshot.observed_at,
+            snapshot.market_snapshot_max_age_sec,
+        ):
+            missing.append("MARKET_SNAPSHOT_STALE")
         if not snapshot.config_version:
             missing.append("SIZING_CONFIG_MISSING")
         if missing:
@@ -208,9 +228,22 @@ class PositionQueriesSizingAdapterV2:
                 "CONFIG_PRESENT",
                 f"POSITION_QUERIES:{why}",
                 f"STEP_SIZE:{debug.get('step_size')}",
+                f"FEE_BUFFER_FRACTION:{debug.get('fee_buffer_fraction')}",
+                f"ORDER_NOTIONAL:{debug.get('order_notional')}",
             ],
             rejection_reasons=[],
         )
+
+
+def _snapshot_is_fresh(
+    snapshot_at: datetime,
+    observed_at: datetime,
+    max_age_sec: int,
+) -> bool:
+    if snapshot_at.tzinfo is None or observed_at.tzinfo is None:
+        return False
+    age = (observed_at - snapshot_at).total_seconds()
+    return 0 <= age <= max_age_sec
 
 
 class AgentTradeIntentV2Processor:
@@ -314,6 +347,7 @@ class AgentTradeIntentV2Processor:
             },
             "why_short": intent.strategy_or_reason[:80],
             "sizing_decision_id": sizing.sizing_decision_id,
+            "config_version": sizing.config_version,
             "session_id": intent.session_id,
             "participant_id": intent.participant_id,
             "agent_id": intent.agent_id,

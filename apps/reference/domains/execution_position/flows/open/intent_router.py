@@ -529,6 +529,8 @@ class IntentRouter:
                 "stop_price": pld.get("stop_price"),
                 "target_price": pld.get("target_price"),
                 "idempotent_key": pld.get("idempotent_key"),
+                "sizing_decision_id": pld.get("sizing_decision_id"),
+                "config_version": pld.get("config_version"),
                 "price_ref": price,
                 "strategy": "llm_microstructure",
                 "regime": None,
