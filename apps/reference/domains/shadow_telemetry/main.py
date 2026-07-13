@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import hmac
 import ipaddress
+import json
 import logging
 import os
 import socket
@@ -56,6 +57,11 @@ from apps.reference.domains.shadow_telemetry.read_model_contract import ReadMode
 from apps.reference.domains.shadow_telemetry.read_model_service import (
     PhenixReadModelService,
     ReadModelUnavailableError,
+)
+from apps.reference.domains.shadow_telemetry.proposal_dry_run import (
+    ProposalDryRunService,
+    ProposalValidationError,
+    validate_proposal_payload,
 )
 from vfoundation.core.protocol import Message, truncate_why
 from vfoundation.dr import wal
@@ -308,6 +314,7 @@ def create_shadow_telemetry_app(
     config: Any,
     *,
     read_model_service: Optional[PhenixReadModelService] = None,
+    proposal_dry_run_service: Optional[ProposalDryRunService] = None,
 ) -> FastAPI:
     shadow_cfg = config.domains.shadow_telemetry
     write_cfg = shadow_cfg.api.write
@@ -361,6 +368,7 @@ def create_shadow_telemetry_app(
     app.state.auth_mode = str(shadow_cfg.api.auth_mode or "bearer")
     app.state.auth_tokens = _load_bearer_tokens()
     app.state.read_model_service = read_model_service
+    app.state.proposal_dry_run_service = proposal_dry_run_service
     app.state.read_model_config = shadow_cfg.api.read_model
 
     @app.on_event("startup")
@@ -580,6 +588,50 @@ def create_shadow_telemetry_app(
     @app.get("/read-model/v1/sessions/{session_id}/lifecycle")
     async def read_model_lifecycle(session_id: str, request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer)) -> Dict[str, Any]:
         return await _read_model_get(session_id, request, credentials, "lifecycle")
+
+    def _proposal_service() -> ProposalDryRunService:
+        service = app.state.proposal_dry_run_service
+        if service is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"reason_code": "DRY_RUN_AUTHORITY_UNAVAILABLE"},
+            )
+        return service
+
+    @app.post("/proposal-dry-run/v1/sessions/{session_id}")
+    async def proposal_dry_run(
+        session_id: str,
+        request: Request,
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
+    ) -> Dict[str, Any]:
+        _read_model_authorize(request, credentials)
+        policy = shadow_cfg.api.proposal_dry_run
+        body = await request.body()
+        if len(body) > int(policy.max_body_kb) * 1024:
+            raise HTTPException(status_code=413, detail={"reason_code": "PROPOSAL_SCHEMA_INVALID"})
+        try:
+            payload = json.loads(body)
+            proposal = validate_proposal_payload(payload)
+        except ProposalValidationError as exc:
+            raise HTTPException(status_code=400, detail={"reason_code": exc.reason}) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail={"reason_code": "PROPOSAL_SCHEMA_INVALID"}) from exc
+        if proposal.phenix_session_id != session_id:
+            raise HTTPException(status_code=409, detail={"reason_code": "SESSION_ID_MISMATCH"})
+        result = _proposal_service().evaluate(proposal)
+        return result.model_dump(mode="json")
+
+    @app.get("/proposal-dry-run/v1/results/{proposal_id}")
+    async def proposal_dry_run_result(
+        proposal_id: str,
+        request: Request,
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
+    ) -> Dict[str, Any]:
+        _read_model_authorize(request, credentials)
+        try:
+            return _proposal_service().get(proposal_id).model_dump(mode="json")
+        except ProposalValidationError as exc:
+            raise HTTPException(status_code=404, detail={"reason_code": exc.reason}) from exc
 
     @app.get("/snapshots/latest")
     async def snapshots_latest(

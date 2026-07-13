@@ -49,6 +49,18 @@ class ShadowTelemetryReadModelConfig(BaseModel):
     max_items_per_section: int = Field(..., ge=1, le=200)
 
 
+class ProposalDryRunApiConfig(BaseModel):
+    """Strict server-to-server no-execution proposal preview boundary."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    enabled: bool = Field(...)
+    schema_version: Literal["p46.proposal-dry-run.v1"] = Field(...)
+    result_schema_version: Literal["p46.proposal-dry-run-result.v1"] = Field(...)
+    endpoint: Literal["/proposal-dry-run/v1/sessions/{session_id}"] = Field(...)
+    max_body_kb: int = Field(..., ge=1, le=64)
+
+
 class ShadowTelemetryApiConfig(BaseModel):
     """Shadow Telemetry API server settings."""
     model_config = ConfigDict(extra='forbid')
@@ -59,6 +71,7 @@ class ShadowTelemetryApiConfig(BaseModel):
     tls: bool = Field(...)
     auth_mode: Literal["bearer", "loopback_optional_bearer"] = Field(...)
     read_model: ShadowTelemetryReadModelConfig = Field(...)
+    proposal_dry_run: ProposalDryRunApiConfig = Field(...)
     write: ShadowTelemetryApiWriteConfig = Field(
         ...)
 

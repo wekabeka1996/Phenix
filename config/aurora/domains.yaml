@@ -751,6 +751,12 @@ shadow_telemetry:
       context_stale_after_sec: 300
       lifecycle_stale_after_sec: 60
       max_items_per_section: 100
+    proposal_dry_run:
+      enabled: true
+      schema_version: p46.proposal-dry-run.v1
+      result_schema_version: p46.proposal-dry-run-result.v1
+      endpoint: /proposal-dry-run/v1/sessions/{session_id}
+      max_body_kb: 32
     write:
       enabled: true
       intents_endpoint: /intents/llm/v1

@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from apps.reference.config_loader import ConfigLoader
 from apps.reference.config.domains.shadow_telemetry import (
     AgentAuthorityPolicyConfig,
+    ProposalDryRunApiConfig as DomainProposalDryRunApiConfig,
     ShadowTelemetryApiConfig as DomainShadowTelemetryApiConfig,
     ShadowTelemetryReadModelConfig as DomainShadowTelemetryReadModelConfig,
     ShadowTelemetryApiWriteConfig as DomainShadowTelemetryApiWriteConfig,
@@ -21,6 +22,7 @@ from apps.reference.config.domains.shadow_telemetry import (
     ShadowTelemetryTfPolicyConfig as DomainShadowTelemetryTfPolicyConfig,
 )
 from apps.reference.config_models import (
+    ProposalDryRunApiConfig,
     ShadowTelemetryApiConfig,
     ShadowTelemetryReadModelConfig,
     ShadowTelemetryApiWriteConfig,
@@ -195,8 +197,14 @@ def test_shadow_telemetry_extraction_preserves_field_contract() -> None:
     )
     assert ShadowTelemetryReadModelConfig is DomainShadowTelemetryReadModelConfig
     _assert_field_contract(
+        ProposalDryRunApiConfig,
+        required={"enabled", "schema_version", "result_schema_version", "endpoint", "max_body_kb"},
+        defaults={}, class_factories={}, dynamic_factories={},
+    )
+    assert ProposalDryRunApiConfig is DomainProposalDryRunApiConfig
+    _assert_field_contract(
         ShadowTelemetryApiConfig,
-        required={"enabled", "host", "port", "tls", "auth_mode", "read_model", "write"},
+        required={"enabled", "host", "port", "tls", "auth_mode", "read_model", "proposal_dry_run", "write"},
         defaults={},
         class_factories={},
         dynamic_factories={},
