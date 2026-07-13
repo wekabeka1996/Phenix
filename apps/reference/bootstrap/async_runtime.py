@@ -8,9 +8,13 @@ from typing import Any, Coroutine, Optional, TypeVar
 T = TypeVar("T")
 
 
-def _run_async_loop(loop: asyncio.AbstractEventLoop) -> None:
+def _run_async_loop(
+    loop: asyncio.AbstractEventLoop,
+    ready: threading.Event,
+) -> None:
     """Run an asyncio loop in a dedicated thread."""
     asyncio.set_event_loop(loop)
+    loop.call_soon(ready.set)
     loop.run_forever()
 
 
@@ -36,15 +40,19 @@ class AsyncLoopRuntime:
         if self._loop is not None and self._loop.is_running():
             return self._loop
         loop = asyncio.new_event_loop()
+        ready = threading.Event()
         thread = threading.Thread(
             target=_run_async_loop,
-            args=(loop,),
+            args=(loop, ready),
             name=self._name,
             daemon=True,
         )
-        thread.start()
         self._loop = loop
         self._thread = thread
+        thread.start()
+        if not ready.wait(timeout=5.0) or not loop.is_running():
+            self.stop()
+            raise RuntimeError("AsyncLoopRuntime loop failed to start")
         return loop
 
     def submit(self, coro: Coroutine[Any, Any, T]) -> Future[T]:

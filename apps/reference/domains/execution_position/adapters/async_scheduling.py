@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from concurrent.futures import Future
 from typing import Any, Coroutine, Optional
 
 from apps.reference.utils.accessors import aget
@@ -14,6 +15,10 @@ from apps.reference.utils.accessors import aget
 LOG = logging.getLogger(
     "apps.reference.domains.execution_position.async_scheduling"
 )
+
+
+class AsyncDispatchUnavailableError(RuntimeError):
+    """The canonical runtime loop cannot accept an async FSM dispatch."""
 
 
 class AsyncSchedulingMixin:
@@ -34,6 +39,10 @@ class AsyncSchedulingMixin:
 
     def set_async_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         """Register the shared asyncio loop for guardian and cleanup tasks."""
+        if loop.is_closed() or not loop.is_running():
+            raise AsyncDispatchUnavailableError(
+                "canonical async loop must be running before registration"
+            )
         self._async_loop = loop
 
     def _get_async_loop(self) -> Optional[asyncio.AbstractEventLoop]:
@@ -43,7 +52,7 @@ class AsyncSchedulingMixin:
         currently running loop in the calling thread.
         """
         loop = self._async_loop
-        if loop and not loop.is_closed():
+        if loop and not loop.is_closed() and loop.is_running():
             return loop
         try:
             return asyncio.get_running_loop()
@@ -54,7 +63,7 @@ class AsyncSchedulingMixin:
         self,
         coro: Coroutine[Any, Any, Any],
         loop: Optional[asyncio.AbstractEventLoop] = None,
-    ) -> None:
+    ) -> asyncio.Task[Any] | Future[Any]:
         """Schedule ``coro`` on the target loop.
 
         The coroutine object is owned by this helper: if no usable loop is
@@ -62,10 +71,12 @@ class AsyncSchedulingMixin:
         was never awaited`` leaks in deferred or shutdown paths.
         """
         target_loop = loop or self._get_async_loop()
-        if not target_loop:
+        if not target_loop or target_loop.is_closed() or not target_loop.is_running():
             LOG.debug("No asyncio loop available to schedule %r", coro)
             coro.close()
-            return
+            raise AsyncDispatchUnavailableError(
+                "canonical async loop is unavailable"
+            )
 
         try:
             running_loop = asyncio.get_running_loop()
@@ -75,9 +86,14 @@ class AsyncSchedulingMixin:
         # Use create_task only when already on the target loop; cross-thread
         # scheduling must go through run_coroutine_threadsafe.
         if running_loop is target_loop:
-            target_loop.create_task(coro)
-        else:
-            asyncio.run_coroutine_threadsafe(coro, target_loop)
+            return target_loop.create_task(coro)
+        try:
+            return asyncio.run_coroutine_threadsafe(coro, target_loop)
+        except Exception as exc:
+            coro.close()
+            raise AsyncDispatchUnavailableError(
+                "canonical async dispatch was rejected"
+            ) from exc
 
     def _schedule_guardian_start(self) -> None:
         """Schedule guardian start/reconcile once the async runtime is ready."""
