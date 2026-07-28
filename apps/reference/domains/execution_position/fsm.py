@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -1806,7 +1807,7 @@ class ExecPosFSM(
             ),
         )
 
-    def shutdown(self):
+    def shutdown(self, *, async_timeout: float = 5.0):
         """Shutdown the FSM and cleanup resources."""
         if self._startup_truth_orchestrator._restore_artifact_has_state():
             self._startup_truth_orchestrator._persist_restore_artifact_snapshot(
@@ -1820,7 +1821,16 @@ class ExecPosFSM(
         if hasattr(self, 'order_guardian') and self.order_guardian:
             loop = self._get_async_loop()
             if loop:
-                self._submit_async(self.order_guardian.stop(), loop)
+                stop_handle = self._submit_async(
+                    self.order_guardian.stop(), loop)
+                if isinstance(stop_handle, Future):
+                    try:
+                        stop_handle.result(timeout=async_timeout)
+                    except FutureTimeoutError:
+                        LOG.error(
+                            "OrderGuardian shutdown timed out after %.3fs",
+                            async_timeout,
+                        )
         # FILL-PIPELINE-FIX-AUDIT: Stop WS client on shutdown (F-4)
         if hasattr(self, 'ws_client') and self.ws_client is not None:
             try:
