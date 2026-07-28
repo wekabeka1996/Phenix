@@ -58,7 +58,7 @@ def compute_notional_target(
     margin_pct: Decimal,
     leverage: int,
     notional_cap: Optional[Decimal] = None,
-    fee_buffer: Decimal = Decimal("0.001"),
+    fee_buffer: Decimal,
 ) -> tuple[Decimal, Decimal]:
     """Return margin budget and resulting notional target.
 

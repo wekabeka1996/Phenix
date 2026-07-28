@@ -193,6 +193,15 @@ class PositionQueries:
         sizing = _field(spec, "sizing")
         execution = _field(spec, "execution")
         margin_pct_base = decimal.Decimal(str(_field(sizing, "margin_pct")))
+        fee_buffer = self.safe_decimal(_field(sizing, "fee_buffer_fraction"))
+        if fee_buffer is None or fee_buffer < 0 or fee_buffer >= 1:
+            return (
+                None,
+                "missing_or_invalid_fee_buffer_fraction",
+                "CONFIG_REGIME_SIZING_INVALID",
+                {"fee_buffer_fraction": str(
+                    _field(sizing, "fee_buffer_fraction"))},
+            )
         margin_pct = margin_pct_base
         if margin_pct_mult is not None:
             try:
@@ -236,6 +245,7 @@ class PositionQueries:
             margin_pct=margin_pct,
             leverage=leverage,
             notional_cap=self.liq_cap_usd,
+            fee_buffer=fee_buffer,
         )
         raw_qty, rounded_qty = compute_qty(
             notional_target=notional_target,
@@ -249,6 +259,7 @@ class PositionQueries:
             "margin_pct_base": str(margin_pct_base),
             "margin_pct_mult": str(margin_pct_mult) if margin_pct_mult is not None else None,
             "margin_pct": str(margin_pct),
+            "fee_buffer_fraction": str(fee_buffer),
             "margin_usdt": str(margin_usdt),
             "leverage": int(leverage),
             "notional_target": str(notional_target),

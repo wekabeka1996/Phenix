@@ -80,6 +80,12 @@ class InstrumentSizingConfig(BaseModel):
         le=1.0,
         description="Fraction of wallet equity allocated as isolated margin for this symbol (0..1].",
     )
+    fee_buffer_fraction: Decimal = Field(
+        ...,
+        ge=Decimal("0"),
+        lt=Decimal("1"),
+        description="Fraction of equity reserved before margin-first sizing.",
+    )
 
 
 class InstrumentPrecisionSpec(BaseModel):
